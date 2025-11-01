@@ -3,6 +3,7 @@ import Home from "./pages/Home"
 import CreateTemplate from "./pages/CreateTemplate"
 import FillForm from "./pages/FillForm"
 import ViewForms from "./pages/ViewForms"
+import ManageTemplates from './pages/ManageTemplates';
 import "./App.css"
 
 function Navigation() {
@@ -27,6 +28,9 @@ function Navigation() {
           <Link to="/fill-form" className={isActive("/fill-form") ? "active" : ""}>
             Llenar Formulario
           </Link>
+          <Link to="/manage-templates" className={isActive("/manage-templates") ? "active" : ""}>
+            Administrar Plantillas
+          </Link>
           <Link to="/view-forms" className={isActive("/view-forms") ? "active" : ""}>
             Ver Formularios
           </Link>
@@ -47,6 +51,7 @@ function App() {
             <Route path="/create-template" element={<CreateTemplate />} />
             <Route path="/fill-form" element={<FillForm />} />
             <Route path="/view-forms" element={<ViewForms />} />
+            <Route path="/manage-templates" element={<ManageTemplates />} />
           </Routes>
         </main>
       </div>

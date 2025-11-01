@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from "react"
 import "./Home.css"
-
+import { API_BASE_URL } from "../apiConfig";
 // Asegúrate de que este puerto coincida con el de tu backend
-const API_URL_TEMPLATES = "https://backend-frigo.onrender.com/api/Templates";
-const API_URL_FILLED_FORMS = "https://backend-frigo.onrender.com/api/FilledForms";
-
+//const API_URL_TEMPLATES = "https://backend-frigo.onrender.com/api/Templates";
+//const API_URL_FILLED_FORMS = "https://backend-frigo.onrender.com/api/FilledForms";
+//const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
+//const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
+const API_URL = "http://localhost:5074/api/Templates";
+const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
+const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
 function Home() {
   const [stats, setStats] = useState({ templates: 0, forms: 0 })
   const [loading, setLoading] = useState(true);

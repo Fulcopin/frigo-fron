@@ -1,0 +1,68 @@
+/* En ManageTemplates.css */
+
+.manage-templates {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.templates-list {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.template-card-manage {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.template-card-manage:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+
+.template-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.template-card-info .template-code {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--primary);
+  background-color: #e0e7ff;
+  padding: 0.25rem 0.5rem;
+  border-radius: 99px;
+  align-self: flex-start;
+}
+
+.template-card-info h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text);
+}
+
+.template-card-info .template-version {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.template-card-actions .btn-danger {
+  background-color: #ef4444;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.template-card-actions .btn-danger:hover {
+  background-color: #dc2626;
+}

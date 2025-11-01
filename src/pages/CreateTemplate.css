@@ -219,3 +219,67 @@
     width: 100%;
   }
 }
+/* Estilos para los nuevos contenedores de bloques dinámicos */
+.body-element-container {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+  background-color: #fcfcfc;
+  position: relative;
+}
+
+.body-element-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 12px;
+}
+
+.section-title-input {
+  font-size: 1.2em;
+  font-weight: 600;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 4px 8px;
+  width: 80%;
+  transition: border-color 0.2s;
+}
+
+.section-title-input:focus {
+  outline: none;
+  border-bottom: 2px solid #007bff;
+}
+
+.body-element-content {
+  padding-left: 8px;
+}
+
+.section-header-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.section-header-inner h4 {
+  margin: 0;
+  color: #555;
+}
+
+.btn-add-small {
+  /* Un botón más pequeño para añadir campos/columnas dentro de un bloque */
+  padding: 4px 10px;
+  font-size: 0.9em;
+  background-color: #f0f0f0;
+  color: #333;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+.btn-add-small:hover {
+  background-color: #e0e0e0;
+}

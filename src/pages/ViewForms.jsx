@@ -3,11 +3,11 @@
 import { useState, useEffect } from "react"
 import FormHeader from "../components/FormHeader"
 import "./ViewForms.css"
-
-// Asegúrate de que este puerto coincida con el de tu backend
-const API_URL_TEMPLATES = "https://backend-frigo.onrender.com/api/Templates";
-const API_URL_FILLED_FORMS = "https://backend-frigo.onrender.com/api/FilledForms";
-
+import { API_BASE_URL } from "../apiConfig"; 
+//const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
+//const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
+const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
+const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
 function ViewForms() {
   const [forms, setForms] = useState([])
   const [templates, setTemplates] = useState([])
@@ -26,28 +26,30 @@ function ViewForms() {
         ]);
         if (!formsResponse.ok || !templatesResponse.ok) throw new Error('No se pudieron cargar los datos.');
 
-       let formsDataResponse = await formsResponse.json();
+        let formsDataResponse = await formsResponse.json();
         let templatesDataResponse = await templatesResponse.json();
 
-        // --- INICIO DEL CAMBIO ---
-        const formsArray = formsDataResponse.$values || [];
-        const templatesArray = templatesDataResponse.$values || [];
-        // --- FIN DEL CAMBIO ---
+        const formsArray = Array.isArray(formsDataResponse) ? formsDataResponse : formsDataResponse.$values || [];
+        const templatesArray = Array.isArray(templatesDataResponse) ? templatesDataResponse : templatesDataResponse.$values || [];
 
-        // Ahora usa los arrays extraídos para el resto de la lógica
+        // CORREGIDO: Parsear bodyElements en las plantillas
+        const parsedTemplates = templatesArray.map(t => ({
+          ...t,
+          bodyElements: JSON.parse(t.bodyElements || '[]')
+        }));
+        
+        // CORREGIDO: Parsear bodyData en los formularios llenados
         const parsedForms = formsArray.map(form => ({
           ...form,
-          templateNombre: templatesArray.find(t => t.templateID === form.templateID)?.nombre || 'Plantilla Desconocida',
-          templateCodigo: templatesArray.find(t => t.templateID === form.templateID)?.codigo || 'N/A',
+          templateNombre: parsedTemplates.find(t => t.templateID === form.templateID)?.nombre || 'Plantilla Desconocida',
+          templateCodigo: parsedTemplates.find(t => t.templateID === form.templateID)?.codigo || 'N/A',
           headerData: JSON.parse(form.headerData || '{}'),
+          bodyData: JSON.parse(form.bodyData || '[]'), // ¡CAMBIO CLAVE!
           firmasData: JSON.parse(form.firmasData || '{}'),
-          // Aquí hay un posible error futuro: 'form.tableRows' podría no ser un array si no lo incluyes en la API.
-          // Pero por ahora, el problema de .map se soluciona.
-          tableRows: form.tableRows ? form.tableRows.$values.map(tr => JSON.parse(tr.rowData || '{}')) : []
         }));
 
         setForms(parsedForms.reverse());
-        setTemplates(templatesArray);
+        setTemplates(parsedTemplates); 
       } catch (err) {
         setError(err.message);
       } finally {
@@ -58,11 +60,10 @@ function ViewForms() {
   }, []);
 
   const deleteForm = async (formId) => {
-    if (confirm("¿Estás seguro de eliminar este formulario de la base de datos? Es una acción permanente.")) {
+    if (window.confirm("¿Estás seguro de eliminar este formulario?")) {
       try {
         const response = await fetch(`${API_URL_FILLED_FORMS}/${formId}`, { method: 'DELETE' });
         if (!response.ok) throw new Error('No se pudo eliminar el formulario.');
-        
         setForms(prev => prev.filter(f => f.formID !== formId));
         setSelectedForm(null);
       } catch (err) {
@@ -72,16 +73,19 @@ function ViewForms() {
   };
 
   const printForm = () => window.print();
-  const exportToJSON = (form) => { /* Tu función de exportar no cambia */
+  const exportToJSON = (form) => { 
     const dataStr = JSON.stringify(form, null, 2); const dataBlob = new Blob([dataStr], { type: "application/json" }); const url = URL.createObjectURL(dataBlob); const link = document.createElement("a"); link.href = url; link.download = `${form.templateCodigo}_${new Date(form.createdAt).toISOString().split("T")[0]}.json`; link.click();
   };
 
   const filteredForms = filterTemplate ? forms.filter((f) => f.templateCodigo === filterTemplate) : forms;
 
-  if (loading) return <div className="view-forms"><h1>Cargando formularios desde la base de datos...</h1></div>;
+  if (loading) return <div className="view-forms"><h1>Cargando formularios...</h1></div>;
   if (error) return <div className="view-forms"><h1 className="error-message">Error: {error}</h1></div>;
 
   if (selectedForm) {
+    // Necesitamos encontrar la plantilla original para saber cómo renderizar el bodyData
+    const correspondingTemplate = templates.find(t => t.templateID === selectedForm.templateID);
+
     return (
       <div className="view-forms">
         <div className="form-viewer-header">
@@ -104,17 +108,42 @@ function ViewForms() {
             </div>
           )}
 
-          {selectedForm.tableRows.length > 0 && selectedForm.tableRows[0] && (
-            <div className="data-section">
-              <h3>Registro de Datos</h3>
-              <div className="table-wrapper">
-                <table className="view-table">
-                  <thead><tr><th>#</th>{Object.keys(selectedForm.tableRows[0]).map((key) => (<th key={key}>{key}</th>))}</tr></thead>
-                  <tbody>{selectedForm.tableRows.map((row, index) => (<tr key={index}><td>{index + 1}</td>{Object.values(row).map((value, i) => (<td key={i}>{value || "-"}</td>))}</tr>))}</tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          {/* --- NUEVO: RENDERIZADO DEL CUERPO DINÁMICO --- */}
+          {correspondingTemplate && selectedForm.bodyData.map((elementData, elementIndex) => {
+            const templateElement = correspondingTemplate.bodyElements[elementIndex];
+            if (!templateElement) return null;
+            
+            // Renderizar una SECCIÓN
+            if (templateElement.type === 'section') {
+              return (
+                <div key={templateElement.id} className="data-section">
+                  <h3>{templateElement.title}</h3>
+                  <div className="data-grid">
+                    {Object.entries(elementData.data).map(([key, value]) => (
+                      <div key={key} className="data-item"><span className="data-label">{key}:</span><span className="data-value">{value || "-"}</span></div>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+
+            // Renderizar una TABLA
+            if (templateElement.type === 'table') {
+              return (
+                <div key={templateElement.id} className="data-section">
+                  <h3>{templateElement.title}</h3>
+                  <div className="table-wrapper">
+                    <table className="view-table">
+                      <thead><tr><th>#</th>{templateElement.columns.map(col => <th key={col.label}>{col.label}</th>)}</tr></thead>
+                      <tbody>{elementData.data.map((row, index) => (<tr key={index}><td>{index + 1}</td>{templateElement.columns.map(col => <td key={col.label}>{row[col.label] || "-"}</td>)}</tr>))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })}
+
 
           {selectedForm.observaciones && (
             <div className="data-section"><h3>Observaciones</h3><div className="observations-box">{selectedForm.observaciones}</div></div>
@@ -133,46 +162,8 @@ function ViewForms() {
     );
   }
 
-  return (
-    <div className="view-forms">
-      <div className="page-header">
-        <h1>Formularios Guardados</h1>
-        <div className="filter-section">
-          <label>Filtrar por plantilla:</label>
-          <select value={filterTemplate} onChange={(e) => setFilterTemplate(e.target.value)}>
-            <option value="">Todas las plantillas</option>
-            {templates.map((t) => (<option key={t.templateID} value={t.codigo}>{t.codigo} - {t.nombre}</option>))}
-          </select>
-        </div>
-      </div>
-
-      {filteredForms.length === 0 ? (
-        <div className="empty-state-card"><p>No hay formularios guardados{filterTemplate ? " para esta plantilla" : ""}.</p></div>
-      ) : (
-        <div className="forms-list">
-          {filteredForms.map((form) => (
-            <div key={form.formID} className="form-card">
-              <div className="form-card-header">
-                <div>
-                  <span className="form-code">{form.templateCodigo}</span>
-                  <h3>{form.templateNombre}</h3>
-                </div>
-                <div className="form-card-actions">
-                  <button onClick={() => setSelectedForm(form)} className="btn-view">👁️ Ver</button>
-                  <button onClick={() => exportToJSON(form)} className="btn-export">📥</button>
-                  <button onClick={() => deleteForm(form.formID)} className="btn-delete">🗑️</button>
-                </div>
-              </div>
-              <div className="form-card-meta">
-                <span>📅 {new Date(form.createdAt).toLocaleString("es-EC")}</span>
-                <span>📊 {form.tableRows.length} registro(s)</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  // La vista para la lista de formularios no necesita grandes cambios
+  return ( <div className="view-forms"> <div className="page-header"> <h1>Formularios Guardados</h1> <div className="filter-section"> <label>Filtrar por plantilla:</label> <select value={filterTemplate} onChange={(e) => setFilterTemplate(e.target.value)}> <option value="">Todas las plantillas</option> {templates.map((t) => (<option key={t.templateID} value={t.codigo}>{t.codigo} - {t.nombre}</option>))} </select> </div> </div> {filteredForms.length === 0 ? ( <div className="empty-state-card"><p>No hay formularios guardados{filterTemplate ? " para esta plantilla" : ""}.</p></div> ) : ( <div className="forms-list"> {filteredForms.map((form) => ( <div key={form.formID} className="form-card"> <div className="form-card-header"> <div> <span className="form-code">{form.templateCodigo}</span> <h3>{form.templateNombre}</h3> </div> <div className="form-card-actions"> <button onClick={() => setSelectedForm(form)} className="btn-view">👁️ Ver</button> <button onClick={() => exportToJSON(form)} className="btn-export">📥</button> <button onClick={() => deleteForm(form.formID)} className="btn-delete">🗑️</button> </div> </div> <div className="form-card-meta"> <span>📅 {new Date(form.createdAt).toLocaleString("es-EC")}</span> {/* Podríamos querer actualizar esto, pero por ahora lo dejamos */} </div> </div> ))} </div> )} </div> );
 }
 
 export default ViewForms;
