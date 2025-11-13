@@ -94,9 +94,11 @@
 .form-card-actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .btn-view,
+.btn-edit,
 .btn-export,
 .btn-delete {
   padding: 0.5rem 1rem;
@@ -104,6 +106,11 @@
   font-size: 0.875rem;
   font-weight: 500;
   transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .btn-view {
@@ -113,6 +120,17 @@
 
 .btn-view:hover {
   background: var(--primary-dark);
+  transform: translateY(-1px);
+}
+
+.btn-edit {
+  background: #f59e0b;
+  color: white;
+}
+
+.btn-edit:hover {
+  background: #d97706;
+  transform: translateY(-1px);
 }
 
 .btn-export {
@@ -122,6 +140,7 @@
 
 .btn-export:hover {
   background: #15803d;
+  transform: translateY(-1px);
 }
 
 .btn-delete {
@@ -131,13 +150,25 @@
 
 .btn-delete:hover {
   background: #b91c1c;
+  transform: translateY(-1px);
 }
 
 .form-card-meta {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 1.5rem;
   font-size: 0.875rem;
   color: var(--text-secondary);
+}
+
+.updated-badge {
+  background: #10b981;
+  color: white;
+  padding: 0.125rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .form-viewer-header {

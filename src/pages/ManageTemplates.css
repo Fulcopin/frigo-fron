@@ -54,6 +54,26 @@
     color: var(--text-secondary);
 }
 
+.template-card-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.template-card-actions .btn-secondary {
+  background-color: var(--primary);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+
+.template-card-actions .btn-secondary:hover {
+  background-color: #4338ca;
+  text-decoration: none;
+}
+
 .template-card-actions .btn-danger {
   background-color: #ef4444;
   color: white;

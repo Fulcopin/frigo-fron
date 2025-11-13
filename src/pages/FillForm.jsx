@@ -4,11 +4,36 @@ import { useState, useEffect } from "react"
 import FormHeader from "../components/FormHeader"
 import "./FillForm.css"
 import { API_BASE_URL } from "../apiConfig";
-// URLs de la API apuntando a tu backend local
-//const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
-//const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
+
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
+
+const AUTOSAVE_INTERVAL = 30000; // 30 segundos
+const AUTOSAVE_KEY_PREFIX = 'autosave_form_';
+
+// --- FUNCIÓN AUXILIAR PARA PROCESAR ENCABEZADOS DE TABLA COMPLEJOS ---
+// Procesa las columnas para agruparlas por su propiedad "group" del JSON.
+const processColumnGroups = (columns = []) => {
+  if (!columns.length) return [];
+
+  const groupsMap = columns.reduce((acc, col) => {
+    // Si una columna no tiene grupo, se asigna uno por defecto para que no se rompa.
+    const groupName = col.group || 'Datos'; 
+    if (!acc[groupName]) {
+      acc[groupName] = [];
+    }
+    acc[groupName].push(col);
+    return acc;
+  }, {});
+
+  // Devuelve un array de objetos para mantener el orden de los grupos
+  return Object.keys(groupsMap).map(groupName => ({
+    groupName,
+    columns: groupsMap[groupName]
+  }));
+};
+
+
 function FillForm() {
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true);
@@ -16,13 +41,12 @@ function FillForm() {
 
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [headerData, setHeaderData] = useState({})
-  
-  // NUEVO: Estado unificado para los datos del cuerpo del formulario (secciones y tablas)
   const [bodyData, setBodyData] = useState([]); 
-
   const [firmasData, setFirmasData] = useState({})
-  const [observaciones, setObservaciones] = useState("")
   const [showSuccess, setShowSuccess] = useState(false)
+  
+  const [autoSaveStatus, setAutoSaveStatus] = useState('')
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -32,12 +56,11 @@ function FillForm() {
         
         let data = await response.json();
         
-        // CORREGIDO: Adaptado para la nueva estructura con bodyElements
         const templatesArray = Array.isArray(data) ? data : data.$values || [];
         const parsedData = templatesArray.map(template => ({
           ...template,
           headerFields: JSON.parse(template.headerFields || '[]'),
-          bodyElements: JSON.parse(template.bodyElements || '[]'), // Se parsea la nueva estructura
+          bodyElements: JSON.parse(template.bodyElements || '[]'),
           firmas: JSON.parse(template.firmas || '[]'),
         }));
 
@@ -51,68 +74,75 @@ function FillForm() {
     fetchTemplates();
   }, []);
 
-  // CORREGIDO: Lógica de inicialización completamente nueva para el cuerpo dinámico
   const handleTemplateSelect = (templateId) => {
     const template = templates.find((t) => t.templateID === templateId);
+    
+    if (!template) {
+      console.error('Template not found');
+      return;
+    }
+
     setSelectedTemplate(template);
 
-    // Inicializar datos del encabezado (sin cambios)
+    const key = `${AUTOSAVE_KEY_PREFIX}${templateId}`;
+    const savedData = localStorage.getItem(key);
+    
+    if (savedData && globalThis.confirm('Se encontraron datos autoguardados para esta plantilla. ¿Deseas cargarlos?')) {
+      try {
+        const parsedData = JSON.parse(savedData);
+        setHeaderData(parsedData.headerData || {});
+        setBodyData(parsedData.bodyData || []);
+        setFirmasData(parsedData.firmasData || {});
+        setHasUnsavedChanges(true);
+        return;
+      } catch (error) {
+        console.error('Error al cargar datos autoguardados:', error);
+        localStorage.removeItem(key);
+      }
+    }
+
     const initialHeader = {};
-    template.headerFields.forEach((field) => { initialHeader[field.label] = "" });
+    (template.headerFields || []).forEach((field) => { initialHeader[field.label] = "" });
     setHeaderData(initialHeader);
 
-    // NUEVO: Inicializar los datos para cada sección y tabla en el cuerpo
-    const initialBodyData = template.bodyElements.map(element => {
+    const initialBodyData = (template.bodyElements || []).map(element => {
       if (element.type === 'section') {
         const sectionData = {};
-        element.fields.forEach(field => { sectionData[field.label] = ""; });
+        (element.fields || []).forEach(field => { sectionData[field.label] = ""; });
         return { id: element.id, type: 'section', data: sectionData };
       }
+      
       if (element.type === 'table') {
-        const initialRow = {};
-        element.columns.forEach(col => { initialRow[col.label] = ""; });
-        return { id: element.id, type: 'table', data: [initialRow] }; // Una tabla empieza con una fila
+          const numRows = element.defaultRows || 10;
+          const initialRows = [];
+          for (let i = 0; i < numRows; i++) {
+            const newRow = {};
+            (element.columns || []).forEach(col => { newRow[col.label] = ""; });
+            initialRows.push(newRow);
+          }
+          return { id: element.id, type: 'table', data: initialRows };
       }
       return null;
-    }).filter(Boolean); // Filtra cualquier elemento nulo
+    }).filter(Boolean);
     setBodyData(initialBodyData);
 
-    // Inicializar firmas y observaciones (sin cambios)
     const initialFirmas = {};
-    template.firmas.forEach((firma) => { initialFirmas[firma.puesto] = { nombre: "", fecha: "" }});
+    (template.firmas || []).forEach((firma) => { initialFirmas[firma.puesto] = { nombre: "", fecha: "" }});
     setFirmasData(initialFirmas);
-    setObservaciones("");
-  };
-
-  // --- NUEVAS FUNCIONES PARA MANEJAR EL ESTADO DEL CUERPO DINÁMICO ---
-  const handleHeaderChange = (label, value) => setHeaderData((prev) => ({ ...prev, [label]: value }));
-  
-  const handleSectionFieldChange = (elementIndex, fieldLabel, value) => {
-    setBodyData(prev => prev.map((element, index) => 
-      index === elementIndex ? { ...element, data: { ...element.data, [fieldLabel]: value } } : element
-    ));
-  };
-  
-  const handleTableFieldChange = (elementIndex, rowIndex, columnLabel, value) => {
-    setBodyData(prev => prev.map((element, index) => {
-      if (index === elementIndex) {
-        const updatedRows = element.data.map((row, rIndex) => 
-          rIndex === rowIndex ? { ...row, [columnLabel]: value } : row
-        );
-        return { ...element, data: updatedRows };
-      }
-      return element;
-    }));
+    setHasUnsavedChanges(false);
   };
 
   const addTableRow = (elementIndex) => {
-    const tableElement = selectedTemplate.bodyElements[elementIndex];
+    const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
+    if (!tableElement) return;
+    
     const newRow = {};
-    tableElement.columns.forEach(col => { newRow[col.label] = ""; });
+    (tableElement.columns || []).forEach(col => { newRow[col.label] = ""; });
 
     setBodyData(prev => prev.map((element, index) => 
       index === elementIndex ? { ...element, data: [...element.data, newRow] } : element
     ));
+    setHasUnsavedChanges(true);
   };
 
   const removeTableRow = (elementIndex, rowIndex) => {
@@ -123,24 +153,81 @@ function FillForm() {
       }
       return element;
     }));
+    setHasUnsavedChanges(true);
   };
 
-  const handleFirmaChange = (puesto, field, value) => setFirmasData(prev => ({...prev, [puesto]: {...prev[puesto], [field]: value}}));
+  const handleFirmaChange = (puesto, field, value) => {
+    setFirmasData(prev => ({...prev, [puesto]: {...prev[puesto], [field]: value}}));
+    setHasUnsavedChanges(true);
+  };
+  
+  const saveToLocalStorage = () => {
+    if (!selectedTemplate) return;
+    
+    const autosaveData = {
+      templateID: selectedTemplate.templateID,
+      headerData,
+      bodyData,
+      firmasData,
+      timestamp: new Date().toISOString()
+    };
+    
+    const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
+    localStorage.setItem(key, JSON.stringify(autosaveData));
+    setAutoSaveStatus('saved');
+    setTimeout(() => setAutoSaveStatus(''), 2000);
+  };
+
+  useEffect(() => {
+    if (!selectedTemplate || !hasUnsavedChanges) return;
+    const autoSaveInterval = setInterval(() => {
+      setAutoSaveStatus('saving');
+      saveToLocalStorage();
+    }, AUTOSAVE_INTERVAL);
+    return () => clearInterval(autoSaveInterval);
+  }, [selectedTemplate, hasUnsavedChanges, headerData, bodyData, firmasData]);
+
+  const handleHeaderChangeWithAutoSave = (label, value) => {
+    setHeaderData((prev) => ({ ...prev, [label]: value }));
+    setHasUnsavedChanges(true);
+  };
+  
+  const handleSectionFieldChangeWithAutoSave = (elementIndex, fieldLabel, value) => {
+    setBodyData(prev => prev.map((element, index) => 
+      index === elementIndex ? { ...element, data: { ...element.data, [fieldLabel]: value } } : element
+    ));
+    setHasUnsavedChanges(true);
+  };
+  
+  const handleTableFieldChangeWithAutoSave = (elementIndex, rowIndex, columnLabel, value) => {
+    setBodyData(prev => prev.map((element, index) => {
+      if (index === elementIndex) {
+        const updatedRows = element.data.map((row, rIndex) => 
+          rIndex === rowIndex ? { ...row, [columnLabel]: value } : row
+        );
+        return { ...element, data: updatedRows };
+      }
+      return element;
+    }));
+    setHasUnsavedChanges(true);
+  };
   
   const renderField = (field, value, onChange) => {
-    const commonProps = { value: value || "", onChange: (e) => onChange(e.target.value), required: field.required };
+    const commonProps = { value: value || "", onChange: (e) => onChange(e.target.value), required: field.required, placeholder: field.placeholder || "" };
+    // Para la columna especial con salto de línea, usamos un textarea que se adapta mejor
+    if (field.label.includes('\n')) {
+        return <textarea {...commonProps} rows="2" />;
+    }
     switch (field.type) { case "textarea": return <textarea {...commonProps} rows="3" />; case "select": return (<select {...commonProps}><option value="">Seleccionar...</option>{field.options?.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}</select>); case "date": return <input type="date" {...commonProps} />; case "time": return <input type="time" {...commonProps} />; case "datetime": return <input type="datetime-local" {...commonProps} />; case "number": case "temperature": return <input type="number" step="0.01" {...commonProps} />; default: return <input type="text" {...commonProps} />; }
   };
 
-  // CORREGIDO: El payload ahora envía 'bodyData' en lugar de 'tableRows'
   const handleSaveForm = async () => {
     setError(null);
     const payload = {
       templateID: selectedTemplate.templateID,
       headerData: JSON.stringify(headerData),
-      bodyData: JSON.stringify(bodyData), // ¡CAMBIO CLAVE!
+      bodyData: JSON.stringify(bodyData),
       firmasData: JSON.stringify(firmasData),
-      observaciones: observaciones,
     };
 
     try {
@@ -153,8 +240,16 @@ function FillForm() {
         const errorText = await response.text();
         throw new Error(`Error al guardar el formulario: ${errorText}`);
       }
+      
+      const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
+      localStorage.removeItem(key);
+      setHasUnsavedChanges(false);
+      
       setShowSuccess(true);
-      setTimeout(() => { setShowSuccess(false); setSelectedTemplate(null); }, 2000);
+      setTimeout(() => { 
+        setShowSuccess(false); 
+        setSelectedTemplate(null); 
+      }, 2000);
     } catch (err) {
       setError(err.message);
     }
@@ -164,7 +259,6 @@ function FillForm() {
   if (error) return <div className="fill-form"><h1 className="error-message">Error: {error}</h1></div>;
 
   if (!selectedTemplate) {
-    // La vista para seleccionar una plantilla no cambia
     return ( <div className="fill-form"> <h1>Llenar Formulario</h1> {templates.length === 0 ? ( <div className="empty-state-card"><p>No hay plantillas disponibles. Crea una plantilla primero.</p></div> ) : ( <div className="template-selection"> <h2>Selecciona una plantilla:</h2> <div className="templates-grid"> {templates.map((template) => ( <div key={template.templateID} className="template-card" onClick={() => handleTemplateSelect(template.templateID)}> <div className="template-code">{template.codigo}</div> <h3>{template.nombre}</h3> {template.proceso && <p className="template-meta">Proceso: {template.proceso}</p>} {template.quienLoLlena && <p className="template-meta">Responsable: {template.quienLoLlena}</p>} </div> ))} </div> </div> )} </div> );
   }
 
@@ -173,6 +267,11 @@ function FillForm() {
       <div className="form-header-bar">
         <button onClick={() => setSelectedTemplate(null)} className="btn-back">← Volver</button>
         <h1>{selectedTemplate.nombre}</h1>
+        <div className="autosave-status">
+          {autoSaveStatus === 'saving' && <span className="status-saving">💾 Guardando...</span>}
+          {autoSaveStatus === 'saved' && <span className="status-saved">✅ Autoguardado</span>}
+          {hasUnsavedChanges && !autoSaveStatus && <span className="status-unsaved">📝 Sin guardar</span>}
+        </div>
         <button onClick={handleSaveForm} className="btn-primary">💾 Guardar Formulario</button>
       </div>
 
@@ -182,34 +281,33 @@ function FillForm() {
       <div className="form-document">
         <FormHeader title={selectedTemplate.nombre} code={selectedTemplate.codigo} version={selectedTemplate.version || "1"} date={new Date().toLocaleDateString("es-EC")} />
         
-        {selectedTemplate.headerFields.length > 0 && (
+        {selectedTemplate.headerFields?.length > 0 && (
             <div className="form-section">
                 <h3>Información General</h3>
                 <div className="header-grid">
                 {selectedTemplate.headerFields.map((field, index) => (
                     <div key={index} className="form-field">
                     <label>{field.label}{field.required && <span className="required">*</span>}</label>
-                    {renderField(field, headerData[field.label], (value) => handleHeaderChange(field.label, value))}
+                    {renderField(field, headerData[field.label], (value) => handleHeaderChangeWithAutoSave(field.label, value))}
                     </div>
                 ))}
                 </div>
             </div>
         )}
 
-        {/* --- NUEVO: RENDERIZADO DEL CUERPO DINÁMICO --- */}
-        {selectedTemplate.bodyElements.map((element, elementIndex) => {
+        {selectedTemplate.bodyElements?.map((element, elementIndex) => {
           const currentElementData = bodyData[elementIndex];
           if (!currentElementData) return null;
 
-          if (element.type === 'section') { // Renderizar una SECCIÓN
+          if (element.type === 'section') {
             return (
               <div key={element.id} className="form-section">
-                <h3>{element.title}</h3>
+                {element.title && <h3>{element.title}</h3>}
                 <div className="header-grid">
-                  {element.fields.map((field, fieldIndex) => (
+                  {(element.fields || []).map((field, fieldIndex) => (
                     <div key={fieldIndex} className="form-field">
                       <label>{field.label}{field.required && <span className="required">*</span>}</label>
-                      {renderField(field, currentElementData.data[field.label], value => handleSectionFieldChange(elementIndex, field.label, value))}
+                      {renderField(field, currentElementData.data[field.label], value => handleSectionFieldChangeWithAutoSave(elementIndex, field.label, value))}
                     </div>
                   ))}
                 </div>
@@ -217,30 +315,47 @@ function FillForm() {
             );
           }
 
-          if (element.type === 'table') { // Renderizar una TABLA
+          if (element.type === 'table') {
+            const groupedColumns = processColumnGroups(element.columns);
+
             return (
               <div key={element.id} className="form-section">
                 <div className="table-header">
-                  <h3>{element.title}</h3>
+                   <h3>{element.title}</h3>
                   <button onClick={() => addTableRow(elementIndex)} className="btn-add-row">+ Agregar Fila</button>
                 </div>
                 <div className="table-wrapper">
-                  <table className="data-table">
+                  <table className="data-table complex-header">
                     <thead>
+                      {/* FILA 1: TÍTULOS DE GRUPOS */}
                       <tr>
-                        <th>#</th>
-                        {element.columns.map((col, colIndex) => (<th key={colIndex}>{col.label}{col.required && <span className="required">*</span>}</th>))}
-                        <th>Acciones</th>
+                        <th rowSpan="2">#</th>
+                        {groupedColumns.map((group, index) => (
+                          <th key={index} colSpan={group.columns.length}>
+                            {group.groupName}
+                          </th>
+                        ))}
+                        <th rowSpan="2">Acciones</th>
+                      </tr>
+                      {/* FILA 2: TÍTULOS DE COLUMNAS INDIVIDUALES */}
+                      <tr>
+                        {(element.columns || []).map((col, colIndex) => (
+                          <th key={colIndex} style={{ whiteSpace: 'pre-wrap' }}>
+                            {col.label}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {currentElementData.data.map((row, rowIndex) => (
+                      {(currentElementData.data || []).map((row, rowIndex) => (
                         <tr key={rowIndex}>
                           <td>{rowIndex + 1}</td>
-                          {element.columns.map((col, colIndex) => (
-                            <td key={colIndex}>{renderField(col, row[col.label], (value) => handleTableFieldChange(elementIndex, rowIndex, col.label, value))}</td>
+                          {(element.columns || []).map((col, colIndex) => (
+                            <td key={colIndex}>
+                              {renderField(col, row[col.label], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, col.label, value))}
+                            </td>
                           ))}
-                          <td><button onClick={() => removeTableRow(elementIndex, rowIndex)} className="btn-remove-row" disabled={currentElementData.data.length === 1} title="Eliminar fila">🗑️</button></td>
+                          <td><button onClick={() => removeTableRow(elementIndex, rowIndex)} className="btn-remove-row" disabled={currentElementData.data.length <= 1} title="Eliminar fila">🗑️</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -251,13 +366,8 @@ function FillForm() {
           }
           return null;
         })}
-
-        <div className="form-section">
-          <h3>Observaciones</h3>
-          <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} placeholder="Escribe aquí cualquier observación relevante..." rows="4" />
-        </div>
         
-        {selectedTemplate.firmas.length > 0 && (
+        {selectedTemplate.firmas?.length > 0 && (
           <div className="form-section signatures-section">
             <h3>Firmas y Aprobaciones</h3>
             <div className="signatures-grid">

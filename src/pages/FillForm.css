@@ -84,6 +84,36 @@
   margin: 0;
 }
 
+.autosave-status {
+  display: flex;
+  align-items: center;
+  margin: 0 1rem;
+}
+
+.status-saving {
+  color: #f59e0b;
+  font-size: 0.875rem;
+  font-weight: 500;
+  animation: pulse 2s infinite;
+}
+
+.status-saved {
+  color: #10b981;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.status-unsaved {
+  color: #ef4444;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .btn-back {
   background: var(--surface);
   color: var(--text);

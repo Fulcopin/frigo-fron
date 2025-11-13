@@ -55,7 +55,10 @@ function CreateTemplate() {
       id: Date.now(),
       type: type,
       title: type === 'section' ? 'Nueva Sección de Campos' : 'Nueva Tabla de Datos',
-      ...(type === 'section' ? { fields: [] } : { columns: [] }),
+      ...(type === 'section' ? { fields: [] } : { 
+        columns: [],
+        defaultRows: 5 // Nueva propiedad para configurar filas por defecto
+      }),
     };
     setTemplate(prev => ({ ...prev, bodyElements: [...prev.bodyElements, newElement] }));
   };
@@ -227,7 +230,26 @@ function CreateTemplate() {
             )}
             {element.type === 'table' && (
               <div className="body-element-content">
-                <div className="section-header-inner"><h4>Columnas de la Tabla</h4><button onClick={() => addColumnToTable(elementIndex)} className="btn-add-small">+ Agregar Columna</button></div>
+                <div className="section-header-inner">
+                  <h4>Configuración de la Tabla</h4>
+                  <div className="table-config">
+                    <div className="form-group">
+                      <label>Filas por defecto</label>
+                      <input 
+                        type="number" 
+                        value={element.defaultRows || 5} 
+                        onChange={(e) => updateBodyElement(elementIndex, 'defaultRows', parseInt(e.target.value) || 5)} 
+                        min="1" 
+                        max="20"
+                        title="Número de filas vacías que se crearán automáticamente al llenar el formulario"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="section-header-inner">
+                  <h4>Columnas de la Tabla</h4>
+                  <button onClick={() => addColumnToTable(elementIndex)} className="btn-add-small">+ Agregar Columna</button>
+                </div>
                 {element.columns.map((column, colIndex) => (
                   <div key={colIndex} className="field-item">
                     <div className="field-grid">

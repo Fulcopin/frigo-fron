@@ -84,6 +84,12 @@ function ManageTemplates() {
                 <span className="template-version">Versión: {template.version}</span>
               </div>
               <div className="template-card-actions">
+                <Link 
+                  to={`/edit-template/${template.templateID}`} 
+                  className="btn-secondary"
+                >
+                  ✏️ Editar
+                </Link>
                 <button 
                   onClick={() => handleDeleteTemplate(template.templateID)} 
                   className="btn-danger"

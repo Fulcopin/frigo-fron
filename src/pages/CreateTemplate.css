@@ -147,6 +147,29 @@
   transition: all 0.2s;
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.table-config {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.table-config .form-group {
+  flex: 0 0 auto;
+}
+
+.table-config .form-group input {
+  width: 80px;
+}
+
 .btn-primary {
   background: var(--primary);
   color: white;
