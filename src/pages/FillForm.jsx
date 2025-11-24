@@ -1,23 +1,23 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useParams, useNavigate } from "react-router-dom" 
 import FormHeader from "../components/FormHeader"
 import "./FillForm.css"
-import { API_BASE_URL } from "../apiConfig";
+import { API_BASE_URL } from "../apiConfig"
 
+// --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
+const API_EXTERNAL_BASE_URL = "http://188.40.197.172:8094/api"; 
 
-const AUTOSAVE_INTERVAL = 30000; // 30 segundos
+const AUTOSAVE_INTERVAL = 30000;
 const AUTOSAVE_KEY_PREFIX = 'autosave_form_';
 
-// --- FUNCIÓN AUXILIAR PARA PROCESAR ENCABEZADOS DE TABLA COMPLEJOS ---
-// Procesa las columnas para agruparlas por su propiedad "group" del JSON.
+// Función auxiliar para agrupar columnas en tablas
 const processColumnGroups = (columns = []) => {
   if (!columns.length) return [];
-
   const groupsMap = columns.reduce((acc, col) => {
-    // Si una columna no tiene grupo, se asigna uno por defecto para que no se rompa.
     const groupName = col.group || 'Datos'; 
     if (!acc[groupName]) {
       acc[groupName] = [];
@@ -25,120 +25,254 @@ const processColumnGroups = (columns = []) => {
     acc[groupName].push(col);
     return acc;
   }, {});
-
-  // Devuelve un array de objetos para mantener el orden de los grupos
   return Object.keys(groupsMap).map(groupName => ({
     groupName,
     columns: groupsMap[groupName]
   }));
 };
 
-
 function FillForm() {
+  // Hooks de navegación
+  const { id } = useParams(); 
+  const navigate = useNavigate(); 
+
+  // Estados principales
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
   const [selectedTemplate, setSelectedTemplate] = useState(null)
+  
+  // Estados de datos del formulario
   const [headerData, setHeaderData] = useState({})
   const [bodyData, setBodyData] = useState([]); 
   const [firmasData, setFirmasData] = useState({})
-  const [showSuccess, setShowSuccess] = useState(false)
   
+  // Estados de UI/Guardado
+  const [showSuccess, setShowSuccess] = useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
+  // Estados para Filtros (NUEVO)
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterProcess, setFilterProcess] = useState("");
+
+  // Estados API Externa
+  const [apiToken, setApiToken] = useState(null);
+  const [searchDate, setSearchDate] = useState(new Date().toISOString().split('T')[0]);
+  const [movements, setMovements] = useState([]);
+  const [selectedMovementId, setSelectedMovementId] = useState(null);
+  const [apiDetailsData, setApiDetailsData] = useState([]);
+  const [isApiLoading, setIsApiLoading] = useState(false);
+
+  // 1. CARGAR PLANTILLAS
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
         const response = await fetch(API_URL_TEMPLATES);
         if (!response.ok) throw new Error('No se pudo cargar la lista de plantillas');
-        
         let data = await response.json();
-        
         const templatesArray = Array.isArray(data) ? data : data.$values || [];
+        
         const parsedData = templatesArray.map(template => ({
           ...template,
-          headerFields: JSON.parse(template.headerFields || '[]'),
-          bodyElements: JSON.parse(template.bodyElements || '[]'),
-          firmas: JSON.parse(template.firmas || '[]'),
+          headerFields: typeof template.headerFields === 'string' ? JSON.parse(template.headerFields || '[]') : template.headerFields,
+          bodyElements: typeof template.bodyElements === 'string' ? JSON.parse(template.bodyElements || '[]') : template.bodyElements,
+          firmas: typeof template.firmas === 'string' ? JSON.parse(template.firmas || '[]') : template.firmas,
         }));
-
         setTemplates(parsedData); 
       } catch (err) {
         setError(err.message);
       } finally {
-        setLoading(false);
+        if (!id) setLoading(false);
       }
     };
     fetchTemplates();
-  }, []);
+  }, [id]);
 
+  // 2. CARGAR FORMULARIO EXISTENTE (MODO EDICIÓN)
+  useEffect(() => {
+    if (!id) return; 
+
+    const fetchExistingForm = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`${API_URL_FILLED_FORMS}/${id}/edit`);
+        if (!response.ok) throw new Error("Error al cargar el formulario para editar");
+        
+        const data = await response.json();
+        
+        const templateRaw = data.template;
+        const processedTemplate = {
+            ...templateRaw,
+            headerFields: typeof templateRaw.headerFields === 'string' ? JSON.parse(templateRaw.headerFields || '[]') : templateRaw.headerFields,
+            bodyElements: typeof templateRaw.bodyElements === 'string' ? JSON.parse(templateRaw.bodyElements || '[]') : templateRaw.bodyElements,
+            firmas: typeof templateRaw.firmas === 'string' ? JSON.parse(templateRaw.firmas || '[]') : templateRaw.firmas,
+        };
+
+        setSelectedTemplate(processedTemplate);
+        setHeaderData(typeof data.headerData === 'string' ? JSON.parse(data.headerData) : data.headerData);
+        setBodyData(typeof data.bodyData === 'string' ? JSON.parse(data.bodyData) : data.bodyData);
+        setFirmasData(typeof data.firmasData === 'string' ? JSON.parse(data.firmasData) : data.firmasData);
+        
+      } catch (err) {
+        setError(`Error cargando edición: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchExistingForm();
+  }, [id]);
+
+  // --- LÓGICA DE FILTRADO DE PLANTILLAS (NUEVO) ---
+  const uniqueProcesses = [...new Set(templates.map(t => t.proceso).filter(Boolean))];
+
+  const filteredTemplates = templates.filter(template => {
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch = 
+        (template.nombre || "").toLowerCase().includes(searchLower) || 
+        (template.codigo || "").toLowerCase().includes(searchLower);
+    const matchesProcess = filterProcess === "" || template.proceso === filterProcess;
+    return matchesSearch && matchesProcess;
+  });
+
+  // --- SELECCIÓN DE PLANTILLA ---
   const handleTemplateSelect = (templateId) => {
     const template = templates.find((t) => t.templateID === templateId);
+    if (!template) return;
     
-    if (!template) {
-      console.error('Template not found');
-      return;
-    }
-
     setSelectedTemplate(template);
-
-    const key = `${AUTOSAVE_KEY_PREFIX}${templateId}`;
-    const savedData = localStorage.getItem(key);
     
-    if (savedData && globalThis.confirm('Se encontraron datos autoguardados para esta plantilla. ¿Deseas cargarlos?')) {
-      try {
-        const parsedData = JSON.parse(savedData);
-        setHeaderData(parsedData.headerData || {});
-        setBodyData(parsedData.bodyData || []);
-        setFirmasData(parsedData.firmasData || {});
-        setHasUnsavedChanges(true);
-        return;
-      } catch (error) {
-        console.error('Error al cargar datos autoguardados:', error);
-        localStorage.removeItem(key);
-      }
+    // Autoguardado (Solo crear)
+    if (!id) {
+        const key = `${AUTOSAVE_KEY_PREFIX}${templateId}`;
+        const savedData = localStorage.getItem(key);
+        if (savedData && globalThis.confirm('Se encontraron datos autoguardados. ¿Deseas cargarlos?')) {
+            try {
+                const parsedData = JSON.parse(savedData);
+                setHeaderData(parsedData.headerData || {});
+                setBodyData(parsedData.bodyData || []);
+                setFirmasData(parsedData.firmasData || {});
+                setHasUnsavedChanges(true);
+                return;
+            } catch (error) {
+                localStorage.removeItem(key);
+            }
+        }
     }
 
+    // Inicializar vacío
     const initialHeader = {};
     (template.headerFields || []).forEach((field) => { initialHeader[field.label] = "" });
     setHeaderData(initialHeader);
-
+    
     const initialBodyData = (template.bodyElements || []).map(element => {
       if (element.type === 'section') {
         const sectionData = {};
         (element.fields || []).forEach(field => { sectionData[field.label] = ""; });
         return { id: element.id, type: 'section', data: sectionData };
       }
-      
       if (element.type === 'table') {
           const numRows = element.defaultRows || 10;
-          const initialRows = [];
-          for (let i = 0; i < numRows; i++) {
+          const initialRows = Array.from({ length: numRows }, () => {
             const newRow = {};
             (element.columns || []).forEach(col => { newRow[col.label] = ""; });
-            initialRows.push(newRow);
-          }
+            return newRow;
+          });
           return { id: element.id, type: 'table', data: initialRows };
       }
       return null;
     }).filter(Boolean);
     setBodyData(initialBodyData);
-
+    
     const initialFirmas = {};
     (template.firmas || []).forEach((firma) => { initialFirmas[firma.puesto] = { nombre: "", fecha: "" }});
     setFirmasData(initialFirmas);
     setHasUnsavedChanges(false);
   };
 
+  // --- API EXTERNA ---
+  const ensureApiToken = async () => {
+    if (apiToken) return apiToken;
+    setIsApiLoading(true);
+    try {
+      const response = await fetch(`${API_EXTERNAL_BASE_URL}/Auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: "iflogin", password: "ifpwd25" }),
+      });
+      if (!response.ok) throw new Error("Error de autenticación en la API");
+      const data = await response.json();
+      setApiToken(data.token);
+      return data.token;
+    } catch (err) {
+      setError(`Error de API: ${err.message}`);
+      return null;
+    } finally {
+      setIsApiLoading(false);
+    }
+  };
+
+  const handleSearchMovements = async () => {
+    const token = await ensureApiToken();
+    if (!token) return;
+    setIsApiLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_EXTERNAL_BASE_URL}/Movimientos/MovimientoPorFecha?fecha=${searchDate}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error("No se pudieron cargar los movimientos.");
+      const data = await response.json();
+      setMovements(data);
+    } catch (err) {
+      setError(`Error de API: ${err.message}`);
+    } finally {
+      setIsApiLoading(false);
+    }
+  };
+
+  const handleSelectMovement = async (movementId) => {
+    setIsApiLoading(true);
+    setError(null);
+    try {
+      const [headerRes, detailsRes] = await Promise.all([
+        fetch(`${API_EXTERNAL_BASE_URL}/Movimientos/MovimientoPorId/${movementId}`, { headers: { 'Authorization': `Bearer ${apiToken}` }}),
+        fetch(`${API_EXTERNAL_BASE_URL}/Movimientos/MovimientoDetallesPorId/${movementId}`, { headers: { 'Authorization': `Bearer ${apiToken}` }})
+      ]);
+
+      if (!headerRes.ok || !detailsRes.ok) throw new Error("No se pudieron cargar los detalles.");
+      
+      const headerJson = await headerRes.json();
+      const detailsJson = await detailsRes.json();
+      
+      setApiDetailsData(detailsJson);
+      
+      const newHeaderData = { ...headerData };
+      
+      selectedTemplate.headerFields.forEach(field => {
+        if (field.apiMap && headerJson.hasOwnProperty(field.apiMap)) {
+            newHeaderData[field.label] = headerJson[field.apiMap];
+        }
+      });
+      
+      setHeaderData(newHeaderData);
+      setSelectedMovementId(movementId);
+      setHasUnsavedChanges(true);
+
+    } catch (err) {
+      setError(`Error de API: ${err.message}`);
+    } finally {
+      setIsApiLoading(false);
+    }
+  };
+
+  // --- MANEJADORES DE ESTADO ---
   const addTableRow = (elementIndex) => {
     const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
     if (!tableElement) return;
-    
     const newRow = {};
     (tableElement.columns || []).forEach(col => { newRow[col.label] = ""; });
-
     setBodyData(prev => prev.map((element, index) => 
       index === elementIndex ? { ...element, data: [...element.data, newRow] } : element
     ));
@@ -155,15 +289,15 @@ function FillForm() {
     }));
     setHasUnsavedChanges(true);
   };
-
+  
   const handleFirmaChange = (puesto, field, value) => {
     setFirmasData(prev => ({...prev, [puesto]: {...prev[puesto], [field]: value}}));
     setHasUnsavedChanges(true);
   };
-  
+
+  // Autoguardado
   const saveToLocalStorage = () => {
-    if (!selectedTemplate) return;
-    
+    if (!selectedTemplate || id) return; 
     const autosaveData = {
       templateID: selectedTemplate.templateID,
       headerData,
@@ -171,7 +305,6 @@ function FillForm() {
       firmasData,
       timestamp: new Date().toISOString()
     };
-    
     const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
     localStorage.setItem(key, JSON.stringify(autosaveData));
     setAutoSaveStatus('saved');
@@ -212,15 +345,51 @@ function FillForm() {
     setHasUnsavedChanges(true);
   };
   
+  // --- RENDER FIELD CORREGIDO (COMBO BOX FIX) ---
   const renderField = (field, value, onChange) => {
-    const commonProps = { value: value || "", onChange: (e) => onChange(e.target.value), required: field.required, placeholder: field.placeholder || "" };
-    // Para la columna especial con salto de línea, usamos un textarea que se adapta mejor
-    if (field.label.includes('\n')) {
-        return <textarea {...commonProps} rows="2" />;
+    let options = field.options || [];
+
+    if (field.apiMap && apiDetailsData.length > 0) {
+      const apiOptions = [...new Set(apiDetailsData.map(item => item[field.apiMap]))].filter(Boolean);
+      if (apiOptions.length > 0) options = apiOptions;
     }
-    switch (field.type) { case "textarea": return <textarea {...commonProps} rows="3" />; case "select": return (<select {...commonProps}><option value="">Seleccionar...</option>{field.options?.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}</select>); case "date": return <input type="date" {...commonProps} />; case "time": return <input type="time" {...commonProps} />; case "datetime": return <input type="datetime-local" {...commonProps} />; case "number": case "temperature": return <input type="number" step="0.01" {...commonProps} />; default: return <input type="text" {...commonProps} />; }
+
+    // FIX: Agregar valor actual a opciones si no existe (para NIX PICO, etc.)
+    if (value && !options.includes(value)) {
+        options = [value, ...options];
+    }
+
+    if (field.type === 'select' || (field.apiMap && options.length > 0)) {
+        return (
+            <select 
+                value={value || ""} 
+                onChange={(e) => onChange(e.target.value)} 
+                required={field.required}
+                className="form-select"
+            >
+                <option value="">Seleccione...</option>
+                {options.map((opt, index) => (
+                    <option key={`${opt}-${index}`} value={opt}>{opt}</option>
+                ))}
+            </select>
+        );
+    }
+
+    const commonProps = { value: value || "", onChange: (e) => onChange(e.target.value), required: field.required, placeholder: field.placeholder || "" };
+    
+    if (field.label.includes('\n')) return <textarea {...commonProps} rows="2" />;
+    
+    switch (field.type) {
+        case "textarea": return <textarea {...commonProps} rows="3" />;
+        case "date": return <input type="date" {...commonProps} />;
+        case "time": return <input type="time" {...commonProps} />;
+        case "datetime": return <input type="datetime-local" {...commonProps} />;
+        case "number": case "temperature": return <input type="number" step="0.01" {...commonProps} />;
+        default: return <input type="text" {...commonProps} />;
+    }
   };
 
+  // --- GUARDADO FINAL (POST / PUT) ---
   const handleSaveForm = async () => {
     setError(null);
     const payload = {
@@ -230,57 +399,172 @@ function FillForm() {
       firmasData: JSON.stringify(firmasData),
     };
 
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `${API_URL_FILLED_FORMS}/${id}` : API_URL_FILLED_FORMS;
+
     try {
-      const response = await fetch(API_URL_FILLED_FORMS, {
-        method: 'POST',
+      const response = await fetch(url, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Error al guardar el formulario: ${errorText}`);
+        throw new Error(`Error al guardar: ${errorText}`);
       }
       
-      const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
-      localStorage.removeItem(key);
-      setHasUnsavedChanges(false);
+      if (!id) {
+        const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
+        localStorage.removeItem(key);
+      }
       
+      setHasUnsavedChanges(false);
       setShowSuccess(true);
+      
       setTimeout(() => { 
-        setShowSuccess(false); 
-        setSelectedTemplate(null); 
+        setShowSuccess(false);
+        if (id) navigate('/historial'); 
+        else {
+            setSelectedTemplate(null); 
+            setSelectedMovementId(null);
+            setMovements([]);
+            setSearchTerm(""); // Limpiar búsqueda
+        }
       }, 2000);
     } catch (err) {
       setError(err.message);
     }
   };
 
-  if (loading) return <div className="fill-form"><h1>Cargando plantillas...</h1></div>;
-  if (error) return <div className="fill-form"><h1 className="error-message">Error: {error}</h1></div>;
+  // --- RENDERIZADO ---
 
+  if (loading) return <div className="fill-form"><h1>Cargando...</h1></div>;
+  if (error && !selectedTemplate) return <div className="fill-form"><h1 className="error-message">Error: {error}</h1></div>;
+
+  // VISTA 1: SELECCIÓN DE PLANTILLA (CON FILTROS)
   if (!selectedTemplate) {
-    return ( <div className="fill-form"> <h1>Llenar Formulario</h1> {templates.length === 0 ? ( <div className="empty-state-card"><p>No hay plantillas disponibles. Crea una plantilla primero.</p></div> ) : ( <div className="template-selection"> <h2>Selecciona una plantilla:</h2> <div className="templates-grid"> {templates.map((template) => ( <div key={template.templateID} className="template-card" onClick={() => handleTemplateSelect(template.templateID)}> <div className="template-code">{template.codigo}</div> <h3>{template.nombre}</h3> {template.proceso && <p className="template-meta">Proceso: {template.proceso}</p>} {template.quienLoLlena && <p className="template-meta">Responsable: {template.quienLoLlena}</p>} </div> ))} </div> </div> )} </div> );
+    return (
+        <div className="fill-form">
+            <h1>Llenar Formulario</h1>
+            
+            {/* BARRA DE BÚSQUEDA Y FILTROS */}
+            <div className="filters-container">
+                <div className="search-input-group">
+                    <label>🔍 Buscar plantilla:</label>
+                    <input 
+                        type="text" 
+                        placeholder="Escribe nombre o código (ej: FOR-PD-1)..." 
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
+                <div className="filter-select-group">
+                    <label>📂 Filtrar por Proceso:</label>
+                    <select value={filterProcess} onChange={(e) => setFilterProcess(e.target.value)}>
+                        <option value="">Todos los procesos</option>
+                        {uniqueProcesses.map(proc => (
+                            <option key={proc} value={proc}>{proc}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+
+            <h2>Paso 1: Selecciona una plantilla</h2>
+            
+            {filteredTemplates.length === 0 ? (
+                <div className="empty-state-card">
+                    <p>No se encontraron plantillas.</p>
+                    <button className="btn-secondary" onClick={() => {setSearchTerm(""); setFilterProcess("");}}>Limpiar filtros</button>
+                </div>
+            ) : (
+                <div className="template-selection">
+                    <div className="templates-grid">
+                        {filteredTemplates.map((template) => (
+                            <div key={template.templateID} className="template-card" onClick={() => handleTemplateSelect(template.templateID)}>
+                                <div className="template-code">{template.codigo}</div>
+                                <h3>{template.nombre}</h3>
+                                {template.proceso && <p className="template-meta">Proceso: {template.proceso}</p>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
   }
 
+  // VISTA 2: SELECCIÓN DE MOVIMIENTO API (Solo crear)
+  if (!selectedMovementId && !id) {
+    return (
+      <div className="fill-form">
+        <div className="form-header-bar">
+          <button onClick={() => setSelectedTemplate(null)} className="btn-back">← Cambiar Plantilla</button>
+          <h1>{selectedTemplate.nombre}</h1>
+        </div>
+        <div className="api-selector-container form-section">
+          <h2>Paso 2: Seleccionar Datos de Origen (desde API)</h2>
+          <p>Elige una fecha para buscar los movimientos de ese día.</p>
+          <div className="api-search-box">
+            <div className="form-field">
+              <label>Fecha del Movimiento</label>
+              <input type="date" value={searchDate} onChange={e => setSearchDate(e.target.value)} />
+            </div>
+            <button onClick={handleSearchMovements} disabled={isApiLoading} className="btn-primary">
+              {isApiLoading ? 'Buscando...' : 'Buscar Movimientos'}
+            </button>
+          </div>
+          {error && <div className="error-message">❌ {error}</div>}
+          {movements.length > 0 && (
+            <div className="movements-list">
+              <h4>Movimientos encontrados:</h4>
+              <ul>
+                {movements.map(mov => (
+                  <li key={mov.cabId}>
+                    <span>Lote: <strong>{mov.cabId}</strong> | Prov: {mov.cabProveedor}</span>
+                    <button onClick={() => handleSelectMovement(mov.cabId)} className="btn-secondary" disabled={isApiLoading}>
+                      Elegir
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+           {movements.length === 0 && !isApiLoading && (<p>No se encontraron movimientos.</p>)}
+        </div>
+      </div>
+    );
+  }
+
+  // VISTA 3: FORMULARIO FINAL
   return (
     <div className="fill-form">
       <div className="form-header-bar">
-        <button onClick={() => setSelectedTemplate(null)} className="btn-back">← Volver</button>
-        <h1>{selectedTemplate.nombre}</h1>
+        {id ? (
+             <button onClick={() => navigate('/historial')} className="btn-back">← Cancelar Edición</button>
+        ) : (
+             <button onClick={() => { setSelectedMovementId(null); setMovements([]); setApiDetailsData([]); }} className="btn-back">← Cambiar Lote</button>
+        )}
+       
+        <h1>{selectedTemplate.nombre} {id && <span className="badge-edit">(Editando)</span>}</h1>
+        
         <div className="autosave-status">
           {autoSaveStatus === 'saving' && <span className="status-saving">💾 Guardando...</span>}
           {autoSaveStatus === 'saved' && <span className="status-saved">✅ Autoguardado</span>}
           {hasUnsavedChanges && !autoSaveStatus && <span className="status-unsaved">📝 Sin guardar</span>}
         </div>
-        <button onClick={handleSaveForm} className="btn-primary">💾 Guardar Formulario</button>
+        <button onClick={handleSaveForm} className="btn-primary">
+            {id ? 'Actualizar' : 'Guardar Formulario'}
+        </button>
       </div>
 
-      {showSuccess && <div className="success-message">✅ Formulario guardado exitosamente</div>}
+      {showSuccess && <div className="success-message">✅ {id ? 'Actualizado' : 'Guardado'} exitosamente</div>}
       {error && <div className="error-message">❌ {error}</div>}
 
       <div className="form-document">
         <FormHeader title={selectedTemplate.nombre} code={selectedTemplate.codigo} version={selectedTemplate.version || "1"} date={new Date().toLocaleDateString("es-EC")} />
         
+        {/* HEADER FIELDS */}
         {selectedTemplate.headerFields?.length > 0 && (
             <div className="form-section">
                 <h3>Información General</h3>
@@ -288,13 +572,18 @@ function FillForm() {
                 {selectedTemplate.headerFields.map((field, index) => (
                     <div key={index} className="form-field">
                     <label>{field.label}{field.required && <span className="required">*</span>}</label>
-                    {renderField(field, headerData[field.label], (value) => handleHeaderChangeWithAutoSave(field.label, value))}
+                    {renderField(
+                        field, 
+                        headerData[field.label], 
+                        (value) => handleHeaderChangeWithAutoSave(field.label, value)
+                    )}
                     </div>
                 ))}
                 </div>
             </div>
         )}
 
+        {/* BODY SECTIONS & TABLES */}
         {selectedTemplate.bodyElements?.map((element, elementIndex) => {
           const currentElementData = bodyData[elementIndex];
           if (!currentElementData) return null;
@@ -317,7 +606,6 @@ function FillForm() {
 
           if (element.type === 'table') {
             const groupedColumns = processColumnGroups(element.columns);
-
             return (
               <div key={element.id} className="form-section">
                 <div className="table-header">
@@ -327,22 +615,16 @@ function FillForm() {
                 <div className="table-wrapper">
                   <table className="data-table complex-header">
                     <thead>
-                      {/* FILA 1: TÍTULOS DE GRUPOS */}
                       <tr>
                         <th rowSpan="2">#</th>
                         {groupedColumns.map((group, index) => (
-                          <th key={index} colSpan={group.columns.length}>
-                            {group.groupName}
-                          </th>
+                          <th key={index} colSpan={group.columns.length}>{group.groupName}</th>
                         ))}
                         <th rowSpan="2">Acciones</th>
                       </tr>
-                      {/* FILA 2: TÍTULOS DE COLUMNAS INDIVIDUALES */}
                       <tr>
                         {(element.columns || []).map((col, colIndex) => (
-                          <th key={colIndex} style={{ whiteSpace: 'pre-wrap' }}>
-                            {col.label}
-                          </th>
+                          <th key={colIndex} style={{ whiteSpace: 'pre-wrap' }}>{col.label}</th>
                         ))}
                       </tr>
                     </thead>
@@ -355,7 +637,7 @@ function FillForm() {
                               {renderField(col, row[col.label], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, col.label, value))}
                             </td>
                           ))}
-                          <td><button onClick={() => removeTableRow(elementIndex, rowIndex)} className="btn-remove-row" disabled={currentElementData.data.length <= 1} title="Eliminar fila">🗑️</button></td>
+                          <td><button onClick={() => removeTableRow(elementIndex, rowIndex)} className="btn-remove-row" disabled={currentElementData.data.length <= 1}>🗑️</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -367,6 +649,7 @@ function FillForm() {
           return null;
         })}
         
+        {/* FIRMAS */}
         {selectedTemplate.firmas?.length > 0 && (
           <div className="form-section signatures-section">
             <h3>Firmas y Aprobaciones</h3>
@@ -375,7 +658,7 @@ function FillForm() {
                 <div key={index} className="signature-box">
                   <h4>{firma.puesto}</h4>
                   <div className="signature-fields">
-                    <div className="form-field"><label>Nombre:</label><input type="text" value={firmasData[firma.puesto]?.nombre || ""} onChange={(e) => handleFirmaChange(firma.puesto, "nombre", e.target.value)} placeholder="Nombre completo" /></div>
+                    <div className="form-field"><label>Nombre:</label><input type="text" value={firmasData[firma.puesto]?.nombre || ""} onChange={(e) => handleFirmaChange(firma.puesto, "nombre", e.target.value)} /></div>
                     <div className="form-field"><label>Fecha:</label><input type="date" value={firmasData[firma.puesto]?.fecha || ""} onChange={(e) => handleFirmaChange(firma.puesto, "fecha", e.target.value)} /></div>
                   </div>
                   <div className="signature-line"><span>Firma: _______________________</span></div>
@@ -386,7 +669,9 @@ function FillForm() {
         )}
 
         <div className="form-actions-bottom">
-          <button onClick={handleSaveForm} className="btn-primary btn-large">💾 Guardar Formulario Completo</button>
+          <button onClick={handleSaveForm} className="btn-primary btn-large">
+            {id ? '💾 Guardar Cambios' : '💾 Guardar Formulario Completo'}
+          </button>
         </div>
       </div>
     </div>

@@ -3,11 +3,11 @@
 import { useState } from "react"
 import "./CreateTemplate.css"
 import { API_BASE_URL } from "../apiConfig"; 
-// La dirección correcta de tu API
-//const API_URL = "https://backend-frigo.onrender.com/api/Templates";
+// --- NUEVO: Importar los campos de la API ---
+import { MAPPABLE_API_FIELDS } from "../api/apiMappings";
 
-//const API_URL = "http://localhost:5074/api/Templates";
 const API_URL = `${API_BASE_URL}/Templates`;
+
 function CreateTemplate() {
   const initialState = {
     codigo: "",
@@ -18,10 +18,8 @@ function CreateTemplate() {
     cuandoSeUsa: "",
     quienLoLlena: "",
     headerFields: [],
-    // NUEVO: Array para el cuerpo dinámico del formulario
     bodyElements: [],
     firmas: [],
-    // 'tableColumns' se elimina, ahora es parte de 'bodyElements'
   };
 
   const [template, setTemplate] = useState(initialState);
@@ -43,12 +41,10 @@ function CreateTemplate() {
     setTemplate((prev) => ({ ...prev, [field]: value }));
   };
 
-  // --- Funciones para el Encabezado (sin cambios) ---
-  const addHeaderField = () => setTemplate((prev) => ({ ...prev, headerFields: [...prev.headerFields, { label: "", type: "text", required: false, options: [] }] }));
+  // --- MODIFICADO: Añadir 'apiMap' por defecto ---
+  const addHeaderField = () => setTemplate((prev) => ({ ...prev, headerFields: [...prev.headerFields, { label: "", type: "text", required: false, options: [], apiMap: "" }] }));
   const updateHeaderField = (index, field, value) => setTemplate((prev) => ({ ...prev, headerFields: prev.headerFields.map((item, i) => (i === index ? { ...item, [field]: value } : item)) }));
   const removeHeaderField = (index) => setTemplate((prev) => ({ ...prev, headerFields: prev.headerFields.filter((_, i) => i !== index) }));
-
-  // --- NUEVAS FUNCIONES PARA EL CUERPO DEL FORMULARIO ---
 
   const addBodyElement = (type) => {
     const newElement = {
@@ -57,58 +53,34 @@ function CreateTemplate() {
       title: type === 'section' ? 'Nueva Sección de Campos' : 'Nueva Tabla de Datos',
       ...(type === 'section' ? { fields: [] } : { 
         columns: [],
-        defaultRows: 5 // Nueva propiedad para configurar filas por defecto
+        defaultRows: 5
       }),
     };
     setTemplate(prev => ({ ...prev, bodyElements: [...prev.bodyElements, newElement] }));
   };
 
-  const updateBodyElement = (elementIndex, field, value) => {
-    setTemplate(prev => ({
-      ...prev,
-      bodyElements: prev.bodyElements.map((el, i) => i === elementIndex ? { ...el, [field]: value } : el)
-    }));
-  };
-  
-  const removeBodyElement = (elementIndex) => {
-    setTemplate(prev => ({
-      ...prev,
-      bodyElements: prev.bodyElements.filter((_, i) => i !== elementIndex)
-    }));
-  };
-
+  const updateBodyElement = (elementIndex, field, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => i === elementIndex ? { ...el, [field]: value } : el) }));
+  const removeBodyElement = (elementIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.filter((_, i) => i !== elementIndex) }));
   const addFieldToSection = (elementIndex) => {
     const newField = { label: "", type: "text", required: false, options: [] };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: [...el.fields, newField] } : el)) }));
   };
 
+  // --- MODIFICADO: Añadir 'apiMap' por defecto ---
   const addColumnToTable = (elementIndex) => {
-    const newColumn = { label: "", type: "text", required: false, options: [] };
+    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "" };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: [...el.columns, newColumn] } : el)) }));
   };
   
-  const updateFieldInSection = (elementIndex, fieldIndex, property, value) => {
-    setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.map((field, j) => (j === fieldIndex ? { ...field, [property]: value } : field)) } : el)) }));
-  };
+  const updateFieldInSection = (elementIndex, fieldIndex, property, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.map((field, j) => (j === fieldIndex ? { ...field, [property]: value } : field)) } : el)) }));
+  const updateColumnInTable = (elementIndex, colIndex, property, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.map((col, j) => (j === colIndex ? { ...col, [property]: value } : col)) } : el)) }));
+  const removeFieldFromSection = (elementIndex, fieldIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.filter((_, j) => j !== fieldIndex) } : el)) }));
+  const removeColumnFromTable = (elementIndex, colIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.filter((_, j) => j !== colIndex) } : el)) }));
 
-  const updateColumnInTable = (elementIndex, colIndex, property, value) => {
-    setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.map((col, j) => (j === colIndex ? { ...col, [property]: value } : col)) } : el)) }));
-  };
-
-  const removeFieldFromSection = (elementIndex, fieldIndex) => {
-    setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.filter((_, j) => j !== fieldIndex) } : el)) }));
-  };
-  
-  const removeColumnFromTable = (elementIndex, colIndex) => {
-    setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.filter((_, j) => j !== colIndex) } : el)) }));
-  };
-
-  // --- Funciones para Firmas (sin cambios) ---
   const addFirma = () => setTemplate((prev) => ({ ...prev, firmas: [...prev.firmas, { puesto: "" }] }));
   const updateFirma = (index, field, value) => setTemplate((prev) => ({ ...prev, firmas: prev.firmas.map((item, i) => (i === index ? { ...item, [field]: value } : item)) }));
   const removeFirma = (index) => setTemplate((prev) => ({ ...prev, firmas: prev.firmas.filter((_, i) => i !== index) }));
 
-  // --- handleSaveTemplate MODIFICADO ---
   const handleSaveTemplate = async () => {
     if (!template.codigo || !template.nombre) {
       alert("Por favor completa al menos el código y nombre del formulario");
@@ -119,10 +91,10 @@ function CreateTemplate() {
     const payload = {
       ...template,
       headerFields: JSON.stringify(template.headerFields),
-      bodyElements: JSON.stringify(template.bodyElements), // Dato clave
+      bodyElements: JSON.stringify(template.bodyElements),
       firmas: JSON.stringify(template.firmas),
     };
-    delete payload.tableColumns; // Eliminamos la propiedad antigua
+    delete payload.tableColumns;
 
     try {
       const response = await fetch(API_URL, {
@@ -130,16 +102,13 @@ function CreateTemplate() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Error del servidor: ${response.status} - ${errorText}`);
       }
-
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
       setTemplate(initialState);
-
     } catch (error) {
       console.error("Hubo un error al guardar la plantilla:", error);
       setError(`No se pudo guardar la plantilla. Detalle: ${error.message}`);
@@ -163,7 +132,6 @@ function CreateTemplate() {
       {showSuccess && <div className="success-message">✅ Plantilla guardada exitosamente en la base de datos.</div>}
       {error && <div className="error-message">❌ {error}</div>}
 
-      {/* --- SECCIÓN INFORMACIÓN GENERAL (RESTAURADA) --- */}
       <div className="form-section">
         <h2>Información General</h2>
         <div className="form-grid">
@@ -177,7 +145,6 @@ function CreateTemplate() {
         </div>
       </div>
 
-      {/* --- SECCIÓN CAMPOS DEL ENCABEZADO (RESTAURADA) --- */}
       <div className="form-section">
         <div className="section-header">
           <h2>Campos del Encabezado</h2>
@@ -188,6 +155,16 @@ function CreateTemplate() {
             <div className="field-grid">
               <div className="form-group"><label>Etiqueta</label><input type="text" value={field.label} onChange={(e) => updateHeaderField(index, "label", e.target.value)} placeholder="Ej: Fecha, Lote, Turno"/></div>
               <div className="form-group"><label>Tipo</label><select value={field.type} onChange={(e) => updateHeaderField(index, "type", e.target.value)}>{fieldTypes.map((type) => (<option key={type.value} value={type.value}>{type.label}</option>))}</select></div>
+              
+              <div className="form-group">
+                <label>Campo API (Autocompletar)</label>
+                <select value={field.apiMap || ""} onChange={(e) => updateHeaderField(index, "apiMap", e.target.value)}>
+                  {MAPPABLE_API_FIELDS.header.map(apiField => (
+                    <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required} onChange={(e) => updateHeaderField(index, "required", e.target.checked)}/>Requerido</label></div>
               <button onClick={() => removeHeaderField(index)} className="btn-remove" title="Eliminar campo">🗑️</button>
             </div>
@@ -197,7 +174,6 @@ function CreateTemplate() {
         {template.headerFields.length === 0 && (<p className="empty-state">No hay campos de encabezado. Agrega al menos uno.</p>)}
       </div>
 
-      {/* --- NUEVA SECCIÓN: CUERPO DINÁMICO DEL FORMULARIO --- */}
       <div className="form-section">
         <div className="section-header">
           <h2>Cuerpo del Formulario</h2>
@@ -206,7 +182,6 @@ function CreateTemplate() {
             <button onClick={() => addBodyElement('table')} className="btn-secondary">+ Añadir Tabla de Datos</button>
           </div>
         </div>
-        {template.bodyElements.length === 0 && (<p className="empty-state">Agrega secciones o tablas para construir el cuerpo del formulario.</p>)}
         {template.bodyElements.map((element, elementIndex) => (
           <div key={element.id} className="body-element-container">
             <div className="body-element-header">
@@ -235,14 +210,7 @@ function CreateTemplate() {
                   <div className="table-config">
                     <div className="form-group">
                       <label>Filas por defecto</label>
-                      <input 
-                        type="number" 
-                        value={element.defaultRows || 5} 
-                        onChange={(e) => updateBodyElement(elementIndex, 'defaultRows', parseInt(e.target.value) || 5)} 
-                        min="1" 
-                        max="20"
-                        title="Número de filas vacías que se crearán automáticamente al llenar el formulario"
-                      />
+                      <input type="number" value={element.defaultRows || 5} onChange={(e) => updateBodyElement(elementIndex, 'defaultRows', parseInt(e.target.value) || 5)} min="1" max="20"/>
                     </div>
                   </div>
                 </div>
@@ -255,6 +223,16 @@ function CreateTemplate() {
                     <div className="field-grid">
                       <div className="form-group"><label>Nombre de Columna</label><input type="text" value={column.label} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "label", e.target.value)} placeholder="Ej: Hora, Temperatura"/></div>
                       <div className="form-group"><label>Tipo</label><select value={column.type} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "type", e.target.value)}>{fieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+                      
+                      <div className="form-group">
+                        <label>Campo API (Lista Selección)</label>
+                        <select value={column.apiMap || ""} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "apiMap", e.target.value)}>
+                          {MAPPABLE_API_FIELDS.details.map(apiField => (
+                            <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={column.required} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "required", e.target.checked)}/>Requerido</label></div>
                       <button onClick={() => removeColumnFromTable(elementIndex, colIndex)} className="btn-remove" title="Eliminar columna">🗑️</button>
                     </div>
@@ -266,7 +244,6 @@ function CreateTemplate() {
         ))}
       </div>
 
-      {/* --- SECCIÓN FIRMAS (RESTAURADA) --- */}
       <div className="form-section">
         <div className="section-header">
           <h2>Firmas</h2>
