@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom" 
 import FormHeader from "../components/FormHeader"
+import AccordionSection from "../components/AccordionSection"
+import { useKeyboardAdjustment } from "../hooks/useKeyboardAdjustment"
 import "./FillForm.css"
 import { API_BASE_URL } from "../apiConfig"
 
@@ -34,7 +36,10 @@ const processColumnGroups = (columns = []) => {
 function FillForm() {
   // Hooks de navegación
   const { id } = useParams(); 
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
+  
+  // Hook para manejar el teclado virtual en tablets
+  useKeyboardAdjustment(); 
 
   // Estados principales
   const [templates, setTemplates] = useState([])
@@ -51,6 +56,13 @@ function FillForm() {
   const [showSuccess, setShowSuccess] = useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
+  // Estados para Acordeón (NUEVO)
+  const [expandedSections, setExpandedSections] = useState({
+    header: true,
+    observations: true,
+    signatures: true
+  })
 
   // Estados para Filtros (NUEVO)
   const [searchTerm, setSearchTerm] = useState("");
@@ -189,6 +201,17 @@ function FillForm() {
     (template.firmas || []).forEach((firma) => { initialFirmas[firma.puesto] = { nombre: "", fecha: "" }});
     setFirmasData(initialFirmas);
     setHasUnsavedChanges(false);
+
+    // Inicializar estados expandidos para elementos del body
+    const initialExpandedStates = {
+      header: true,
+      observations: true,
+      signatures: true
+    };
+    (template.bodyElements || []).forEach((element, index) => {
+      initialExpandedStates[`body_${index}`] = true; // Todas las secciones expandidas por defecto
+    });
+    setExpandedSections(initialExpandedStates);
   };
 
   // --- API EXTERNA ---
@@ -233,6 +256,13 @@ function FillForm() {
   };
 
   const handleSelectMovement = async (movementId) => {
+    // Si es MANUAL, simplemente marcar como seleccionado sin cargar datos de API
+    if (movementId === 'MANUAL') {
+      setSelectedMovementId('MANUAL');
+      setApiDetailsData([]);
+      return;
+    }
+
     setIsApiLoading(true);
     setError(null);
     try {
@@ -295,6 +325,45 @@ function FillForm() {
     setHasUnsavedChanges(true);
   };
 
+  // Función para toggle de secciones del acordeón
+  const toggleSection = (sectionName) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionName]: !prev[sectionName]
+    }));
+  };
+
+  // Toggle para elementos del body (tablas y secciones)
+  const toggleBodySection = (elementIndex) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [`body_${elementIndex}`]: !prev[`body_${elementIndex}`]
+    }));
+  };
+
+  // Función para salir con confirmación si hay cambios sin guardar
+  const handleSafeExit = (callback) => {
+    if (hasUnsavedChanges && !id) {
+      const confirmExit = window.confirm(
+        '⚠️ Tienes cambios sin guardar.\n\nLos datos se han guardado automáticamente como borrador.\n\n¿Estás seguro de que quieres salir?'
+      );
+      if (confirmExit) {
+        saveToLocalStorage(); // Guardar antes de salir
+        callback();
+      }
+    } else {
+      callback();
+    }
+  };
+
+  const handleChangeTemplate = () => {
+    handleSafeExit(() => setSelectedTemplate(null));
+  };
+
+  const handleCancelEdit = () => {
+    handleSafeExit(() => navigate('/historial'));
+  };
+
   // Autoguardado
   const saveToLocalStorage = () => {
     if (!selectedTemplate || id) return; 
@@ -311,6 +380,7 @@ function FillForm() {
     setTimeout(() => setAutoSaveStatus(''), 2000);
   };
 
+  // Autoguardado periódico
   useEffect(() => {
     if (!selectedTemplate || !hasUnsavedChanges) return;
     const autoSaveInterval = setInterval(() => {
@@ -319,6 +389,35 @@ function FillForm() {
     }, AUTOSAVE_INTERVAL);
     return () => clearInterval(autoSaveInterval);
   }, [selectedTemplate, hasUnsavedChanges, headerData, bodyData, firmasData]);
+
+  // Guardar antes de salir de la página o navegar
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (hasUnsavedChanges && selectedTemplate && !id) {
+        saveToLocalStorage();
+        e.preventDefault();
+        e.returnValue = ''; // Mensaje de confirmación
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden && hasUnsavedChanges && selectedTemplate && !id) {
+        saveToLocalStorage();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      // Guardar al desmontar el componente
+      if (hasUnsavedChanges && selectedTemplate && !id) {
+        saveToLocalStorage();
+      }
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [hasUnsavedChanges, selectedTemplate, id, headerData, bodyData, firmasData]);
 
   const handleHeaderChangeWithAutoSave = (label, value) => {
     setHeaderData((prev) => ({ ...prev, [label]: value }));
@@ -499,7 +598,7 @@ function FillForm() {
     return (
       <div className="fill-form">
         <div className="form-header-bar">
-          <button onClick={() => setSelectedTemplate(null)} className="btn-back">← Cambiar Plantilla</button>
+          <button onClick={handleChangeTemplate} className="btn-back">← Cambiar Plantilla</button>
           <h1>{selectedTemplate.nombre}</h1>
         </div>
         <div className="api-selector-container form-section">
@@ -515,22 +614,52 @@ function FillForm() {
             </button>
           </div>
           {error && <div className="error-message">❌ {error}</div>}
+          
           {movements.length > 0 && (
             <div className="movements-list">
-              <h4>Movimientos encontrados:</h4>
+              <h4>Movimientos encontrados ({movements.length}):</h4>
               <ul>
                 {movements.map(mov => (
                   <li key={mov.cabId}>
                     <span>Lote: <strong>{mov.cabId}</strong> | Prov: {mov.cabProveedor}</span>
                     <button onClick={() => handleSelectMovement(mov.cabId)} className="btn-secondary" disabled={isApiLoading}>
-                      Elegir
+                      Elegir Lote
                     </button>
                   </li>
                 ))}
               </ul>
+              
+              {/* Opción para continuar sin lote */}
+              <div className="no-lote-option">
+                <p className="info-message">
+                  💡 <strong>¿No encuentras el lote que buscas?</strong>
+                </p>
+                <button 
+                  onClick={() => setSelectedMovementId('MANUAL')} 
+                  className="btn-outline-primary"
+                >
+                  ✏️ Continuar sin Lote (Llenar Manualmente)
+                </button>
+              </div>
             </div>
           )}
-           {movements.length === 0 && !isApiLoading && (<p>No se encontraron movimientos.</p>)}
+          
+          {movements.length === 0 && !isApiLoading && searchDate && (
+            <div className="no-movements-found">
+              <p className="warning-message">⚠️ No se encontraron movimientos para la fecha <strong>{searchDate}</strong></p>
+              <div className="no-lote-option">
+                <p className="info-message">
+                  💡 Puedes continuar llenando el formulario manualmente
+                </p>
+                <button 
+                  onClick={() => setSelectedMovementId('MANUAL')} 
+                  className="btn-outline-primary"
+                >
+                  ✏️ Continuar sin Lote
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -541,21 +670,51 @@ function FillForm() {
     <div className="fill-form">
       <div className="form-header-bar">
         {id ? (
-             <button onClick={() => navigate('/historial')} className="btn-back">← Cancelar Edición</button>
+             <button onClick={handleCancelEdit} className="btn-back">← Cancelar Edición</button>
         ) : (
-             <button onClick={() => { setSelectedMovementId(null); setMovements([]); setApiDetailsData([]); }} className="btn-back">← Cambiar Lote</button>
+             <button onClick={() => { setSelectedMovementId(null); setMovements([]); setApiDetailsData([]); }} className="btn-back">
+               ← {selectedMovementId === 'MANUAL' ? 'Cambiar a Búsqueda' : 'Cambiar Lote'}
+             </button>
         )}
        
-        <h1>{selectedTemplate.nombre} {id && <span className="badge-edit">(Editando)</span>}</h1>
+        <h1>
+          {selectedTemplate.nombre} 
+          {id && <span className="badge-edit">(Editando)</span>}
+          {selectedMovementId === 'MANUAL' && !id && <span className="badge-manual">✏️ Modo Manual</span>}
+        </h1>
         
-        <div className="autosave-status">
-          {autoSaveStatus === 'saving' && <span className="status-saving">💾 Guardando...</span>}
-          {autoSaveStatus === 'saved' && <span className="status-saved">✅ Autoguardado</span>}
-          {hasUnsavedChanges && !autoSaveStatus && <span className="status-unsaved">📝 Sin guardar</span>}
-        </div>
         <button onClick={handleSaveForm} className="btn-primary">
             {id ? 'Actualizar' : 'Guardar Formulario'}
         </button>
+      </div>
+
+      {/* INDICADOR DE AUTOGUARDADO FLOTANTE Y VISIBLE */}
+      {!id && (
+        <div className={`autosave-indicator ${autoSaveStatus ? 'visible' : ''} ${autoSaveStatus === 'saving' ? 'saving' : ''} ${autoSaveStatus === 'saved' ? 'saved' : ''} ${hasUnsavedChanges && !autoSaveStatus ? 'unsaved' : ''}`}>
+          <div className="autosave-content">
+            {autoSaveStatus === 'saving' && (
+              <>
+                <span className="autosave-icon rotating">💾</span>
+                <span className="autosave-text">Guardando borrador...</span>
+              </>
+            )}
+            {autoSaveStatus === 'saved' && (
+              <>
+                <span className="autosave-icon">✅</span>
+                <span className="autosave-text">¡Borrador guardado!</span>
+              </>
+            )}
+            {hasUnsavedChanges && !autoSaveStatus && (
+              <>
+                <span className="autosave-icon">📝</span>
+                <span className="autosave-text">Cambios sin guardar</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="form-header-bar">
       </div>
 
       {showSuccess && <div className="success-message">✅ {id ? 'Actualizado' : 'Guardado'} exitosamente</div>}
@@ -564,23 +723,28 @@ function FillForm() {
       <div className="form-document">
         <FormHeader title={selectedTemplate.nombre} code={selectedTemplate.codigo} version={selectedTemplate.version || "1"} date={new Date().toLocaleDateString("es-EC")} />
         
-        {/* HEADER FIELDS */}
+        {/* HEADER FIELDS CON ACORDEÓN */}
         {selectedTemplate.headerFields?.length > 0 && (
-            <div className="form-section">
-                <h3>Información General</h3>
-                <div className="header-grid">
+            <AccordionSection
+              title="Información General"
+              icon="📋"
+              badge={`${selectedTemplate.headerFields.length} campos`}
+              isExpanded={expandedSections.header}
+              onToggle={() => toggleSection('header')}
+            >
+              <div className="header-grid">
                 {selectedTemplate.headerFields.map((field, index) => (
-                    <div key={index} className="form-field">
+                  <div key={index} className="form-field">
                     <label>{field.label}{field.required && <span className="required">*</span>}</label>
                     {renderField(
-                        field, 
-                        headerData[field.label], 
-                        (value) => handleHeaderChangeWithAutoSave(field.label, value)
+                      field, 
+                      headerData[field.label], 
+                      (value) => handleHeaderChangeWithAutoSave(field.label, value)
                     )}
-                    </div>
+                  </div>
                 ))}
-                </div>
-            </div>
+              </div>
+            </AccordionSection>
         )}
 
         {/* BODY SECTIONS & TABLES */}
@@ -590,8 +754,14 @@ function FillForm() {
 
           if (element.type === 'section') {
             return (
-              <div key={element.id} className="form-section">
-                {element.title && <h3>{element.title}</h3>}
+              <AccordionSection
+                key={element.id}
+                title={element.title || 'Sección'}
+                icon="📝"
+                badge={`${(element.fields || []).length} campos`}
+                isExpanded={expandedSections[`body_${elementIndex}`] !== false}
+                onToggle={() => toggleBodySection(elementIndex)}
+              >
                 <div className="header-grid">
                   {(element.fields || []).map((field, fieldIndex) => (
                     <div key={fieldIndex} className="form-field">
@@ -600,17 +770,27 @@ function FillForm() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </AccordionSection>
             );
           }
 
           if (element.type === 'table') {
             const groupedColumns = processColumnGroups(element.columns);
+            const rowCount = (currentElementData.data || []).length;
+            
             return (
-              <div key={element.id} className="form-section">
+              <AccordionSection
+                key={element.id}
+                title={element.title || 'Tabla'}
+                icon="📊"
+                badge={`${rowCount} filas`}
+                isExpanded={expandedSections[`body_${elementIndex}`] !== false}
+                onToggle={() => toggleBodySection(elementIndex)}
+              >
                 <div className="table-header">
-                   <h3>{element.title}</h3>
-                  <button onClick={() => addTableRow(elementIndex)} className="btn-add-row">+ Agregar Fila</button>
+                  <button onClick={() => addTableRow(elementIndex)} className="btn-add-row">
+                    + Agregar Fila
+                  </button>
                 </div>
                 <div className="table-wrapper">
                   <table className="data-table complex-header">
@@ -643,16 +823,21 @@ function FillForm() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </AccordionSection>
             );
           }
           return null;
         })}
         
-        {/* FIRMAS */}
+        {/* FIRMAS CON ACORDEÓN */}
         {selectedTemplate.firmas?.length > 0 && (
-          <div className="form-section signatures-section">
-            <h3>Firmas y Aprobaciones</h3>
+          <AccordionSection
+            title="Firmas y Aprobaciones"
+            icon="✍️"
+            badge={`${selectedTemplate.firmas.length} firmas`}
+            isExpanded={expandedSections.signatures}
+            onToggle={() => toggleSection('signatures')}
+          >
             <div className="signatures-grid">
               {selectedTemplate.firmas.map((firma, index) => (
                 <div key={index} className="signature-box">
@@ -665,7 +850,7 @@ function FillForm() {
                 </div>
               ))}
             </div>
-          </div>
+          </AccordionSection>
         )}
 
         <div className="form-actions-bottom">

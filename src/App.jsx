@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react-router-dom"
 import Home from "./pages/Home"
 import CreateTemplate from "./pages/CreateTemplate"
@@ -10,11 +11,22 @@ import "./App.css"
 
 function Navigation() {
   const location = useLocation()
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   const isActive = (path) => location.pathname === path
 
   return (
-    <nav className="navbar">
+    <nav className={`navbar ${isCollapsed ? 'collapsed' : 'expanded'}`}>
+      {/* Botón para colapsar/expandir el menú */}
+      <button 
+        className="navbar-toggle-btn"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        title={isCollapsed ? 'Mostrar menú' : 'Ocultar menú'}
+      >
+        <span className="toggle-icon">{isCollapsed ? '▼' : '▲'}</span>
+        <span className="toggle-text">{isCollapsed ? 'Mostrar Menú' : 'Ocultar Menú'}</span>
+      </button>
+
       <div className="nav-container">
         <div className="nav-brand">
           <h1>Frigolab "San Mateo"</h1>
@@ -22,24 +34,49 @@ function Navigation() {
         </div>
         <div className="nav-links">
           <Link to="/" className={isActive("/") ? "active" : ""}>
-            Inicio
+            🏠 Inicio
           </Link>
           <Link to="/create-template" className={isActive("/create-template") ? "active" : ""}>
-            Crear Plantilla
+            ➕ Crear Plantilla
           </Link>
           <Link to="/fill-form" className={isActive("/fill-form") ? "active" : ""}>
-            Llenar Formulario
+            📝 Llenar Formulario
           </Link>
           <Link to="/manage-templates" className={isActive("/manage-templates") ? "active" : ""}>
-            Administrar Plantillas
+            ⚙️ Administrar Plantillas
           </Link>
           <Link to="/view-forms" className={isActive("/view-forms") ? "active" : ""}>
-            Ver Formularios
+            👁️ Ver Formularios
           </Link>
         </div>
       </div>
+
+      {/* Barra compacta cuando está colapsado */}
+      {isCollapsed && (
+        <div className="navbar-collapsed-info">
+          <span className="collapsed-brand">📋 Frigolab "San Mateo"</span>
+          <span className="collapsed-page">{getPageName(location.pathname)}</span>
+        </div>
+      )}
     </nav>
   )
+}
+
+// Función auxiliar para obtener el nombre de la página actual
+function getPageName(pathname) {
+  const routes = {
+    '/': 'Inicio',
+    '/create-template': 'Crear Plantilla',
+    '/fill-form': 'Llenar Formulario',
+    '/manage-templates': 'Administrar Plantillas',
+    '/view-forms': 'Ver Formularios',
+  }
+  
+  // Para rutas dinámicas como /edit-template/:id
+  if (pathname.includes('/edit-template')) return 'Editar Plantilla'
+  if (pathname.includes('/edit-filled-form')) return 'Editar Formulario'
+  
+  return routes[pathname] || 'Sistema de Formularios'
 }
 
 function App() {
