@@ -50,5 +50,50 @@ namespace FormBuilder.API.Models
         // Usuario que modificó el formulario (opcional)
         [MaxLength(255)]
         public string ModificadoPor { get; set; }
+
+        // ========================================
+        // CAMPOS NUEVOS: Conversión de Unidades
+        // ========================================
+
+        // Peso en Libras (unidad del sistema)
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? PesoLb { get; set; }
+
+        // Peso en Kilogramos (para exportación/Inforbusiness)
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? PesoKg { get; set; }
+
+        // Unidad original del peso
+        [MaxLength(10)]
+        public string? UnidadPeso { get; set; } = "lb";
+
+        // Lotes/Batches separados por espacios
+        [MaxLength(500)]
+        public string? Batches { get; set; }
+
+        // Producto/Nombre (para búsquedas más fáciles)
+        [MaxLength(200)]
+        public string? Producto { get; set; }
+
+        // Propiedad calculada: Array de lotes
+        [NotMapped]
+        public string[] BatchArray => 
+            string.IsNullOrWhiteSpace(Batches) 
+                ? Array.Empty<string>() 
+                : Batches.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        // Propiedad calculada: Conversión automática lb → kg
+        [NotMapped]
+        public decimal PesoKgCalculado => 
+            PesoLb.HasValue 
+                ? Math.Round(PesoLb.Value * 0.453592m, 2)
+                : 0;
+
+        // Propiedad calculada: Conversión automática kg → lb
+        [NotMapped]
+        public decimal PesoLbCalculado => 
+            PesoKg.HasValue 
+                ? Math.Round(PesoKg.Value * 2.20462m, 2)
+                : 0;
     }
 }

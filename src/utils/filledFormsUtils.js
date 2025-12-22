@@ -105,6 +105,10 @@ function processFormData(data) {
       createdAt: data.CreatedAt || data.createdAt,
       updatedAt: data.UpdatedAt || data.updatedAt
     },
+    versionInfo: {
+      templateVersion: data.TemplateVersion || data.templateVersion || null,
+      isHistorical: data.IsHistorical || data.isHistorical || false
+    },
     template: {
       templateID: template.TemplateID || template.templateID,
       codigo: template.Codigo || template.codigo || 'N/A',
@@ -284,4 +288,150 @@ export const autosaveForm = async (formId, partialData) => {
   } catch (error) {
     throw new Error(`Error en autoguardado: ${error.message}`);
   }
+};
+
+/**
+ * ============================================
+ * FUNCIONES PARA VERSIONAMIENTO DE PLANTILLAS
+ * ============================================
+ */
+
+/**
+ * Cargar formulario con información de versionamiento
+ * Incluye datos sobre si usa plantilla histórica o actual
+ * @param {number} formId - ID del formulario
+ * @returns {Promise<object>} - Formulario con datos de versión
+ */
+export const loadFormWithVersionInfo = async (formId) => {
+  try {
+    console.log('📦 Cargando formulario con información de versión. FormID:', formId);
+    
+    const response = await fetch(`${API_URL_FILLED_FORMS}/${formId}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Error del servidor: ${response.status} - ${errorText}`);
+    }
+    
+    const data = await response.json();
+    console.log('📋 Datos recibidos:', data);
+    console.log('🏷️ Versión de plantilla:', data.templateVersion || data.TemplateVersion || 'Sin versión');
+    console.log('📜 Es versión histórica:', data.isHistorical || data.IsHistorical);
+    
+    // Procesar datos y agregar información de versionamiento
+    const processedData = processFormData(data);
+    
+    // Agregar información de versión CON el snapshot del template
+    processedData.versionInfo = {
+      templateVersion: data.templateVersion || data.TemplateVersion || null,
+      isHistorical: data.isHistorical || data.IsHistorical || false,
+      createdAt: data.createdAt || data.CreatedAt,
+      updatedAt: data.updatedAt || data.UpdatedAt,
+      // Guardar el snapshot del template (con estructura parseada)
+      templateSnapshot: data.template ? {
+        ...data.template,
+        headerFields: typeof data.template.headerFields === 'string' || typeof data.template.HeaderFields === 'string' 
+          ? JSON.parse(data.template.headerFields || data.template.HeaderFields || '[]') 
+          : (data.template.headerFields || data.template.HeaderFields || []),
+        bodyElements: typeof data.template.bodyElements === 'string' || typeof data.template.BodyElements === 'string'
+          ? JSON.parse(data.template.bodyElements || data.template.BodyElements || '[]')
+          : (data.template.bodyElements || data.template.BodyElements || []),
+        firmas: typeof data.template.firmas === 'string' || typeof data.template.Firmas === 'string'
+          ? JSON.parse(data.template.firmas || data.template.Firmas || '[]')
+          : (data.template.firmas || data.template.Firmas || [])
+      } : null
+    };
+    
+    console.log('✅ Datos procesados con versión:', processedData);
+    console.log('📸 Template snapshot incluido:', !!processedData.versionInfo.templateSnapshot);
+    if (processedData.versionInfo.templateSnapshot) {
+      console.log('   - Columns:', processedData.versionInfo.templateSnapshot.bodyElements?.[0]?.columns?.length);
+    }
+    
+    return processedData;
+    
+  } catch (error) {
+    console.error('❌ Error al cargar formulario con versión:', error);
+    throw error;
+  }
+};
+
+/**
+ * Comparar versiones de plantillas
+ * @param {string} version1 - Primera versión (ej: "02-01")
+ * @param {string} version2 - Segunda versión
+ * @returns {number} -1 si v1 < v2, 0 si iguales, 1 si v1 > v2
+ */
+export const compareVersions = (version1, version2) => {
+  if (!version1 || !version2) return 0;
+  
+  // Extraer números de versiones (ej: "02-01" -> [2, 1])
+  const v1Parts = version1.split('-').map(num => parseInt(num, 10));
+  const v2Parts = version2.split('-').map(num => parseInt(num, 10));
+  
+  // Comparar cada parte
+  for (let i = 0; i < Math.max(v1Parts.length, v2Parts.length); i++) {
+    const v1 = v1Parts[i] || 0;
+    const v2 = v2Parts[i] || 0;
+    
+    if (v1 < v2) return -1;
+    if (v1 > v2) return 1;
+  }
+  
+  return 0;
+};
+
+/**
+ * Formatear fecha de snapshot
+ * @param {string} dateString - Fecha ISO
+ * @returns {string} Fecha formateada legible
+ */
+export const formatSnapshotDate = (dateString) => {
+  if (!dateString) return '';
+  
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (error) {
+    console.warn('Error formateando fecha:', error);
+    return dateString;
+  }
+};
+
+/**
+ * Determinar si una plantilla es más nueva que otra
+ * @param {string} currentVersion - Versión actual
+ * @param {string} historicVersion - Versión histórica
+ * @returns {boolean} true si la versión actual es más nueva
+ */
+export const isNewerVersion = (currentVersion, historicVersion) => {
+  return compareVersions(currentVersion, historicVersion) > 0;
+};
+
+/**
+ * Generar mensaje explicativo sobre la versión del formulario
+ * @param {object} versionInfo - Información de versión
+ * @returns {string} Mensaje explicativo
+ */
+export const getVersionMessage = (versionInfo) => {
+  if (!versionInfo) return '';
+  
+  const { templateVersion, isHistorical, createdAt } = versionInfo;
+  
+  if (isHistorical && templateVersion) {
+    const formattedDate = formatSnapshotDate(createdAt);
+    return `Este formulario fue creado con la versión ${templateVersion} de la plantilla (${formattedDate}). Se muestra con el formato original aunque la plantilla haya sido actualizada.`;
+  }
+  
+  if (templateVersion) {
+    return `Este formulario usa la versión ${templateVersion} de la plantilla.`;
+  }
+  
+  return 'Este formulario usa la versión actual de la plantilla.';
 };

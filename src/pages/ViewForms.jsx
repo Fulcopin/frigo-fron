@@ -3,6 +3,10 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import FormHeader from "../components/FormHeader"
+import VersionIndicator from "../components/VersionIndicator"
+import { loadFormWithVersionInfo } from "../utils/filledFormsUtils"
+import { exportFormToPDF } from "../services/pdfExportService"
+import { exportFormToExcel } from "../services/excelExportService"
 import "./ViewForms.css"
 import { API_BASE_URL } from "../apiConfig"; 
 //const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
@@ -19,7 +23,12 @@ function ViewForms() {
   const [error, setError] = useState(null);
 
   const [selectedForm, setSelectedForm] = useState(null)
+  const [selectedFormVersionInfo, setSelectedFormVersionInfo] = useState(null)
   const [filterTemplate, setFilterTemplate] = useState("")
+  
+  // 📅 NUEVO: Estados para filtro por rango de fechas
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -80,19 +89,185 @@ function ViewForms() {
     navigate(`/edit-filled-form/${formId}`);
   };
 
-  const printForm = () => window.print();
-  const exportToJSON = (form) => { 
-    const dataStr = JSON.stringify(form, null, 2); const dataBlob = new Blob([dataStr], { type: "application/json" }); const url = URL.createObjectURL(dataBlob); const link = document.createElement("a"); link.href = url; link.download = `${form.templateCodigo}_${new Date(form.createdAt).toISOString().split("T")[0]}.json`; link.click();
+  // NUEVO: Función para ver formulario con información de versión
+  const viewFormWithVersion = async (form) => {
+    try {
+      console.log('📋 Cargando formulario con versión:', form.formID);
+      const formWithVersion = await loadFormWithVersionInfo(form.formID);
+      
+      // Mantener compatibilidad con el código existente
+      const enrichedForm = {
+        ...form,
+        versionInfo: formWithVersion.versionInfo
+      };
+      
+      setSelectedForm(enrichedForm);
+      setSelectedFormVersionInfo(formWithVersion.versionInfo);
+      
+      console.log('✅ Información de versión cargada:', formWithVersion.versionInfo);
+    } catch (error) {
+      console.error('❌ Error al cargar versión:', error);
+      // Si falla, mostrar el formulario sin información de versión
+      setSelectedForm(form);
+      setSelectedFormVersionInfo(null);
+    }
   };
 
-  const filteredForms = filterTemplate ? forms.filter((f) => f.templateCodigo === filterTemplate) : forms;
+  const printForm = () => window.print();
+  
+  const exportToJSON = (form) => { 
+    const dataStr = JSON.stringify(form, null, 2); 
+    const dataBlob = new Blob([dataStr], { type: "application/json" }); 
+    const url = URL.createObjectURL(dataBlob); 
+    const link = document.createElement("a"); 
+    link.href = url; 
+    link.download = `${form.templateCodigo}_${new Date(form.createdAt).toISOString().split("T")[0]}.json`; 
+    link.click();
+  };
+
+  // NUEVO: Exportar a PDF usando endpoint /with-template
+  const handleExportPDF = async (form) => {
+    try {
+      console.log('📄 Exportando formulario a PDF...', form);
+      
+      // Usar el endpoint /with-template que parsea todos los datos
+      const response = await fetch(`${API_URL_FILLED_FORMS}/${form.formID}/with-template`);
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: No se pudo cargar los datos del formulario`);
+      }
+      
+      const formData = await response.json();
+      console.log('📦 Datos completos recibidos:', formData);
+      console.log('📊 formData.data.body:', JSON.stringify(formData.data.body, null, 2));
+      console.log('📋 formData.template.structure.bodyElements:', JSON.stringify(formData.template.structure.bodyElements, null, 2));
+      
+      // Transformar estructura del endpoint al formato esperado por el servicio PDF
+      const transformedData = {
+        formID: formData.formID,
+        templateID: formData.templateID,
+        createdAt: formData.createdAt,
+        observaciones: formData.observaciones,
+        templateCodigo: formData.template.codigo,
+        templateNombre: formData.template.nombre,
+        version: formData.template.version,
+        headerData: formData.data.header,
+        bodyData: formData.data.body,
+        firmasData: formData.data.firmas
+      };
+      
+      const templateStructure = {
+        codigo: formData.template.codigo,
+        nombre: formData.template.nombre,
+        version: formData.template.version,
+        bodyElements: formData.template.structure.bodyElements,
+        headerFields: formData.template.structure.headerFields,
+        firmas: formData.template.structure.firmas
+      };
+      
+      console.log('🔄 Datos transformados:', { transformedData, templateStructure });
+      
+      // Los datos ya vienen parseados desde el backend
+      const result = await exportFormToPDF(transformedData, templateStructure);
+      if (result.success) {
+        alert(`✅ PDF generado exitosamente: ${result.fileName}`);
+      }
+    } catch (error) {
+      console.error('❌ Error al exportar PDF:', error);
+      alert(`❌ Error al generar PDF: ${error.message}`);
+    }
+  };
+
+  // NUEVO: Exportar a Excel usando endpoint /with-template
+  const handleExportExcel = async (form) => {
+    try {
+      console.log('📊 Exportando formulario a Excel...', form);
+      
+      // Usar el endpoint /with-template que parsea todos los datos
+      const response = await fetch(`${API_URL_FILLED_FORMS}/${form.formID}/with-template`);
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: No se pudo cargar los datos del formulario`);
+      }
+      
+      const formData = await response.json();
+      console.log('📦 Datos completos recibidos:', formData);
+      
+      // Transformar estructura del endpoint al formato esperado por el servicio Excel
+      const transformedData = {
+        formID: formData.formID,
+        templateID: formData.templateID,
+        createdAt: formData.createdAt,
+        observaciones: formData.observaciones,
+        templateCodigo: formData.template.codigo,
+        templateNombre: formData.template.nombre,
+        version: formData.template.version,
+        headerData: formData.data.header,
+        bodyData: formData.data.body,
+        firmasData: formData.data.firmas
+      };
+      
+      const templateStructure = {
+        codigo: formData.template.codigo,
+        nombre: formData.template.nombre,
+        version: formData.template.version,
+        bodyElements: formData.template.structure.bodyElements,
+        headerFields: formData.template.structure.headerFields,
+        firmas: formData.template.structure.firmas
+      };
+      
+      console.log('🔄 Datos transformados:', { transformedData, templateStructure });
+      
+      // Los datos ya vienen parseados desde el backend
+      const result = await exportFormToExcel(transformedData, templateStructure);
+      if (result.success) {
+        alert(`✅ Excel generado exitosamente: ${result.fileName}`);
+      }
+    } catch (error) {
+      console.error('Error al exportar Excel:', error);
+      alert(`❌ Error al generar Excel: ${error.message}`);
+    }
+  };
+
+  // 🔍 FILTRADO MEJORADO: Template + Rango de Fechas
+  const filteredForms = forms.filter((form) => {
+    // Filtro por template
+    const matchesTemplate = filterTemplate ? form.templateCodigo === filterTemplate : true;
+    
+    // Filtro por rango de fechas
+    let matchesDateRange = true;
+    if (startDate || endDate) {
+      const formDate = new Date(form.createdAt);
+      const start = startDate ? new Date(startDate) : null;
+      const end = endDate ? new Date(endDate) : null;
+      
+      // Ajustar end date para incluir todo el día
+      if (end) {
+        end.setHours(23, 59, 59, 999);
+      }
+      
+      if (start && formDate < start) matchesDateRange = false;
+      if (end && formDate > end) matchesDateRange = false;
+    }
+    
+    return matchesTemplate && matchesDateRange;
+  });
 
   if (loading) return <div className="view-forms"><h1>Cargando formularios...</h1></div>;
   if (error) return <div className="view-forms"><h1 className="error-message">Error: {error}</h1></div>;
 
   if (selectedForm) {
-    // Necesitamos encontrar la plantilla original para saber cómo renderizar el bodyData
-    const correspondingTemplate = templates.find(t => t.templateID === selectedForm.templateID);
+    // Usar el snapshot del template si está disponible (versión histórica)
+    // Si no, buscar el template actual de la lista
+    let correspondingTemplate;
+    
+    if (selectedFormVersionInfo && selectedFormVersionInfo.templateSnapshot) {
+      // Usar el snapshot guardado con el formulario (versión histórica)
+      console.log('📸 Usando snapshot de template (versión histórica)');
+      correspondingTemplate = selectedFormVersionInfo.templateSnapshot;
+    } else {
+      // Buscar el template actual en la lista
+      console.log('📋 Usando template actual de la lista');
+      correspondingTemplate = templates.find(t => t.templateID === selectedForm.templateID);
+    }
 
     return (
       <div className="view-forms">
@@ -100,13 +275,23 @@ function ViewForms() {
           <button onClick={() => setSelectedForm(null)} className="btn-back">← Volver a la lista</button>
           <div className="viewer-actions">
             <button onClick={printForm} className="btn-secondary">🖨️ Imprimir</button>
-            <button onClick={() => exportToJSON(selectedForm)} className="btn-secondary">📥 Exportar JSON</button>
+            <button onClick={() => handleExportPDF(selectedForm)} className="btn-pdf" title="Exportar a PDF">📄 PDF</button>
+            <button onClick={() => handleExportExcel(selectedForm)} className="btn-excel" title="Exportar a Excel">📊 Excel</button>
+            <button onClick={() => exportToJSON(selectedForm)} className="btn-secondary">📥 JSON</button>
             <button onClick={() => editForm(selectedForm.formID)} className="btn-primary">✏️ Editar</button>
             <button onClick={() => deleteForm(selectedForm.formID)} className="btn-danger">🗑️ Eliminar</button>
           </div>
         </div>
         <div className="form-viewer-document">
           <FormHeader title={selectedForm.templateNombre} code={selectedForm.templateCodigo} version="1" date={new Date(selectedForm.createdAt).toLocaleDateString("es-EC")} />
+          
+          {/* NUEVO: Indicador de versión de plantilla */}
+          {selectedFormVersionInfo && (
+            <VersionIndicator 
+              versionInfo={selectedFormVersionInfo}
+              templateInfo={{ nombre: selectedForm.templateNombre, codigo: selectedForm.templateCodigo }}
+            />
+          )}
           
           {Object.keys(selectedForm.headerData).length > 0 && (
             <div className="data-section">
@@ -162,16 +347,43 @@ function ViewForms() {
                   <h3>{templateElement.title}</h3>
                   <div className="table-wrapper">
                     <table className="view-table">
-                      <thead><tr><th>#</th>{templateElement.columns.map(col => <th key={col.label}>{col.label}</th>)}</tr></thead>
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          {templateElement.columns.map((col, colIndex) => (
+                            <th key={`header-${colIndex}`}>{col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}</th>
+                          ))}
+                        </tr>
+                      </thead>
                       <tbody>
-                        {tableRows.map((row, index) => (
-                          <tr key={index}>
-                            <td>{index + 1}</td>
-                            {templateElement.columns.map(col => (
-                              <td key={col.label}>{row[col.label] || "-"}</td>
-                            ))}
-                          </tr>
-                        ))}
+                        {tableRows.map((row, rowIndex) => {
+                          // Obtener la fila del template para mapear nombres de celdas
+                          const templateRow = templateElement.rows ? templateElement.rows[rowIndex] : null;
+                          
+                          return (
+                            <tr key={`row-${rowIndex}`}>
+                              <td>{rowIndex + 1}</td>
+                              {templateElement.columns.map((col, colIndex) => {
+                                // Determinar el nombre de la celda
+                                let cellName;
+                                if (templateRow && templateRow.cells && templateRow.cells[colIndex]) {
+                                  // Usar el 'name' de la celda pre-definida
+                                  cellName = templateRow.cells[colIndex].name;
+                                } else {
+                                  // Usar el nombre de la columna
+                                  cellName = col.label || col.header || col.name || col.id;
+                                }
+                                
+                                const cellValue = row[cellName];
+                                return (
+                                  <td key={`cell-${rowIndex}-${colIndex}`}>
+                                    {cellValue !== undefined && cellValue !== null && cellValue !== "" ? cellValue : "-"}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
                         {tableRows.length === 0 && (
                           <tr><td colSpan={templateElement.columns.length + 1}>No hay datos</td></tr>
                         )}
@@ -206,23 +418,79 @@ function ViewForms() {
   return (
     <div className="view-forms">
       <div className="page-header">
-        <h1>Formularios Guardados</h1>
-        <div className="filter-section">
-          <label>Filtrar por plantilla:</label>
-          <select value={filterTemplate} onChange={(e) => setFilterTemplate(e.target.value)}>
-            <option value="">Todas las plantillas</option>
-            {templates.map((t) => (
-              <option key={t.templateID} value={t.codigo}>
-                {t.codigo} - {t.nombre}
-              </option>
-            ))}
-          </select>
+        <h1>📋 Formularios Guardados</h1>
+        
+        {/* 🔍 SECCIÓN DE FILTROS MEJORADA */}
+        <div className="filters-container-view">
+          <div className="filter-row">
+            <div className="filter-group">
+              <label>📂 Plantilla:</label>
+              <select value={filterTemplate} onChange={(e) => setFilterTemplate(e.target.value)}>
+                <option value="">Todas las plantillas</option>
+                {templates.map((t) => (
+                  <option key={t.templateID} value={t.codigo}>
+                    {t.codigo} - {t.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="filter-group">
+              <label>📅 Desde:</label>
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)}
+                max={endDate || undefined}
+              />
+            </div>
+            
+            <div className="filter-group">
+              <label>📅 Hasta:</label>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)}
+                min={startDate || undefined}
+              />
+            </div>
+            
+            <button 
+              className="btn-clear-filters" 
+              onClick={() => {
+                setFilterTemplate("");
+                setStartDate("");
+                setEndDate("");
+              }}
+              title="Limpiar todos los filtros"
+            >
+              🔄 Limpiar
+            </button>
+          </div>
+          
+          {/* Contador de resultados */}
+          <div className="results-count">
+            {filteredForms.length} formulario{filteredForms.length !== 1 ? 's' : ''} encontrado{filteredForms.length !== 1 ? 's' : ''}
+            {(filterTemplate || startDate || endDate) && ` (filtrado de ${forms.length} total${forms.length !== 1 ? 'es' : ''})`}
+          </div>
         </div>
       </div>
 
       {filteredForms.length === 0 ? (
         <div className="empty-state-card">
-          <p>No hay formularios guardados{filterTemplate ? " para esta plantilla" : ""}.</p>
+          <p>No hay formularios guardados{filterTemplate || startDate || endDate ? " con los filtros seleccionados" : ""}.</p>
+          {(filterTemplate || startDate || endDate) && (
+            <button 
+              className="btn-secondary" 
+              onClick={() => {
+                setFilterTemplate("");
+                setStartDate("");
+                setEndDate("");
+              }}
+            >
+              Limpiar filtros
+            </button>
+          )}
         </div>
       ) : (
         <div className="forms-list">
@@ -235,7 +503,7 @@ function ViewForms() {
                 </div>
                 <div className="form-card-actions">
                   <button 
-                    onClick={() => setSelectedForm(form)} 
+                    onClick={() => viewFormWithVersion(form)} 
                     className="btn-view"
                     title="Ver detalles completos"
                   >
@@ -247,6 +515,20 @@ function ViewForms() {
                     title="Editar este formulario"
                   >
                     ✏️ Editar
+                  </button>
+                  <button 
+                    onClick={() => handleExportPDF(form)} 
+                    className="btn-pdf"
+                    title="Exportar a PDF"
+                  >
+                    📄 PDF
+                  </button>
+                  <button 
+                    onClick={() => handleExportExcel(form)} 
+                    className="btn-excel"
+                    title="Exportar a Excel"
+                  >
+                    📊 Excel
                   </button>
                   <button 
                     onClick={() => exportToJSON(form)} 

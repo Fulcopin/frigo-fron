@@ -11,7 +11,11 @@
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
+    "file-saver": "^2.0.5",
     "jiti": "latest",
+    "jspdf": "^3.0.4",
+    "jspdf-autotable": "^5.0.2",
     "less": "latest",
     "lightningcss": "latest",
     "lucide-react": "^0.454.0",

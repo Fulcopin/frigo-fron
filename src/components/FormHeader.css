@@ -42,11 +42,9 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
-/* BOTÓN GRANDE Y VISIBLE PARA TOGGLE */
+/* ✅ BOTÓN MEJORADO - Ahora en la esquina inferior derecha cuando está expandido */
 .header-toggle-btn-main {
   position: absolute;
-  right: 15px;
-  top: 10px;
   z-index: 101;
   background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   color: white;
@@ -61,7 +59,21 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-height: 44px; /* Touch-friendly */
+  min-height: 44px;
+}
+
+/* Cuando está expandido: esquina inferior derecha */
+.form-header.expanded .header-toggle-btn-main {
+  bottom: 10px;
+  right: 15px;
+  top: auto;
+}
+
+/* Cuando está colapsado: esquina superior derecha */
+.form-header.collapsed .header-toggle-btn-main {
+  top: 10px;
+  right: 15px;
+  bottom: auto;
 }
 
 .header-toggle-btn-main:hover {
@@ -187,12 +199,16 @@
   color: #6b7280;
   font-weight: 500;
 }
-.logo-icon {
- 
-  width: 120px; 
 
-  height: auto; 
+/* ✅ LOGO CENTRADO Y RESPONSIVE */
+.logo-icon {
+  width: 120px; 
+  height: auto;
+  display: block;
+  margin: 0.5rem auto; /* Centrado horizontal */
+  object-fit: contain;
 }
+
 .form-header-left {
   flex: 0 0 280px;
   border-right: 2px solid #000;
@@ -204,6 +220,9 @@
 .company-logo {
   width: 100%;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Centrar todo el contenido */
 }
 
 .logo-text {

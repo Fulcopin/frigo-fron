@@ -5,18 +5,131 @@
 
 .page-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 1.5rem;
   margin-bottom: 2rem;
-  gap: 2rem;
-  flex-wrap: wrap;
 }
 
 .page-header h1 {
   font-size: 2rem;
   color: var(--primary);
+  margin: 0;
 }
 
+/* 🔍 CONTENEDOR DE FILTROS MEJORADO */
+.filters-container-view {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 180px;
+}
+
+.filter-group label {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.filter-group select,
+.filter-group input[type="date"] {
+  padding: 0.625rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  background: white;
+  color: var(--text);
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.filter-group select:focus,
+.filter-group input[type="date"]:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+}
+
+.filter-group select:hover,
+.filter-group input[type="date"]:hover {
+  border-color: var(--primary);
+}
+
+.btn-clear-filters {
+  padding: 0.625rem 1.25rem;
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  height: fit-content;
+  align-self: flex-end;
+}
+
+.btn-clear-filters:hover {
+  background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-clear-filters:active {
+  transform: translateY(0);
+}
+
+.results-count {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  background: rgba(30, 64, 175, 0.05);
+  border-radius: 6px;
+  border-left: 3px solid var(--primary);
+}
+
+/* Responsivo */
+@media (max-width: 768px) {
+  .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .filter-group {
+    min-width: 100%;
+  }
+  
+  .btn-clear-filters {
+    align-self: stretch;
+    justify-content: center;
+  }
+}
+
+/* OLD FILTER SECTION - Keeping for backwards compatibility */
 .filter-section {
   display: flex;
   align-items: center;
@@ -100,7 +213,9 @@
 .btn-view,
 .btn-edit,
 .btn-export,
-.btn-delete {
+.btn-delete,
+.btn-pdf,
+.btn-excel {
   padding: 0.5rem 1rem;
   border-radius: 6px;
   font-size: 0.875rem;
@@ -131,6 +246,30 @@
 .btn-edit:hover {
   background: #d97706;
   transform: translateY(-1px);
+}
+
+/* 📄 BOTÓN PDF - ROJO */
+.btn-pdf {
+  background: #dc2626;
+  color: white;
+}
+
+.btn-pdf:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
+}
+
+/* 📊 BOTÓN EXCEL - VERDE */
+.btn-excel {
+  background: #16a34a;
+  color: white;
+}
+
+.btn-excel:hover {
+  background: #15803d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(22, 163, 74, 0.3);
 }
 
 .btn-export {

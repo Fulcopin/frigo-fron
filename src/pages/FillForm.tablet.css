@@ -1,0 +1,521 @@
+/* ============================================
+   📱 OPTIMIZACIÓN ESPECÍFICA PARA TABLETS
+   Archivo: FillForm.tablet.css
+   Propósito: Mejorar precisión y reducir invasividad en tablets
+   ============================================ */
+
+/* ============================================
+   🎯 CONFIGURACIÓN BASE PARA TABLETS
+   ============================================ */
+@media (min-width: 768px) and (max-width: 1024px) {
+  
+  /* Contenedor principal con padding adaptativo */
+  .fill-form {
+    padding: 0.75rem;
+    max-width: 100%;
+  }
+
+  /* ============================================
+     📝 INPUTS Y CAMPOS DE FORMULARIO
+     ============================================ */
+  
+  /* Inputs más grandes y precisos para dedos */
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="tel"],
+  select,
+  textarea {
+    min-height: 48px !important; /* Tamaño mínimo recomendado para táctil */
+    font-size: 16px !important; /* Evita zoom en iOS */
+    padding: 12px 16px !important;
+    border-radius: 8px !important;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(37, 99, 235, 0.2);
+    /* ✅ PREVENIR SCROLL AUTOMÁTICO AL HACER FOCUS */
+    scroll-margin: 0 !important;
+    scroll-padding: 0 !important;
+  }
+
+  /* Espaciado entre campos para evitar clics accidentales */
+  .form-field {
+    margin-bottom: 1.25rem;
+  }
+
+  .form-grid {
+    gap: 1.25rem;
+  }
+
+  /* ============================================
+     🗂️ TABLAS OPTIMIZADAS
+     ============================================ */
+  
+  /* Tabla con scroll horizontal suave */
+  .table-wrapper {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 500px; /* Más bajo para tablets */
+    -webkit-overflow-scrolling: touch; /* Scroll suave en iOS */
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    /* ✅ PREVENIR SCROLL AUTOMÁTICO DE LA PÁGINA */
+    scroll-behavior: smooth;
+    overflow-anchor: none;
+    contain: layout style paint;
+  }
+
+  /* Celdas más espaciadas */
+  .data-table th,
+  .data-table td {
+    padding: 14px 12px !important;
+    min-width: 140px; /* Ancho mínimo para legibilidad */
+  }
+
+  /* Inputs dentro de tablas */
+  .data-table input,
+  .data-table select,
+  .data-table textarea {
+    min-width: 130px !important;
+    min-height: 44px !important;
+    font-size: 15px !important;
+    /* ✅ PREVENIR SCROLL AUTOMÁTICO AL HACER FOCUS EN TABLAS */
+    scroll-margin: 0 !important;
+    scroll-padding: 0 !important;
+  }
+
+  /* Botón agregar fila más grande */
+  .btn-add-row {
+    min-height: 48px;
+    padding: 12px 20px;
+    font-size: 16px;
+    margin: 12px 0;
+    width: 100%; /* Ancho completo para fácil acceso */
+  }
+
+  /* Botón eliminar fila con área táctil amplia */
+  .btn-remove-row {
+    min-width: 48px;
+    min-height: 48px;
+    padding: 12px;
+    margin: 4px;
+    font-size: 18px;
+  }
+
+  /* ============================================
+     🎨 ENCABEZADO COMPACTO Y MENOS INVASIVO
+     ============================================ */
+  
+  /* Encabezado más compacto por defecto */
+  .form-header {
+    margin-bottom: 0.75rem;
+  }
+
+  .form-header.expanded .form-header-content {
+    max-height: 300px; /* Más compacto en tablets */
+  }
+
+  /* Botón de toggle más accesible */
+  .header-toggle-btn-main {
+    min-width: 52px;
+    min-height: 52px;
+    padding: 10px 16px;
+    font-size: 15px;
+    z-index: 150;
+  }
+
+  /* Logo más pequeño para ahorrar espacio */
+  .logo-icon {
+    width: 90px !important;
+    margin: 0.25rem auto;
+  }
+
+  .company-logo {
+    padding: 0.5rem;
+  }
+
+  .logo-text {
+    font-size: 1rem;
+  }
+
+  .logo-subtitle {
+    font-size: 0.65rem;
+  }
+
+  /* ============================================
+     📦 ACORDEONES Y SECCIONES
+     ============================================ */
+  
+  /* Headers de acordeón más grandes */
+  .accordion-header {
+    min-height: 56px;
+    padding: 16px 20px;
+    font-size: 17px;
+    touch-action: manipulation;
+  }
+
+  /* Botones de toggle de sección */
+  .section-toggle-btn {
+    min-width: 48px;
+    min-height: 48px;
+    padding: 12px;
+  }
+
+  /* ============================================
+     🔘 BOTONES Y CONTROLES
+     ============================================ */
+  
+  /* Todos los botones con tamaño táctil adecuado */
+  button,
+  .btn-primary,
+  .btn-secondary,
+  .btn-back {
+    min-height: 50px;
+    min-width: 50px;
+    padding: 14px 24px;
+    font-size: 16px;
+    border-radius: 10px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(37, 99, 235, 0.2);
+  }
+
+  /* Espaciado entre botones */
+  .form-actions-bottom {
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .form-actions-bottom button {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  /* ============================================
+     🎯 SELECTOR DE LOTES API
+     ============================================ */
+  
+  /* Modal más grande y centrado */
+  .lote-modal {
+    width: 95%;
+    max-width: 720px;
+    max-height: 85vh;
+    padding: 20px;
+  }
+
+  /* Checkboxes más grandes */
+  .checkbox-container input[type="checkbox"] + .checkmark {
+    width: 28px !important;
+    height: 28px !important;
+  }
+
+  .checkbox-container input[type="checkbox"]:checked + .checkmark::after {
+    width: 10px !important;
+    height: 16px !important;
+    border-width: 0 3px 3px 0 !important;
+  }
+
+  /* Items de lote con padding amplio */
+  .lote-item {
+    padding: 16px;
+    margin-bottom: 12px;
+    border-radius: 10px;
+    min-height: 70px;
+  }
+
+  /* Chips de lotes seleccionados */
+  .lote-chip {
+    padding: 10px 16px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+
+  /* ============================================
+     📊 GRID LAYOUTS ADAPTATIVOS
+     ============================================ */
+  
+  /* Grid de 2 columnas en portrait, 3 en landscape */
+  .header-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+
+  .signatures-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+  }
+
+  /* ============================================
+     🎨 INDICADORES Y FEEDBACK VISUAL
+     ============================================ */
+  
+  /* Indicador de autoguardado menos invasivo */
+  .autosave-indicator {
+    top: auto;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 18px;
+    font-size: 14px;
+    border-radius: 10px;
+    max-width: 250px;
+  }
+
+  /* Badges más pequeños */
+  .badge-lotes,
+  .badge-manual {
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 6px;
+  }
+
+  /* ============================================
+     📱 PREVENCIÓN DE PROBLEMAS TÁCTILES
+     ============================================ */
+  
+  /* Evitar selección de texto accidental */
+  .accordion-header,
+  .table-header,
+  button,
+  .lote-item {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Permitir selección en inputs y editables */
+  input,
+  textarea,
+  .data-table td {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /* Scroll más visible */
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+    border-radius: 10px;
+    border: 2px solid #f1f5f9;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+  }
+
+  /* ============================================
+     🌐 ORIENTACIÓN LANDSCAPE
+     ============================================ */
+  
+  @media (orientation: landscape) {
+    /* Encabezado aún más compacto en landscape */
+    .form-header.expanded .form-header-content {
+      max-height: 200px;
+    }
+
+    /* Grid de 3 columnas */
+    .header-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* Tabla con menos altura */
+    .table-wrapper {
+      max-height: 350px;
+    }
+
+    /* Botones en fila */
+    .form-actions-bottom {
+      flex-direction: row;
+      justify-content: center;
+    }
+  }
+
+  /* ============================================
+     🎯 MEJORAS DE PRECISIÓN
+     ============================================ */
+  
+  /* Separación visual entre secciones */
+  .form-section {
+    margin-bottom: 1.5rem;
+    padding: 1.25rem;
+    border-radius: 12px;
+  }
+
+  /* Etiquetas más legibles */
+  label {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+    color: #374151;
+  }
+
+  /* Mensajes de error/validación más visibles */
+  .error-message,
+  .validation-message {
+    font-size: 14px;
+    padding: 10px 14px;
+    margin-top: 8px;
+    border-radius: 8px;
+  }
+
+  /* ============================================
+     ⚡ OPTIMIZACIÓN DE RENDIMIENTO
+     ============================================ */
+  
+  /* Hardware acceleration para animaciones */
+  button,
+  .accordion-header,
+  .template-card,
+  .lote-item {
+    transform: translateZ(0);
+    will-change: transform;
+  }
+
+  /* Reducir complejidad visual en movimiento */
+  * {
+    transition-duration: 200ms !important;
+  }
+
+  /* ============================================
+     🎨 ESTADOS INTERACTIVOS MEJORADOS
+     ============================================ */
+  
+  /* Feedback visual al tocar */
+  button:active,
+  .accordion-header:active,
+  .template-card:active,
+  .lote-item:active {
+    transform: scale(0.98) translateZ(0);
+    opacity: 0.9;
+  }
+
+  /* Focus más visible */
+  input:focus,
+  select:focus,
+  textarea:focus,
+  button:focus {
+    outline: 3px solid rgba(37, 99, 235, 0.5);
+    outline-offset: 2px;
+  }
+
+  /* ============================================
+     📐 AJUSTES ESPECÍFICOS DE LAYOUT
+     ============================================ */
+  
+  /* Reducir padding del contenedor principal */
+  .form-document {
+    padding: 1rem;
+    border-radius: 10px;
+  }
+
+  /* Headers de sección menos prominentes */
+  .section-header h3 {
+    font-size: 1.1rem;
+    padding: 10px 0;
+  }
+
+  /* Tarjetas de plantilla adaptadas */
+  .template-card {
+    padding: 1.25rem;
+    border-radius: 10px;
+  }
+
+  .templates-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+}
+
+/* ============================================
+   🎯 TABLET PORTRAIT ESPECÍFICO (768px-1024px)
+   ============================================ */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+  
+  /* Layout de una columna para mejor legibilidad */
+  .header-grid,
+  .signatures-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Tabla con más altura disponible */
+  .table-wrapper {
+    max-height: 600px;
+  }
+
+  /* Botones apilados verticalmente */
+  .form-actions-bottom {
+    flex-direction: column;
+  }
+
+  .form-actions-bottom button {
+    width: 100%;
+  }
+}
+
+/* ============================================
+   🎯 TABLET LANDSCAPE ESPECÍFICO
+   ============================================ */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+  
+  /* Aprovechar ancho horizontal */
+  .templates-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Formulario en dos columnas */
+  .form-grid-2col {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+}
+
+/* ============================================
+   ⚡ OPTIMIZACIONES DE RENDIMIENTO
+   ============================================ */
+
+/* Reducir animaciones en tablets para mejor performance */
+@media (min-width: 768px) and (max-width: 1024px) {
+  @media (prefers-reduced-motion: no-preference) {
+    * {
+      transition-duration: 150ms !important;
+    }
+  }
+}
+
+/* ============================================
+   🎨 MEJORAS VISUALES FINALES
+   ============================================ */
+@media (min-width: 768px) and (max-width: 1024px) {
+  
+  /* Sombras más sutiles */
+  .form-document,
+  .table-wrapper,
+  .form-section {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Bordes redondeados consistentes */
+  .form-section,
+  .table-wrapper,
+  .accordion-section,
+  button,
+  input,
+  select,
+  textarea {
+    border-radius: 10px;
+  }
+
+  /* Espaciado vertical consistente */
+  .form-section + .form-section {
+    margin-top: 1.25rem;
+  }
+}

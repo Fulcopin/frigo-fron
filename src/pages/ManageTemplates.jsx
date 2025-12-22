@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom"; // Asumiendo que usas react-router-dom
 import "./ManageTemplates.css"; // Crearemos este archivo CSS a continuación
 import { API_BASE_URL } from "../apiConfig";
+import TemplateVersionHistory from "../components/TemplateVersionHistory";
 //const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 
@@ -11,6 +12,8 @@ function ManageTemplates() {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -58,6 +61,16 @@ function ManageTemplates() {
     }
   };
 
+  const handleViewVersionHistory = (template) => {
+    setSelectedTemplate(template);
+    setShowVersionHistory(true);
+  };
+
+  const handleCloseVersionHistory = () => {
+    setShowVersionHistory(false);
+    setSelectedTemplate(null);
+  };
+
   if (loading) return <div className="manage-templates"><h1>Cargando plantillas...</h1></div>;
   if (error) return <div className="manage-templates"><h1 className="error-message">Error: {error}</h1></div>;
 
@@ -84,6 +97,13 @@ function ManageTemplates() {
                 <span className="template-version">Versión: {template.version}</span>
               </div>
               <div className="template-card-actions">
+                <button 
+                  onClick={() => handleViewVersionHistory(template)} 
+                  className="btn-info"
+                  title="Ver historial de versiones"
+                >
+                  📚 Historial
+                </button>
                 <Link 
                   to={`/edit-template/${template.templateID}`} 
                   className="btn-secondary"
@@ -100,6 +120,15 @@ function ManageTemplates() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Modal de Historial de Versiones */}
+      {showVersionHistory && selectedTemplate && (
+        <TemplateVersionHistory
+          templateId={selectedTemplate.templateID}
+          templateName={selectedTemplate.nombre}
+          onClose={handleCloseVersionHistory}
+        />
       )}
     </div>
   );

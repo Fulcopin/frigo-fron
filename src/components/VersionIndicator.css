@@ -1,0 +1,316 @@
+/* ============================================
+   INDICADORES DE VERSIÓN DE PLANTILLA
+   ============================================ */
+
+.version-indicator-container {
+  margin: 1.5rem 0;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Badge principal de versión */
+.version-badge {
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.version-badge:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+/* Badge de versión histórica (amarillo/ámbar) */
+.version-badge.historic {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border: 2px solid #f59e0b;
+}
+
+.version-badge.historic .badge-icon {
+  color: #92400e;
+  font-size: 1.5rem;
+}
+
+.version-badge.historic .badge-title {
+  color: #92400e;
+  font-weight: 700;
+}
+
+.version-badge.historic .badge-version {
+  background: #f59e0b;
+  color: white;
+}
+
+.version-badge.historic .badge-message {
+  color: #78350f;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.version-badge.historic .info-label {
+  color: #92400e;
+}
+
+.version-badge.historic .info-value {
+  color: #78350f;
+}
+
+/* Badge de versión actual (verde) */
+.version-badge.current {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  border: 2px solid #10b981;
+}
+
+.version-badge.current .badge-icon {
+  color: #065f46;
+  font-size: 1.5rem;
+}
+
+.version-badge.current .badge-title {
+  color: #065f46;
+  font-weight: 700;
+}
+
+.version-badge.current .badge-version {
+  background: #10b981;
+  color: white;
+}
+
+.version-badge.current .badge-message {
+  color: #047857;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Estructura interna del badge */
+.badge-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.badge-icon {
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.badge-title {
+  font-size: 1.125rem;
+  flex: 1;
+}
+
+.badge-version {
+  padding: 0.35rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+.badge-message {
+  padding: 0.875rem;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+}
+
+.badge-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.info-label {
+  font-weight: 600;
+}
+
+.info-value {
+  font-weight: 400;
+}
+
+/* ============================================
+   BADGE COMPACTO (para listas)
+   ============================================ */
+.compact-version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.compact-version-badge.historic {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+}
+
+.compact-version-badge.current {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #10b981;
+}
+
+/* ============================================
+   BADGE INLINE (para headers de formularios)
+   ============================================ */
+.inline-version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-left: 1rem;
+}
+
+.inline-version-badge.historic {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
+  border: 2px solid #f59e0b;
+}
+
+.inline-version-badge.current {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  color: #065f46;
+  border: 2px solid #10b981;
+}
+
+.version-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.version-text {
+  font-size: 0.875rem;
+}
+
+/* ============================================
+   RESPONSIVE PARA TABLETS
+   ============================================ */
+@media (max-width: 1024px) {
+  .version-badge {
+    padding: 1rem 1.25rem;
+  }
+
+  .badge-title {
+    font-size: 1rem;
+  }
+
+  .badge-message {
+    font-size: 0.9rem;
+    padding: 0.75rem;
+  }
+
+  .badge-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .inline-version-badge {
+    margin-left: 0;
+    margin-top: 0.5rem;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 768px) {
+  .version-indicator-container {
+    margin: 1rem 0;
+  }
+
+  .version-badge {
+    padding: 0.875rem 1rem;
+  }
+
+  .badge-header {
+    flex-wrap: wrap;
+  }
+
+  .badge-icon {
+    font-size: 1.25rem;
+  }
+
+  .badge-title {
+    font-size: 0.95rem;
+  }
+
+  .badge-version {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8rem;
+  }
+
+  .badge-message {
+    font-size: 0.85rem;
+    padding: 0.65rem;
+  }
+
+  .compact-version-badge {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+  }
+}
+
+/* ============================================
+   ANIMACIONES Y ESTADOS
+   ============================================ */
+@keyframes pulse-version {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(251, 191, 36, 0);
+  }
+}
+
+.version-badge.historic.pulse {
+  animation: pulse-version 2s infinite;
+}
+
+/* Modo de impresión - simplificar colores */
+@media print {
+  .version-badge {
+    border: 2px solid #000;
+    background: #fff !important;
+    box-shadow: none;
+    break-inside: avoid;
+  }
+
+  .version-badge.historic {
+    border-left: 4px solid #f59e0b;
+  }
+
+  .version-badge.current {
+    border-left: 4px solid #10b981;
+  }
+
+  .badge-message {
+    background: #f5f5f5 !important;
+    color: #000 !important;
+  }
+
+  .badge-version {
+    background: #666 !important;
+    color: #fff !important;
+  }
+}

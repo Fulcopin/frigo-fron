@@ -1,0 +1,298 @@
+/* ===========================
+   WEIGHT INPUT - Estilos
+   =========================== */
+
+.weight-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.weight-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.required-mark {
+  color: #ef4444;
+  font-size: 16px;
+}
+
+.weight-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 2px solid #d1d5db;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.weight-input-group:hover:not(.disabled) {
+  border-color: #9ca3af;
+}
+
+.weight-input-group.focused {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.weight-input {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #1f2937;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.weight-input::placeholder {
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+.weight-unit {
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+  border-left: 1px solid #e5e7eb;
+  user-select: none;
+}
+
+.conversion-badge {
+  position: absolute;
+  top: -12px;
+  right: 12px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  animation: badgeFloat 2s ease-in-out infinite;
+}
+
+@keyframes badgeFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+.weight-hint {
+  font-size: 13px;
+  color: #6b7280;
+  padding: 4px 8px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+.weight-error {
+  font-size: 13px;
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #fef2f2;
+  border-radius: 6px;
+  border-left: 3px solid #ef4444;
+}
+
+.weight-input-container.has-error .weight-input-group {
+  border-color: #ef4444;
+}
+
+.weight-input-container.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ===========================
+   UNIT TOGGLE
+   =========================== */
+
+.unit-toggle {
+  display: inline-flex;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.unit-option {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.unit-option:hover {
+  background: rgba(255, 255, 255, 0.5);
+  color: #374151;
+}
+
+.unit-option.active {
+  background: white;
+  color: #3b82f6;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-weight: 600;
+}
+
+/* ===========================
+   WEIGHT DISPLAY (Read-only)
+   =========================== */
+
+.weight-display {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.weight-main {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.weight-secondary {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* ===========================
+   COMPARISON TABLE
+   =========================== */
+
+.weight-comparison-table {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.weight-comparison-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.weight-comparison-table thead {
+  background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+}
+
+.weight-comparison-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #d1d5db;
+}
+
+.weight-comparison-table td {
+  padding: 12px 16px;
+  color: #1f2937;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.weight-comparison-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+.weight-comparison-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ===========================
+   CONVERSION INFO
+   =========================== */
+
+.conversion-info {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.info-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #1e40af;
+  font-size: 15px;
+}
+
+.info-icon {
+  font-size: 18px;
+}
+
+.info-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #1f2937;
+}
+
+.info-content p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.info-content strong {
+  color: #1e40af;
+  font-weight: 600;
+}
+
+/* ===========================
+   RESPONSIVE
+   =========================== */
+
+@media (max-width: 768px) {
+  .weight-input {
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+
+  .weight-unit {
+    padding: 0 12px;
+  }
+
+  .conversion-badge {
+    position: static;
+    margin-top: 8px;
+    display: inline-block;
+  }
+
+  .weight-comparison-table {
+    font-size: 12px;
+  }
+
+  .weight-comparison-table th,
+  .weight-comparison-table td {
+    padding: 8px 12px;
+  }
+
+  .unit-option {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}

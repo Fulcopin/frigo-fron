@@ -1,0 +1,624 @@
+/* 🎨 Estilos para LoteSelectorAPI - Selector de múltiples lotes desde API */
+
+.lote-selector-api {
+  margin: 15px 0;
+  width: 100%;
+}
+
+/* Header */
+.lote-selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.lote-selector-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #2c3e50;
+}
+
+.btn-abrir-selector {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 13px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.btn-abrir-selector:hover {
+  background: linear-gradient(135deg, #2980b9, #21618c);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+/* Lotes seleccionados */
+.lotes-seleccionados-container {
+  background: #f8f9fa;
+  border: 2px dashed #dee2e6;
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 60px;
+}
+
+.lotes-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.lote-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #27ae60, #229954);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.lote-numero {
+  font-weight: 700;
+}
+
+.lote-proveedor {
+  font-size: 11px;
+  opacity: 0.9;
+  padding-left: 6px;
+  border-left: 1px solid rgba(255,255,255,0.3);
+}
+
+.btn-eliminar-lote {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.btn-eliminar-lote:hover {
+  background: rgba(255,255,255,0.4);
+  transform: scale(1.1);
+}
+
+.btn-limpiar-lotes {
+  padding: 6px 12px;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-limpiar-lotes:hover {
+  background: #c0392b;
+}
+
+.lotes-vacio {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  padding: 12px;
+  text-align: center;
+}
+
+.lotes-vacio p {
+  margin: 0;
+  color: #856404;
+  font-size: 13px;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.btn-cerrar-modal {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.btn-cerrar-modal:hover {
+  background: rgba(255,255,255,0.3);
+  transform: rotate(90deg);
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Sección de búsqueda */
+.busqueda-seccion {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.busqueda-seccion h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: #2c3e50;
+}
+
+.hint {
+  font-size: 13px;
+  color: #6c757d;
+  margin: 4px 0 12px 0;
+}
+
+.fecha-input-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.fecha-input-group label {
+  font-weight: 500;
+  font-size: 14px;
+  color: #2c3e50;
+  min-width: 180px;
+}
+
+.fecha-input {
+  flex: 1;
+  min-width: 150px;
+  padding: 10px;
+  border: 2px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.3s ease;
+}
+
+.fecha-input:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
+.btn-buscar {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #27ae60, #229954);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  transition: all 0.3s ease;
+}
+
+.btn-buscar:hover:not(:disabled) {
+  background: linear-gradient(135deg, #229954, #1e8449);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.btn-buscar:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Alertas */
+.alert-warning {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 15px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.alert-warning span {
+  font-size: 20px;
+}
+
+.alert-warning p {
+  margin: 0;
+  color: #856404;
+  font-size: 14px;
+  flex: 1;
+}
+
+.hint-continuar {
+  margin-top: 8px;
+  padding: 8px;
+  background: #e7f3ff;
+  border-left: 3px solid #3498db;
+  font-size: 12px;
+  color: #2c3e50;
+}
+
+/* Sección de selección */
+.seleccion-seccion {
+  background: #ffffff;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.seleccion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  margin-bottom: 15px;
+}
+
+.seleccion-seccion h3 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: #2c3e50;
+}
+
+/* Contador de seleccionados */
+.contador-seleccionados {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #27ae60, #229954);
+  color: white;
+  padding: 15px 20px;
+  border-radius: 12px;
+  min-width: 100px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.numero-grande {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+  display: block;
+}
+
+.texto-pequeno {
+  font-size: 11px;
+  text-transform: uppercase;
+  opacity: 0.9;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* Lista de movimientos */
+.movimientos-lista {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  background: #f8f9fa;
+}
+
+.movimiento-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: white;
+  border-bottom: 1px solid #dee2e6;
+  transition: all 0.2s ease;
+}
+
+.movimiento-item:last-child {
+  border-bottom: none;
+}
+
+.movimiento-item:hover {
+  background: #e3f2fd;
+}
+
+.movimiento-item.seleccionado {
+  background: #d4edda;
+  border-left: 4px solid #27ae60;
+}
+
+.movimiento-checkbox {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+
+/* Checkbox personalizado estilo material */
+.checkbox-container {
+  display: block;
+  position: relative;
+  cursor: pointer;
+  font-size: 22px;
+  user-select: none;
+  width: 28px;
+  height: 28px;
+}
+
+.checkbox-container input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.checkmark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 26px;
+  width: 26px;
+  background-color: #fff;
+  border: 2px solid #dee2e6;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.checkbox-container:hover input ~ .checkmark {
+  border-color: #27ae60;
+  box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.1);
+}
+
+.checkbox-container input:checked ~ .checkmark {
+  background-color: #27ae60;
+  border-color: #27ae60;
+}
+
+.checkmark:after {
+  content: "";
+  position: absolute;
+  display: none;
+}
+
+.checkbox-container input:checked ~ .checkmark:after {
+  display: block;
+}
+
+.checkbox-container .checkmark:after {
+  left: 8px;
+  top: 3px;
+  width: 7px;
+  height: 14px;
+  border: solid white;
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
+}
+
+.movimiento-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.movimiento-lote,
+.movimiento-proveedor {
+  font-size: 13px;
+}
+
+.movimiento-lote strong,
+.movimiento-proveedor strong {
+  color: #2c3e50;
+  margin-right: 4px;
+}
+
+.btn-elegir-lote {
+  padding: 6px 12px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.btn-elegir-lote:hover {
+  background: #2980b9;
+}
+
+.movimiento-item.seleccionado .btn-elegir-lote {
+  background: #27ae60;
+}
+
+.movimiento-item.seleccionado .btn-elegir-lote:hover {
+  background: #229954;
+}
+
+/* Resumen de selección */
+.resumen-seleccion {
+  background: #e3f2fd;
+  border: 2px solid #3498db;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 15px;
+}
+
+.resumen-seleccion h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #2c3e50;
+}
+
+.lotes-resumen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lote-badge {
+  display: inline-block;
+  background: #27ae60;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Footer del modal */
+.modal-footer {
+  background: #f8f9fa;
+  padding: 15px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #dee2e6;
+}
+
+.btn-cancelar,
+.btn-confirmar {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.btn-cancelar {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-cancelar:hover {
+  background: #5a6268;
+}
+
+.btn-confirmar {
+  background: linear-gradient(135deg, #27ae60, #229954);
+  color: white;
+}
+
+.btn-confirmar:hover {
+  background: linear-gradient(135deg, #229954, #1e8449);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .modal-content {
+    width: 95%;
+    max-height: 95vh;
+  }
+
+  .fecha-input-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fecha-input-group label {
+    min-width: auto;
+  }
+
+  .movimiento-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .btn-elegir-lote {
+    align-self: stretch;
+  }
+}
