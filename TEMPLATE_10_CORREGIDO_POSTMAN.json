@@ -1,0 +1,14 @@
+{
+  "template": {
+    "templateId": 10,
+    "codigo": "FOR-PD-4",
+    "nombre": "CONTROL DE PRODUCCIÓN PARA FILETEO",
+    "objetivo": "Registrar y controlar la producción durante el proceso de fileteo, asegurando la trazabilidad y el rendimiento.",
+    "proceso": "Producción / Fileteo",
+    "cuandoSeUsa": "Durante cada turno de fileteo.",
+    "quienLoLlena": "Asistente de Producción",
+    "headerFields": "[{\"id\":\"fecha\",\"name\":\"fecha\",\"label\":\"FECHA\",\"type\":\"date\",\"required\":true},{\"id\":\"lote-proceso\",\"name\":\"lote_proceso\",\"label\":\"LOTE DE PROCESO\",\"type\":\"text\",\"required\":true}]",
+    "bodyElements": "[{\"id\":\"tabla-fileteo\",\"type\":\"table\",\"title\":\"Registro de Producción de Fileteo\",\"columns\":[{\"id\":\"col-hora\",\"name\":\"HORA\",\"label\":\"HORA\",\"type\":\"time\",\"required\":false},{\"id\":\"col-tina\",\"name\":\"TINA\",\"label\":\"TINA *\",\"type\":\"text\",\"required\":false},{\"id\":\"col-codigos-mp\",\"name\":\"CODIGOS_MAT_PRIMA\",\"label\":\"CÓDIGOS DE MAT. PRIMA\",\"type\":\"text\",\"required\":false},{\"id\":\"col-especie\",\"name\":\"ESPECIE_PRESENTACION\",\"label\":\"ESPECIE / PRESENTACIÓN\",\"type\":\"text\",\"required\":false},{\"id\":\"col-peso-bruto\",\"name\":\"PESO_BRUTO\",\"label\":\"PESO BRUTO\",\"type\":\"number\",\"required\":false},{\"id\":\"col-peso-neto\",\"name\":\"PESO_NETO_LBS\",\"label\":\"PESO NETO LBS.\",\"type\":\"number\",\"required\":false}]},{\"id\":\"tabla-material-empaque\",\"type\":\"table\",\"title\":\"Material de Empaque / Insumo en Proceso\",\"columns\":[{\"id\":\"col-insumo\",\"name\":\"INSUMO\",\"label\":\"Insumo\",\"type\":\"text\",\"required\":false},{\"id\":\"col-cantidad\",\"name\":\"CANTIDAD\",\"label\":\"Cantidad\",\"type\":\"number\",\"required\":false}]},{\"id\":\"seccion-personal\",\"type\":\"section\",\"title\":\"Personal\",\"fields\":[{\"id\":\"field-fileteadores\",\"name\":\"FILETEADORES\",\"label\":\"FILETEADORES\",\"type\":\"number\",\"required\":false},{\"id\":\"field-personal-planta\",\"name\":\"PERSONAL_PLANTA\",\"label\":\"PERSONAL PLANTA\",\"type\":\"number\",\"required\":false}]}]",
+    "firmas": "[{\"id\":\"firma-asistente\",\"puesto\":\"ASISTENTE DE PRODUCCIÓN\"},{\"id\":\"firma-jefe-calidad\",\"puesto\":\"JEFE DE ASEG. DE CALIDAD\"}]"
+  }
+}

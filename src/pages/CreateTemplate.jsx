@@ -13,6 +13,7 @@ function CreateTemplate() {
     codigo: "",
     nombre: "",
     version: "1",
+    fechaVersion: null, // ✅ NUEVO: Fecha efectiva de la versión
     objetivo: "",
     proceso: "",
     cuandoSeUsa: "",
@@ -41,8 +42,8 @@ function CreateTemplate() {
     setTemplate((prev) => ({ ...prev, [field]: value }));
   };
 
-  // --- MODIFICADO: Añadir 'apiMap' por defecto ---
-  const addHeaderField = () => setTemplate((prev) => ({ ...prev, headerFields: [...prev.headerFields, { label: "", type: "text", required: false, options: [], apiMap: "" }] }));
+  // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' por defecto ---
+  const addHeaderField = () => setTemplate((prev) => ({ ...prev, headerFields: [...prev.headerFields, { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" }] }));
   const updateHeaderField = (index, field, value) => setTemplate((prev) => ({ ...prev, headerFields: prev.headerFields.map((item, i) => (i === index ? { ...item, [field]: value } : item)) }));
   const removeHeaderField = (index) => setTemplate((prev) => ({ ...prev, headerFields: prev.headerFields.filter((_, i) => i !== index) }));
 
@@ -66,9 +67,9 @@ function CreateTemplate() {
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: [...el.fields, newField] } : el)) }));
   };
 
-  // --- MODIFICADO: Añadir 'apiMap' por defecto ---
+  // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' por defecto ---
   const addColumnToTable = (elementIndex) => {
-    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "" };
+    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: [...el.columns, newColumn] } : el)) }));
   };
   
@@ -137,6 +138,18 @@ function CreateTemplate() {
         <div className="form-grid">
           <div className="form-group"><label>Código *</label><input type="text" value={template.codigo} onChange={(e) => handleInputChange("codigo", e.target.value)} placeholder="Ej: FOR-CA-1"/></div>
           <div className="form-group"><label>Versión</label><input type="text" value={template.version} onChange={(e) => handleInputChange("version", e.target.value)} placeholder="Ej: 1, 2, 1.1"/></div>
+          <div className="form-group">
+            <label>📅 Fecha de Versión</label>
+            <input 
+              type="date" 
+              value={template.fechaVersion ? template.fechaVersion.split('T')[0] : ''} 
+              onChange={(e) => handleInputChange("fechaVersion", e.target.value ? new Date(e.target.value).toISOString() : null)} 
+              placeholder="Fecha efectiva de esta versión"
+            />
+            <small style={{display: 'block', marginTop: '4px', color: '#6b7280', fontSize: '0.75rem'}}>
+              Fecha a partir de la cual esta versión es efectiva
+            </small>
+          </div>
           <div className="form-group full-width"><label>Nombre del Registro *</label><input type="text" value={template.nombre} onChange={(e) => handleInputChange("nombre", e.target.value)} placeholder="Ej: CONTROL DE TEMPERATURA DE TÚNELES"/></div>
           <div className="form-group full-width"><label>Objetivo</label><textarea value={template.objetivo} onChange={(e) => handleInputChange("objetivo", e.target.value)} placeholder="Describe el objetivo del formulario" rows="3"/></div>
           <div className="form-group"><label>Proceso</label><input type="text" value={template.proceso} onChange={(e) => handleInputChange("proceso", e.target.value)} placeholder="Ej: Producción, Calidad, Recepción"/></div>
@@ -156,10 +169,36 @@ function CreateTemplate() {
               <div className="form-group"><label>Etiqueta</label><input type="text" value={field.label} onChange={(e) => updateHeaderField(index, "label", e.target.value)} placeholder="Ej: Fecha, Lote, Turno"/></div>
               <div className="form-group"><label>Tipo</label><select value={field.type} onChange={(e) => updateHeaderField(index, "type", e.target.value)}>{fieldTypes.map((type) => (<option key={type.value} value={type.value}>{type.label}</option>))}</select></div>
               
+              {/* --- DROPDOWN 1: API LOTES (DATOS DE MOVIMIENTOS) --- */}
               <div className="form-group">
-                <label>Campo API (Autocompletar)</label>
-                <select value={field.apiMap || ""} onChange={(e) => updateHeaderField(index, "apiMap", e.target.value)}>
-                  {MAPPABLE_API_FIELDS.header.map(apiField => (
+                <label>🔄 API Lotes (Autocompletar desde Movimientos)</label>
+                <select value={field.apiMap || ""} onChange={(e) => {
+                  updateHeaderField(index, "apiMap", e.target.value);
+                  if (e.target.value) updateHeaderField(index, "apiEndpoint", ""); // Limpiar apiEndpoint
+                }}>
+                  {/* 🎯 CABECERAS */}
+                  <optgroup label="📋 Datos de Cabecera (Lote Principal)">
+                    {MAPPABLE_API_FIELDS.header.map(apiField => (
+                      <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                    ))}
+                  </optgroup>
+                  {/* 🎯 DETALLES */}
+                  <optgroup label="📦 Datos de Detalles (Items del Lote)">
+                    {MAPPABLE_API_FIELDS.details.map(apiField => (
+                      <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* 🆕 DROPDOWN 2: API CATÁLOGOS (DATOS DE API EXTERNA) --- */}
+              <div className="form-group">
+                <label>📚 API Catálogos (Opciones desde API Externa)</label>
+                <select value={field.apiEndpoint || ""} onChange={(e) => {
+                  updateHeaderField(index, "apiEndpoint", e.target.value);
+                  if (e.target.value) updateHeaderField(index, "apiMap", ""); // Limpiar apiMap
+                }}>
+                  {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
                     <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
                   ))}
                 </select>
@@ -224,10 +263,27 @@ function CreateTemplate() {
                       <div className="form-group"><label>Nombre de Columna</label><input type="text" value={column.label} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "label", e.target.value)} placeholder="Ej: Hora, Temperatura"/></div>
                       <div className="form-group"><label>Tipo</label><select value={column.type} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "type", e.target.value)}>{fieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
                       
+                      {/* --- DROPDOWN 1: API LOTES (DATOS DE DETALLES DE MOVIMIENTOS) --- */}
                       <div className="form-group">
-                        <label>Campo API (Lista Selección)</label>
-                        <select value={column.apiMap || ""} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "apiMap", e.target.value)}>
+                        <label>🔄 API Lotes (Lista desde Movimientos)</label>
+                        <select value={column.apiMap || ""} onChange={(e) => {
+                          updateColumnInTable(elementIndex, colIndex, "apiMap", e.target.value);
+                          if (e.target.value) updateColumnInTable(elementIndex, colIndex, "apiEndpoint", "");
+                        }}>
                           {MAPPABLE_API_FIELDS.details.map(apiField => (
+                            <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 🆕 DROPDOWN 2: API CATÁLOGOS (DATOS DE API EXTERNA) --- */}
+                      <div className="form-group">
+                        <label>📚 API Catálogos (Opciones desde API Externa)</label>
+                        <select value={column.apiEndpoint || ""} onChange={(e) => {
+                          updateColumnInTable(elementIndex, colIndex, "apiEndpoint", e.target.value);
+                          if (e.target.value) updateColumnInTable(elementIndex, colIndex, "apiMap", "");
+                        }}>
+                          {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
                             <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
                           ))}
                         </select>

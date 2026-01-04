@@ -60,6 +60,8 @@
     -webkit-overflow-scrolling: touch; /* Scroll suave en iOS */
     border-radius: 10px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
+    margin: 1.25rem 0;
     /* ✅ PREVENIR SCROLL AUTOMÁTICO DE LA PÁGINA */
     scroll-behavior: smooth;
     overflow-anchor: none;
@@ -69,7 +71,7 @@
   /* Celdas más espaciadas */
   .data-table th,
   .data-table td {
-    padding: 14px 12px !important;
+    padding: 16px 14px !important;
     min-width: 140px; /* Ancho mínimo para legibilidad */
   }
 

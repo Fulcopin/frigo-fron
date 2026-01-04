@@ -103,7 +103,10 @@ function processFormData(data) {
       formID: data.FormID || data.formID,
       templateID: data.TemplateID || data.templateID,
       createdAt: data.CreatedAt || data.createdAt,
-      updatedAt: data.UpdatedAt || data.updatedAt
+      updatedAt: data.UpdatedAt || data.updatedAt,
+      // 🎯 NUEVOS CAMPOS PARA VERSIONAMIENTO POR FECHA
+      versionUsada: data.VersionUsada || data.versionUsada || null,
+      versionCorrecta: data.VersionCorrecta !== undefined ? data.VersionCorrecta : (data.versionCorrecta !== undefined ? data.versionCorrecta : null)
     },
     versionInfo: {
       templateVersion: data.TemplateVersion || data.templateVersion || null,

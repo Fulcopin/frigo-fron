@@ -5,8 +5,13 @@ import { formatSnapshotDate, getVersionMessage } from '../utils/filledFormsUtils
 /**
  * Componente para mostrar indicador de versión de plantilla
  * Muestra si un formulario usa una versión histórica o la actual
+ * 🔧 NOTA: Desactivado por solicitud del usuario para interfaz más limpia
  */
 const VersionIndicator = ({ versionInfo, templateInfo }) => {
+  // 🔧 Retornar null para ocultar completamente el indicador
+  return null;
+  
+  /* CÓDIGO ORIGINAL COMENTADO - Para referencia futura
   if (!versionInfo) return null;
 
   const { templateVersion, isHistorical, createdAt } = versionInfo;
@@ -49,12 +54,18 @@ const VersionIndicator = ({ versionInfo, templateInfo }) => {
       )}
     </div>
   );
+  */
 };
 
 /**
  * Componente compacto para mostrar solo la versión (sin mensaje largo)
+ * 🔧 NOTA: Desactivado por solicitud del usuario para interfaz más limpia
  */
 export const CompactVersionBadge = ({ versionInfo }) => {
+  // 🔧 Retornar null para ocultar completamente
+  return null;
+  
+  /* CÓDIGO ORIGINAL COMENTADO
   if (!versionInfo || !versionInfo.templateVersion) return null;
 
   const { templateVersion, isHistorical } = versionInfo;
@@ -64,12 +75,18 @@ export const CompactVersionBadge = ({ versionInfo }) => {
       {isHistorical ? '📜' : '✅'} v{templateVersion}
     </span>
   );
+  */
 };
 
 /**
  * Componente inline para mostrar versión en headers
+ * 🔧 NOTA: Desactivado por solicitud del usuario para interfaz más limpia
  */
 export const InlineVersionBadge = ({ versionInfo }) => {
+  // 🔧 Retornar null para ocultar completamente
+  return null;
+  
+  /* CÓDIGO ORIGINAL COMENTADO
   if (!versionInfo || !versionInfo.templateVersion) return null;
 
   const { templateVersion, isHistorical } = versionInfo;
@@ -89,6 +106,7 @@ export const InlineVersionBadge = ({ versionInfo }) => {
       )}
     </span>
   );
+  */
 };
 
 export default VersionIndicator;

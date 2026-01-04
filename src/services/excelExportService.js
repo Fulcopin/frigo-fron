@@ -157,13 +157,40 @@ const createFrigolabHeader = async (worksheet, templateData, logoBase64) => {
   formTitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
   worksheet.getRow(7).height = 25;
   
-  // Metadatos (G1:H6)
+  // Metadatos (G1:H6) - PRIORIZAR VALORES DE HEADERDATA (EDITABLES)
   const metadataLabels = ['CÓDIGO:', 'VERSIÓN:', 'FECHA:'];
-  const metadataValues = [
-    templateData.codigo || 'N/A',
-    String(templateData.version || '1'),
-    templateData.headerData?.fecha || new Date().toLocaleDateString('es-EC')
-  ];
+  
+  // ✅ CÓDIGO: Usar headerData.codigo (editable) o código del template
+  const codigoFinal = templateData.headerData?.codigo || templateData.headerData?.Código || templateData.codigo || 'N/A';
+  
+  // ✅ VERSIÓN: Usar headerData.version (editable) o versión del template
+  const versionFinal = templateData.headerData?.version || templateData.headerData?.Versión || String(templateData.version || '1.0');
+  
+  // ✅ FECHA: Usar headerData.fecha (editable) o fecha de creación del formulario
+  let fechaFinal = templateData.headerData?.fecha || templateData.headerData?.Fecha;
+  
+  // Si no hay fecha editada, usar la fecha de creación del formulario
+  if (!fechaFinal && templateData.createdAt) {
+    const createdDate = new Date(templateData.createdAt);
+    fechaFinal = createdDate.toLocaleDateString('es-EC', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  }
+  
+  // Si aún no hay fecha, usar la fecha actual
+  if (!fechaFinal) {
+    fechaFinal = new Date().toLocaleDateString('es-EC');
+  }
+  
+  // Si la fecha viene en formato ISO (YYYY-MM-DD), convertir a DD/MM/YYYY
+  if (fechaFinal && fechaFinal.includes('-') && fechaFinal.length === 10) {
+    const [year, month, day] = fechaFinal.split('-');
+    fechaFinal = `${day}/${month}/${year}`;
+  }
+  
+  const metadataValues = [codigoFinal, versionFinal, fechaFinal];
   
   for (let i = 0; i < metadataLabels.length; i++) {
     const labelCell = worksheet.getCell(i + 1, 7); // Columna G
@@ -508,7 +535,8 @@ export const exportFormToExcel = async (form, template) => {
       codigo: template?.codigo || form.templateCodigo || 'N/A',
       nombre: template?.nombre || form.templateNombre || 'Formulario',
       version: template?.version || form.version || 1,
-      headerData: form.headerData || {}
+      headerData: form.headerData || {},
+      createdAt: form.createdAt || new Date().toISOString() // ✅ Fecha de creación del formulario
     };
     
     console.log('📋 Excel - Template Data:', templateData);
@@ -615,7 +643,8 @@ export const exportMultipleFormsToExcel = async (forms, templates) => {
         codigo: template?.codigo || form.templateCodigo,
         nombre: template?.nombre || 'Formulario',
         version: template?.version || 1,
-        headerData: form.headerData || {}
+        headerData: form.headerData || {},
+        createdAt: form.createdAt || new Date().toISOString() // ✅ Fecha de creación del formulario
       };
       
       const bodyElements = template?.bodyElements || [];

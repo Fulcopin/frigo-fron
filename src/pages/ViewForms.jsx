@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import FormHeader from "../components/FormHeader"
 import VersionIndicator from "../components/VersionIndicator"
 import { loadFormWithVersionInfo } from "../utils/filledFormsUtils"
@@ -16,6 +16,10 @@ const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
 
 function ViewForms() {
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // 🎯 NUEVO: Obtener formId pre-seleccionado desde el state de navegación
+  const preSelectedFormId = location.state?.viewFormId;
   
   const [forms, setForms] = useState([])
   const [templates, setTemplates] = useState([])
@@ -71,6 +75,24 @@ function ViewForms() {
     };
     loadInitialData();
   }, []);
+
+  // 🎯 NUEVO: Auto-abrir formulario si viene desde Home
+  useEffect(() => {
+    const openPreSelectedForm = async () => {
+      if (preSelectedFormId && forms.length > 0 && !selectedForm) {
+        console.log('🎯 Auto-abriendo formulario desde Home:', preSelectedFormId);
+        const formToView = forms.find(f => f.formID === preSelectedFormId);
+        if (formToView) {
+          await viewFormWithVersion(formToView);
+          // Limpiar el state para que no se auto-abra de nuevo
+          globalThis.history.replaceState({}, document.title);
+        }
+      }
+    };
+    
+    openPreSelectedForm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preSelectedFormId, forms.length]); // Solo depende de preSelectedFormId y cantidad de forms
 
   const deleteForm = async (formId) => {
     if (window.confirm("¿Estás seguro de eliminar este formulario?")) {
@@ -138,7 +160,12 @@ function ViewForms() {
       
       const formData = await response.json();
       console.log('📦 Datos completos recibidos:', formData);
-      console.log('📊 formData.data.body:', JSON.stringify(formData.data.body, null, 2));
+      console.log('� DEBUG createdAt:', {
+        'formData.createdAt': formData.createdAt,
+        'formData.CreatedAt': formData.CreatedAt,
+        'type': typeof formData.createdAt
+      });
+      console.log('�📊 formData.data.body:', JSON.stringify(formData.data.body, null, 2));
       console.log('📋 formData.template.structure.bodyElements:', JSON.stringify(formData.template.structure.bodyElements, null, 2));
       
       // Transformar estructura del endpoint al formato esperado por el servicio PDF
@@ -293,11 +320,58 @@ function ViewForms() {
             />
           )}
           
-          {Object.keys(selectedForm.headerData).length > 0 && (
+          {/* Campos del Header usando el template */}
+          {correspondingTemplate && correspondingTemplate.headerFields && correspondingTemplate.headerFields.length > 0 ? (
             <div className="data-section">
               <h3>Información General</h3>
               <div className="data-grid">
-                {Object.entries(selectedForm.headerData).map(([key, value]) => (<div key={key} className="data-item"><span className="data-label">{key}:</span><span className="data-value">{value || "-"}</span></div>))}
+                {correspondingTemplate.headerFields.map((field, index) => {
+                  // Buscar el valor usando múltiples estrategias
+                  let value = selectedForm.headerData[field.label] 
+                           || selectedForm.headerData[field.name] 
+                           || selectedForm.headerData[field.id];
+                  
+                  // Si no encontró el valor, buscar por label normalizado (sin acentos)
+                  if (!value) {
+                    const normalizeString = (str) => str?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+                    const normalizedFieldLabel = normalizeString(field.label);
+                    
+                    const matchingKey = Object.keys(selectedForm.headerData).find(key => 
+                      normalizeString(key) === normalizedFieldLabel
+                    );
+                    
+                    if (matchingKey) {
+                      value = selectedForm.headerData[matchingKey];
+                    }
+                  }
+                  
+                  return (
+                    <div key={index} className="data-item">
+                      <span className="data-label">{field.label || field.name || field.id}:</span>
+                      <span className="data-value">{value || "-"}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="data-section">
+              <h3>⚠️ No hay campos de header definidos en el template</h3>
+              <div className="data-grid">
+                <div className="data-item">
+                  <span className="data-label">Template ID:</span>
+                  <span className="data-value">{selectedForm.templateID}</span>
+                </div>
+                <div className="data-item">
+                  <span className="data-label">Template tiene headerFields:</span>
+                  <span className="data-value">{correspondingTemplate?.headerFields ? 'Sí' : 'No'}</span>
+                </div>
+                {correspondingTemplate?.headerFields && (
+                  <div className="data-item">
+                    <span className="data-label">Cantidad de campos:</span>
+                    <span className="data-value">{correspondingTemplate.headerFields.length}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -350,9 +424,20 @@ function ViewForms() {
                       <thead>
                         <tr>
                           <th>#</th>
-                          {templateElement.columns.map((col, colIndex) => (
-                            <th key={`header-${colIndex}`}>{col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}</th>
-                          ))}
+                          {templateElement.columns.map((col, colIndex) => {
+                            // 🐛 DEBUG: Log para ver qué columnas se renderizan
+                            if (colIndex < 3) {
+                              console.log(`🔍 Renderizando header columna ${colIndex}:`, {
+                                id: col.id,
+                                label: col.label,
+                                header: col.header,
+                                name: col.name
+                              });
+                            }
+                            return (
+                              <th key={`header-${colIndex}`}>{col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}</th>
+                            );
+                          })}
                         </tr>
                       </thead>
                       <tbody>
@@ -366,15 +451,84 @@ function ViewForms() {
                               {templateElement.columns.map((col, colIndex) => {
                                 // Determinar el nombre de la celda
                                 let cellName;
+                                const rowKeys = Object.keys(row);
+                                const colId = (col.id || col.name || '').toUpperCase();
+                                const colLabel = (col.label || col.header || '').toUpperCase();
+                                const isPesoColumn = colId.includes('PESO') || colLabel.includes('PESO');
+                                
+                                // Obtener cellName del template
+                                let cellNameFromTemplate = null;
                                 if (templateRow && templateRow.cells && templateRow.cells[colIndex]) {
-                                  // Usar el 'name' de la celda pre-definida
-                                  cellName = templateRow.cells[colIndex].name;
+                                  cellNameFromTemplate = templateRow.cells[colIndex].name;
+                                  
+                                  // 🐛 VALIDACIÓN: Si es columna PESO, verificar que el cellName no sea de TOTAL
+                                  if (isPesoColumn) {
+                                    const cellNameUpper = (cellNameFromTemplate || '').toUpperCase();
+                                    if (cellNameUpper.includes('TOTAL')) {
+                                      // Template corrupto: columna PESO tiene cellName de TOTAL
+                                      cellNameFromTemplate = null;
+                                    }
+                                  }
+                                }
+                                
+                                // Validar que el cellName existe en el row
+                                if (cellNameFromTemplate && rowKeys.includes(cellNameFromTemplate)) {
+                                  cellName = cellNameFromTemplate;
                                 } else {
-                                  // Usar el nombre de la columna
-                                  cellName = col.label || col.header || col.name || col.id;
+                                  // Buscar la clave correcta en el row
+                                  if (isPesoColumn) {
+                                    // Para PESO, buscar PESO{num}_T1, PESO6_T2, etc en el row
+                                    const pesoMatch = (col.id || col.label || '').match(/\d+/);
+                                    const pesoNum = pesoMatch ? pesoMatch[0] : '';
+                                    
+                                    const pesoKey = rowKeys.find(key => {
+                                      const keyUpper = key.toUpperCase();
+                                      return keyUpper.includes(`PESO${pesoNum}`) && !keyUpper.includes('TOTAL');
+                                    });
+                                    
+                                    if (pesoKey) {
+                                      cellName = pesoKey;
+                                    } else {
+                                      // Generar cellName correcto con sufijo
+                                      const firstKey = rowKeys[0] || '';
+                                      const suffixMatch = firstKey.match(/_T(\d+)$/);
+                                      const suffix = suffixMatch ? suffixMatch[0] : '';
+                                      cellName = `PESO${pesoNum}${suffix}`;
+                                    }
+                                  } else if (colId.includes('TOTAL') || colLabel.includes('TOTAL')) {
+                                    // Para TOTAL, buscar clave con TOTAL
+                                    const totalKey = rowKeys.find(key => key.toUpperCase().includes('TOTAL'));
+                                    cellName = totalKey || col.id || col.name || col.label;
+                                  } else {
+                                    // Otras columnas: HORA, TINA, etc
+                                    // Intentar buscar por id base (col-hora → HORA_T1)
+                                    const baseId = (col.id || '').replace('col-', '').toUpperCase();
+                                    const baseLabel = (col.label || col.header || '').replace(/[⏰🔵⚖️📊\s]/g, '').toUpperCase();
+                                    
+                                    // Buscar clave que contenga el nombre base
+                                    let matchingKey = null;
+                                    if (baseId) {
+                                      matchingKey = rowKeys.find(key => key.toUpperCase().startsWith(baseId + '_'));
+                                    }
+                                    if (!matchingKey && baseLabel) {
+                                      matchingKey = rowKeys.find(key => key.toUpperCase().startsWith(baseLabel + '_'));
+                                    }
+                                    
+                                    if (matchingKey) {
+                                      cellName = matchingKey;
+                                    } else {
+                                      // Fallback: generar cellName con sufijo
+                                      const firstKey = rowKeys[0] || '';
+                                      const suffixMatch = firstKey.match(/_T(\d+)$/);
+                                      const suffix = suffixMatch ? suffixMatch[0] : '';
+                                      const nameToUse = baseId || baseLabel || col.id || col.name;
+                                      cellName = nameToUse ? `${nameToUse}${suffix}` : (col.label || col.header || col.name || col.id);
+                                    }
+                                  }
                                 }
                                 
                                 const cellValue = row[cellName];
+                                
                                 return (
                                   <td key={`cell-${rowIndex}-${colIndex}`}>
                                     {cellValue !== undefined && cellValue !== null && cellValue !== "" ? cellValue : "-"}

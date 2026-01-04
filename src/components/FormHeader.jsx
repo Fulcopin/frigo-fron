@@ -1,36 +1,31 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import "./FormHeader.css"
 import logoUrl from "../assets/logo.png"; 
 
 export default function FormHeader({ title, code, version, date }) {
   const [isCollapsed, setIsCollapsed] = useState(true); // Empezar colapsado para ahorrar espacio
-  const [lastScrollY, setLastScrollY] = useState(0);
 
-  // Auto-ocultar/mostrar al hacer scroll (desactivado - solo control manual)
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      
-      // Mantener colapsado si el usuario lo colapsó manualmente
-      // Solo auto-expandir si está al inicio de la página
-      if (currentScrollY < 10 && isCollapsed) {
-        // No hacer nada, dejar que el usuario controle manualmente
-      }
-      
-      setLastScrollY(currentScrollY);
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [lastScrollY, isCollapsed]);
+  // ⚡ CONTROL MANUAL - Sin scroll automático
+  const handleToggle = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsCollapsed(!isCollapsed);
+    
+    // ⚡ PREVENIR CUALQUIER SCROLL AUTOMÁTICO
+    window.scrollTo({ top: window.scrollY, behavior: 'auto' });
+  };
 
   return (
-    <div className={`form-header ${isCollapsed ? 'collapsed' : 'expanded'}`}>
+    <div 
+      className={`form-header ${isCollapsed ? 'collapsed' : 'expanded'}`}
+      style={{ scrollMargin: 0, scrollPadding: 0 }}
+    >
       {/* Botón grande y visible para toggle */}
       <button 
         className="header-toggle-btn-main" 
-        onClick={() => setIsCollapsed(!isCollapsed)}
+        onClick={handleToggle}
         title={isCollapsed ? 'Mostrar información de Frigolab' : 'Ocultar información de Frigolab'}
+        type="button"
       >
         <span className="toggle-icon">{isCollapsed ? '▼' : '▲'}</span>
         <span className="toggle-text">{isCollapsed ? 'Mostrar Encabezado' : 'Ocultar Encabezado'}</span>

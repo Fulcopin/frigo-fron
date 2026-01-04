@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 Verificar Caché del Navegador</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .card {
+            background: white;
+            color: #333;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+        }
+        h1 {
+            text-align: center;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            opacity: 0.9;
+            margin-bottom: 30px;
+        }
+        .option {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .option h2 {
+            color: #667eea;
+            margin-top: 0;
+            font-size: 1.5em;
+        }
+        .step {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .step strong {
+            color: #667eea;
+            font-size: 1.2em;
+        }
+        .expected {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .expected h3 {
+            color: #28a745;
+            margin-top: 0;
+        }
+        .dropdown-preview {
+            background: white;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: Arial, sans-serif;
+        }
+        .btn {
+            background: #667eea;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            cursor: pointer;
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            text-align: center;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .warning {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            color: #856404;
+            margin: 20px 0;
+        }
+        code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #e83e8c;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Verificación de Caché</h1>
+    <p class="subtitle">Tu código está correcto, solo necesitas actualizar el caché del navegador</p>
+
+    <div class="card">
+        <h2>❌ Lo que ves ahora (CACHÉ VIEJO):</h2>
+        <div class="dropdown-preview">
+            <strong>Campo API (Autocompletar)</strong>
+            <select style="width: 100%; padding: 8px; margin-top: 5px;">
+                <option>▼ No aplica</option>
+                <option>ID Lote Principal (cabId)</option>
+                <option>Proveedor</option>
+                <option>Embarcación (Pesquero)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="card expected">
+        <h3>✅ Lo que DEBERÍAS ver (VERSIÓN NUEVA):</h3>
+        <div class="dropdown-preview">
+            <strong>🔄 API Lotes (Autocompletar desde Movimientos)</strong>
+            <select style="width: 100%; padding: 8px; margin-top: 5px;">
+                <option>▼ No aplica</option>
+                <option>ID Lote Principal (cabId)</option>
+                <option>Proveedor</option>
+            </select>
+        </div>
+        <div class="dropdown-preview" style="margin-top: 15px;">
+            <strong>📚 API Catálogos (Opciones desde API Externa)</strong>
+            <select style="width: 100%; padding: 8px; margin-top: 5px;">
+                <option>▼ No aplica</option>
+                <option>🔧 Balanzas (Catálogo)</option>
+                <option>👤 Choferes (Catálogo)</option>
+                <option>🐟 Especies (Catálogo)</option>
+                <option>🚢 Pesqueros (Catálogo)</option>
+                <option>📦 Productos (Catálogo)</option>
+                <option>🏢 Proveedores (Catálogo)</option>
+                <option>⚙️ Configuraciones (Catálogo)</option>
+                <option>❄️ Configuraciones FRIGO (Catálogo)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="option">
+            <h2>⚡ OPCIÓN 1: Hard Refresh (30 segundos)</h2>
+            <div class="step">
+                <strong>Paso 1:</strong> Ve a <code>http://localhost:5173/</code>
+            </div>
+            <div class="step">
+                <strong>Paso 2:</strong> Presiona <code>Ctrl + Shift + R</code> (Windows) o <code>Ctrl + F5</code>
+            </div>
+            <div class="step">
+                <strong>Paso 3:</strong> Ve a "Crear Plantilla" o "Editar Plantilla"
+            </div>
+            <div class="step">
+                <strong>Paso 4:</strong> Agrega un campo y verifica que hay 2 dropdowns
+            </div>
+            <a href="http://localhost:5173/" target="_blank" class="btn">🚀 Abrir Aplicación (Luego presiona Ctrl+Shift+R)</a>
+        </div>
+
+        <div class="option">
+            <h2>🔒 OPCIÓN 2: Ventana Incógnito (100% Garantizado)</h2>
+            <div class="step">
+                <strong>Paso 1:</strong> Presiona <code>Ctrl + Shift + N</code> (Chrome/Edge) o <code>Ctrl + Shift + P</code> (Firefox)
+            </div>
+            <div class="step">
+                <strong>Paso 2:</strong> En la ventana incógnito, ve a <code>http://localhost:5173/</code>
+            </div>
+            <div class="step">
+                <strong>Paso 3:</strong> Navega a "Crear Plantilla"
+            </div>
+            <div class="step">
+                <strong>Paso 4:</strong> Agrega un campo → Deberías ver 2 dropdowns
+            </div>
+        </div>
+
+        <div class="option">
+            <h2>🧹 OPCIÓN 3: Limpiar Todo el Caché (Opción Nuclear)</h2>
+            <div class="step">
+                <strong>Paso 1:</strong> Ve a <code>http://localhost:5173/</code>
+            </div>
+            <div class="step">
+                <strong>Paso 2:</strong> Presiona <code>F12</code> para abrir DevTools
+            </div>
+            <div class="step">
+                <strong>Paso 3:</strong> Haz clic derecho en el botón de <strong>Recargar</strong> (🔄)
+            </div>
+            <div class="step">
+                <strong>Paso 4:</strong> Selecciona <strong>"Vaciar caché y recargar fuerte"</strong> (Empty Cache and Hard Reload)
+            </div>
+        </div>
+    </div>
+
+    <div class="card warning">
+        <h3>⚠️ ¿Por qué pasa esto?</h3>
+        <p><strong>Tu código está correcto.</strong> Los archivos modificados son:</p>
+        <ul>
+            <li>✅ <code>src/api/apiMappings.js</code> - Array "catalogs" agregado</li>
+            <li>✅ <code>src/pages/EditTemplate.jsx</code> - 2 dropdowns implementados</li>
+            <li>✅ <code>src/pages/FillForm.jsx</code> - Lógica de catálogos lista</li>
+        </ul>
+        <p><strong>El servidor Vite está corriendo con los cambios.</strong></p>
+        <p>El navegador guarda los archivos JavaScript en memoria (caché) para cargar más rápido. Cuando haces cambios, el navegador NO se da cuenta automáticamente y sigue usando el archivo viejo.</p>
+        <p><strong>Solución:</strong> Forzar al navegador a descargar la versión nueva (con cualquiera de las opciones de arriba).</p>
+    </div>
+
+    <div class="card" style="background: #28a745; color: white;">
+        <h2>✅ Confirmación</h2>
+        <p>Después de limpiar el caché, deberías ver:</p>
+        <ul>
+            <li>✅ <strong>2 selectores</strong> en lugar de 1</li>
+            <li>✅ Primer selector: "🔄 API Lotes (Autocompletar desde Movimientos)"</li>
+            <li>✅ Segundo selector: "📚 API Catálogos (Opciones desde API Externa)"</li>
+            <li>✅ El segundo selector tiene 8 opciones con emojis (Balanzas, Choferes, etc.)</li>
+        </ul>
+        <p><strong>Si sigues sin verlo:</strong> Cierra TODAS las pestañas de localhost:5173, cierra el navegador completamente, y ábrelo de nuevo.</p>
+    </div>
+
+    <script>
+        console.log('🔍 Verificador de Caché cargado');
+        console.log('📍 Servidor corriendo en: http://localhost:5173/');
+        console.log('✅ Código correcto, solo falta limpiar caché del navegador');
+    </script>
+</body>
+</html>

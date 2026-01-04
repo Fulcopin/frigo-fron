@@ -13,7 +13,9 @@ function LoteSelectorAPI({
   loginEndpoint = '/api/auth/login', // Endpoint de login
   label = 'Seleccionar Lotes',
 }) {
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]); // Fecha de hoy por defecto
+  // 📅 CAMBIO: Ahora usamos rango de fechas (inicio y fin)
+  const [fechaInicio, setFechaInicio] = useState(new Date().toISOString().split('T')[0]); 
+  const [fechaFin, setFechaFin] = useState(new Date().toISOString().split('T')[0]); 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [movimientos, setMovimientos] = useState([]);
@@ -61,10 +63,16 @@ function LoteSelectorAPI({
     }
   };
 
-  // �🔍 Buscar movimientos por fecha
+  // 🔍 Buscar movimientos por fecha
   const buscarMovimientos = async () => {
-    if (!fecha) {
-      setError('Por favor selecciona una fecha');
+    if (!fechaInicio || !fechaFin) {
+      setError('Por favor selecciona ambas fechas (inicio y fin)');
+      return;
+    }
+
+    // Validar que fecha inicio no sea mayor que fecha fin
+    if (new Date(fechaInicio) > new Date(fechaFin)) {
+      setError('La fecha de inicio no puede ser mayor que la fecha fin');
       return;
     }
 
@@ -80,27 +88,66 @@ function LoteSelectorAPI({
     setMovimientos([]);
 
     try {
-      // Llamada a la API con autenticación
-      const response = await fetch(`${apiEndpoint}?fecha=${fecha}`, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      // 🎯 SOLUCIÓN: Como el backend no soporta rango, hacemos múltiples llamadas
+      const inicio = new Date(fechaInicio);
+      const fin = new Date(fechaFin);
+      const diasDiferencia = Math.ceil((fin - inicio) / (1000 * 60 * 60 * 24)) + 1;
       
-      if (!response.ok) {
-        throw new Error('Error al buscar movimientos');
+      // Validar que no sea un rango muy grande (máximo 60 días)
+      if (diasDiferencia > 60) {
+        setError('⚠️ El rango no puede ser mayor a 60 días. Por favor selecciona un rango más pequeño.');
+        setLoading(false);
+        return;
       }
 
-      const data = await response.json();
+      console.log(`📅 Buscando ${diasDiferencia} días...`);
       
-      console.log('✅ Movimientos recibidos:', data);
+      // Crear array de fechas a buscar
+      const fechasABuscar = [];
+      for (let i = 0; i < diasDiferencia; i++) {
+        const fecha = new Date(inicio);
+        fecha.setDate(inicio.getDate() + i);
+        fechasABuscar.push(fecha.toISOString().split('T')[0]);
+      }
 
-      if (!data || data.length === 0) {
-        setError(`⚠️ No se encontraron movimientos para la fecha ${fecha}`);
+      // Hacer todas las llamadas en paralelo
+      const promesas = fechasABuscar.map(fecha =>
+        fetch(`${apiEndpoint}?fecha=${fecha}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        })
+      );
+
+      const respuestas = await Promise.all(promesas);
+      
+      // Procesar todas las respuestas
+      const datosPromesas = respuestas.map(async (response, index) => {
+        if (response.ok) {
+          const data = await response.json();
+          return data || [];
+        } else {
+          console.warn(`⚠️ No hay datos para ${fechasABuscar[index]}`);
+          return [];
+        }
+      });
+
+      const todosDatos = await Promise.all(datosPromesas);
+      
+      // Combinar todos los resultados y eliminar duplicados
+      const movimientosCombinados = todosDatos.flat();
+      const movimientosUnicos = movimientosCombinados.filter((mov, index, self) => 
+        index === self.findIndex((m) => m.cabId === mov.cabId)
+      );
+      
+      console.log('✅ Movimientos recibidos:', movimientosUnicos.length);
+
+      if (movimientosUnicos.length === 0) {
+        setError(`⚠️ No se encontraron movimientos entre ${fechaInicio} y ${fechaFin}`);
         setMovimientos([]);
       } else {
-        setMovimientos(data);
+        setMovimientos(movimientosUnicos);
       }
     } catch (err) {
       console.error('❌ Error al buscar:', err);
@@ -108,6 +155,37 @@ function LoteSelectorAPI({
     } finally {
       setLoading(false);
     }
+  };
+
+  // 📅 Atajos rápidos de fechas
+  const setRangoHoy = () => {
+    const hoy = new Date().toISOString().split('T')[0];
+    setFechaInicio(hoy);
+    setFechaFin(hoy);
+  };
+
+  const setRangoUltimos7Dias = () => {
+    const hoy = new Date();
+    const hace7Dias = new Date(hoy);
+    hace7Dias.setDate(hoy.getDate() - 7);
+    setFechaInicio(hace7Dias.toISOString().split('T')[0]);
+    setFechaFin(hoy.toISOString().split('T')[0]);
+  };
+
+  const setRangoUltimos30Dias = () => {
+    const hoy = new Date();
+    const hace30Dias = new Date(hoy);
+    hace30Dias.setDate(hoy.getDate() - 30);
+    setFechaInicio(hace30Dias.toISOString().split('T')[0]);
+    setFechaFin(hoy.toISOString().split('T')[0]);
+  };
+
+  const setRangoEstaSemana = () => {
+    const hoy = new Date();
+    const primerDia = new Date(hoy);
+    primerDia.setDate(hoy.getDate() - hoy.getDay()); // Domingo
+    setFechaInicio(primerDia.toISOString().split('T')[0]);
+    setFechaFin(hoy.toISOString().split('T')[0]);
   };
 
   // ✅ Seleccionar/deseleccionar un lote
@@ -235,21 +313,56 @@ function LoteSelectorAPI({
             <div className="modal-body">
               {/* Paso 1: Buscar por fecha */}
               <div className="busqueda-seccion">
-                <h3>Paso 1: Buscar Movimientos</h3>
-                <p className="hint">Elige una fecha para buscar los movimientos de ese día.</p>
+                <h3>Paso 1: Buscar Movimientos por Rango de Fechas</h3>
+                <p className="hint">
+                  📅 Elige un rango de fechas para buscar todos los movimientos de esos días. 
+                  <br/>💡 <strong>Puedes buscar varios días a la vez</strong> para encontrar más lotes.
+                </p>
                 
-                <div className="fecha-input-group">
-                  <label>Fecha del Movimiento:</label>
-                  <input
-                    type="date"
-                    value={fecha}
-                    onChange={(e) => setFecha(e.target.value)}
-                    className="fecha-input"
-                  />
+                {/* Atajos rápidos */}
+                <div className="atajos-fechas">
+                  <span className="atajos-label">Atajos rápidos:</span>
+                  <button type="button" className="btn-atajo" onClick={setRangoHoy}>
+                    📍 Hoy
+                  </button>
+                  <button type="button" className="btn-atajo" onClick={setRangoEstaSemana}>
+                    📆 Esta semana
+                  </button>
+                  <button type="button" className="btn-atajo" onClick={setRangoUltimos7Dias}>
+                    🗓️ Últimos 7 días
+                  </button>
+                  <button type="button" className="btn-atajo" onClick={setRangoUltimos30Dias}>
+                    📊 Últimos 30 días
+                  </button>
+                </div>
+                
+                <div className="fecha-rango-container">
+                  <div className="fecha-input-group">
+                    <label>Desde:</label>
+                    <input
+                      type="date"
+                      value={fechaInicio}
+                      onChange={(e) => setFechaInicio(e.target.value)}
+                      className="fecha-input"
+                    />
+                  </div>
+                  
+                  <div className="fecha-separador">→</div>
+                  
+                  <div className="fecha-input-group">
+                    <label>Hasta:</label>
+                    <input
+                      type="date"
+                      value={fechaFin}
+                      onChange={(e) => setFechaFin(e.target.value)}
+                      className="fecha-input"
+                    />
+                  </div>
+                  
                   <button
                     type="button"
                     onClick={buscarMovimientos}
-                    disabled={loading || !fecha}
+                    disabled={loading || !fechaInicio || !fechaFin}
                     className="btn-buscar"
                   >
                     {loading ? '🔄 Buscando...' : '🔍 Buscar Movimientos'}
@@ -305,7 +418,8 @@ function LoteSelectorAPI({
                                   e.stopPropagation();
                                   toggleLote({
                                     numero: mov.cabId,
-                                    proveedor: mov.cabProveedor
+                                    proveedor: mov.cabProveedor,
+                                    fecha: mov.cabFecha || mov.fecha || ''
                                   });
                                 }}
                               />
@@ -316,14 +430,27 @@ function LoteSelectorAPI({
                             className="movimiento-info"
                             onClick={() => toggleLote({
                               numero: mov.cabId,
-                              proveedor: mov.cabProveedor
+                              proveedor: mov.cabProveedor,
+                              fecha: mov.cabFecha || mov.fecha || ''
                             })}
                           >
-                            <div className="movimiento-lote">
-                              <strong>Lote:</strong> {mov.cabId}
+                            <div className="movimiento-header-info">
+                              <div className="movimiento-lote">
+                                <span className="label">📦 Lote:</span> 
+                                <span className="valor">{mov.cabId}</span>
+                              </div>
+                              {(mov.cabFecha || mov.fecha) && (
+                                <div className="movimiento-fecha">
+                                  <span className="label">📅</span> 
+                                  <span className="valor-fecha">
+                                    {new Date(mov.cabFecha || mov.fecha).toLocaleDateString('es-ES')}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                             <div className="movimiento-proveedor">
-                              <strong>Proveedor:</strong> {mov.cabProveedor}
+                              <span className="label">🏭 Proveedor:</span> 
+                              <span className="valor">{mov.cabProveedor}</span>
                             </div>
                           </div>
                           <button
@@ -333,7 +460,8 @@ function LoteSelectorAPI({
                               e.stopPropagation();
                               toggleLote({
                                 numero: mov.cabId,
-                                proveedor: mov.cabProveedor
+                                proveedor: mov.cabProveedor,
+                                fecha: mov.cabFecha || mov.fecha || ''
                               });
                             }}
                           >

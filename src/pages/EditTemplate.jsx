@@ -18,6 +18,7 @@ function EditTemplate() {
     codigo: "",
     nombre: "",
     version: "1",
+    fechaVersion: null, // ✅ NUEVO: Fecha de versión
     objetivo: "",
     proceso: "",
     cuandoSeUsa: "",
@@ -76,8 +77,8 @@ function EditTemplate() {
     setTemplate((prev) => ({ ...prev, [field]: value }));
   };
 
-  // --- MODIFICADO: Añadir 'apiMap' por defecto ---
-  const addHeaderField = () => setTemplate((prev) => ({ ...prev, headerFields: [...prev.headerFields, { label: "", type: "text", required: false, options: [], apiMap: "" }] }));
+  // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' por defecto ---
+  const addHeaderField = () => setTemplate((prev) => ({ ...prev, headerFields: [...prev.headerFields, { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" }] }));
   const updateHeaderField = (index, field, value) => setTemplate((prev) => ({ ...prev, headerFields: prev.headerFields.map((item, i) => (i === index ? { ...item, [field]: value } : item)) }));
   const removeHeaderField = (index) => setTemplate((prev) => ({ ...prev, headerFields: prev.headerFields.filter((_, i) => i !== index) }));
 
@@ -98,16 +99,83 @@ function EditTemplate() {
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: [...el.fields, newField] } : el)) }));
   };
   
-  // --- MODIFICADO: Añadir 'apiMap' por defecto ---
+  // --- MODIFICADO: Añadir columna ANTES de TOTAL si existe ---
   const addColumnToTable = (elementIndex) => {
-    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "" };
-    setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: [...el.columns, newColumn] } : el)) }));
+    setTemplate(prev => {
+      const element = prev.bodyElements[elementIndex];
+      const currentColumns = element.columns || [];
+      
+      // Buscar el índice de la columna TOTAL
+      const totalIndex = currentColumns.findIndex(col => 
+        (col.label || '').toUpperCase().includes('TOTAL')
+      );
+      
+      // Contar cuántas columnas de PESO ya existen (excluyendo TOTAL)
+      const pesoColumns = currentColumns.filter(col => {
+        const colLabel = (col.label || '').toUpperCase();
+        return colLabel.includes('PESO') && !colLabel.includes('TOTAL');
+      });
+      
+      const newColumnNumber = pesoColumns.length + 1;
+      const newColumnLabel = `PESO ${newColumnNumber}`;
+      
+      // Crear nueva columna
+      const newColumn = { 
+        label: newColumnLabel, 
+        type: "number", 
+        required: false, 
+        options: [], 
+        apiMap: "", 
+        apiEndpoint: "" 
+      };
+      
+      // Insertar la nueva columna ANTES de TOTAL (o al final si no hay TOTAL)
+      let updatedColumns;
+      if (totalIndex !== -1) {
+        // Insertar antes de TOTAL
+        updatedColumns = [
+          ...currentColumns.slice(0, totalIndex),
+          newColumn,
+          ...currentColumns.slice(totalIndex)
+        ];
+      } else {
+        // Si no hay TOTAL, agregar al final
+        updatedColumns = [...currentColumns, newColumn];
+      }
+      
+      return {
+        ...prev,
+        bodyElements: prev.bodyElements.map((el, i) => 
+          i === elementIndex 
+            ? { ...el, columns: updatedColumns } 
+            : el
+        )
+      };
+    });
   };
   
   const updateFieldInSection = (elementIndex, fieldIndex, property, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.map((field, j) => (j === fieldIndex ? { ...field, [property]: value } : field)) } : el)) }));
   const updateColumnInTable = (elementIndex, colIndex, property, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.map((col, j) => (j === colIndex ? { ...col, [property]: value } : col)) } : el)) }));
   const removeFieldFromSection = (elementIndex, fieldIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.filter((_, j) => j !== fieldIndex) } : el)) }));
-  const removeColumnFromTable = (elementIndex, colIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.filter((_, j) => j !== colIndex) } : el)) }));
+  
+  // --- MODIFICADO: Eliminar la última columna PESO antes de TOTAL ---
+  const removeColumnFromTable = (elementIndex, colIndex) => {
+    const element = template.bodyElements[elementIndex];
+    const columnToRemove = element.columns[colIndex];
+    
+    if (!globalThis.confirm(`¿Eliminar la columna "${columnToRemove.label}"?`)) {
+      return;
+    }
+    
+    setTemplate(prev => ({ 
+      ...prev, 
+      bodyElements: prev.bodyElements.map((el, i) => 
+        i === elementIndex 
+          ? { ...el, columns: el.columns.filter((_, j) => j !== colIndex) } 
+          : el
+      ) 
+    }));
+  };
 
   const addFirma = () => setTemplate((prev) => ({ ...prev, firmas: [...prev.firmas, { puesto: "" }] }));
   const updateFirma = (index, field, value) => setTemplate((prev) => ({ ...prev, firmas: prev.firmas.map((item, i) => (i === index ? { ...item, [field]: value } : item)) }));
@@ -168,6 +236,7 @@ function EditTemplate() {
             <div className="form-group"><label>Código del Formulario *</label><input type="text" value={template.codigo} onChange={(e) => handleInputChange("codigo", e.target.value)} placeholder="Ej: FRM-001"/></div>
             <div className="form-group"><label>Nombre del Formulario *</label><input type="text" value={template.nombre} onChange={(e) => handleInputChange("nombre", e.target.value)} placeholder="Ej: Control de Temperatura"/></div>
             <div className="form-group"><label>Versión</label><input type="text" value={template.version} onChange={(e) => handleInputChange("version", e.target.value)} placeholder="1"/></div>
+            <div className="form-group"><label>Fecha de Versión</label><input type="date" value={template.fechaVersion ? template.fechaVersion.split('T')[0] : ''} onChange={(e) => handleInputChange("fechaVersion", e.target.value ? new Date(e.target.value).toISOString() : null)} /></div>
             <div className="form-group full-width"><label>Objetivo</label><textarea value={template.objetivo} onChange={(e) => handleInputChange("objetivo", e.target.value)} placeholder="Describe el propósito de este formulario"/></div>
             <div className="form-group full-width"><label>Proceso</label><textarea value={template.proceso} onChange={(e) => handleInputChange("proceso", e.target.value)} placeholder="Describe el proceso que documenta este formulario"/></div>
             <div className="form-group"><label>¿Cuándo se usa?</label><input type="text" value={template.cuandoSeUsa} onChange={(e) => handleInputChange("cuandoSeUsa", e.target.value)} placeholder="Ej: Diariamente, Semanalmente"/></div>
@@ -194,11 +263,36 @@ function EditTemplate() {
                   </select>
                 </div>
 
-                {/* --- NUEVO CAMPO DE API AÑADIDO --- */}
+                {/* --- CAMPO DE API (DATOS DE LOTES) --- */}
                 <div className="form-group">
-                  <label>Campo API (Autocompletar)</label>
-                  <select value={field.apiMap || ""} onChange={(e) => updateHeaderField(index, "apiMap", e.target.value)}>
-                    {MAPPABLE_API_FIELDS.header.map(apiField => (
+                  <label>🔄 API Lotes (Autocompletar desde Movimientos)</label>
+                  <select value={field.apiMap || ""} onChange={(e) => {
+                    updateHeaderField(index, "apiMap", e.target.value);
+                    if (e.target.value) updateHeaderField(index, "apiEndpoint", ""); // Limpiar apiEndpoint
+                  }}>
+                    {/* 🎯 CABECERAS */}
+                    <optgroup label="📋 Datos de Cabecera (Lote Principal)">
+                      {MAPPABLE_API_FIELDS.header.map(apiField => (
+                        <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                      ))}
+                    </optgroup>
+                    {/* 🎯 DETALLES */}
+                    <optgroup label="📦 Datos de Detalles (Items del Lote)">
+                      {MAPPABLE_API_FIELDS.details.map(apiField => (
+                        <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+
+                {/* 🆕 NUEVO: CAMPO DE API EXTERNA (CATÁLOGOS) --- */}
+                <div className="form-group">
+                  <label>📚 API Catálogos (Opciones desde API Externa)</label>
+                  <select value={field.apiEndpoint || ""} onChange={(e) => {
+                    updateHeaderField(index, "apiEndpoint", e.target.value);
+                    if (e.target.value) updateHeaderField(index, "apiMap", ""); // Limpiar apiMap
+                  }}>
+                    {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
                       <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
                     ))}
                   </select>
@@ -259,11 +353,27 @@ function EditTemplate() {
                           </select>
                         </div>
                         
-                        {/* --- NUEVO CAMPO DE API AÑADIDO --- */}
+                        {/* --- CAMPO DE API (DATOS DE LOTES) --- */}
                         <div className="form-group">
-                          <label>Campo API (Lista Selección)</label>
-                          <select value={column.apiMap || ""} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "apiMap", e.target.value)}>
+                          <label>🔄 API Lotes (Datos desde Movimientos)</label>
+                          <select value={column.apiMap || ""} onChange={(e) => {
+                            updateColumnInTable(elementIndex, colIndex, "apiMap", e.target.value);
+                            if (e.target.value) updateColumnInTable(elementIndex, colIndex, "apiEndpoint", ""); // Limpiar apiEndpoint
+                          }}>
                             {MAPPABLE_API_FIELDS.details.map(apiField => (
+                              <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 🆕 NUEVO: CAMPO DE API EXTERNA (CATÁLOGOS) --- */}
+                        <div className="form-group">
+                          <label>📚 API Catálogos (Opciones desde API Externa)</label>
+                          <select value={column.apiEndpoint || ""} onChange={(e) => {
+                            updateColumnInTable(elementIndex, colIndex, "apiEndpoint", e.target.value);
+                            if (e.target.value) updateColumnInTable(elementIndex, colIndex, "apiMap", ""); // Limpiar apiMap
+                          }}>
+                            {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
                               <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
                             ))}
                           </select>

@@ -1,0 +1,101 @@
+{
+  "templateID": 10,
+  "nombre": "CONTROL DE PRODUCCIÓN PARA FILETEO",
+  "isMasterForm": false,
+  "structureJSON": {
+    "headerData": [
+      {
+        "id": "fecha",
+        "label": "Fecha",
+        "type": "date",
+        "required": true,
+        "editable": false
+      },
+      {
+        "id": "turno",
+        "label": "Turno",
+        "type": "select",
+        "options": ["Matutino", "Vespertino", "Nocturno"]
+      }
+    ],
+    "bodyElements": [
+      {
+        "id": "tabla-produccion",
+        "type": "table",
+        "defaultRows": 10,
+        "columns": [
+          {
+            "id": "hora",
+            "name": "HORA",
+            "label": "HORA",
+            "type": "time"
+          },
+          {
+            "id": "tina",
+            "name": "TINA *",
+            "label": "TINA *",
+            "type": "text",
+            "required": true
+          },
+          {
+            "id": "codigos",
+            "name": "CÓDIGOS DE MAT. PRIMA",
+            "label": "CÓDIGOS DE MAT. PRIMA",
+            "type": "text"
+          },
+          {
+            "id": "especie",
+            "name": "ESPECIE / PRESENTACIÓN",
+            "label": "ESPECIE / PRESENTACIÓN",
+            "type": "text"
+          },
+          {
+            "id": "peso-bruto-col4",
+            "name": "PESO BRUTO",
+            "label": "PESO BRUTO",
+            "type": "number"
+          },
+          {
+            "id": "peso-bruto-col5",
+            "name": "PESO BRUTO 2",
+            "label": "PESO BRUTO",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "id": "tabla-insumos",
+        "type": "table",
+        "defaultRows": 10,
+        "columns": [
+          {
+            "id": "insumo",
+            "name": "Insumo",
+            "label": "Insumo",
+            "type": "text"
+          },
+          {
+            "id": "cantidad",
+            "name": "Cantidad",
+            "label": "Cantidad",
+            "type": "number"
+          }
+        ]
+      }
+    ],
+    "firmasData": [
+      {
+        "puesto": "elaboro",
+        "titulo": "Elaboró"
+      },
+      {
+        "puesto": "reviso",
+        "titulo": "Revisó"
+      },
+      {
+        "puesto": "aprobo",
+        "titulo": "Aprobó"
+      }
+    ]
+  }
+}

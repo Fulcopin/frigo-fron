@@ -14,6 +14,37 @@ body {
   overscroll-behavior: none !important;
 }
 
+/* 🆕 ANIMACIÓN PARA INDICADOR DE CAMBIOS SIN GUARDAR */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
+
+/* 🆕 ESTILOS PARA TABS (PESTAÑAS) */
+.tabs-container {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ⚡ INPUTS EN TABLAS - FOCUS AZUL SUTIL */
 .data-table input,
 .data-table select, 
@@ -39,7 +70,7 @@ body {
 .fill-form {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 1.5rem;
   touch-action: pan-y pinch-zoom;
   scroll-behavior: auto !important;
   overflow-anchor: none !important;
@@ -125,6 +156,8 @@ body {
   font-size: 1.75rem;
   color: var(--primary);
   margin: 0;
+  text-align: center; /* 🎨 CENTRAR EL TÍTULO */
+  min-width: 0; /* 🐛 FIX para flexbox y texto largo */
 }
 
 /* ============================================
@@ -401,6 +434,13 @@ body {
   border-bottom: none;
 }
 
+.table-controls-left,
+.table-controls-right {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .btn-add-row {
   background: var(--success);
   color: white;
@@ -416,11 +456,109 @@ body {
   transform: translateY(-1px);
 }
 
+.btn-add-column {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-add-column:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-remove-column {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-remove-column:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+}
+
+/* 💾 Botón para guardar estructura del formulario */
+.btn-save-structure {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+  margin-left: 0.5rem;
+}
+
+.btn-save-structure:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(17, 153, 142, 0.4);
+}
+
+/* 🎯 COLUMNA TOTAL: Solo lectura con estilo especial */
+.total-readonly {
+  background-color: #e8f5e9 !important;
+  font-weight: bold !important;
+  text-align: right !important;
+  cursor: not-allowed !important;
+  color: #2e7d32 !important;
+  border: 2px solid #4caf50 !important;
+  font-size: 1rem !important;
+  padding: 0.5rem !important;
+  border-radius: 4px !important;
+}
+
+.total-readonly:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3);
+}
+
+/* 🔄 BOTÓN RECALCULAR TOTALES */
+.btn-recalcular {
+  background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+  margin-left: 0.5rem;
+}
+
+.btn-recalcular:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+  background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
+}
+
+.btn-recalcular:active {
+  transform: translateY(0);
+}
+
 /* ⚡ TABLA CON MÁXIMA PREVENCIÓN DE SCROLL AUTOMÁTICO */
 .table-wrapper {
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
+  /* ✨ ESPACIADO PARA NO PEGAR A LOS BORDES */
+  margin: 1rem 0;
+  padding: 0.5rem;
   /* Límite de altura para tablas muy largas */
   max-height: 600px;
   overflow-y: auto;
@@ -436,24 +574,32 @@ body {
   scroll-padding: 0 !important;
 }
 
-/* Scroll suave y moderno */
+/* Scroll suave y moderno - MÁS ANCHO Y VISIBLE */
 .table-wrapper::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
 }
 
 .table-wrapper::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #e2e8f0;
   border-radius: 10px;
+  margin: 4px;
 }
 
 .table-wrapper::-webkit-scrollbar-thumb {
   background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   border-radius: 10px;
+  border: 2px solid #e2e8f0;
+  min-height: 40px;
 }
 
 .table-wrapper::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+  border-color: #cbd5e1;
+}
+
+.table-wrapper::-webkit-scrollbar-corner {
+  background: #e2e8f0;
 }
 
 /* ✅ ENCABEZADO STICKY EN TABLAS */
@@ -473,7 +619,7 @@ body {
 }
 
 .data-table th {
-  padding: 0.875rem;
+  padding: 1rem 1.25rem;
   text-align: left;
   font-weight: 600;
   color: var(--text);
@@ -483,8 +629,9 @@ body {
 }
 
 .data-table td {
-  padding: 0.75rem;
+  padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border);
+  vertical-align: middle;
 }
 
 .data-table tbody tr:hover {
@@ -603,11 +750,13 @@ body {
 
   .table-wrapper {
     font-size: 0.875rem;
+    padding: 0.75rem;
+    margin: 0.75rem 0;
   }
 
   .data-table th,
   .data-table td {
-    padding: 0.5rem;
+    padding: 0.75rem 1rem;
   }
 }
 .filters-container {
@@ -749,6 +898,8 @@ body {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     border-radius: 8px;
+    padding: 0.75rem;
+    margin: 1rem 0;
   }
 
   .data-table input,
@@ -1560,6 +1711,74 @@ body {
   
   .summary-section .total-unit {
     font-size: 1rem;
+  }
+}
+
+/* 🎯 INDICADOR DE VERSIÓN HISTÓRICA */
+.version-indicator {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  margin: 1.5rem 0;
+  border-radius: 8px;
+  border-left: 4px solid;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.version-indicator.warning {
+  background: #fef3c7;
+  border-left-color: #f59e0b;
+  color: #92400e;
+}
+
+.version-indicator.success {
+  background: #d1fae5;
+  border-left-color: #10b981;
+  color: #065f46;
+}
+
+.version-indicator-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.version-indicator-content {
+  flex: 1;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.version-indicator-content strong {
+  font-weight: 600;
+  color: inherit;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .version-indicator {
+    padding: 0.875rem 1rem;
+    gap: 0.75rem;
+  }
+  
+  .version-indicator-icon {
+    font-size: 1.25rem;
+  }
+  
+  .version-indicator-content {
+    font-size: 0.875rem;
   }
 }
 

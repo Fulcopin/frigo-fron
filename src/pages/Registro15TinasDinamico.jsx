@@ -97,10 +97,14 @@ const Registro15TinasDinamico = () => {
       return;
     }
     setNumColumnasPeso(prev => prev + 1);
-    setTinas(prev => prev.map(tina => ({
-      ...tina,
-      pesos: [...tina.pesos, 0]
-    })));
+    setTinas(prev => prev.map(tina => {
+      const nuevosPesos = [...tina.pesos, 0];
+      return {
+        ...tina,
+        pesos: nuevosPesos,
+        total: calcularTotal(nuevosPesos)
+      };
+    }));
   };
 
   // 🆕 ELIMINAR UNA COLUMNA DE PESO
@@ -377,7 +381,7 @@ const Registro15TinasDinamico = () => {
             </tbody>
             <tfoot>
               <tr className="fila-total-general">
-                <td colSpan={numColumnasPeso + 3} className="label-total">
+                <td colSpan={3 + numColumnasPeso} className="label-total">
                   🏆 TOTAL GENERAL:
                 </td>
                 <td className="valor-total-general">

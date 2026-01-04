@@ -77,6 +77,30 @@ function TemplateVersionHistory({ templateId, templateName, onClose }) {
       }
 
       const data = await response.json();
+      console.log('🔍 DEBUG - Comparison result:', data);
+      console.log('🔍 DEBUG - DetailedChanges:', data.detailedChanges);
+      console.log('🔍 DEBUG - HeaderFieldsChanges:', data.detailedChanges?.headerFieldsChanges);
+      console.log('🔍 DEBUG - BodyElementsChanges:', data.detailedChanges?.bodyElementsChanges);
+      
+      // ✅ FIX: Normalizar estructura .NET con $values a arrays JavaScript normales
+      if (data.detailedChanges) {
+        if (data.detailedChanges.headerFieldsChanges?.$values) {
+          data.detailedChanges.headerFieldsChanges = data.detailedChanges.headerFieldsChanges.$values;
+        }
+        if (data.detailedChanges.bodyElementsChanges?.$values) {
+          data.detailedChanges.bodyElementsChanges = data.detailedChanges.bodyElementsChanges.$values;
+        }
+        if (data.detailedChanges.metadataChanges?.$values) {
+          data.detailedChanges.metadataChanges = data.detailedChanges.metadataChanges.$values;
+        }
+      }
+      if (data.changes?.$values) {
+        data.changes = data.changes.$values;
+      }
+      
+      console.log('🔍 DEBUG - After normalization - HeaderFieldsChanges:', data.detailedChanges?.headerFieldsChanges);
+      console.log('🔍 DEBUG - After normalization - BodyElementsChanges:', data.detailedChanges?.bodyElementsChanges);
+      
       setComparisonResult(data);
       setActiveTab('compare');
       setError(null);
@@ -164,6 +188,18 @@ function TemplateVersionHistory({ templateId, templateName, onClose }) {
                   {versionItem.formCount} {versionItem.formCount === 1 ? 'formulario' : 'formularios'}
                 </span>
               </div>
+
+              {versionItem.fechaVersion && (
+                <div className="version-date-badge">
+                  <strong>📅 Fecha de versión:</strong> {formatDate(versionItem.fechaVersion)}
+                </div>
+              )}
+
+              {versionItem.changeDescription && (
+                <div className="version-description">
+                  <strong>📝 Descripción:</strong> {versionItem.changeDescription}
+                </div>
+              )}
 
               <div className="version-dates">
                 <p>
@@ -275,6 +311,66 @@ function TemplateVersionHistory({ templateId, templateName, onClose }) {
                 </span>
               </div>
             </div>
+
+            {/* ✅ NUEVO: Mostrar campos de encabezado */}
+            {versionDetail.headerFields && (() => {
+              try {
+                const headerFields = JSON.parse(versionDetail.headerFields);
+                if (headerFields && headerFields.length > 0) {
+                  return (
+                    <div className="fields-display">
+                      <h5>📝 Campos de Encabezado ({headerFields.length})</h5>
+                      <div className="fields-list">
+                        {headerFields.map((field, idx) => (
+                          <div key={idx} className="field-item">
+                            <span className="field-label">{field.label || 'Sin nombre'}</span>
+                            <span className="field-type">{field.type || 'text'}</span>
+                            {field.required && <span className="field-required">*</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
+              } catch (e) {
+                return <p className="parse-error">⚠️ Error al parsear campos de encabezado</p>;
+              }
+            })()}
+
+            {/* ✅ NUEVO: Mostrar campos de tabla */}
+            {versionDetail.bodyElements && (() => {
+              try {
+                const bodyElements = JSON.parse(versionDetail.bodyElements);
+                if (bodyElements && bodyElements.length > 0) {
+                  return (
+                    <div className="fields-display">
+                      <h5>📊 Campos de Tabla</h5>
+                      {bodyElements.map((element, idx) => {
+                        if (element.type === 'table' && element.columns) {
+                          return (
+                            <div key={idx} className="table-element">
+                              <strong>{element.title || `Tabla ${idx + 1}`}</strong>
+                              <div className="fields-list">
+                                {element.columns.map((col, colIdx) => (
+                                  <div key={colIdx} className="field-item">
+                                    <span className="field-label">{col.label || 'Sin nombre'}</span>
+                                    <span className="field-type">{col.type || 'text'}</span>
+                                    {col.required && <span className="field-required">*</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  );
+                }
+              } catch (e) {
+                return <p className="parse-error">⚠️ Error al parsear elementos del cuerpo</p>;
+              }
+            })()}
           </div>
 
           <div className="detail-section">
@@ -351,6 +447,60 @@ function TemplateVersionHistory({ templateId, templateName, onClose }) {
               </ul>
             ) : (
               <p className="no-changes">✅ No se detectaron cambios entre estas versiones</p>
+            )}
+
+            {/* ✅ NUEVO: Mostrar cambios detallados de campos */}
+            {comparisonResult.detailedChanges && comparisonResult.detailedChanges.hasChanges && (
+              <div className="detailed-changes">
+                {/* Cambios en campos de encabezado */}
+                {comparisonResult.detailedChanges.headerFieldsChanges && comparisonResult.detailedChanges.headerFieldsChanges.length > 0 && (
+                  <div className="field-changes-section">
+                    <h5>📝 Cambios en Campos de Encabezado</h5>
+                    {comparisonResult.detailedChanges.headerFieldsChanges.map((change, idx) => (
+                      <div key={idx} className={`field-change field-${change.changeType}`}>
+                        <span className="change-type-icon">
+                          {change.changeType === 'added' && '✅'}
+                          {change.changeType === 'removed' && '❌'}
+                          {change.changeType === 'modified' && '🔄'}
+                        </span>
+                        <span className="field-name">{change.fieldName}</span>
+                        <span className="field-description">{change.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Cambios en elementos del cuerpo (tablas) */}
+                {comparisonResult.detailedChanges.bodyElementsChanges && comparisonResult.detailedChanges.bodyElementsChanges.length > 0 && (
+                  <div className="field-changes-section">
+                    <h5>📊 Cambios en Campos de Tabla</h5>
+                    {comparisonResult.detailedChanges.bodyElementsChanges.map((change, idx) => (
+                      <div key={idx} className={`field-change field-${change.changeType}`}>
+                        <span className="change-type-icon">
+                          {change.changeType === 'added' && '✅'}
+                          {change.changeType === 'removed' && '❌'}
+                          {change.changeType === 'modified' && '🔄'}
+                        </span>
+                        <span className="field-name">{change.fieldName}</span>
+                        <span className="field-description">{change.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Cambios en metadatos */}
+                {comparisonResult.detailedChanges.metadataChanges && comparisonResult.detailedChanges.metadataChanges.length > 0 && (
+                  <div className="field-changes-section">
+                    <h5>ℹ️ Cambios en Metadatos</h5>
+                    {comparisonResult.detailedChanges.metadataChanges.map((change, idx) => (
+                      <div key={idx} className="field-change field-modified">
+                        <span className="change-type-icon">🔄</span>
+                        <span className="field-description">{change}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

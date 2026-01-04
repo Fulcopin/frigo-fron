@@ -95,5 +95,27 @@ namespace FormBuilder.API.Models
             PesoKg.HasValue 
                 ? Math.Round(PesoKg.Value * 2.20462m, 2)
                 : 0;
+
+        // ========================================
+        // CAMPOS NUEVOS: Sistema de Versiones
+        // ========================================
+
+        /// <summary>
+        /// Versión de la plantilla usada al momento de crear el formulario
+        /// </summary>
+        public int? TemplateVersion { get; set; }
+
+        /// <summary>
+        /// Snapshot completo de la plantilla en formato JSON
+        /// Guarda la estructura exacta al momento de crear el formulario
+        /// </summary>
+        [Column(TypeName = "nvarchar(max)")]
+        public string? TemplateSnapshot { get; set; }
+
+        /// <summary>
+        /// Fecha de la versión de la plantilla
+        /// Permite rastrear cuándo se creó/modificó la versión
+        /// </summary>
+        public DateTime? FechaVersion { get; set; }
     }
 }

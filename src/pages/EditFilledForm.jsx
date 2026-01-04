@@ -22,6 +22,7 @@ function EditFilledForm() {
     firmasData: {},
     observaciones: ""
   });
+  const [formCreatedAt, setFormCreatedAt] = useState(null); // ✅ Fecha de creación del formulario
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -45,6 +46,9 @@ function EditFilledForm() {
         setTemplate(template);
         setFilledForm(formInfo);
         setFormData(formData);
+        setFormCreatedAt(formInfo.createdAt); // ✅ Guardar fecha de creación
+        
+        console.log('📅 Formulario cargado - CreatedAt:', formInfo.createdAt);
         
         // 🔍 DEBUG: Verificar estructura de bodyData
         console.log('🔍 DEBUG - FormData cargado:', formData);
@@ -462,12 +466,51 @@ Template: ${template?.nombre}
 
       <form onSubmit={handleSubmit} className="form-container">
         <div className="form-document">
-          <FormHeader 
-            title={template?.nombre}
-            code={template?.codigo}
-            version={template?.version}
-            date={new Date().toLocaleDateString("es-EC")}
-          />
+          {(() => {
+            // Usar fecha de creación si existe, sino fecha actual
+            const fechaFinal = formCreatedAt 
+              ? new Date(formCreatedAt).toLocaleDateString("es-EC")
+              : new Date().toLocaleDateString("es-EC");
+            
+            console.log('🗓️ Fecha en EditFilledForm:', {
+              formCreatedAt,
+              fechaFinal
+            });
+            
+            return (
+              <>
+                <FormHeader 
+                  title={template?.nombre}
+                  code={template?.codigo}
+                  version={template?.version}
+                  date={fechaFinal}
+                />
+                
+                {/* 🎯 Indicador de Versión Histórica - OCULTO por solicitud del usuario */}
+                {/* {filledForm?.versionUsada && filledForm?.versionUsada !== template?.version && (
+                  <div className="version-indicator warning">
+                    <div className="version-indicator-icon">⚠️</div>
+                    <div className="version-indicator-content">
+                      <strong>Versión Histórica:</strong> Este formulario fue creado con la versión <strong>{filledForm.versionUsada}</strong> 
+                      (vigente el {new Date(formCreatedAt).toLocaleDateString("es-EC")}).
+                      La versión actual de la plantilla es <strong>{template?.version}</strong>.
+                    </div>
+                  </div>
+                )} */}
+                
+                {/* ✅ Indicador de Versión Correcta - OCULTO por solicitud del usuario */}
+                {/* {filledForm?.versionCorrecta === true && (
+                  <div className="version-indicator success">
+                    <div className="version-indicator-icon">✅</div>
+                    <div className="version-indicator-content">
+                      <strong>Versión Correcta:</strong> Este formulario está usando la versión <strong>{template?.version}</strong> 
+                      que estaba vigente en la fecha de creación.
+                    </div>
+                  </div>
+                )} */}
+              </>
+            );
+          })()}
 
           {/* Campos del Encabezado */}
           {template?.headerFields?.length > 0 && (
@@ -529,17 +572,107 @@ Template: ${template?.nombre}
                       </tr>
                     </thead>
                     <tbody>
-                      {formData.bodyData[elementIndex]?.rows?.map((row, rowIndex) => (
+                      {formData.bodyData[elementIndex]?.rows?.map((row, rowIndex) => {
+                        // 🐛 DEBUG: Mostrar una vez las columnas del template y las claves del row
+                        if (rowIndex === 0) {
+                          console.log('📋 Template tiene estas columnas:', element.columns?.map(c => ({
+                            label: c.label,
+                            id: c.id,
+                            name: c.name
+                          })));
+                          console.log('📦 Fila 1 tiene estas claves:', Object.keys(row));
+                          console.log('📦 Fila 1 datos completos:', row);
+                        }
+                        
+                        return (
                         <tr key={rowIndex}>
-                          {element.columns?.map((column, colIndex) => (
-                            <td key={colIndex}>
-                              {renderField(
-                                column,
-                                row[column.label],
-                                (value) => updateTableCell(elementIndex, rowIndex, column.label, value)
-                              )}
-                            </td>
-                          ))}
+                          {element.columns?.map((column, colIndex) => {
+                            // 🔧 BUSCAR LA CLAVE CORRECTA EN EL ROW
+                            const rowKeys = Object.keys(row);
+                            const colId = (column.id || column.name || '').toUpperCase();
+                            const colLabel = (column.label || column.header || '').toUpperCase();
+                            
+                            let cellName;
+                            
+                            // 🎯 PRIORIDAD 1: Usar column.label si la clave existe en row (funcionaba antes)
+                            if (row.hasOwnProperty(column.label)) {
+                              cellName = column.label;
+                            }
+                            // 🎯 PRIORIDAD 2: Si column.label no existe, buscar variaciones (para 15 Tinas)
+                            else if (colId.includes('PESO') || colLabel.includes('PESO')) {
+                              const pesoMatch = (column.id || column.label || '').match(/\d+/);
+                              const pesoNum = pesoMatch ? pesoMatch[0] : '';
+                              const pesoKey = rowKeys.find(key => {
+                                const keyUpper = key.toUpperCase();
+                                return keyUpper.includes(`PESO${pesoNum}`) && !keyUpper.includes('TOTAL');
+                              });
+                              cellName = pesoKey || column.label;
+                              
+                              // 🐛 DEBUG para PESO 6
+                              if (rowIndex === 0 && pesoNum === '6') {
+                                console.log(`🔍 EditFilledForm - PESO ${pesoNum} (colIndex=${colIndex}):`);
+                                console.log(`   Column.id="${column.id}", Column.label="${column.label}"`);
+                                console.log(`   rowKeys = [${rowKeys.join(', ')}]`);
+                                console.log(`   pesoKey encontrada = "${pesoKey}"`);
+                                console.log(`   cellName final = "${cellName}"`);
+                                console.log(`   Valor en row[cellName] = "${row[cellName]}"`);
+                              }
+                            } 
+                            else if (colId.includes('TOTAL') || colLabel.includes('TOTAL')) {
+                              const totalKey = rowKeys.find(key => key.toUpperCase().includes('TOTAL'));
+                              cellName = totalKey || column.label;
+                              
+                              // 🐛 DEBUG para TOTAL
+                              if (rowIndex === 0) {
+                                console.log(`🔍 EditFilledForm - TOTAL (colIndex=${colIndex}):`);
+                                console.log(`   Column.id="${column.id}", Column.label="${column.label}"`);
+                                console.log(`   totalKey encontrada = "${totalKey}"`);
+                                console.log(`   cellName final = "${cellName}"`);
+                                console.log(`   Valor en row[cellName] = "${row[cellName]}"`);
+                              }
+                            }
+                            else {
+                              cellName = column.label;
+                            }
+                            
+                            // Verificar si es columna TOTAL (solo lectura)
+                            // REGLA: Solo bloquear columnas TOTAL si la tabla tiene columnas PESO
+                            const tableTienePeso = element.columns?.some(c => {
+                              const cId = (c.id || c.name || '').toUpperCase();
+                              const cLabel = (c.label || c.header || '').toUpperCase();
+                              return cId.includes('PESO') || cLabel.includes('PESO');
+                            });
+                            
+                            const isTotalById = colId.includes('-TOTAL') || colId.includes('TOTAL_') || colId.includes('_TOTAL');
+                            const isTotalByLabel = colLabel === 'TOTAL' || colLabel === '📊 TOTAL';
+                            const isPeso = colId.includes('PESO') || colLabel.includes('PESO');
+                            const isTotalColumn = tableTienePeso && (isTotalById || isTotalByLabel) && !isPeso;
+                            
+                            return (
+                              <td key={colIndex}>
+                                {isTotalColumn ? (
+                                  // Columna TOTAL: solo lectura
+                                  <input 
+                                    type="text" 
+                                    value={row[cellName] || '0.00'} 
+                                    readOnly 
+                                    className="total-readonly"
+                                    style={{ 
+                                      backgroundColor: '#d4edda', 
+                                      fontWeight: 'bold',
+                                      cursor: 'not-allowed'
+                                    }}
+                                  />
+                                ) : (
+                                  renderField(
+                                    column,
+                                    row[cellName],
+                                    (value) => updateTableCell(elementIndex, rowIndex, cellName, value)
+                                  )
+                                )}
+                              </td>
+                            );
+                          })}
                           <td>
                             <button
                               type="button"
@@ -550,7 +683,8 @@ Template: ${template?.nombre}
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {(!formData.bodyData[elementIndex]?.rows || formData.bodyData[elementIndex].rows.length === 0) && (
                         <tr>
                           <td colSpan={element.columns?.length + 1} className="no-data">

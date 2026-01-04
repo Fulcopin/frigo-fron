@@ -10,7 +10,7 @@
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import logoUrl from '../assets/logo.png';
+import logoUrl from '../assets/logo-8.png';
 
 /**
  * Convierte imagen a Base64 para incrustar en PDF
@@ -64,7 +64,7 @@ const PAGE_CONFIG = {
  * 🖼️ Dibuja el encabezado de Frigolab (igual que en el formulario web)
  */
 const drawFrigolabHeader = async (doc, templateData) => {
-  const { codigo, nombre, version, headerData } = templateData;
+  const { codigo, nombre, version, headerData, createdAt } = templateData;
   
   // Fondo azul para el header
   doc.setFillColor(...COLORS.headerBg);
@@ -102,7 +102,7 @@ const drawFrigolabHeader = async (doc, templateData) => {
   const titleWidth = doc.getTextWidth(nombre);
   doc.text(nombre, (220 - titleWidth) / 2, 38);
   
-  // Metadatos (derecha)
+  // Metadatos (derecha) - PRIORIZAR VALORES DE HEADERDATA (EDITABLES)
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.text('CODIGO:', 155, 13);
@@ -110,12 +110,53 @@ const drawFrigolabHeader = async (doc, templateData) => {
   doc.text('FECHA:', 155, 25);
   
   doc.setFont('helvetica', 'normal');
-  doc.text(codigo || 'N/A', 175, 13);
-  doc.text(String(version || '1'), 175, 19);
   
-  // Fecha del headerData o fecha actual
-  const fecha = headerData?.fecha || new Date().toLocaleDateString('es-EC');
-  doc.text(fecha, 175, 25);
+  // ✅ CÓDIGO: Usar headerData.codigo (editable) o código del template
+  const codigoFinal = headerData?.codigo || headerData?.Código || codigo || 'N/A';
+  doc.text(codigoFinal, 175, 13);
+  
+  // ✅ VERSIÓN: Usar headerData.version (editable) o versión del template
+  const versionFinal = headerData?.version || headerData?.Versión || String(version || '1.0');
+  doc.text(versionFinal, 175, 19);
+  
+  // ✅ FECHA: Usar headerData.fecha (editable) o fecha de creación del formulario
+  console.log('🔍 DEBUG FECHA PDF:', {
+    'headerData.fecha': headerData?.fecha,
+    'headerData.Fecha': headerData?.Fecha,
+    'createdAt': createdAt,
+    'createdAt type': typeof createdAt
+  });
+  
+  let fechaFinal = headerData?.fecha || headerData?.Fecha;
+  
+  // Si no hay fecha editada, usar la fecha de creación del formulario
+  if (!fechaFinal && createdAt) {
+    console.log('📅 Usando createdAt:', createdAt);
+    const createdDate = new Date(createdAt);
+    fechaFinal = createdDate.toLocaleDateString('es-EC', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+    console.log('📅 Fecha formateada:', fechaFinal);
+  }
+  
+  // Si aún no hay fecha, usar la fecha actual
+  if (!fechaFinal) {
+    console.log('⚠️ FALLBACK: Usando fecha actual');
+    fechaFinal = new Date().toLocaleDateString('es-EC');
+  }
+  
+  // Si la fecha viene en formato ISO (YYYY-MM-DD), convertir a DD/MM/YYYY
+  if (fechaFinal && fechaFinal.includes('-') && fechaFinal.length === 10) {
+    const [year, month, day] = fechaFinal.split('-');
+    fechaFinal = `${day}/${month}/${year}`;
+    console.log('🔄 Convertido de ISO a DD/MM/YYYY:', fechaFinal);
+  }
+  
+  console.log('✅ FECHA FINAL EN PDF:', fechaFinal);
+  
+  doc.text(fechaFinal, 175, 25);
   
   // Resetear color de texto
   doc.setTextColor(...COLORS.text);
@@ -442,7 +483,8 @@ export const exportFormToPDF = async (form, template) => {
       codigo: template?.codigo || form.templateCodigo || 'N/A',
       nombre: template?.nombre || form.templateNombre || 'Formulario',
       version: template?.version || form.version || 1,
-      headerData: form.headerData || {}
+      headerData: form.headerData || {},
+      createdAt: form.createdAt || new Date().toISOString() // ✅ Fecha de creación del formulario
     };
     
     console.log('📋 Template Data:', templateData);

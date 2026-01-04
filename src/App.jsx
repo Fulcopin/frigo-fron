@@ -11,10 +11,7 @@ import FillForm from "./pages/FillForm"
 import EditFilledForm from "./pages/EditFilledForm"
 import ViewForms from "./pages/ViewForms"
 import ManageTemplates from './pages/ManageTemplates';
-import MasterForms from './pages/MasterForms';
-import MasterFormsData from './pages/MasterFormsData';
-import Registro15Tinas from './pages/Registro15Tinas';
-import Registro15TinasDinamico from './pages/Registro15TinasDinamico';
+import DailyForms from './pages/DailyForms';
 import "./App.css"
 
 function Navigation() {
@@ -25,7 +22,7 @@ function Navigation() {
   const isActive = (path) => location.pathname === path
 
   const handleLogout = () => {
-    if (window.confirm('¿Estás seguro de que deseas cerrar sesión?')) {
+    if (globalThis.confirm('¿Estás seguro de que deseas cerrar sesión?')) {
       logout()
     }
   }
@@ -49,8 +46,13 @@ function Navigation() {
 
       <div className="nav-container">
         <div className="nav-brand">
-          <h1>🐟 Frigolab "San Mateo"</h1>
-          <p>Sistema FishCort - Formularios Dinámicos</p>
+          <div className="brand-title">
+            <span className="brand-logo">🐟</span>
+            <div className="brand-text">
+              <h1 className="brand-main">Frigolab Docs</h1>
+              <p className="brand-sub">Frigolab "San Mateo"</p>
+            </div>
+          </div>
         </div>
         <div className="nav-links">
           <Link to="/" className={isActive("/") ? "active" : ""}>
@@ -62,20 +64,14 @@ function Navigation() {
           <Link to="/fill-form" className={isActive("/fill-form") ? "active" : ""}>
             📝 Llenar Formulario
           </Link>
-          <Link to="/registro-15-tinas" className={isActive("/registro-15-tinas") ? "active" : ""}>
-            ⚖️ Registro 15 Tinas
-          </Link>
-          <Link to="/registro-15-tinas-dinamico" className={isActive("/registro-15-tinas-dinamico") ? "active" : ""}>
-            🔄 Registro Tinas (Dinámico)
-          </Link>
-          <Link to="/master-forms" className={isActive("/master-forms") ? "active" : ""}>
-            📊 Formularios Maestros
-          </Link>
           <Link to="/manage-templates" className={isActive("/manage-templates") ? "active" : ""}>
             ⚙️ Administrar Plantillas
           </Link>
           <Link to="/view-forms" className={isActive("/view-forms") ? "active" : ""}>
             👁️ Ver Formularios
+          </Link>
+          <Link to="/daily-forms" className={isActive("/daily-forms") ? "active" : ""}>
+            📅 Formularios por Fecha
           </Link>
           
           <UserInfo />
@@ -107,17 +103,14 @@ function getPageName(pathname) {
     '/': 'Inicio',
     '/create-template': 'Crear Plantilla',
     '/fill-form': 'Llenar Formulario',
-    '/registro-15-tinas': 'Registro 15 Tinas',
-    '/registro-15-tinas-dinamico': 'Registro Tinas Dinámico',
-    '/master-forms': 'Formularios Maestros',
     '/manage-templates': 'Administrar Plantillas',
     '/view-forms': 'Ver Formularios',
+    '/daily-forms': 'Formularios por Fecha',
   }
   
   // Para rutas dinámicas como /edit-template/:id
   if (pathname.includes('/edit-template')) return 'Editar Plantilla'
   if (pathname.includes('/edit-filled-form')) return 'Editar Formulario'
-  if (pathname.includes('/master-forms/') && pathname.includes('/data')) return 'Datos de Formulario Maestro'
   
   return routes[pathname] || 'Sistema de Formularios'
 }
@@ -153,16 +146,6 @@ function App() {
                   <FillForm />
                 </ProtectedRoute>
               } />
-              <Route path="/registro-15-tinas" element={
-                <ProtectedRoute>
-                  <Registro15Tinas />
-                </ProtectedRoute>
-              } />
-              <Route path="/registro-15-tinas-dinamico" element={
-                <ProtectedRoute>
-                  <Registro15TinasDinamico />
-                </ProtectedRoute>
-              } />
               <Route path="/edit-filled-form/:id" element={
                 <ProtectedRoute>
                   <EditFilledForm />
@@ -178,14 +161,9 @@ function App() {
                   <ManageTemplates />
                 </ProtectedRoute>
               } />
-              <Route path="/master-forms" element={
+              <Route path="/daily-forms" element={
                 <ProtectedRoute>
-                  <MasterForms />
-                </ProtectedRoute>
-              } />
-              <Route path="/master-forms/:id/data" element={
-                <ProtectedRoute>
-                  <MasterFormsData />
+                  <DailyForms />
                 </ProtectedRoute>
               } />
             </Routes>

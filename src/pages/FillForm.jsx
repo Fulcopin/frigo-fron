@@ -1,11 +1,10 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useParams, useNavigate } from "react-router-dom" 
+import { useParams, useNavigate, useLocation } from "react-router-dom" 
 import FormHeader from "../components/FormHeader"
 import AccordionSection from "../components/AccordionSection"
 import LoteSelectorAPI from "../components/LoteSelectorAPI"
-import { useKeyboardAdjustment } from "../hooks/useKeyboardAdjustment"
 import "./FillForm.css"
 import "./FillForm.tablet.css"  // 📱 Estilos optimizados para tablets
 import { API_BASE_URL } from "../apiConfig"
@@ -39,15 +38,22 @@ function FillForm() {
   // Hooks de navegación
   const { id } = useParams(); 
   const navigate = useNavigate();
+  const location = useLocation();
   
-  // Hook para manejar el teclado virtual en tablets
-  useKeyboardAdjustment(); 
+  // 🎯 NUEVO: Obtener templateId pre-seleccionado desde el state de navegación
+  const preSelectedTemplateId = location.state?.selectedTemplateId;
+
+  // 🆕 ESTADOS PARA MÚLTIPLES FORMULARIOS EN PESTAÑAS
+  const [openTabs, setOpenTabs] = useState([]); // Array de formularios abiertos
+  const [activeTabIndex, setActiveTabIndex] = useState(0); // Índice de la pestaña activa
+  const [nextTabId, setNextTabId] = useState(1); // ID único para cada pestaña
 
   // Estados principales
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [formCreatedAt, setFormCreatedAt] = useState(null); // ✅ NUEVO: Fecha de creación del formulario
   
   // Estados de datos del formulario
   const [headerData, setHeaderData] = useState({})
@@ -77,48 +83,194 @@ function FillForm() {
   const [selectedMovementId, setSelectedMovementId] = useState(null);
   const [selectedLotes, setSelectedLotes] = useState([]); // NUEVO: Array de lotes seleccionados
   const [lotesConfirmados, setLotesConfirmados] = useState(false); // Control de confirmación
-  const [apiDetailsData, setApiDetailsData] = useState([]);
+  const [apiDetailsData, setApiDetailsData] = useState([]); // Detalles de movimientos
+  const [apiMovimientoData, setApiMovimientoData] = useState([]); // 🆕 Cabeceras de movimientos
   const [isApiLoading, setIsApiLoading] = useState(false);
   const [forceRenderKey, setForceRenderKey] = useState(0); // Para forzar re-render de selectores
+  
+  // � FUNCIÓN HELPER: Verificar si el formulario debe tener auto-suma activo
+  const shouldEnableAutoSum = useCallback(() => {
+    if (!selectedTemplate) {
+      console.log('⚠️ shouldEnableAutoSum: selectedTemplate es null');
+      return false;
+    }
+    
+    // 1️⃣ Verificar si el backend marcó este formulario como "maestro"
+    const isMasterFormFromBackend = selectedTemplate.isMasterForm === true;
+    
+    // 2️⃣ FALLBACK: Detectar por nombre si el backend no tiene el campo
+    const formName = (selectedTemplate.nombre || '').toUpperCase();
+    const isTinasForm = formName.includes('TINA') || formName.includes('15');
+    
+    // ✅ Activar si:
+    // - El backend lo marcó como maestro, O
+    // - Es un formulario de Tinas (fallback por nombre)
+    const shouldEnable = isMasterFormFromBackend || isTinasForm;
+    
+    console.log(`🔍 shouldEnableAutoSum - DETALLE COMPLETO:`, {
+      nombre: selectedTemplate.nombre,
+      templateID: selectedTemplate.templateID,
+      isMasterForm: selectedTemplate.isMasterForm,
+      isMasterFormType: typeof selectedTemplate.isMasterForm,
+      isTinasForm: isTinasForm,
+      resultado: shouldEnable ? '✅ ACTIVADO' : '⛔ DESACTIVADO'
+    });
+    
+    return shouldEnable;
+  }, [selectedTemplate]);
+  
+  // �🆕 Estados para datos de TODAS las APIs externas
+  const [apiCatalogData, setApiCatalogData] = useState({
+    balanzas: [],
+    choferes: [],
+    especies: [],
+    pesqueros: [],
+    productos: [],
+    proveedores: [],
+    configuraciones: [],
+    configuracionesFrigo: [],
+    // 🆕 Catálogos de calidad sensorial
+    piel: [],
+    dureza: [],
+    cavidadVentral: [],
+    olor: [],
+    saborCarne: [],
+    ojosClaridad: [],
+    ojosForma: [],
+    branquiasColor: [],
+    branquiasOlor: []
+  });
 
-  // 🔄 Forzar re-render cuando apiDetailsData cambie
+  // 🆕 NUEVO: Estados para cargar datos de otros formularios guardados
+  const [availableSourceForms, setAvailableSourceForms] = useState([]); // Formularios disponibles para cargar
+  const [selectedSourceForm, setSelectedSourceForm] = useState(null); // Formulario seleccionado como origen
+  const [isLoadingSourceForms, setIsLoadingSourceForms] = useState(false);
+  const [showFormDataLoader, setShowFormDataLoader] = useState(false); // Modal/panel de carga
+
+  // 🆕 NUEVO: Estados para mapeo personalizado de campos
+  const [showFieldMapper, setShowFieldMapper] = useState(false); // Modal de mapeo de campos
+  const [sourceFields, setSourceFields] = useState({ header: [], body: [] }); // Campos disponibles del origen
+  const [targetFields, setTargetFields] = useState({ header: [], body: [] }); // Campos disponibles del destino
+  const [fieldMapping, setFieldMapping] = useState({ header: {}, body: {} }); // Mapeo seleccionado por el usuario
+  const [selectedHeaderFields, setSelectedHeaderFields] = useState([]); // Campos de header seleccionados
+  const [selectedBodyFields, setSelectedBodyFields] = useState([]); // Campos de body seleccionados
+  
+  // 🆕 Estado para panel de vista de pestañas abiertas
+  const [showTabsPanel, setShowTabsPanel] = useState(false); // Panel desplegable de pestañas
+
+  // 🆕 NUEVO: Estados para selector interactivo de datos
+  const [showDataPicker, setShowDataPicker] = useState(false); // Modal de selector de datos
+  const [dataPickerForm, setDataPickerForm] = useState(null); // Formulario cargado en el selector
+  const [currentFieldForPicker, setCurrentFieldForPicker] = useState(null); // Campo actual donde copiar
+  const [dataPickerCallback, setDataPickerCallback] = useState(null); // Callback para copiar valor
+
+  // 🆕 NUEVO: Estados para IMPORTAR COLUMNA AUTOMÁTICO
+  const [showColumnImporter, setShowColumnImporter] = useState(false); // Modal importador de columnas
+  const [columnImporterForms, setColumnImporterForms] = useState([]); // Formularios disponibles
+  const [columnImporterForm, setColumnImporterForm] = useState(null); // Formulario seleccionado para importar
+  const [columnImporterTarget, setColumnImporterTarget] = useState(null); // { elementIndex, columnIndex, columnName }
+
+  // 🔄 Forzar re-render cuando apiDetailsData O apiMovimientoData cambien
   useEffect(() => {
-    if (apiDetailsData.length > 0) {
-      console.log('🔄 apiDetailsData actualizado → Forzando re-render de selectores');
-      console.log(`   📦 Total de items: ${apiDetailsData.length}`);
+    if (apiDetailsData.length > 0 || apiMovimientoData.length > 0) {
+      console.log('🔄 Datos de API actualizados → Forzando re-render de selectores');
+      console.log(`   📦 Detalles: ${apiDetailsData.length} items`);
+      console.log(`   📋 Movimientos: ${apiMovimientoData.length} items`);
+      
+      // 🔍 EXPONER DATOS GLOBALMENTE PARA DEBUG
+      window.apiDetailsDataGlobal = apiDetailsData;
+      window.apiMovimientoDataGlobal = apiMovimientoData;
+      
+      // Mostrar campos disponibles
+      if (apiDetailsData.length > 0) {
+        console.log('🔍 CAMPOS EN PRIMER DETALLE:', Object.keys(apiDetailsData[0]));
+      }
+      if (apiMovimientoData.length > 0) {
+        console.log('🔍 CAMPOS EN PRIMER MOVIMIENTO:', Object.keys(apiMovimientoData[0]));
+      }
+      
       setForceRenderKey(prev => prev + 1);
     }
-  }, [apiDetailsData]);
+  }, [apiDetailsData, apiMovimientoData]);
 
-  // ⚡ SOLUCIÓN SIMPLE Y EFECTIVA: SOLO PREVENIR SCROLL DE PÁGINA
+  // 🆕 Mostrar resumen de catálogos cuando cambien
   useEffect(() => {
-    let savedScrollY = 0;
+    if (Object.keys(apiCatalogData).length > 0) {
+      console.log('📊 RESUMEN DE CATÁLOGOS CARGADOS:');
+      console.log(`   🏭 Proveedores: ${apiCatalogData.proveedores?.length || 0}`);
+      console.log(`   🚢 Pesqueros: ${apiCatalogData.pesqueros?.length || 0}`);
+      console.log(`   🐟 Especies: ${apiCatalogData.especies?.length || 0}`);
+      console.log(`   📦 Productos: ${apiCatalogData.productos?.length || 0}`);
+      console.log(`   🚗 Choferes: ${apiCatalogData.choferes?.length || 0}`);
+      console.log(`   ⚖️ Balanzas: ${apiCatalogData.balanzas?.length || 0}`);
+      console.log(`   ⚙️ Configuraciones: ${apiCatalogData.configuraciones?.length || 0}`);
+      console.log(`   🧊 Config FRIGO: ${apiCatalogData.configuracionesFrigo?.length || 0}`);
+      
+      // Forzar re-render cuando los catálogos se actualicen
+      setForceRenderKey(prev => prev + 1);
+    }
+  }, [apiCatalogData]);
+
+
+  // 🔧 FUNCIÓN: Normalizar sufijos en bodyData (corregir datos guardados con sufijos incorrectos)
+  const normalizeBodyDataSuffixes = (bodyData) => {
+    if (!Array.isArray(bodyData)) return bodyData;
     
-    // Guardar posición cuando se hace clic en input de tabla
-    const handleFocusCapture = (e) => {
-      // Solo actuar si es un input/select/textarea dentro de tabla
-      if (e.target.matches && e.target.matches('input, select, textarea')) {
-        const isInTable = e.target.closest('.data-table, .table-wrapper');
-        if (isInTable) {
-          // Guardar posición ANTES del focus
-          savedScrollY = window.scrollY;
+    return bodyData.map(element => {
+      if (element.type === 'table' && element.data && Array.isArray(element.data)) {
+        const normalizedData = element.data.map((row, rowIndex) => {
+          const newRow = {};
+          const rowNumber = rowIndex + 1;
           
-          // Restaurar posición después del focus (múltiples intentos)
-          setTimeout(() => window.scrollTo(0, savedScrollY), 0);
-          setTimeout(() => window.scrollTo(0, savedScrollY), 10);
-          setTimeout(() => window.scrollTo(0, savedScrollY), 50);
-          setTimeout(() => window.scrollTo(0, savedScrollY), 100);
-        }
+          Object.keys(row).forEach(key => {
+            // Detectar si tiene sufijo
+            const suffixMatch = key.match(/^(.+)_T(\d+)$/);
+            if (suffixMatch) {
+              const baseName = suffixMatch[1];
+              const oldSuffix = suffixMatch[2];
+              
+              // Si el sufijo no coincide con el número de fila, corregirlo
+              if (parseInt(oldSuffix) !== rowNumber) {
+                const newKey = `${baseName}_T${rowNumber}`;
+                newRow[newKey] = row[key];
+                console.log(`🔧 Corrigiendo: ${key} → ${newKey}`);
+              } else {
+                // Ya es correcto
+                newRow[key] = row[key];
+              }
+            } else {
+              // No tiene sufijo, mantener tal cual
+              newRow[key] = row[key];
+            }
+          });
+          
+          return newRow;
+        });
+        
+        return { ...element, data: normalizedData };
       }
-    };
+      return element;
+    });
+  };
 
-    // Interceptar SOLO el focus
-    document.addEventListener('focus', handleFocusCapture, true);
-
-    return () => {
-      document.removeEventListener('focus', handleFocusCapture, true);
-    };
-  }, []);
+  // 🆕 Forzar re-render cuando se carguen catálogos de API externa
+  useEffect(() => {
+    const totalCatalogItems = Object.values(apiCatalogData).reduce((sum, arr) => sum + arr.length, 0);
+    if (totalCatalogItems > 0) {
+      console.log('🔄 Catálogos de API actualizados → Forzando re-render');
+      console.log('   📊 Items por catálogo:', {
+        balanzas: apiCatalogData.balanzas.length,
+        choferes: apiCatalogData.choferes.length,
+        especies: apiCatalogData.especies.length,
+        pesqueros: apiCatalogData.pesqueros.length,
+        productos: apiCatalogData.productos.length,
+        proveedores: apiCatalogData.proveedores.length,
+        configuraciones: apiCatalogData.configuraciones.length,
+        configuracionesFrigo: apiCatalogData.configuracionesFrigo.length
+      });
+      setForceRenderKey(prev => prev + 1);
+    }
+  }, [apiCatalogData]);
 
   // 1. CARGAR PLANTILLAS
   useEffect(() => {
@@ -145,6 +297,16 @@ function FillForm() {
     fetchTemplates();
   }, [id]);
 
+  // 🎯 NUEVO: Auto-seleccionar plantilla si viene desde Home
+  useEffect(() => {
+    if (preSelectedTemplateId && templates.length > 0 && !selectedTemplate && !id) {
+      console.log('🎯 Auto-seleccionando plantilla desde Home:', preSelectedTemplateId);
+      handleTemplateSelect(preSelectedTemplateId);
+      // Limpiar el state para que no se auto-seleccione de nuevo
+      window.history.replaceState({}, document.title);
+    }
+  }, [preSelectedTemplateId, templates, selectedTemplate, id]);
+
   // 2. CARGAR FORMULARIO EXISTENTE (MODO EDICIÓN)
   useEffect(() => {
     if (!id) return; 
@@ -167,9 +329,31 @@ function FillForm() {
 
         setSelectedTemplate(processedTemplate);
         setHeaderData(typeof data.headerData === 'string' ? JSON.parse(data.headerData) : data.headerData);
-        setBodyData(typeof data.bodyData === 'string' ? JSON.parse(data.bodyData) : data.bodyData);
+        
+        // 🔧 NORMALIZAR bodyData: Corregir claves con sufijos incorrectos
+        let parsedBodyData = typeof data.bodyData === 'string' ? JSON.parse(data.bodyData) : data.bodyData;
+        parsedBodyData = normalizeBodyDataSuffixes(parsedBodyData);
+        
+        setBodyData(parsedBodyData);
         setFirmasData(typeof data.firmasData === 'string' ? JSON.parse(data.firmasData) : data.firmasData);
         
+        console.log('🔍 DEBUG COMPLETO:', {
+          data: data,
+          createdAt: data.createdAt,
+          headerData: typeof data.headerData === 'string' ? JSON.parse(data.headerData) : data.headerData,
+          fecha_en_header: (typeof data.headerData === 'string' ? JSON.parse(data.headerData) : data.headerData).fecha
+        });
+        
+        setFormCreatedAt(data.createdAt); // ✅ NUEVO: Guardar fecha de creación
+        
+        console.log('📅 Formulario cargado - CreatedAt:', data.createdAt);
+        console.log('📅 FormCreatedAt state después de setear:', formCreatedAt);
+        
+        // 🆕 Cargar catálogos de la API para modo edición
+        await loadAllApiCatalogs();
+        
+        // 🆕 Recalcular totales después de cargar
+        setTimeout(() => recalcularTodosLosTotales(), 100);        
       } catch (err) {
         setError(`Error cargando edición: ${err.message}`);
       } finally {
@@ -179,6 +363,174 @@ function FillForm() {
 
     fetchExistingForm();
   }, [id]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🆕 FUNCIONES PARA MANEJAR MÚLTIPLES FORMULARIOS EN PESTAÑAS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Crea una nueva pestaña con un formulario en blanco
+   */
+  const createNewTab = (template) => {
+    console.log('➕ Creando nueva pestaña de formulario...');
+    
+    const newTab = {
+      id: nextTabId,
+      templateId: template.templateID,
+      templateName: template.nombre,
+      template: template,
+      headerData: {},
+      bodyData: [],
+      firmasData: {},
+      hasUnsavedChanges: false,
+      createdAt: new Date().toISOString()
+    };
+    
+    // Inicializar header vacío
+    (template.headerFields || []).forEach((field) => {
+      newTab.headerData[field.label] = "";
+    });
+    
+    // Inicializar body vacío
+    const initialBodyData = (template.bodyElements || []).map(element => {
+      if (element.type === 'section') {
+        const sectionData = {};
+        (element.fields || []).forEach(field => { sectionData[field.label] = ""; });
+        return { id: element.id, type: 'section', data: sectionData };
+      }
+      if (element.type === 'table') {
+        const numRows = element.defaultRows || 10;
+        const initialRows = Array.from({ length: numRows }, () => {
+          const newRow = {};
+          (element.columns || []).forEach((col) => { 
+            newRow[col.label || col.header || col.name || col.id] = ""; 
+          });
+          return newRow;
+        });
+        return { id: element.id, type: 'table', data: initialRows };
+      }
+      return null;
+    }).filter(Boolean);
+    newTab.bodyData = initialBodyData;
+    
+    // Inicializar firmas vacías
+    (template.firmas || []).forEach((firma) => {
+      newTab.firmasData[firma.puesto] = { nombre: "", fecha: "" };
+    });
+    
+    setOpenTabs(prev => [...prev, newTab]);
+    setActiveTabIndex(openTabs.length); // Activar la nueva pestaña
+    setNextTabId(prev => prev + 1);
+    
+    // 🔧 IMPORTANTE: Cargar los datos de la nueva pestaña en el formulario
+    setSelectedTemplate(template);
+    setHeaderData(newTab.headerData);
+    setBodyData(newTab.bodyData);
+    setFirmasData(newTab.firmasData);
+    setHasUnsavedChanges(false);
+    setLotesConfirmados(true); // Confirmar lotes automáticamente para nueva pestaña
+    
+    console.log(`✅ Pestaña #${nextTabId} creada y activada: "${template.nombre}"`);
+  };
+
+  /**
+   * Cambia a una pestaña específica
+   */
+  const switchToTab = (index) => {
+    console.log(`🔄 Cambiando a pestaña ${index + 1}`);
+    
+    // Guardar datos de la pestaña actual antes de cambiar
+    if (activeTabIndex >= 0 && openTabs[activeTabIndex]) {
+      saveCurrentTabData();
+    }
+    
+    // Cambiar a la nueva pestaña
+    setActiveTabIndex(index);
+    
+    // Cargar datos de la nueva pestaña
+    loadTabData(openTabs[index]);
+  };
+
+  /**
+   * Guarda los datos del formulario actual en la pestaña activa
+   */
+  const saveCurrentTabData = () => {
+    if (activeTabIndex < 0 || !openTabs[activeTabIndex]) return;
+    
+    setOpenTabs(prev => prev.map((tab, index) => {
+      if (index === activeTabIndex) {
+        return {
+          ...tab,
+          headerData: headerData,
+          bodyData: bodyData,
+          firmasData: firmasData,
+          hasUnsavedChanges: hasUnsavedChanges
+        };
+      }
+      return tab;
+    }));
+  };
+
+  /**
+   * Carga los datos de una pestaña en los estados del formulario
+   */
+  const loadTabData = (tab) => {
+    console.log(`📥 Cargando datos de pestaña: "${tab.templateName || tab.template?.nombre}"`);
+    
+    setSelectedTemplate(tab.template);
+    setHeaderData(tab.headerData || {});
+    setBodyData(tab.bodyData || []);
+    setFirmasData(tab.firmasData || {});
+    setHasUnsavedChanges(tab.hasUnsavedChanges || false);
+  };
+
+  /**
+   * Cierra una pestaña específica
+   */
+  const closeTab = (index) => {
+    const tab = openTabs[index];
+    
+    // Confirmar si hay cambios sin guardar
+    if (tab.hasUnsavedChanges) {
+      if (!confirm(`¿Cerrar la pestaña "${tab.templateName}"?\n\n⚠️ Hay cambios sin guardar que se perderán.`)) {
+        return;
+      }
+    }
+    
+    console.log(`❌ Cerrando pestaña: "${tab.templateName}"`);
+    
+    setOpenTabs(prev => prev.filter((_, i) => i !== index));
+    
+    // Ajustar índice activo
+    if (index === activeTabIndex) {
+      // Si se cierra la pestaña activa, activar la anterior (o 0 si era la primera)
+      setActiveTabIndex(Math.max(0, index - 1));
+    } else if (index < activeTabIndex) {
+      // Si se cierra una pestaña anterior, decrementar el índice activo
+      setActiveTabIndex(prev => prev - 1);
+    }
+  };
+
+  /**
+   * Guarda el formulario de la pestaña activa
+   */
+  const saveActiveTab = async () => {
+    if (activeTabIndex < 0 || !openTabs[activeTabIndex]) {
+      alert('❌ No hay pestaña activa para guardar');
+      return;
+    }
+    
+    const tab = openTabs[activeTabIndex];
+    console.log(`💾 Guardando pestaña: "${tab.templateName}"`);
+    
+    // Aquí va la lógica de guardado (usar la función existente handleSaveForm)
+    await handleSaveForm();
+    
+    // Marcar como guardado
+    setOpenTabs(prev => prev.map((t, i) => 
+      i === activeTabIndex ? { ...t, hasUnsavedChanges: false } : t
+    ));
+  };
 
   // --- LÓGICA DE FILTRADO DE PLANTILLAS (NUEVO) ---
   const uniqueProcesses = [...new Set(templates.map(t => t.proceso).filter(Boolean))];
@@ -204,6 +556,104 @@ function FillForm() {
       firstElement: template.bodyElements?.[0]?.type,
       columns: template.bodyElements?.[0]?.columns?.length
     });
+    
+    // 🔥 CARGAR CATÁLOGOS INDEPENDIENTES AL SELECCIONAR TEMPLATE
+    console.log('🚀 Cargando catálogos de la API...');
+    loadAllApiCatalogs().then(() => {
+      console.log('✅ Catálogos cargados al abrir formulario');
+    }).catch(err => {
+      console.error('❌ Error cargando catálogos:', err);
+    });
+    
+    // 🆕 SIEMPRE crear pestañas (nuevo sistema)
+    if (openTabs.length > 0) {
+      // Ya hay pestañas: preguntar si crear nueva o reemplazar
+      const action = confirm(
+        `📋 Ya tienes ${openTabs.length} formulario(s) abierto(s).\n\n` +
+        `¿Quieres abrir "${template.nombre}" en una NUEVA PESTAÑA?\n\n` +
+        `✅ Aceptar = Nueva pestaña (trabajar en paralelo)\n` +
+        `❌ Cancelar = Reemplazar pestaña actual`
+      );
+      
+      if (action) {
+        // Crear nueva pestaña
+        console.log('📋 Creando nueva pestaña adicional...');
+        createNewTab(template);
+        return;
+      } else {
+        // Reemplazar pestaña actual
+        if (activeTabIndex >= 0 && openTabs[activeTabIndex]) {
+          const currentTab = openTabs[activeTabIndex];
+          if (currentTab.hasUnsavedChanges) {
+            if (!confirm(`⚠️ La pestaña "${currentTab.templateName}" tiene cambios sin guardar.\n\n¿Deseas continuar sin guardar?`)) {
+              return;
+            }
+          }
+          
+          // Actualizar pestaña con nueva plantilla
+          console.log('🔄 Reemplazando plantilla en pestaña actual...');
+          
+          // Inicializar datos vacíos para la nueva plantilla
+          const initialHeader = {};
+          (template.headerFields || []).forEach((field) => { initialHeader[field.label] = "" });
+          
+          const initialBodyData = (template.bodyElements || []).map(element => {
+            if (element.type === 'section') {
+              const sectionData = {};
+              (element.fields || []).forEach(field => { sectionData[field.label] = ""; });
+              return { id: element.id, type: 'section', data: sectionData };
+            }
+            if (element.type === 'table') {
+              const numRows = element.defaultRows || 10;
+              const initialRows = Array.from({ length: numRows }, () => {
+                const newRow = {};
+                (element.columns || []).forEach((col) => { 
+                  newRow[col.label || col.header || col.name || col.id] = ""; 
+                });
+                return newRow;
+              });
+              return { id: element.id, type: 'table', data: initialRows };
+            }
+            return null;
+          }).filter(Boolean);
+          
+          const initialFirmas = {};
+          (template.firmas || []).forEach((firma) => {
+            initialFirmas[firma.puesto] = { nombre: "", fecha: "" };
+          });
+          
+          // Actualizar pestaña en el array
+          setOpenTabs(prev => prev.map((tab, idx) => {
+            if (idx === activeTabIndex) {
+              return {
+                ...tab,
+                templateId: template.templateID,
+                templateName: template.nombre,
+                template: template,
+                headerData: initialHeader,
+                bodyData: initialBodyData,
+                firmasData: initialFirmas,
+                hasUnsavedChanges: false
+              };
+            }
+            return tab;
+          }));
+          
+          // Cargar datos en el estado actual
+          setSelectedTemplate(template);
+          setHeaderData(initialHeader);
+          setBodyData(initialBodyData);
+          setFirmasData(initialFirmas);
+          setHasUnsavedChanges(false);
+        }
+        return;
+      }
+    } else {
+      // Primera vez: crear pestaña automáticamente
+      console.log('📋 Creando primera pestaña automáticamente...');
+      createNewTab(template);
+      return;
+    }
     
     setSelectedTemplate(template);
     
@@ -245,11 +695,37 @@ function FillForm() {
               firstRowCells: element.rows[0]?.cells?.length
             });
             
+            // 🔧 PASO 1: Detectar columnas duplicadas en el template
+            const columnNames = (element.columns || []).map((col, colIdx) => {
+              const colName = col.label || col.header || col.name || col.id;
+              return { colIdx, originalName: colName };
+            });
+            
+            const nameCount = {};
+            const finalColumnNames = columnNames.map(({ colIdx, originalName }) => {
+              if (!nameCount[originalName]) {
+                nameCount[originalName] = 0;
+              }
+              nameCount[originalName]++;
+              
+              // Si es un duplicado (segunda vez que aparece este nombre)
+              if (nameCount[originalName] > 1) {
+                const uniqueName = `${originalName}_col${colIdx}`;
+                console.log(`🔧 Columna duplicada detectada en template: "${originalName}" → "${uniqueName}"`);
+                return { colIdx, originalName, uniqueName };
+              }
+              return { colIdx, originalName, uniqueName: originalName };
+            });
+            
+            // 🔧 PASO 2: Crear filas con nombres únicos
             const initialRows = element.rows.map(row => {
               const newRow = {};
-              (row.cells || []).forEach(cell => {
-                // Usar el 'name' de la celda como clave
-                const cellName = cell.name || cell.columnId;
+              
+              (row.cells || []).forEach((cell, cellIndex) => {
+                // Buscar el nombre único que corresponde a este índice
+                const columnInfo = finalColumnNames[cellIndex];
+                const cellName = columnInfo ? columnInfo.uniqueName : (cell.name || cell.columnId);
+                
                 // Preservar el valor 0 (no convertirlo a "")
                 newRow[cellName] = cell.value !== undefined && cell.value !== null ? cell.value : "";
               });
@@ -265,8 +741,19 @@ function FillForm() {
           const numRows = element.defaultRows || 10;
           const initialRows = Array.from({ length: numRows }, () => {
             const newRow = {};
-            (element.columns || []).forEach(col => { 
-              const colName = col.label || col.header || col.name || col.id;
+            const usedColNames = new Set(); // Rastrear nombres usados
+            
+            (element.columns || []).forEach((col, colIndex) => { 
+              let colName = col.label || col.header || col.name || col.id;
+              
+              // 🔧 DETECTAR Y CORREGIR COLUMNAS DUPLICADAS
+              if (usedColNames.has(colName)) {
+                const originalName = colName;
+                colName = `${colName}_col${colIndex}`;
+                console.log(`🔧 Columna duplicada en inicialización: "${originalName}" → "${colName}"`);
+              }
+              
+              usedColNames.add(colName);
               newRow[colName] = ""; 
             });
             return newRow;
@@ -292,6 +779,71 @@ function FillForm() {
       initialExpandedStates[`body_${index}`] = true; // Todas las secciones expandidas por defecto
     });
     setExpandedSections(initialExpandedStates);
+    
+    // 🔧 MIGRAR DATOS: Agregar claves para columnas duplicadas
+    setTimeout(() => {
+      migrateDuplicateColumns(template);
+    }, 100);
+  };
+  
+  // 🔧 Función para migrar columnas duplicadas en datos existentes
+  const migrateDuplicateColumns = (template) => {
+    if (!template || !template.bodyElements) return;
+    
+    setBodyData(prevBodyData => {
+      const newBodyData = [...prevBodyData];
+      let hasChanges = false;
+      
+      template.bodyElements.forEach((element, elementIndex) => {
+        if (element.type === 'table' && element.columns) {
+          // Detectar columnas duplicadas
+          const columnNames = element.columns.map((col, idx) => ({
+            idx,
+            name: col.label || col.header || col.name || col.id
+          }));
+          
+          const nameCount = {};
+          columnNames.forEach(({ name }) => {
+            nameCount[name] = (nameCount[name] || 0) + 1;
+          });
+          
+          // Encontrar duplicados y agregarles sufijo
+          const columnsToAdd = [];
+          let countByName = {};
+          
+          columnNames.forEach(({ idx, name }) => {
+            if (nameCount[name] > 1) {
+              if (!countByName[name]) countByName[name] = 0;
+              countByName[name]++;
+              
+              if (countByName[name] > 1) {
+                // Es un duplicado, necesita sufijo
+                const uniqueName = `${name}_col${idx}`;
+                columnsToAdd.push({ name, uniqueName });
+              }
+            }
+          });
+          
+          // Agregar las claves faltantes a todas las filas
+          if (columnsToAdd.length > 0 && newBodyData[elementIndex]?.data) {
+            console.log(`🔄 Migrando ${columnsToAdd.length} columnas duplicadas en tabla ${elementIndex}`);
+            
+            newBodyData[elementIndex].data = newBodyData[elementIndex].data.map(row => {
+              const newRow = { ...row };
+              columnsToAdd.forEach(({ uniqueName }) => {
+                if (newRow[uniqueName] === undefined) {
+                  newRow[uniqueName] = "";
+                  hasChanges = true;
+                }
+              });
+              return newRow;
+            });
+          }
+        }
+      });
+      
+      return hasChanges ? newBodyData : prevBodyData;
+    });
   };
 
   // --- API EXTERNA ---
@@ -314,6 +866,113 @@ function FillForm() {
     } finally {
       setIsApiLoading(false);
     }
+  };
+
+  // 🆕 FUNCIONES PARA CARGAR DATOS DE CATÁLOGOS DE LA API
+  const loadApiCatalog = async (endpoint, catalogKey, displayName) => {
+    try {
+      console.log(`📡 Intentando cargar ${displayName} desde /${endpoint}...`);
+      
+      // 🔥 INTENTO 1: Sin token (la mayoría de catálogos no lo necesitan según OpenAPI)
+      const url = `${API_EXTERNAL_BASE_URL}/${endpoint}`;
+      console.log(`   🌐 URL completa: ${url}`);
+      console.log(`📡 Cargando ${displayName} SIN TOKEN...`);
+      
+      let response = await fetch(url);
+      
+      // 🔥 INTENTO 2: Si falla (401), intentar con token
+      if (response.status === 401) {
+        console.log(`   🔐 ${displayName} requiere autenticación, obteniendo token...`);
+        const token = await ensureApiToken();
+        if (!token) {
+          console.error(`❌ No se pudo obtener token para ${displayName}`);
+          return [];
+        }
+        response = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      }
+      
+      if (!response.ok) throw new Error(`Error cargando ${displayName}`);
+      const data = await response.json();
+      
+      console.log(`✅ ${data.length} ${displayName} cargados`);
+      
+      // 🐛 DEBUG: Ver estructura del primer item
+      if (data.length > 0) {
+        console.log(`   📋 Campos disponibles en ${displayName}:`, Object.keys(data[0]));
+        console.log(`   🔍 Primer ${displayName}:`, data[0]);
+      }
+      
+      setApiCatalogData(prev => ({ ...prev, [catalogKey]: data }));
+      return data;
+    } catch (err) {
+      console.error(`❌ Error cargando ${displayName}:`, err);
+      return [];
+    }
+  };
+
+  const loadAllApiCatalogs = async () => {
+    console.log('🔄 Cargando catálogos de la API externa...');
+    
+    // Cargar catálogos maestros
+    await Promise.all([
+      loadApiCatalog('Balanzas', 'balanzas', 'Balanzas'),
+      loadApiCatalog('Choferes', 'choferes', 'Choferes'),
+      loadApiCatalog('Especies', 'especies', 'Especies'),
+      loadApiCatalog('Pesqueros', 'pesqueros', 'Pesqueros'),
+      loadApiCatalog('Productos', 'productos', 'Productos'),
+      loadApiCatalog('Proveedores', 'proveedores', 'Proveedores'),
+      loadApiCatalog('Configuraciones', 'configuraciones', 'Configuraciones')
+    ]);
+    
+    // Cargar configuraciones FRIGO (filtradas)
+    try {
+      console.log('📡 Cargando configuraciones FRIGO...');
+      // 🔥 Intentar sin token primero
+      let response = await fetch(`${API_EXTERNAL_BASE_URL}/Configuraciones`);
+      
+      // Si requiere auth, obtener token
+      if (response.status === 401) {
+        const token = await ensureApiToken();
+        if (token) {
+          response = await fetch(`${API_EXTERNAL_BASE_URL}/Configuraciones`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+        }
+      }
+      
+      if (response.ok) {
+        const allConfigs = await response.json();
+        const frigoConfigs = allConfigs.filter(c => 
+          c.descripcion?.toUpperCase().includes('FRIGO') || 
+          c.clave?.toUpperCase().includes('FRIGO')
+        );
+        console.log(`✅ ${frigoConfigs.length} Configuraciones FRIGO cargadas`);
+        setApiCatalogData(prev => ({ ...prev, configuracionesFrigo: frigoConfigs }));
+      }
+    } catch (err) {
+      console.error('❌ Error cargando configuraciones FRIGO:', err);
+    }
+    
+    // 🆕 Cargar catálogos de calidad sensorial desde endpoints reales
+    console.log('📡 Cargando catálogos de calidad sensorial desde API...');
+    await Promise.all([
+      loadApiCatalog('Catalogos/Piel', 'piel', 'Piel'),
+      loadApiCatalog('Catalogos/Dureza', 'dureza', 'Dureza'),
+      loadApiCatalog('Catalogos/CavidadVentral', 'cavidadVentral', 'Cavidad Ventral'),
+      loadApiCatalog('Catalogos/Olor', 'olor', 'Olor'),
+      loadApiCatalog('Catalogos/SaborCarne', 'saborCarne', 'Sabor Carne'),
+      loadApiCatalog('Catalogos/OjosClaridad', 'ojosClaridad', 'Ojos Claridad'),
+      loadApiCatalog('Catalogos/OjosForma', 'ojosForma', 'Ojos Forma'),
+      loadApiCatalog('Catalogos/BranquiasColor', 'branquiasColor', 'Branquias Color'),
+      loadApiCatalog('Catalogos/BranquiasOlor', 'branquiasOlor', 'Branquias Olor')
+    ]);
+    
+    console.log('✅ Catálogos cargados completamente');
+    
+    // � Forzar actualización para que los selectores se re-rendericen con los nuevos datos
+    setForceRenderKey(prev => prev + 1);
   };
 
   const handleSearchMovements = async () => {
@@ -340,6 +999,7 @@ function FillForm() {
     if (movementId === 'MANUAL') {
       setSelectedMovementId('MANUAL');
       setApiDetailsData([]);
+      setApiMovimientoData([]); // 🔥 Limpiar también las cabeceras
       return;
     }
 
@@ -356,6 +1016,16 @@ function FillForm() {
       const headerJson = await headerRes.json();
       const detailsJson = await detailsRes.json();
       
+      // � DEBUG: Mostrar qué datos trae la API
+      console.log('📦 DATOS DE CABECERA:', headerJson);
+      console.log('📋 CAMPOS DISPONIBLES EN CABECERA:', Object.keys(headerJson));
+      console.log('📦 DATOS DE DETALLES:', detailsJson);
+      if (detailsJson.length > 0) {
+        console.log('📋 CAMPOS DISPONIBLES EN DETALLES:', Object.keys(detailsJson[0]));
+      }
+      
+      // �🔥 FIX: Guardar AMBOS - cabeceras y detalles
+      setApiMovimientoData([headerJson]); // Array con 1 elemento (la cabecera del movimiento)
       setApiDetailsData(detailsJson);
       
       const newHeaderData = { ...headerData };
@@ -377,6 +1047,976 @@ function FillForm() {
     }
   };
 
+  // ==========================================
+  // 🆕 FUNCIONES PARA CARGAR DATOS DE FORMULARIOS GUARDADOS
+  // ==========================================
+
+  /**
+   * Cargar formularios guardados filtrados por templateId
+   * @param {number} sourceTemplateId - ID del template de origen (ej: 36 para "15 Tinas")
+   */
+  const loadSourceFormsFromTemplate = async (sourceTemplateId) => {
+    setIsLoadingSourceForms(true);
+    try {
+      console.log(`📋 Cargando FORMULARIOS LLENOS Y GUARDADOS del template ${sourceTemplateId}...`);
+      console.log(`   📡 Endpoint: ${API_URL_FILLED_FORMS}`);
+      
+      // Cargar TODOS los formularios LLENOS guardados (FilledForms, NO Templates)
+      const response = await fetch(API_URL_FILLED_FORMS);
+      if (!response.ok) throw new Error('Error al cargar formularios llenos');
+      
+      let allForms = await response.json();
+      
+      // 🔧 VALIDACIÓN: Verificar que allForms sea un array
+      console.log('   🔍 Tipo de dato recibido:', typeof allForms);
+      console.log('   🔍 Es array:', Array.isArray(allForms));
+      console.log('   🔍 Datos completos:', allForms);
+      
+      // Si allForms es un objeto con una propiedad que contiene el array
+      if (!Array.isArray(allForms)) {
+        console.warn('⚠️ allForms NO es un array. Tipo:', typeof allForms);
+        
+        // Intentar extraer el array si está dentro de una propiedad
+        if (allForms && typeof allForms === 'object') {
+          // Buscar la propiedad que contiene el array
+          const possibleArrayKeys = ['data', 'forms', 'items', 'results', 'value', '$values'];
+          let foundArray = null;
+          
+          for (const key of possibleArrayKeys) {
+            if (Array.isArray(allForms[key])) {
+              console.log(`   ✅ Array encontrado en propiedad: "${key}"`);
+              foundArray = allForms[key];
+              break;
+            }
+          }
+          
+          if (foundArray) {
+            allForms = foundArray;
+          } else {
+            // Si no encontramos array en propiedades conocidas, mostrar estructura
+            console.error('❌ No se encontró array en propiedades conocidas');
+            console.error('   Estructura del objeto:', Object.keys(allForms));
+            throw new Error('La respuesta del servidor no contiene un array de formularios');
+          }
+        } else {
+          throw new Error('La respuesta del servidor no es válida');
+        }
+      }
+      
+      console.log(`   📦 Total de formularios llenos en BD: ${allForms.length}`);
+      
+      // 🔍 DEBUG: Mostrar estructura del primer formulario para identificar nombre de templateId
+      if (allForms.length > 0) {
+        console.log('   🔍 Estructura del primer formulario:');
+        console.log('      Propiedades:', Object.keys(allForms[0]));
+        console.log('      templateId:', allForms[0].templateId);
+        console.log('      templateID:', allForms[0].templateID);
+        console.log('      TemplateId:', allForms[0].TemplateId);
+        console.log('      TemplateID:', allForms[0].TemplateID);
+      }
+      
+      // Filtrar formularios LLENOS por templateId (probar con diferentes nombres)
+      const filteredForms = allForms.filter(form => {
+        const templateId = form.templateId || form.templateID || form.TemplateId || form.TemplateID;
+        return templateId === sourceTemplateId;
+      });
+      
+      console.log(`✅ ${filteredForms.length} FORMULARIOS LLENOS encontrados para template ${sourceTemplateId}`);
+      if (filteredForms.length > 0) {
+        console.log('   📋 Primeros 3 formularios:');
+        filteredForms.slice(0, 3).forEach(form => {
+          const formId = form.formID || form.FormID || form.id || form.ID;
+          const createdAt = form.createdAt || form.CreatedAt || form.created_at;
+          
+          console.log(`      - FormID ${formId}: ${new Date(createdAt).toLocaleString('es-EC')}`);
+          console.log(`        Header:`, form.headerData || form.HeaderData);
+          console.log(`        Filas en tabla: ${(form.bodyData || form.BodyData)?.[0]?.data?.length || 0}`);
+        });
+      }
+      
+      // Ordenar por fecha de creación (más recientes primero)
+      const sortedForms = filteredForms.sort((a, b) => 
+        new Date(b.createdAt) - new Date(a.createdAt)
+      );
+      
+      setAvailableSourceForms(sortedForms);
+      
+      return sortedForms;
+    } catch (err) {
+      console.error('❌ Error cargando formularios origen:', err);
+      setError(`Error al cargar formularios: ${err.message}`);
+      return [];
+    } finally {
+      setIsLoadingSourceForms(false);
+    }
+  };
+
+  /**
+   * Cargar datos de un formulario específico seleccionado
+   * @param {number} formId - ID del formulario a cargar
+   */
+  const loadDataFromSourceForm = async (formId) => {
+    try {
+      console.log(`📥 Cargando datos del FORMULARIO LLENO ${formId}...`);
+      console.log(`   📡 Endpoint: ${API_URL_FILLED_FORMS}/${formId}`);
+      
+      const response = await fetch(`${API_URL_FILLED_FORMS}/${formId}`);
+      if (!response.ok) throw new Error('Error al cargar datos del formulario lleno');
+      
+      const formData = await response.json();
+      
+      console.log('✅ Datos del FORMULARIO LLENO cargados exitosamente:');
+      console.log('   📋 FormID:', formData.formID);
+      console.log('   📅 Fecha:', new Date(formData.createdAt).toLocaleString('es-EC'));
+      console.log('   📝 Header Data:', formData.headerData);
+      console.log('   📊 Body Data (tablas):', formData.bodyData);
+      console.log('   🔢 Total de filas en tabla 0:', formData.bodyData?.[0]?.data?.length || 0);
+      
+      return formData;
+    } catch (err) {
+      console.error('❌ Error cargando datos del formulario:', err);
+      setError(`Error: ${err.message}`);
+      return null;
+    }
+  };
+
+  /**
+   * 🆕 Crear mapeo automático inteligente comparando nombres de columnas
+   * Mapea automáticamente campos con nombres iguales (ignorando sufijos _T1, _T2, etc.)
+   */
+  const createAutoMapping = (sourceFormData) => {
+    console.log('🤖 Creando mapeo automático inteligente...');
+    
+    const autoMapping = {
+      headerMapping: {},
+      bodyMapping: []
+    };
+
+    // 1. Auto-mapear Header (campos con mismo nombre)
+    if (sourceFormData.headerData || sourceFormData.HeaderData) {
+      const sourceHeader = sourceFormData.headerData || sourceFormData.HeaderData;
+      Object.keys(sourceHeader).forEach(sourceField => {
+        // Si el campo existe en headerData actual, mapearlo
+        if (headerData && headerData.hasOwnProperty(sourceField)) {
+          autoMapping.headerMapping[sourceField] = sourceField;
+          console.log(`   📝 Header auto-mapeado: ${sourceField}`);
+        }
+      });
+    }
+
+    // 2. Auto-mapear Body (columnas de tabla por nombre base)
+    const sourceBody = sourceFormData.bodyData || sourceFormData.BodyData;
+    if (sourceBody && sourceBody[0]?.data?.[0]) {
+      const sourceFirstRow = sourceBody[0].data[0];
+      const sourceColumns = Object.keys(sourceFirstRow).filter(k => k !== 'id' && k !== 'ID');
+      
+      console.log('   📊 Columnas origen detectadas:', sourceColumns);
+      
+      // Extraer nombres base (sin sufijo _T1, _T2, etc.)
+      const sourceBaseNames = new Set();
+      sourceColumns.forEach(col => {
+        const baseName = col.replace(/_T\d+$/, ''); // Quitar sufijo
+        sourceBaseNames.add(baseName);
+      });
+      
+      console.log('   🎯 Nombres base origen:', Array.from(sourceBaseNames));
+      
+      // Obtener columnas del template actual
+      const targetColumns = new Set();
+      if (selectedTemplate?.bodyElements?.[0]) {
+        const tableElement = selectedTemplate.bodyElements[0];
+        if (tableElement.rows?.[0]) {
+          tableElement.rows[0].forEach(cell => {
+            if (cell.cellName) {
+              const baseName = cell.cellName.replace(/_T\d+$/, '');
+              targetColumns.add(baseName);
+            }
+          });
+        }
+      }
+      
+      console.log('   🎯 Nombres base destino:', Array.from(targetColumns));
+      
+      // Crear mapeo solo para columnas que existen en ambos
+      const fieldMapping = {};
+      sourceColumns.forEach(sourceCol => {
+        const sourceBase = sourceCol.replace(/_T\d+$/, '');
+        if (targetColumns.has(sourceBase)) {
+          // Mapear al nombre base (sin sufijo)
+          fieldMapping[sourceCol] = sourceBase;
+          console.log(`   ✅ Columna auto-mapeada: ${sourceCol} → ${sourceBase}`);
+        }
+      });
+      
+      if (Object.keys(fieldMapping).length > 0) {
+        autoMapping.bodyMapping.push({
+          sourceTableIndex: 0,
+          targetTableIndex: 0,
+          copyAllRows: true,
+          fieldMapping: fieldMapping
+        });
+        console.log(`   📦 Total campos mapeados: ${Object.keys(fieldMapping).length}`);
+      }
+    }
+
+    console.log('✅ Mapeo automático creado:', autoMapping);
+    return autoMapping;
+  };
+
+  /**
+   * Mapear y transferir datos de un formulario origen al formulario actual
+   * @param {object} sourceFormData - Datos del formulario origen
+   * @param {object} mappingConfig - Configuración de mapeo de campos
+   */
+  const mapAndTransferFormData = (sourceFormData, mappingConfig) => {
+    try {
+      console.log('═══════════════════════════════════════════════════');
+      console.log('🔄 INICIANDO TRANSFERENCIA DE DATOS DESDE FORMULARIO LLENO');
+      console.log('═══════════════════════════════════════════════════');
+      console.log('📥 Formulario origen (lleno):');
+      console.log('   - FormID:', sourceFormData.formID);
+      console.log('   - TemplateID:', sourceFormData.templateId);
+      console.log('   - Fecha guardado:', new Date(sourceFormData.createdAt).toLocaleString('es-EC'));
+      console.log('   - Header Data:', sourceFormData.headerData);
+      console.log('   - Total de filas:', sourceFormData.bodyData?.[0]?.data?.length || 0);
+      console.log('');
+      console.log('⚙️ Configuración de mapeo:', mappingConfig);
+      console.log('');
+      
+      const newHeaderData = { ...headerData };
+      const newBodyData = [...bodyData];
+      
+      // === MAPEO DE HEADER ===
+      console.log('📝 === MAPEANDO CAMPOS DE HEADER ===');
+      if (mappingConfig.headerMapping && sourceFormData.headerData) {
+        Object.entries(mappingConfig.headerMapping).forEach(([targetField, sourceField]) => {
+          if (sourceFormData.headerData[sourceField]) {
+            newHeaderData[targetField] = sourceFormData.headerData[sourceField];
+            console.log(`   ✅ ${sourceField} → ${targetField} = "${sourceFormData.headerData[sourceField]}"`);
+          } else {
+            console.log(`   ⚠️ Campo origen "${sourceField}" no encontrado en headerData`);
+          }
+        });
+      } else {
+        console.log('   ℹ️ No hay mapeo de header configurado');
+      }
+      console.log('');
+      
+      // === MAPEO DE BODY (TABLAS) ===
+      console.log('📊 === MAPEANDO DATOS DE TABLAS (BODY) ===');
+      if (mappingConfig.bodyMapping && sourceFormData.bodyData) {
+        mappingConfig.bodyMapping.forEach((tableMap, index) => {
+          console.log(`\n🗂️ Mapeo de tabla ${index + 1}:`);
+          console.log(`   Tabla origen índice: ${tableMap.sourceTableIndex}`);
+          console.log(`   Tabla destino índice: ${tableMap.targetTableIndex}`);
+          
+          const sourceTable = sourceFormData.bodyData[tableMap.sourceTableIndex];
+          const targetTableIndex = tableMap.targetTableIndex;
+          
+          if (sourceTable && sourceTable.data && newBodyData[targetTableIndex]) {
+            // Mapeo de filas completas
+            if (tableMap.copyAllRows) {
+              console.log(`   📋 Modo: COPIAR TODAS LAS FILAS (${sourceTable.data.length} filas)`);
+              console.log(`   📦 Datos de la primera fila origen:`, sourceTable.data[0]);
+              
+              // Si hay fieldMapping, usar mapeo con sufijos
+              if (tableMap.fieldMapping) {
+                console.log(`   🎯 Usando mapeo de campos con sufijos automáticos`);
+                
+                newBodyData[targetTableIndex].data = sourceTable.data.map((sourceRow, rowIndex) => {
+                  const newRow = {};
+                  const rowSuffix = `_T${rowIndex + 1}`; // _T1, _T2, _T3, etc.
+                  
+                  // Mapear cada campo según fieldMapping
+                  Object.entries(tableMap.fieldMapping).forEach(([sourceFieldWithSuffix, targetFieldBase]) => {
+                    if (sourceRow[sourceFieldWithSuffix] !== undefined) {
+                      // Agregar sufijo al campo destino
+                      const targetFieldWithSuffix = targetFieldBase + rowSuffix;
+                      newRow[targetFieldWithSuffix] = sourceRow[sourceFieldWithSuffix];
+                      
+                      if (rowIndex === 0) {
+                        console.log(`      ✅ ${sourceFieldWithSuffix} → ${targetFieldWithSuffix} = "${sourceRow[sourceFieldWithSuffix]}"`);
+                      }
+                    }
+                  });
+                  
+                  if (rowIndex === 0) {
+                    console.log(`   📝 Fila 1 mapeada con ${Object.keys(newRow).length} campos:`, Object.keys(newRow).join(', '));
+                  }
+                  
+                  return newRow;
+                });
+                
+                console.log(`   ✅ Total de filas mapeadas: ${newBodyData[targetTableIndex].data.length}`);
+              } else {
+                // Sin fieldMapping, copiar todo tal cual
+                newBodyData[targetTableIndex].data = sourceTable.data.map((row, idx) => {
+                  const copiedRow = { ...row };
+                  if (idx === 0) {
+                    console.log(`   ✅ Fila 1 copiada con ${Object.keys(copiedRow).length} campos:`, Object.keys(copiedRow).join(', '));
+                  }
+                  return copiedRow;
+                });
+                console.log(`   ✅ Total de filas copiadas: ${sourceTable.data.length}`);
+              }
+            } 
+            // Mapeo de campos específicos
+            else if (tableMap.fieldMapping) {
+              console.log(`   🎯 Modo: MAPEO SELECTIVO DE CAMPOS`);
+              sourceTable.data.forEach((sourceRow, rowIndex) => {
+                if (!newBodyData[targetTableIndex].data[rowIndex]) {
+                  newBodyData[targetTableIndex].data[rowIndex] = {};
+                }
+                
+                Object.entries(tableMap.fieldMapping).forEach(([targetField, sourceField]) => {
+                  if (sourceRow[sourceField] !== undefined) {
+                    newBodyData[targetTableIndex].data[rowIndex][targetField] = sourceRow[sourceField];
+                    if (rowIndex === 0) {
+                      console.log(`      ✅ ${sourceField} → ${targetField} = "${sourceRow[sourceField]}"`);
+                    }
+                  }
+                });
+              });
+              console.log(`   ✅ ${sourceTable.data.length} filas mapeadas selectivamente`);
+            }
+          } else {
+            console.log(`   ⚠️ No se pudo mapear: tabla origen o destino no válida`);
+          }
+        });
+      } else {
+        console.log('   ℹ️ No hay mapeo de body configurado');
+      }
+      console.log('');
+      
+      // Actualizar estados
+      setHeaderData(newHeaderData);
+      setBodyData(newBodyData);
+      setHasUnsavedChanges(true);
+      
+      console.log('═══════════════════════════════════════════════════');
+      console.log('✅ TRANSFERENCIA DE DATOS COMPLETADA EXITOSAMENTE');
+      console.log('═══════════════════════════════════════════════════');
+      console.log('📊 Resumen:');
+      console.log('   - Campos de header actualizados:', Object.keys(newHeaderData).length);
+      console.log('   - Filas en tabla destino:', newBodyData[0]?.data?.length || 0);
+      console.log('   - Estado: Listo para guardar');
+      console.log('═══════════════════════════════════════════════════');
+      
+      alert(`✅ Datos cargados exitosamente desde el formulario lleno!\n\n📋 FormID origen: ${sourceFormData.formID}\n📊 ${newBodyData[0]?.data?.length || 0} filas copiadas\n💾 Recuerda guardar el formulario`);
+      
+    } catch (err) {
+      console.error('❌ Error en transferencia de datos:', err);
+      alert(`❌ Error al transferir datos: ${err.message}`);
+    }
+  };
+
+  // 🆕 NUEVO: Extraer campos disponibles de un formulario para mapeo personalizado
+  const extractAvailableFields = (formData, currentHeaderData, currentBodyData) => {
+    console.log('🔍 Extrayendo campos disponibles para mapeo personalizado...');
+    
+    const fields = {
+      header: [],
+      body: []
+    };
+
+    // 1. Extraer campos del header del formulario origen
+    if (formData.headerData || formData.HeaderData) {
+      const sourceHeader = formData.headerData || formData.HeaderData;
+      fields.header = Object.keys(sourceHeader).filter(key => key !== 'id' && key !== 'ID');
+      console.log('   📝 Campos de Header origen:', fields.header);
+    }
+
+    // 2. Extraer campos del body (primera fila de la tabla)
+    const sourceBody = formData.bodyData || formData.BodyData;
+    if (sourceBody && sourceBody[0]?.data?.[0]) {
+      const firstRow = sourceBody[0].data[0];
+      fields.body = Object.keys(firstRow).filter(key => 
+        key !== 'id' && key !== 'ID' && !key.includes('$')
+      );
+      console.log('   📊 Campos de Body origen:', fields.body);
+    }
+
+    // 3. Extraer campos disponibles en el formulario destino actual
+    const targetFields = {
+      header: currentHeaderData ? Object.keys(currentHeaderData).filter(key => key !== 'id' && key !== 'ID') : [],
+      body: []
+    };
+
+    // Extraer nombres base de columnas del template actual (sin sufijos)
+    if (selectedTemplate?.bodyElements?.[0]) {
+      const tableElement = selectedTemplate.bodyElements[0];
+      if (tableElement.rows?.[0]) {
+        const uniqueColumns = new Set();
+        tableElement.rows[0].forEach(cell => {
+          if (cell.cellName) {
+            // Extraer nombre base (sin sufijo _T1, _T2, etc)
+            const baseName = cell.cellName.replace(/_T\d+$/, '');
+            uniqueColumns.add(baseName);
+          }
+        });
+        targetFields.body = Array.from(uniqueColumns).filter(name => 
+          !name.includes('TOTAL') && name !== 'id' && name !== 'ID'
+        );
+      }
+    }
+
+    console.log('   🎯 Campos de Header destino:', targetFields.header);
+    console.log('   🎯 Campos de Body destino:', targetFields.body);
+
+    return { source: fields, target: targetFields };
+  };
+
+  // 🆕 NUEVO: Iniciar mapeo personalizado de campos
+  const startCustomFieldMapping = async (sourceForm) => {
+    console.log('🎨 Iniciando mapeo personalizado de campos...');
+    
+    try {
+      // Cargar datos completos del formulario origen
+      const formId = sourceForm.formID || sourceForm.FormID || sourceForm.id || sourceForm.ID;
+      const fullFormData = await loadDataFromSourceForm(formId);
+      
+      if (!fullFormData) {
+        alert('❌ No se pudo cargar el formulario origen');
+        return;
+      }
+
+      // Extraer campos disponibles
+      const { source, target } = extractAvailableFields(fullFormData, headerData, bodyData);
+      
+      setSourceFields(source);
+      setTargetFields(target);
+      
+      // Crear mapeo automático inicial (campos con mismo nombre)
+      const autoHeaderMapping = {};
+      const autoBodyMapping = {};
+      
+      source.header.forEach(field => {
+        if (target.header.includes(field)) {
+          autoHeaderMapping[field] = field;
+        }
+      });
+      
+      source.body.forEach(field => {
+        if (target.body.includes(field)) {
+          autoBodyMapping[field] = field;
+        }
+      });
+      
+      setFieldMapping({
+        header: autoHeaderMapping,
+        body: autoBodyMapping
+      });
+      
+      // Marcar campos auto-mapeados como seleccionados
+      setSelectedHeaderFields(Object.keys(autoHeaderMapping));
+      setSelectedBodyFields(Object.keys(autoBodyMapping));
+      
+      console.log('✅ Mapeo inicial creado:', { autoHeaderMapping, autoBodyMapping });
+      
+      // Mostrar modal de mapeo
+      setShowFieldMapper(true);
+      
+    } catch (err) {
+      console.error('❌ Error al iniciar mapeo personalizado:', err);
+      alert(`❌ Error: ${err.message}`);
+    }
+  };
+
+  // 🆕 NUEVO: Aplicar mapeo personalizado y transferir solo campos seleccionados
+  const applyCustomFieldMapping = async () => {
+    console.log('🚀 Aplicando mapeo personalizado de campos...');
+    console.log('   📝 Header mapping:', fieldMapping.header);
+    console.log('   📊 Body mapping:', fieldMapping.body);
+    
+    try {
+      const formId = selectedSourceForm.formID || selectedSourceForm.FormID || selectedSourceForm.id || selectedSourceForm.ID;
+      const fullFormData = await loadDataFromSourceForm(formId);
+      
+      if (!fullFormData) {
+        alert('❌ No se pudo cargar el formulario origen');
+        return;
+      }
+
+      // Crear configuración de mapeo basada en la selección del usuario
+      const mappingConfig = {
+        headerMapping: fieldMapping.header,
+        bodyMapping: [{
+          sourceTableIndex: 0,
+          targetTableIndex: 0,
+          copyAllRows: true,
+          fieldMapping: fieldMapping.body
+        }]
+      };
+
+      console.log('📋 Configuración de mapeo personalizado:', mappingConfig);
+
+      // Aplicar la transferencia con mapeo personalizado
+      await mapAndTransferFormData(fullFormData, mappingConfig);
+      
+      // Cerrar modal
+      setShowFieldMapper(false);
+      
+    } catch (err) {
+      console.error('❌ Error al aplicar mapeo personalizado:', err);
+      alert(`❌ Error: ${err.message}`);
+    }
+  };
+
+  // 🆕 NUEVO: Abrir selector interactivo de datos
+  /**
+   * Abre un modal que muestra todos los datos de un formulario guardado
+   * El usuario puede hacer clic en cualquier celda para copiar ese valor
+   * @param {Function} callback - Función que recibe el valor seleccionado
+   * @param {string} fieldLabel - Etiqueta del campo actual (para mostrar en el modal)
+   */
+  const openDataPicker = async (callback, fieldLabel = 'Campo actual') => {
+    console.log('🎯 Abriendo selector interactivo de datos...');
+    console.log('   📝 Campo destino:', fieldLabel);
+    
+    try {
+      // Cargar lista de formularios disponibles si no está cargada
+      if (availableSourceForms.length === 0) {
+        console.log('📦 Cargando lista de formularios guardados...');
+        // Usar el template actual como filtro
+        if (selectedTemplate?.templateID) {
+          await loadSourceFormsFromTemplate(selectedTemplate.templateID);
+        }
+      }
+      
+      setCurrentFieldForPicker({ label: fieldLabel, callback: callback });
+      setShowDataPicker(true);
+      
+    } catch (err) {
+      console.error('❌ Error al abrir selector de datos:', err);
+      alert(`❌ Error: ${err.message}`);
+    }
+  };
+
+  // 🆕 NUEVO: Cargar formulario en el selector de datos
+  const loadFormDataInPicker = async (formId) => {
+    console.log('📖 Cargando datos del formulario en selector...');
+    
+    try {
+      const fullFormData = await loadDataFromSourceForm(formId);
+      if (fullFormData) {
+        setDataPickerForm(fullFormData);
+        console.log('✅ Formulario cargado en selector:', fullFormData);
+      }
+    } catch (err) {
+      console.error('❌ Error cargando formulario en selector:', err);
+      alert(`❌ Error: ${err.message}`);
+    }
+  };
+
+  // 🆕 NUEVO: Copiar valor seleccionado al campo actual
+  const copyValueFromPicker = (value) => {
+    console.log('📋 Copiando valor:', value);
+    
+    if (currentFieldForPicker && currentFieldForPicker.callback) {
+      currentFieldForPicker.callback(value);
+      console.log(`✅ Valor "${value}" copiado a ${currentFieldForPicker.label}`);
+      
+      // Cerrar modal
+      setShowDataPicker(false);
+      setDataPickerForm(null);
+      
+      // Mensaje de confirmación
+      alert(`✅ Valor copiado: "${value}"\n📝 Al campo: ${currentFieldForPicker.label}`);
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🚀 FUNCIONES DE IMPORTACIÓN AUTOMÁTICA DE COLUMNAS
+  // Permite copiar toda una columna de un formulario lleno a la columna actual
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Abre el modal de importación de columnas
+   * @param {number} elementIndex - Índice del elemento de tabla
+   * @param {number} colIndex - Índice de la columna destino
+   * @param {string} columnName - Nombre de la columna destino
+   */
+  const openColumnImporter = async (elementIndex, colIndex, columnName) => {
+    console.log('📥 Abriendo importador de columnas...');
+    console.log('   🎯 Columna destino:', columnName);
+    console.log('   📍 Elemento:', elementIndex, 'Columna:', colIndex);
+
+    try {
+      setColumnImporterTarget({ elementIndex, colIndex, columnName });
+      
+      // 🆕 Cargar formularios con el endpoint /simple para tener nombres de templates
+      const response = await fetch(API_URL_FILLED_FORMS);
+      if (!response.ok) throw new Error('Error al cargar formularios');
+      
+      let allForms = await response.json();
+      
+      // Manejar wrapper $values de ASP.NET
+      if (allForms.$values) allForms = allForms.$values;
+      if (!Array.isArray(allForms)) allForms = [allForms];
+      
+      // 🆕 Cargar información completa de cada formulario (con nombre de template)
+      const formsWithDetails = await Promise.all(
+        allForms.slice(0, 50).map(async (form) => {
+          try {
+            const formId = form.filledFormID || form.FormID || form.formID;
+            if (!formId) return null;
+            
+            // Usar el endpoint /simple para obtener el nombre del template
+            const detailResponse = await fetch(`${API_URL_FILLED_FORMS}/${formId}/simple`);
+            if (!detailResponse.ok) return form; // Si falla, usar datos originales
+            
+            const detailData = await detailResponse.json();
+            return {
+              ...form,
+              templateName: detailData.templateName || 'Formulario',
+              formID: detailData.formID
+            };
+          } catch (err) {
+            console.warn('Error cargando detalle de formulario:', err);
+            return form;
+          }
+        })
+      );
+      
+      const availableForms = formsWithDetails.filter(f => f !== null);
+      
+      console.log(`📋 ${availableForms.length} formularios disponibles para importar`);
+      setColumnImporterForms(availableForms);
+      setShowColumnImporter(true);
+      
+    } catch (err) {
+      console.error('❌ Error al abrir importador de columnas:', err);
+      alert(`❌ Error: ${err.message}`);
+    }
+  };
+
+  /**
+   * Carga los datos completos de un formulario para verlo en el importador
+   * Usa el endpoint /simple para obtener datos parseados directamente
+   */
+  const loadFormForColumnImport = async (form) => {
+    console.log('📖 Cargando formulario para importar columnas...');
+    console.log('   📦 Form object recibido:', form);
+    
+    try {
+      // 🔧 FIX: Buscar el ID en múltiples posibles campos
+      const formId = form.formID || form.FormID || form.filledFormID || form.FilledFormID || form.id || form.Id;
+      
+      console.log('   🔢 FormID detectado:', formId);
+      
+      if (!formId) {
+        throw new Error('No se pudo encontrar el ID del formulario');
+      }
+      
+      // 🆕 Usar el nuevo endpoint /simple que devuelve datos parseados
+      const endpoint = `${API_URL_FILLED_FORMS}/${formId}/simple`;
+      console.log('   📡 Endpoint:', endpoint);
+      
+      const response = await fetch(endpoint);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Error response:', response.status, errorText);
+        throw new Error(`Error al cargar datos: ${response.status}`);
+      }
+      
+      const fullFormData = await response.json();
+      console.log('✅ Datos recibidos del endpoint /simple:', fullFormData);
+      
+      // Preparar estructura para el importador
+      // El bodyData del endpoint /simple viene como array de objetos con {id, type, data}
+      const parsedBody = Array.isArray(fullFormData.bodyData) 
+        ? fullFormData.bodyData 
+        : [];
+      
+      setColumnImporterForm({
+        ...form,
+        templateName: fullFormData.templateName,
+        fullData: {
+          formID: fullFormData.formID,
+          templateID: fullFormData.templateID,
+          headerData: fullFormData.headerData || {},
+          body: parsedBody,  // Estructura esperada por importColumnData
+          createdAt: fullFormData.createdAt
+        }
+      });
+      
+      console.log('✅ Formulario listo para importar columnas');
+      
+    } catch (err) {
+      console.error('❌ Error cargando formulario:', err);
+      alert(`❌ Error: ${err.message}`);
+    }
+  };
+
+  /**
+   * 🔥 FUNCIÓN PRINCIPAL: Importa toda una columna de un formulario origen
+   * al formulario actual (columna destino)
+   */
+  const importColumnData = (sourceColumnName) => {
+    console.log('🚀 IMPORTANDO COLUMNA AUTOMÁTICAMENTE...');
+    console.log('   📤 Columna origen:', sourceColumnName);
+    console.log('   📥 Columna destino:', columnImporterTarget?.columnName);
+    console.log('   📋 bodyData actual:', bodyData);
+    
+    if (!columnImporterForm?.fullData || !columnImporterTarget) {
+      alert('❌ No hay datos para importar');
+      return;
+    }
+
+    const { elementIndex, colIndex, columnName: targetColumnName } = columnImporterTarget;
+    const sourceBody = columnImporterForm.fullData.body || [];
+    
+    console.log('   🔍 elementIndex:', elementIndex, 'colIndex:', colIndex);
+    console.log('   📊 sourceBody tiene', sourceBody.length, 'elementos');
+    
+    // 🆕 Determinar cuántas filas destino hay para limitar la búsqueda
+    const targetRowCount = bodyData[elementIndex]?.data?.length || 10;
+    console.log('   🎯 Filas destino:', targetRowCount);
+    
+    // Buscar la tabla origen (puede haber múltiples elementos)
+    let sourceColumnData = [];
+    
+    sourceBody.forEach((bodyElement, elemIdx) => {
+      const data = bodyElement.data || [];
+      console.log(`   📦 Elemento ${elemIdx}: ${data.length} filas`);
+      
+      // 🆕 SOLO procesar las primeras N filas (donde N = número de filas destino)
+      const rowsToProcess = Math.min(data.length, targetRowCount);
+      console.log(`   🔄 Procesando primeras ${rowsToProcess} filas de ${data.length} disponibles`);
+      
+      // 🚀 FUNCIÓN INTELIGENTE: Detectar el patrón de la columna seleccionada
+      const detectColumnPattern = (columnName) => {
+        // Patrones comunes:
+        // 1. "TINA_T1" → prefijo="TINA", sufijo="_T\d+"
+        // 2. "TOTAL_T1" → prefijo="TOTAL", sufijo="_T\d+"
+        // 3. "Producto_1" → prefijo="Producto", sufijo="_\d+"
+        // 4. "Item-A" → prefijo="Item", sufijo="-[A-Z]"
+        // 5. "Codigo123" → prefijo="Codigo", sufijo="\d+"
+        // 6. "HORA" → sin patrón (columna simple)
+        
+        const patterns = [
+          { regex: /^(.+)_T(\d+)$/i, type: 'tina' },        // TINA_T1, TOTAL_T2
+          { regex: /^(.+)_(\d+)$/i, type: 'underscore' },  // Producto_1, Item_2
+          { regex: /^(.+)-([A-Z0-9]+)$/i, type: 'dash' },  // Item-A, Code-B1
+          { regex: /^(.+?)(\d+)$/i, type: 'numeric' },     // Codigo123, Ref456
+        ];
+        
+        for (const pattern of patterns) {
+          const match = columnName.match(pattern.regex);
+          if (match) {
+            return {
+              hasPattern: true,
+              prefix: match[1],
+              suffix: match[2],
+              type: pattern.type,
+              fullRegex: pattern.regex
+            };
+          }
+        }
+        
+        // Sin patrón → columna simple (HORA, FECHA, etc)
+        return {
+          hasPattern: false,
+          prefix: columnName,
+          type: 'simple'
+        };
+      };
+      
+      const columnPattern = detectColumnPattern(sourceColumnName);
+      console.log(`     🔍 Patrón detectado:`, columnPattern);
+      
+      for (let rowIndex = 0; rowIndex < rowsToProcess; rowIndex++) {
+        const row = data[rowIndex];
+        let value = null;
+        let foundKey = null;
+        
+        if (columnPattern.hasPattern) {
+          // 🎯 MODO PREFIJO: Buscar cualquier clave con el mismo prefijo
+          const prefixUpper = columnPattern.prefix.toUpperCase();
+          
+          Object.keys(row).forEach(key => {
+            if (foundKey) return; // Ya encontramos una coincidencia
+            
+            const keyUpper = key.toUpperCase();
+            
+            // Coincidir por prefijo (más flexible)
+            if (keyUpper.startsWith(prefixUpper)) {
+              // Verificar que el resto de la clave siga el patrón
+              const restOfKey = key.substring(columnPattern.prefix.length);
+              
+              // Si tiene el mismo tipo de separador/patrón
+              if (columnPattern.type === 'tina' && restOfKey.match(/_T\d+$/i)) {
+                value = row[key];
+                foundKey = key;
+                console.log(`     🎯 Fila ${rowIndex}: Match por prefijo TINA: "${key}" = "${value}"`);
+              }
+              else if (columnPattern.type === 'underscore' && restOfKey.match(/_\d+$/i)) {
+                value = row[key];
+                foundKey = key;
+                console.log(`     🎯 Fila ${rowIndex}: Match por prefijo _N: "${key}" = "${value}"`);
+              }
+              else if (columnPattern.type === 'dash' && restOfKey.match(/-[A-Z0-9]+$/i)) {
+                value = row[key];
+                foundKey = key;
+                console.log(`     🎯 Fila ${rowIndex}: Match por prefijo -X: "${key}" = "${value}"`);
+              }
+              else if (columnPattern.type === 'numeric' && restOfKey.match(/^\d+$/i)) {
+                value = row[key];
+                foundKey = key;
+                console.log(`     🎯 Fila ${rowIndex}: Match por prefijo N: "${key}" = "${value}"`);
+              }
+            }
+          });
+        } else {
+          // 📦 MODO SIMPLE: Buscar coincidencia exacta (HORA, FECHA, etc)
+          const sourceUpper = sourceColumnName.toUpperCase();
+          
+          Object.keys(row).forEach(key => {
+            const keyUpper = key.toUpperCase();
+            
+            if (key === sourceColumnName || keyUpper === sourceUpper || 
+                keyUpper.includes(sourceUpper) || sourceUpper.includes(keyUpper)) {
+              value = row[key];
+              foundKey = key;
+              console.log(`     ✅ Fila ${rowIndex}: Match exacto: "${key}" = "${value}"`);
+            }
+          });
+        }
+        
+        // Guardar siempre para mantener el mapeo 1:1
+        sourceColumnData.push({ 
+          rowIndex, 
+          value: value !== null && value !== undefined ? value : '', 
+          key: foundKey || sourceColumnName 
+        });
+        
+        if (!foundKey) {
+          console.log(`     ⚠️ Fila ${rowIndex}: No se encontró ninguna clave`);
+        }
+      }
+    });
+    
+    console.log(`📊 Encontrados ${sourceColumnData.length} valores para importar:`, sourceColumnData);
+    
+    // 🐛 DEBUG: Ver los primeros 3 valores
+    console.log('🔍 Primeros valores a copiar:');
+    sourceColumnData.slice(0, 3).forEach((item, idx) => {
+      console.log(`   [${idx}] rowIndex=${item.rowIndex}, value="${item.value}", key="${item.key}"`);
+    });
+    
+    if (sourceColumnData.length === 0) {
+      alert(`⚠️ No se encontraron datos en la columna "${sourceColumnName}"`);
+      return;
+    }
+    
+    // 🆕 Ahora, copiar los valores a la columna destino - MAPEO CORRECTO
+    setBodyData(prevBodyData => {
+      console.log('🔄 Actualizando bodyData...');
+      console.log('   📋 prevBodyData:', prevBodyData);
+      
+      const newBodyData = JSON.parse(JSON.stringify(prevBodyData)); // Deep clone
+      const targetElement = newBodyData[elementIndex];
+      
+      if (!targetElement) {
+        console.error('❌ Elemento destino no encontrado en índice', elementIndex);
+        console.log('   📋 newBodyData tiene', newBodyData.length, 'elementos');
+        return prevBodyData;
+      }
+      
+      if (!targetElement.data) {
+        console.error('❌ targetElement.data no existe');
+        return prevBodyData;
+      }
+      
+      console.log('   ✅ targetElement encontrado:', targetElement);
+      console.log('   📊 targetElement.data tiene', targetElement.data.length, 'filas');
+      
+      // Obtener las claves del primer row para saber qué campos hay
+      if (targetElement.data.length > 0) {
+        const firstRow = targetElement.data[0];
+        const rowKeys = Object.keys(firstRow);
+        console.log('   🔑 Claves disponibles en row destino:', rowKeys);
+        console.log('   🎯 Queremos actualizar la columna en índice:', colIndex);
+        console.log('   🏷️  Nombre de columna destino:', targetColumnName);
+        
+        // 🆕 MAPEO INTELIGENTE: Copiar valores hasta donde alcancen las filas destino
+        let copiedCount = 0;
+        const maxRowsToCopy = Math.min(sourceColumnData.length, targetElement.data.length);
+        
+        console.log(`   � Copiando ${maxRowsToCopy} filas (origen tiene ${sourceColumnData.length}, destino tiene ${targetElement.data.length})`);
+        
+        for (let i = 0; i < maxRowsToCopy; i++) {
+          const sourceItem = sourceColumnData[i];
+          
+          // 🔧 CRÍTICO: Buscar la clave EXACTA en el row destino
+          const currentRow = targetElement.data[i];
+          const currentRowKeys = Object.keys(currentRow);
+          
+          // 🆕 Estrategia de búsqueda: 
+          // 1. Buscar por nombre exacto del targetColumnName
+          // 2. Si no, usar el índice colIndex
+          let targetKey = null;
+          
+          if (currentRowKeys.includes(targetColumnName)) {
+            targetKey = targetColumnName;
+            console.log(`     🎯 Usando nombre exacto: "${targetKey}"`);
+          } else {
+            // Fallback: usar índice
+            targetKey = currentRowKeys[colIndex];
+            console.log(`     🔢 Usando índice ${colIndex}: "${targetKey}"`);
+          }
+          
+          if (targetKey) {
+            // 🆕 Copiar el valor (puede ser vacío)
+            const valueToSet = sourceItem?.value !== undefined ? sourceItem.value : '';
+            
+            // 🐛 DEBUG ANTES de asignar
+            console.log(`     🔧 ANTES: targetElement.data[${i}]["${targetKey}"] = "${targetElement.data[i][targetKey]}"`);
+            
+            targetElement.data[i][targetKey] = valueToSet;
+            
+            // 🐛 DEBUG DESPUÉS de asignar
+            console.log(`     ✅ DESPUÉS: targetElement.data[${i}]["${targetKey}"] = "${targetElement.data[i][targetKey]}"`);
+            
+            if (valueToSet !== '' && valueToSet !== null) {
+              console.log(`     📝 Fila ${i}: ${targetKey} = "${valueToSet}"`);
+              copiedCount++;
+            } else {
+              console.log(`     ⚪ Fila ${i}: ${targetKey} = (vacío)`);
+            }
+          } else {
+            console.warn(`     ⚠️ Fila ${i}: No se pudo determinar targetKey. targetColumnName="${targetColumnName}", colIndex=${colIndex}, keys=`, currentRowKeys);
+          }
+        }
+        
+        console.log(`   ✅ ${copiedCount} valores copiados`);
+        console.log('   📋 newBodyData después de actualizar:', newBodyData);
+        console.log('   🔍 Primera fila después de copiar:', newBodyData[elementIndex].data[0]);
+        console.log('   🔍 targetKey usado:', Object.keys(newBodyData[elementIndex].data[0])[colIndex]);
+        
+        if (sourceColumnData.length > targetElement.data.length) {
+          console.warn(`   ⚠️ Origen tiene ${sourceColumnData.length} filas pero destino solo ${targetElement.data.length}. Se copiaron solo las primeras ${copiedCount}.`);
+        }
+      }
+      
+      return newBodyData;
+    });
+    
+    // 🆕 FORZAR RE-RENDER después de actualizar el estado
+    setTimeout(() => {
+      console.log('🔄 Forzando re-render completo...');
+      setForceRenderKey(prev => prev + 1);
+    }, 200);
+    
+    // Cerrar modal y mostrar mensaje
+    setShowColumnImporter(false);
+    setColumnImporterForm(null);
+    
+    const copiedCount = Math.min(sourceColumnData.length, bodyData[elementIndex]?.data?.length || 0);
+    alert(`✅ ¡Columna importada!\n\n📤 Origen: ${sourceColumnName} (${sourceColumnData.length} valores)\n📥 Destino: ${targetColumnName}\n📊 ${copiedCount} valores copiados\n${sourceColumnData.length > copiedCount ? `\n⚠️ Se omitieron ${sourceColumnData.length - copiedCount} filas extras` : ''}`);
+  };
+
   // --- MANEJADORES DE ESTADO ---
   const addTableRow = (elementIndex) => {
     const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
@@ -391,8 +2031,35 @@ function FillForm() {
       // Usar los nombres de las celdas de una fila existente si hay data
       if (currentElementData?.data && currentElementData.data.length > 0) {
         const lastRow = currentElementData.data[currentElementData.data.length - 1];
+        const nextRowNumber = currentElementData.data.length + 1;
+        
+        // 🔧 FIX: Incrementar el sufijo (_T1 -> _T2, _T15 -> _T16, etc.)
         Object.keys(lastRow).forEach(key => {
-          newRow[key] = "";
+          // Detectar si la clave tiene un sufijo _Txx
+          const suffixMatch = key.match(/^(.+)_T(\d+)$/);
+          if (suffixMatch) {
+            // Tiene sufijo: reemplazar el número
+            const baseName = suffixMatch[1]; // Ej: "PESO6"
+            const newKey = `${baseName}_T${nextRowNumber}`;
+            newRow[newKey] = "";
+            
+            // 🐛 DEBUG
+            if (baseName.includes('PESO') || baseName.includes('HORA') || baseName.includes('TINA')) {
+              console.log(`➕ Nueva fila ${nextRowNumber}: ${key} → ${newKey}`);
+            }
+          } else {
+            // NO tiene sufijo: verificar si es una clave válida o un col-xxx corrupto
+            const keyUpper = key.toUpperCase();
+            
+            // IGNORAR claves que empiezan con "col-" (son IDs de columna, no datos)
+            if (key.startsWith('col-') || key.startsWith('COL-')) {
+              console.warn(`⚠️ Ignorando clave corrupta en nueva fila: "${key}"`);
+              // No agregar esta clave a la nueva fila
+            } else {
+              // Clave válida sin sufijo: copiar tal cual (ej: metadatos)
+              newRow[key] = "";
+            }
+          }
         });
       } else {
         // Si no hay data, usar las celdas de la primera fila del template
@@ -410,6 +2077,8 @@ function FillForm() {
       });
     }
     
+    console.log('➕ Nueva fila creada con claves:', Object.keys(newRow));
+    
     setBodyData(prev => prev.map((element, index) => 
       index === elementIndex ? { ...element, data: [...element.data, newRow] } : element
     ));
@@ -426,11 +2095,377 @@ function FillForm() {
     }));
     setHasUnsavedChanges(true);
   };
+
+  // 🆕 Función para agregar columna dinámicamente
+  const addTableColumn = (elementIndex) => {
+    const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
+    if (!tableElement) return;
+    
+    // Obtener columnas actuales
+    const currentColumns = tableElement.columns || [];
+    
+    // 🔍 Detectar el patrón de nombres de las columnas existentes
+    // Buscar una columna PESO para detectar el sufijo (ej: _T1, _T2, etc.)
+    const firstPesoCol = currentColumns.find(col => {
+      const colId = col.id || col.name || col.label || '';
+      return colId.toUpperCase().includes('PESO') && !colId.toUpperCase().includes('TOTAL');
+    });
+    
+    // Extraer el sufijo (ej: "_T1" de "PESO1_T1")
+    let suffix = '';
+    if (firstPesoCol) {
+      const colId = firstPesoCol.id || firstPesoCol.name || firstPesoCol.label || '';
+      const match = colId.match(/_T\d+$/); // Busca _T1, _T2, etc. al final
+      if (match) {
+        suffix = match[0]; // ej: "_T1"
+      }
+    }
+    
+    console.log('🔍 Detectado sufijo para nuevas columnas:', suffix || '(ninguno)');
+    
+    // Buscar el índice de la columna TOTAL
+    const totalIndex = currentColumns.findIndex(col => 
+      (col.label || col.header || '').toUpperCase().includes('TOTAL') ||
+      (col.id || col.name || '').toUpperCase().includes('TOTAL')
+    );
+    
+    // Contar cuántas columnas de PESO ya existen (excluyendo TOTAL)
+    const pesoColumns = currentColumns.filter(col => {
+      const colLabel = (col.label || col.header || '').toUpperCase();
+      return colLabel.includes('PESO') && !colLabel.includes('TOTAL');
+    });
+    
+    const newColumnNumber = pesoColumns.length + 1;
+    const newColumnName = `PESO ${newColumnNumber}`;
+    const newColumnId = `PESO${newColumnNumber}${suffix}`; // ✅ Agregar sufijo detectado
+    
+    console.log('✅ Creando nueva columna:', { label: newColumnName, id: newColumnId });
+    
+    // Crear nueva columna
+    const newColumn = { 
+      id: newColumnId, 
+      label: newColumnName, 
+      header: newColumnName,
+      name: newColumnId,
+      type: 'number'
+    };
+    
+    // Insertar la nueva columna ANTES de TOTAL (o al final si no hay TOTAL)
+    const updatedColumns = [...currentColumns];
+    if (totalIndex !== -1) {
+      // Insertar antes de TOTAL
+      updatedColumns.splice(totalIndex, 0, newColumn);
+    } else {
+      // Si no hay TOTAL, agregar al final
+      updatedColumns.push(newColumn);
+    }
+    
+    // Actualizar el template con la nueva columna
+    setSelectedTemplate(prev => {
+      const updatedBodyElements = [...prev.bodyElements];
+      updatedBodyElements[elementIndex] = {
+        ...updatedBodyElements[elementIndex],
+        columns: updatedColumns
+      };
+      const newTemplate = { ...prev, bodyElements: updatedBodyElements };
+      
+      // 🔄 Guardar el template actualizado en la base de datos
+      saveTemplateToDatabase(newTemplate);
+      
+      return newTemplate;
+    });
+    
+    // Actualizar bodyData: agregar la nueva columna a todas las filas existentes
+    setBodyData(prev => prev.map((element, index) => {
+      if (index === elementIndex) {
+        const updatedData = element.data.map((row, rowIndex) => {
+          // 🔧 FIX: Detectar el sufijo de esta fila específica (_T1, _T2, etc.)
+          const firstKey = Object.keys(row)[0] || '';
+          const suffixMatch = firstKey.match(/_T(\d+)$/);
+          
+          let rowColumnKey;
+          if (suffixMatch) {
+            // Esta fila usa sufijos: agregar el mismo sufijo a PESO{newColumnNumber}
+            const rowSuffix = suffixMatch[0]; // Ej: "_T1", "_T2", etc.
+            rowColumnKey = `PESO${newColumnNumber}${rowSuffix}`;
+            
+            // 🐛 DEBUG
+            if (rowIndex === 0 || rowIndex === 1) {
+              console.log(`✅ Fila ${rowIndex + 1}: Agregando columna "${rowColumnKey}" (sufijo: ${rowSuffix})`);
+            }
+          } else {
+            // Esta fila no usa sufijos: usar el ID base
+            rowColumnKey = newColumnId;
+          }
+          
+          return {
+            ...row,
+            [rowColumnKey]: "" // Agregar columna con la clave correcta para esta fila
+          };
+        });
+        return { ...element, data: updatedData };
+      }
+      return element;
+    }));
+    
+    setHasUnsavedChanges(true);
+  };
+
+  // 🔄 Función para guardar el template actualizado en la base de datos
+  const saveTemplateToDatabase = async (template, showAlert = false) => {
+    try {
+      console.log('💾 Guardando template actualizado en BD...', template);
+      
+      // 🔧 PASO 1: Reparar cellNames corruptos en el template antes de guardar
+      let bodyElements = template.bodyElements;
+      if (typeof bodyElements === 'string') {
+        bodyElements = JSON.parse(bodyElements);
+      }
+      
+      // Buscar y reparar cellNames de PESO que apuntan a TOTAL
+      bodyElements = bodyElements.map(element => {
+        if (element.type === 'table' && element.row && element.row.cells) {
+          const repairedCells = element.row.cells.map((cell, cellIndex) => {
+            const colDef = element.columns?.[cellIndex];
+            if (!colDef) return cell;
+            
+            const colId = (colDef.id || '').toUpperCase();
+            const colLabel = (colDef.label || '').toUpperCase();
+            const cellName = (cell.name || '').toUpperCase();
+            
+            // Si es una columna PESO y el cellName contiene TOTAL, repararlo
+            if ((colId.includes('PESO') || colLabel.includes('PESO')) && 
+                !colId.includes('TOTAL') && !colLabel.includes('TOTAL') &&
+                cellName.includes('TOTAL')) {
+              
+              // Extraer el número de PESO (ej: PESO6)
+              const pesoMatch = colId.match(/PESO(\d+)/) || colLabel.match(/PESO(\d+)/);
+              if (pesoMatch) {
+                const pesoNum = pesoMatch[1];
+                const correctedName = `PESO${pesoNum}_T1`;
+                console.log(`🔧 Reparando cellName corrupto: "${cell.name}" → "${correctedName}"`);
+                return { ...cell, name: correctedName };
+              }
+            }
+            
+            return cell;
+          });
+          
+          return { ...element, row: { ...element.row, cells: repairedCells } };
+        }
+        return element;
+      });
+      
+      // 🔧 PASO 2: Preparar el template para el backend: convertir objetos a strings JSON
+      const templateForBackend = {
+        templateID: template.templateID,
+        codigo: template.codigo,
+        nombre: template.nombre,
+        version: template.version || "1",
+        fechaVersion: template.fechaVersion,
+        objetivo: template.objetivo,
+        proceso: template.proceso,
+        cuandoSeUsa: template.cuandoSeUsa,
+        quienLoLlena: template.quienLoLlena,
+        // Convertir objetos/arrays a strings JSON
+        headerFields: typeof template.headerFields === 'string' 
+          ? template.headerFields 
+          : JSON.stringify(template.headerFields || []),
+        bodyElements: JSON.stringify(bodyElements), // Usar la versión reparada
+        firmas: typeof template.firmas === 'string'
+          ? template.firmas
+          : JSON.stringify(template.firmas || []),
+        createdAt: template.createdAt,
+        updatedAt: new Date().toISOString()
+      };
+      
+      console.log('📤 Enviando al backend:', templateForBackend);
+      
+      const response = await fetch(`${API_URL_TEMPLATES}/${template.templateID}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(templateForBackend)
+      });
+      
+      if (response.ok) {
+        console.log('✅ Template guardado exitosamente');
+        if (showAlert) {
+          alert('✅ Cambios de estructura guardados exitosamente. La nueva estructura estará disponible al recargar o crear nuevas filas.');
+        }
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Error al guardar template:', errorText);
+        if (showAlert) {
+          alert('❌ Error al guardar la estructura del formulario. Ver consola para detalles.');
+        }
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Error guardando template:', error);
+      if (showAlert) {
+        alert('❌ Error de conexión al guardar la estructura');
+      }
+      return false;
+    }
+  };
+
+  // 🆕 Función para eliminar la última columna
+  const removeTableColumn = (elementIndex) => {
+    const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
+    if (!tableElement || !tableElement.columns || tableElement.columns.length <= 1) {
+      alert('No se puede eliminar: debe haber al menos una columna');
+      return;
+    }
+    
+    const currentColumns = tableElement.columns;
+    
+    // Buscar el índice de la columna TOTAL
+    const totalIndex = currentColumns.findIndex(col => 
+      (col.label || col.header || '').toUpperCase().includes('TOTAL') ||
+      (col.id || col.name || '').toUpperCase().includes('TOTAL')
+    );
+    
+    // Encontrar la última columna PESO (antes de TOTAL)
+    let columnToRemoveIndex = -1;
+    if (totalIndex !== -1) {
+      // Buscar la última columna de PESO antes de TOTAL
+      for (let i = totalIndex - 1; i >= 0; i--) {
+        const colLabel = (currentColumns[i].label || currentColumns[i].header || '').toUpperCase();
+        if (colLabel.includes('PESO')) {
+          columnToRemoveIndex = i;
+          break;
+        }
+      }
+    } else {
+      // Si no hay TOTAL, buscar la última columna de PESO
+      for (let i = currentColumns.length - 1; i >= 0; i--) {
+        const colLabel = (currentColumns[i].label || currentColumns[i].header || '').toUpperCase();
+        if (colLabel.includes('PESO')) {
+          columnToRemoveIndex = i;
+          break;
+        }
+      }
+    }
+    
+    if (columnToRemoveIndex === -1) {
+      alert('No se encontraron columnas de PESO para eliminar');
+      return;
+    }
+    
+    const columnToRemove = currentColumns[columnToRemoveIndex];
+    const columnId = columnToRemove.id || columnToRemove.name || columnToRemove.label;
+    
+    if (!globalThis.confirm(`¿Eliminar la columna "${columnToRemove.label}"?`)) {
+      return;
+    }
+    
+    // Crear nuevo array de columnas sin la columna a eliminar
+    const updatedColumns = currentColumns.filter((_, index) => index !== columnToRemoveIndex);
+    
+    // Actualizar el template eliminando la columna
+    setSelectedTemplate(prev => {
+      const updatedBodyElements = [...prev.bodyElements];
+      updatedBodyElements[elementIndex] = {
+        ...updatedBodyElements[elementIndex],
+        columns: updatedColumns
+      };
+      const newTemplate = { ...prev, bodyElements: updatedBodyElements };
+      
+      // 🔄 Guardar el template actualizado en la base de datos
+      saveTemplateToDatabase(newTemplate);
+      
+      return newTemplate;
+    });
+    
+    // Actualizar bodyData: eliminar la columna de todas las filas
+    setBodyData(prev => prev.map((element, index) => {
+      if (index === elementIndex) {
+        const updatedData = element.data.map(row => {
+          const { [columnId]: removed, ...rest } = row;
+          return rest;
+        });
+        return { ...element, data: updatedData };
+      }
+      return element;
+    }));
+    
+    setHasUnsavedChanges(true);
+  };
   
   const handleFirmaChange = (puesto, field, value) => {
     setFirmasData(prev => ({...prev, [puesto]: {...prev[puesto], [field]: value}}));
     setHasUnsavedChanges(true);
   };
+
+  // 🆕 FUNCIÓN PARA RECALCULAR TOTALES DE TODAS LAS FILAS
+  const recalcularTodosLosTotales = useCallback(() => {
+    // 🎯 Verificar si el formulario permite auto-suma
+    const isAutoSumEnabled = shouldEnableAutoSum();
+    
+    if (!isAutoSumEnabled) {
+      console.log('⛔ Auto-suma DESACTIVADO - No se recalculará nada');
+      return;
+    }
+    
+    console.log('🔄 Recalculando TODOS los totales...');
+    
+    setBodyData(prev => prev.map((element, elementIndex) => {
+      if (element.type === 'table' && element.data && element.data.length > 0) {
+        // 🎯 VERIFICAR SI ESTA TABLA TIENE COLUMNAS PESO
+        const primeraFila = element.data[0];
+        const columnNames = Object.keys(primeraFila);
+        const tienePeso = columnNames.some(key => key.toUpperCase().includes('PESO'));
+        
+        // ⚠️ SOLO RECALCULAR SI LA TABLA TIENE COLUMNAS PESO
+        if (!tienePeso) {
+          console.log(`  ⏭️ Tabla ${elementIndex}: SIN columnas PESO - SALTANDO cálculo`);
+          return element; // No modificar esta tabla
+        }
+        
+        console.log(`  📊 Tabla ${elementIndex}: CON columnas PESO - Recalculando ${element.data.length} filas`);
+        
+        const updatedData = element.data.map((row, rowIndex) => {
+          const updatedRow = { ...row };
+          
+          // Buscar si hay columna TOTAL en esta fila
+          const totalKey = columnNames.find(key => key.toUpperCase().includes('TOTAL'));
+          
+          if (totalKey) {
+            let total = 0;
+            const pesoColumns = []; // 🔧 Definir array para tracking
+            
+            // Sumar TODAS las columnas PESO
+            columnNames.forEach(key => {
+              const keyUpper = key.toUpperCase();
+              const containsPeso = keyUpper.includes('PESO');
+              const containsTotal = keyUpper.includes('TOTAL');
+              
+              if (containsPeso && !containsTotal) {
+                const pesoValue = Number.parseFloat(updatedRow[key]);
+                if (!Number.isNaN(pesoValue) && updatedRow[key] !== '' && updatedRow[key] !== null) {
+                  total += pesoValue;
+                  pesoColumns.push(`${key}=${pesoValue}`); // 🔧 Agregar para logging
+                }
+              }
+            });
+            
+            if (pesoColumns.length > 0) {
+              console.log(`    ✅ Fila ${rowIndex + 1}: ${totalKey} = ${total.toFixed(2)} (${pesoColumns.join(', ')})`);
+            } else {
+              console.log(`    ⚠️ Fila ${rowIndex + 1}: Sin valores para sumar`);
+            }
+            updatedRow[totalKey] = total.toFixed(2);
+          }
+          
+          return updatedRow;
+        });
+        
+        return { ...element, data: updatedData };
+      }
+      return element;
+    }));
+  }, [shouldEnableAutoSum]);
 
   // Función para toggle de secciones del acordeón
   const toggleSection = (sectionName) => {
@@ -446,6 +2481,41 @@ function FillForm() {
       ...prev,
       [`body_${elementIndex}`]: !prev[`body_${elementIndex}`]
     }));
+  };
+
+  // 📋 Función para copiar al portapapeles
+  const copyToClipboard = async (text, event) => {
+    try {
+      await navigator.clipboard.writeText(String(text || ''));
+      
+      // Feedback visual en el botón
+      if (event && event.currentTarget) {
+        const btn = event.currentTarget;
+        const originalContent = btn.innerHTML;
+        btn.innerHTML = '✓';
+        btn.style.backgroundColor = '#10b981';
+        btn.style.transform = 'scale(1.1)';
+        
+        setTimeout(() => {
+          btn.innerHTML = originalContent;
+          btn.style.backgroundColor = '';
+          btn.style.transform = '';
+        }, 1000);
+      }
+    } catch (err) {
+      console.error('Error al copiar:', err);
+      // Fallback para navegadores viejos
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text || '';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      } catch (fallbackErr) {
+        console.error('Error en fallback:', fallbackErr);
+      }
+    }
   };
 
   // Función para salir con confirmación si hay cambios sin guardar
@@ -549,31 +2619,78 @@ function FillForm() {
       return;
     }
     
+    console.log(`📝 Usuario escribió en: [Fila ${rowIndex + 1}][${columnLabel}] = "${value}"`);
+    console.log(`   🔑 cellName exacto: "${columnLabel}"`);
+    
     setBodyData(prev => prev.map((element, index) => {
       if (index === elementIndex) {
         const updatedRows = element.data.map((row, rIndex) => {
           if (rIndex === rowIndex) {
+            // 🔥 PRIMERO: Actualizar el valor que el usuario escribió
             const updatedRow = { ...row, [columnLabel]: value };
             
-            // 🔢 CALCULAR TOTAL AUTOMÁTICAMENTE si es un campo de peso
-            // Obtener el número de tina (T1, T2, etc.) del nombre de la columna
-            const tinaMatch = columnLabel.match(/T(\d+)$/);
-            if (tinaMatch && columnLabel.includes('PESO')) {
-              const tinaNum = tinaMatch[1];
-              const totalKey = `TOTAL_T${tinaNum}`;
+            // 🎯 VERIFICAR SI DEBEMOS CALCULAR AUTO-SUMA
+            const isAutoSumEnabled = shouldEnableAutoSum();
+            
+            console.log(`   🔍 ¿Auto-suma habilitado? ${isAutoSumEnabled ? '✅ SÍ' : '⛔ NO'}`);
+            console.log(`   🔍 Template actual:`, {
+              nombre: selectedTemplate?.nombre,
+              isMasterForm: selectedTemplate?.isMasterForm
+            });
+            
+            // ⛔ SI AUTO-SUMA ESTÁ DESACTIVADO, RETORNAR INMEDIATAMENTE
+            if (!isAutoSumEnabled) {
+              console.log(`   ⏭️ Auto-suma DESACTIVADO - El usuario puede escribir libremente en TOTAL`);
+              return updatedRow; // ✅ SALIR SIN MODIFICAR NADA
+            }
+            
+            // 🎯 VERIFICAR SI ESTA TABLA TIENE COLUMNAS PESO (en la plantilla, NO en el row)
+            const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+            const tienePeso = tableTemplate?.columns?.some(col => {
+              const colId = (col.id || col.name || '').toUpperCase();
+              const colLabel = (col.label || col.header || '').toUpperCase();
+              return colId.includes('PESO') || colLabel.includes('PESO');
+            }) || false;
+            
+            console.log(`      📊 ¿Tabla tiene columnas PESO? ${tienePeso ? '✅ SÍ' : '⛔ NO'}`);
+            
+            // ⚠️ SOLO CALCULAR TOTAL SI LA TABLA TIENE COLUMNAS PESO
+            if (tienePeso) {
+              // 🔢 CALCULAR TOTAL AUTOMÁTICAMENTE
+              const allKeys = Object.keys(updatedRow);
+              const totalKey = allKeys.find(key => 
+                key.toUpperCase().includes('TOTAL')
+              );
               
-              // Sumar todos los pesos de esta tina
-              let total = 0;
-              for (let i = 1; i <= 5; i++) {
-                const pesoKey = `PESO${i}_T${tinaNum}`;
-                const pesoValue = Number.parseFloat(updatedRow[pesoKey]);
-                if (!Number.isNaN(pesoValue)) {
-                  total += pesoValue;
-                }
+              if (totalKey) {
+                let total = 0;
+                
+                console.log(`      🧮 Calculando total para columna: "${totalKey}"`);
+                
+                // Sumar TODAS las columnas PESO de esta fila
+                allKeys.forEach(key => {
+                  const keyUpper = key.toUpperCase();
+                  const containsPeso = keyUpper.includes('PESO');
+                  const containsTotal = keyUpper.includes('TOTAL');
+                  const cellValue = updatedRow[key];
+                  
+                  // Sumar si contiene PESO y NO contiene TOTAL
+                  if (containsPeso && !containsTotal) {
+                    const pesoValue = Number.parseFloat(cellValue);
+                    
+                    if (!Number.isNaN(pesoValue) && cellValue !== '' && cellValue !== null && cellValue !== undefined) {
+                      total += pesoValue;
+                      console.log(`         ➕ ${key} = ${pesoValue}`);
+                    }
+                  }
+                });
+                
+                // Actualizar el total
+                console.log(`      ✅ TOTAL CALCULADO: ${total.toFixed(2)}`);
+                updatedRow[totalKey] = total.toFixed(2);
+              } else {
+                console.log(`      ⚠️ No se encontró columna TOTAL`);
               }
-              
-              // Actualizar el total
-              updatedRow[totalKey] = total.toFixed(2);
             }
             
             return updatedRow;
@@ -585,24 +2702,196 @@ function FillForm() {
       return element;
     }));
     setHasUnsavedChanges(true);
-  }, []);
+  }, [selectedTemplate, shouldEnableAutoSum]);
   
   // --- RENDER FIELD CORREGIDO (COMBO BOX FIX) ---
   const renderField = (field, value, onChange) => {
     let options = field.options || [];
 
-    // 🔄 IMPORTANTE: Recalcular opciones cuando apiDetailsData cambie
-    if (field.apiMap && apiDetailsData.length > 0) {
-      const apiOptions = [...new Set(apiDetailsData.map(item => item[field.apiMap]))].filter(Boolean);
+    // 🔄 IMPORTANTE: Recalcular opciones cuando apiDetailsData o apiMovimientoData cambien
+    if (field.apiMap) {
+      let apiOptions = [];
       
-      // Solo log si es la primera vez o si hay opciones
-      if (apiOptions.length > 0) {
-        console.log(`✅ Campo "${field.label}" → ${apiOptions.length} opciones de API`);
-      } else if (apiOptions.length === 0) {
+      // 🔍 DEBUG: Estado actual
+      console.log(`🔍 Buscando opciones para "${field.label}" (apiMap: "${field.apiMap}")`);
+      console.log(`   📦 apiMovimientoData.length = ${apiMovimientoData.length}`);
+      console.log(`   📦 apiDetailsData.length = ${apiDetailsData.length}`);
+      console.log(`   📦 apiCatalogData keys:`, Object.keys(apiCatalogData));
+      
+      // � PRIMERO: Buscar en CATÁLOGOS INDEPENDIENTES (Especies, Choferes, etc.)
+      // Estos NO necesitan movimiento seleccionado
+      const catalogMapping = {
+        'nombreEs': 'especies',
+        'nombreEn': 'especies',
+        'nombre': 'choferes', // o balanzas, proveedores, pesqueros
+        'apellido': 'choferes',
+        'clave': 'configuraciones',
+        'valor': 'configuraciones',
+        'descripcion': 'configuraciones'
+      };
+      
+      // Intentar identificar el catálogo correcto por el apiMap
+      for (const [fieldName, catalogKey] of Object.entries(catalogMapping)) {
+        if (field.apiMap === fieldName && apiCatalogData[catalogKey]?.length > 0) {
+          apiOptions = [...new Set(apiCatalogData[catalogKey].map(item => item[fieldName]))].filter(Boolean);
+          if (apiOptions.length > 0) {
+            console.log(`✅ Campo "${field.label}" (${field.apiMap}) → ${apiOptions.length} opciones de CATÁLOGO ${catalogKey.toUpperCase()}`);
+            break;
+          }
+        }
+      }
+      
+      // 🎯 Si no encontró en catálogos, buscar en CABECERAS (movimientos)
+      if (apiOptions.length === 0 && apiMovimientoData.length > 0) {
+        console.log(`   🔎 Buscando "${field.apiMap}" en cabeceras:`, apiMovimientoData[0]);
+        const movOptions = [...new Set(apiMovimientoData.map(item => item[field.apiMap]))].filter(Boolean);
+        if (movOptions.length > 0) {
+          apiOptions = movOptions;
+          console.log(`✅ Campo "${field.label}" (${field.apiMap}) → ${movOptions.length} opciones de CABECERA:`, movOptions);
+        }
+      }
+      
+      // 🎯 Si no hay en cabeceras, buscar en DETALLES
+      if (apiOptions.length === 0 && apiDetailsData.length > 0) {
+        const detOptions = [...new Set(apiDetailsData.map(item => item[field.apiMap]))].filter(Boolean);
+        if (detOptions.length > 0) {
+          apiOptions = detOptions;
+          console.log(`✅ Campo "${field.label}" (${field.apiMap}) → ${detOptions.length} opciones de DETALLES`);
+        } else {
+          // 🔍 DEBUG: Mostrar qué campos están disponibles
+          if (apiDetailsData.length > 0) {
+            const availableFields = Object.keys(apiDetailsData[0]);
+            console.warn(`⚠️ Campo "${field.label}" buscando "${field.apiMap}" en DETALLES → 0 resultados`);
+            console.log(`   📋 Campos disponibles en detalles:`, availableFields.filter(f => f.startsWith('det')));
+          }
+        }
+      }
+      
+      // 🎯 Si aún no hay opciones, buscar con prefijo "_"
+      if (apiOptions.length === 0 && apiDetailsData.length > 0) {
+        const fieldWithUnderscore = `_${field.apiMap}`;
+        const underscoreOptions = [...new Set(apiDetailsData.map(item => item[fieldWithUnderscore]))].filter(Boolean);
+        if (underscoreOptions.length > 0) {
+          apiOptions = underscoreOptions;
+          console.log(`✅ Campo "${field.label}" (${fieldWithUnderscore}) → ${underscoreOptions.length} opciones de DETALLES`);
+        }
+      }
+      
+      // Solo mostrar advertencia si definitivamente no hay opciones
+      if (apiOptions.length === 0) {
         console.warn(`⚠️ Campo "${field.label}" con apiMap "${field.apiMap}" → 0 opciones. Campo no existe en datos.`);
       }
       
       if (apiOptions.length > 0) options = apiOptions;
+    }
+
+    // 🆕 AUTOCOMPLETAR SELECTORES VACÍOS CON TODOS LOS CAMPOS DE DETALLES
+    if (field.type === 'select' && options.length === 0 && !field.apiEndpoint && !field.apiMap) {
+      // 🎯 Intentar detectar qué campo buscar según el label
+      const labelLower = (field.label || '').toLowerCase();
+      
+      let autoDetectedField = null;
+      
+      // Mapeo de labels comunes a campos de detalles
+      if (labelLower.includes('especie')) autoDetectedField = 'detEspecie';
+      else if (labelLower.includes('producto')) autoDetectedField = 'detProducto';
+      else if (labelLower.includes('tipo') && labelLower.includes('control')) autoDetectedField = 'detTipoControl';
+      else if (labelLower.includes('tipo') && labelLower.includes('tina')) autoDetectedField = 'detTipoTina';
+      else if (labelLower.includes('temperatura')) autoDetectedField = 'detTemperatura';
+      else if (labelLower.includes('codigo')) autoDetectedField = 'detCodigo';
+      else if (labelLower.includes('proveedor')) autoDetectedField = 'cabProveedor';
+      else if (labelLower.includes('pesquero') || labelLower.includes('embarcacion')) autoDetectedField = 'cabPesquero';
+      else if (labelLower.includes('placa')) autoDetectedField = 'cabPlaca';
+      else if (labelLower.includes('chofer')) autoDetectedField = 'cabChofer';
+      else if (labelLower.includes('calificador')) autoDetectedField = 'cabCalificador';
+      
+      if (autoDetectedField) {
+        // Buscar en cabeceras
+        if (autoDetectedField.startsWith('cab') && apiMovimientoData.length > 0) {
+          const autoOptions = [...new Set(apiMovimientoData.map(item => item[autoDetectedField]))].filter(Boolean);
+          if (autoOptions.length > 0) {
+            options = autoOptions;
+            console.log(`🤖 AUTODETECCIÓN: "${field.label}" → ${autoDetectedField} (${autoOptions.length} opciones de CABECERA)`);
+          }
+        }
+        // Buscar en detalles
+        else if (autoDetectedField.startsWith('det') && apiDetailsData.length > 0) {
+          const autoOptions = [...new Set(apiDetailsData.map(item => item[autoDetectedField]))].filter(Boolean);
+          if (autoOptions.length > 0) {
+            options = autoOptions;
+            console.log(`🤖 AUTODETECCIÓN: "${field.label}" → ${autoDetectedField} (${autoOptions.length} opciones de DETALLES)`);
+          }
+        }
+      }
+    }
+
+    // 🆕 CARGAR OPCIONES DESDE CATÁLOGOS DE LA API EXTERNA
+    if (field.apiEndpoint && !field.apiMap) {
+      const endpointMap = {
+        'BALANZAS': { catalog: 'balanzas', field: 'nombre' },
+        'CHOFERES': { catalog: 'choferes', field: 'nombre', secondaryField: 'apellido' }, // ✅ Concatenar nombre + apellido
+        'ESPECIES': { catalog: 'especies', field: 'nombreEs' }, // ✅ Corregido: nombreEs
+        'PESQUEROS': { catalog: 'pesqueros', field: 'nombre' },
+        'PRODUCTOS': { catalog: 'productos', field: 'nombreEs' }, // ✅ Corregido: nombreEs (o abreviatura)
+        'PROVEEDORES': { catalog: 'proveedores', field: 'nombre', secondaryField: 'apellido' }, // ✅ Corregido: concatenar nombre + apellido
+        'CONFIGURACIONES': { catalog: 'configuraciones', field: 'descripcion' },
+        'CONFIGURACIONES_FRIGO': { catalog: 'configuracionesFrigo', field: 'descripcion' },
+        // 🆕 Catálogos de calidad sensorial (estructura especial con value/text)
+        'PIEL': { catalog: 'piel', field: 'text', valueField: 'value' },
+        'DUREZA': { catalog: 'dureza', field: 'text', valueField: 'value' },
+        'CAVIDAD_VENTRAL': { catalog: 'cavidadVentral', field: 'text', valueField: 'value' },
+        'OLOR': { catalog: 'olor', field: 'text', valueField: 'value' },
+        'SABOR_CARNE': { catalog: 'saborCarne', field: 'text', valueField: 'value' },
+        'OJOS_CLARIDAD': { catalog: 'ojosClaridad', field: 'text', valueField: 'value' },
+        'OJOS_FORMA': { catalog: 'ojosForma', field: 'text', valueField: 'value' },
+        'BRANQUIAS_COLOR': { catalog: 'branquiasColor', field: 'text', valueField: 'value' },
+        'BRANQUIAS_OLOR': { catalog: 'branquiasOlor', field: 'text', valueField: 'value' }
+      };
+
+      const mapping = endpointMap[field.apiEndpoint?.toUpperCase()];
+      
+      if (mapping) {
+        const catalogData = apiCatalogData[mapping.catalog] || [];
+        
+        // ✅ CHOFERES: Concatenar nombre + apellido
+        if (mapping.secondaryField) {
+          const catalogOptions = catalogData
+            .filter(item => item[mapping.field] || item[mapping.secondaryField])
+            .map(item => {
+              const nombre = item[mapping.field] || '';
+              const apellido = item[mapping.secondaryField] || '';
+              return `${nombre} ${apellido}`.trim();
+            })
+            .filter(Boolean); // Eliminar strings vacíos
+          
+          if (catalogOptions.length > 0) {
+            options = catalogOptions;
+            console.log(`✅ Campo "${field.label}" → ${catalogOptions.length} opciones de ${field.apiEndpoint} (concatenadas)`);
+          }
+        } 
+        // 🆕 Catálogos con estructura value/text (calidad sensorial)
+        else if (mapping.valueField) {
+          const catalogOptions = catalogData
+            .filter(item => item[mapping.field] !== undefined && item[mapping.field] !== null)
+            .map(item => item[mapping.field]); // Usar el campo 'text' para mostrar
+          
+          if (catalogOptions.length > 0) {
+            options = catalogOptions;
+            console.log(`✅ Campo "${field.label}" → ${catalogOptions.length} opciones de ${field.apiEndpoint} (calidad)`);
+          }
+        } 
+        // Otros catálogos: usar campo simple
+        else {
+          const catalogOptions = catalogData
+            .filter(item => item[mapping.field])
+            .map(item => item[mapping.field]);
+          
+          if (catalogOptions.length > 0) {
+            options = catalogOptions;
+            console.log(`✅ Campo "${field.label}" → ${catalogOptions.length} opciones de ${field.apiEndpoint}`);
+          }
+        }
+      }
     }
 
     // FIX: Agregar valor actual a opciones si no existe (para NIX PICO, etc.)
@@ -610,12 +2899,15 @@ function FillForm() {
         options = [value, ...options];
     }
 
-    // 🔑 Key único que fuerza re-render cuando apiDetailsData cambia
+    // 🔑 Key único que fuerza re-render cuando apiDetailsData o catálogos cambien
     const selectKey = field.apiMap 
       ? `${field.label}-${forceRenderKey}-${options.length}` 
+      : field.apiEndpoint
+      ? `${field.label}-catalog-${forceRenderKey}-${options.length}`
       : field.label;
 
-    if (field.type === 'select' || (field.apiMap && options.length > 0)) {
+    if (field.type === 'select' || (field.apiMap && options.length > 0) || (field.apiEndpoint && options.length > 0)) {
+        console.log(`🔧 Renderizando select "${field.label}" con ${options.length} opciones (key: ${selectKey})`);
         return (
             <select 
                 key={selectKey}
@@ -764,12 +3056,42 @@ function FillForm() {
   // --- GUARDADO FINAL (POST / PUT) ---
   const handleSaveForm = async () => {
     setError(null);
+    
+    // ✅ Si no hay fecha en headerData, usar la fecha actual (fecha de creación)
+    const finalHeaderData = { ...headerData };
+    
+    // Buscar campos de fecha (pueden llamarse: fecha, Fecha, date, Date)
+    const fechaCampos = ['fecha', 'Fecha', 'date', 'Date'];
+    const tieneFecha = fechaCampos.some(campo => finalHeaderData[campo]);
+    
+    if (!tieneFecha && !id) {
+      // Si no hay fecha y es un formulario nuevo, agregar fecha actual
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      
+      // Buscar el campo de fecha en headerFields para usar el nombre correcto
+      const fechaField = selectedTemplate.headerFields?.find(f => 
+        f.name === 'fecha' || f.label === 'Fecha' || f.type === 'date'
+      );
+      
+      if (fechaField) {
+        finalHeaderData[fechaField.label || fechaField.name || 'Fecha'] = today;
+        console.log('📅 Auto-rellenado fecha de creación:', today);
+      }
+    }
+    
     const payload = {
       templateID: selectedTemplate.templateID,
-      headerData: JSON.stringify(headerData),
+      headerData: JSON.stringify(finalHeaderData),
       bodyData: JSON.stringify(bodyData),
       firmasData: JSON.stringify(firmasData),
     };
+    
+    // 🐛 DEBUG: Ver qué se está guardando
+    console.log('💾 GUARDANDO FORMULARIO:');
+    console.log('   headerData:', finalHeaderData);
+    console.log('   bodyData[0].data[0] (primera fila):', bodyData[0]?.data?.[0]);
+    console.log('   bodyData[0].data[15] (fila 16):', bodyData[0]?.data?.[15]);
+    console.log('   Keys de primera fila:', Object.keys(bodyData[0]?.data?.[0] || {}));
 
     const method = id ? 'PUT' : 'POST';
     const url = id ? `${API_URL_FILLED_FORMS}/${id}` : API_URL_FILLED_FORMS;
@@ -901,46 +3223,88 @@ function FillForm() {
               console.log('✅ Lotes CONFIRMADOS:', lotes);
               setSelectedLotes(lotes);
               
+              // 🆕 Cargar catálogos de la API en paralelo
+              console.log('🚀 Iniciando carga de catálogos...');
+              try {
+                await loadAllApiCatalogs();
+                console.log('✅ Catálogos cargados exitosamente');
+              } catch (error) {
+                console.error('❌ ERROR al cargar catálogos:', error);
+              }
+              
               // Cargar detalles de TODOS los lotes seleccionados
               if (lotes.length > 0 && lotes[0] !== 'MANUAL') {
                 setIsApiLoading(true);
                 try {
                   const token = await ensureApiToken();
                   
-                  // Cargar detalles de TODOS los lotes en paralelo con información del lote
-                  const allDetailsPromises = lotes.map(lote => 
-                    fetch(`${API_EXTERNAL_BASE_URL}/Movimientos/MovimientoDetallesPorId/${lote.numero}`, {
-                      headers: { 'Authorization': `Bearer ${token}` }
-                    })
-                    .then(res => {
-                      if (!res.ok) throw new Error(`Error en lote ${lote.numero}`);
-                      return res.json();
-                    })
-                    .then(details => {
-                      console.log(`✅ Lote ${lote.numero}: ${details.length} items cargados`);
-                      // Agregar número de lote y proveedor a cada detalle
-                      return details.map(item => ({
-                        ...item,
-                        _loteNumero: lote.numero,
-                        _loteProveedor: lote.proveedor
-                      }));
-                    })
+                  // 🆕 Cargar CABECERA + DETALLES de cada lote
+                  const allDataPromises = lotes.map(async (lote) => {
+                    // Cargar cabecera del movimiento
+                    const cabeceraResponse = await fetch(
+                      `${API_EXTERNAL_BASE_URL}/Movimientos/MovimientoPorId/${lote.numero}`, 
+                      { headers: { 'Authorization': `Bearer ${token}` }}
+                    );
+                    
+                    // Cargar detalles del movimiento
+                    const detallesResponse = await fetch(
+                      `${API_EXTERNAL_BASE_URL}/Movimientos/MovimientoDetallesPorId/${lote.numero}`, 
+                      { headers: { 'Authorization': `Bearer ${token}` }}
+                    );
+                    
+                    if (!cabeceraResponse.ok || !detallesResponse.ok) {
+                      throw new Error(`Error en lote ${lote.numero}`);
+                    }
+                    
+                    const cabecera = await cabeceraResponse.json();
+                    const detalles = await detallesResponse.json();
+                    
+                    console.log(`✅ Lote ${lote.numero}:`, {
+                      cabecera: cabecera,
+                      detalles: `${detalles.length} items`
+                    });
+                    
+                    return { cabecera, detalles, lote };
+                  });
+                  
+                  const allData = await Promise.all(allDataPromises);
+                  
+                  // 🎯 Combinar datos de cabeceras (para selectores)
+                  const cabecerasArray = allData.map(d => d.cabecera);
+                  console.log('� Cabeceras de movimientos:', cabecerasArray);
+                  
+                  // 🎯 Combinar detalles (para tablas)
+                  const combinedDetails = allData.flatMap(({ cabecera, detalles, lote }) =>
+                    detalles.map(item => ({
+                      ...item,
+                      _loteNumero: lote.numero,
+                      _loteProveedor: lote.proveedor,
+                      // 🆕 Agregar datos de cabecera a cada detalle
+                      _cabProveedor: cabecera.cabProveedor,
+                      _cabPesquero: cabecera.cabPesquero,
+                      _cabPlaca: cabecera.cabPlaca,
+                      _cabChofer: cabecera.cabChofer,
+                      _cabCalificador: cabecera.cabCalificador,
+                      _cabGuiaRemision: cabecera.cabGuiaRemision,
+                      _cabLugarDesembarque: cabecera.cabLugarDesembarque
+                    }))
                   );
                   
-                  const allDetailsArrays = await Promise.all(allDetailsPromises);
+                  console.log('� Datos combinados:', {
+                    cabeceras: cabecerasArray.length,
+                    detalles: combinedDetails.length,
+                    camposDisponibles: combinedDetails[0] ? Object.keys(combinedDetails[0]) : []
+                  });
                   
-                  // Combinar todos los detalles en un solo array
-                  const combinedDetails = allDetailsArrays.flat();
-                  console.log('📦 Detalles combinados de todos los lotes:', combinedDetails);
-                  console.log(`   Total: ${combinedDetails.length} items de ${lotes.length} lote(s)`);
+                  // 🆕 Guardar CABECERAS para los selectores
+                  setApiMovimientoData(cabecerasArray);
                   
-                  // Verificar campos disponibles
-                  if (combinedDetails.length > 0) {
-                    console.log('🔍 Campos disponibles en detalles:', Object.keys(combinedDetails[0]));
-                  }
-                  
+                  // Guardar DETALLES para las tablas
                   setApiDetailsData(combinedDetails);
-                  console.log('✅ apiDetailsData actualizado con', combinedDetails.length, 'items');
+                  console.log('✅ Datos actualizados:', {
+                    apiMovimientoData: cabecerasArray.length,
+                    apiDetailsData: combinedDetails.length
+                  });
                   
                   // 🎯 AUTO-LLENAR TABLAS con datos de la API
                   if (combinedDetails.length > 0) {
@@ -1006,8 +3370,9 @@ function FillForm() {
               💡 <strong>¿No encuentras los lotes que buscas?</strong>
             </p>
             <button 
-              onClick={() => {
+              onClick={async () => {
                 setSelectedLotes(['MANUAL']);
+                await loadAllApiCatalogs(); // 🆕 Cargar catálogos también en modo manual
                 setLotesConfirmados(true);
               }} 
               className="btn-outline-primary"
@@ -1023,7 +3388,178 @@ function FillForm() {
   // VISTA 3: FORMULARIO FINAL
   return (
     <div className="fill-form">
-      <div className="form-header-bar">
+      {/* 🆕 BARRA DE PESTAÑAS (TABS) */}
+      {openTabs.length > 0 && (
+        <div className="tabs-container" style={{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          padding: '1rem 2rem',
+          borderRadius: '12px 12px 0 0',
+          boxShadow: '0 4px 20px rgba(102, 126, 234, 0.3)',
+          marginBottom: '0',
+          display: 'flex',
+          gap: '0.5rem',
+          flexWrap: 'wrap',
+          alignItems: 'center'
+        }}>
+          {/* Botón para agregar nueva pestaña */}
+          <button
+            onClick={() => {
+              // Mostrar selector de plantilla en modal
+              if (confirm('¿Deseas abrir una nueva pestaña?\n\nPodrás seleccionar otra plantilla.')) {
+                // Regresar a selección de plantilla pero mantener pestañas
+                setSelectedTemplate(null);
+                setLotesConfirmados(false);
+              }
+            }}
+            style={{
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: '2px solid rgba(255, 255, 255, 0.5)',
+              color: 'white',
+              padding: '0.6rem 1rem',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '1.2rem',
+              fontWeight: 'bold',
+              transition: 'all 0.3s',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)';
+              e.currentTarget.style.transform = 'scale(1.05)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
+            title="Agregar nueva pestaña"
+          >
+            ➕ Nueva Pestaña
+          </button>
+
+          {/* Pestañas */}
+          {openTabs.map((tab, index) => (
+            <div
+              key={tab.id}
+              style={{
+                background: index === activeTabIndex 
+                  ? 'white' 
+                  : 'rgba(255, 255, 255, 0.15)',
+                color: index === activeTabIndex ? '#667eea' : 'white',
+                padding: '0.7rem 1.2rem',
+                borderRadius: '8px 8px 0 0',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                transition: 'all 0.3s',
+                fontWeight: index === activeTabIndex ? 'bold' : 'normal',
+                boxShadow: index === activeTabIndex 
+                  ? '0 -2px 10px rgba(0,0,0,0.1)' 
+                  : 'none',
+                position: 'relative',
+                minWidth: '150px',
+                maxWidth: '250px'
+              }}
+              onClick={() => switchToTab(index)}
+              onMouseOver={(e) => {
+                if (index !== activeTabIndex) {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                }
+              }}
+              onMouseOut={(e) => {
+                if (index !== activeTabIndex) {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                }
+              }}
+            >
+              {/* Icono de formulario */}
+              <span style={{ fontSize: '1.2rem' }}>📋</span>
+              
+              {/* Nombre de la pestaña */}
+              <span style={{ 
+                flex: 1, 
+                overflow: 'hidden', 
+                textOverflow: 'ellipsis', 
+                whiteSpace: 'nowrap',
+                fontSize: '0.9rem'
+              }}>
+                {tab.templateName.length > 20 
+                  ? tab.templateName.substring(0, 20) + '...' 
+                  : tab.templateName}
+              </span>
+              
+              {/* Indicador de cambios sin guardar */}
+              {tab.hasUnsavedChanges && (
+                <span style={{
+                  background: '#fbbf24',
+                  color: 'white',
+                  borderRadius: '50%',
+                  width: '12px',
+                  height: '12px',
+                  display: 'inline-block',
+                  animation: 'pulse 2s infinite'
+                }} title="Cambios sin guardar">
+                </span>
+              )}
+              
+              {/* Botón cerrar */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTab(index);
+                }}
+                style={{
+                  background: index === activeTabIndex 
+                    ? 'rgba(239, 68, 68, 0.1)' 
+                    : 'rgba(255, 255, 255, 0.2)',
+                  border: 'none',
+                  color: index === activeTabIndex ? '#ef4444' : 'white',
+                  borderRadius: '50%',
+                  width: '24px',
+                  height: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = '#ef4444';
+                  e.currentTarget.style.color = 'white';
+                  e.currentTarget.style.transform = 'scale(1.1)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = index === activeTabIndex 
+                    ? 'rgba(239, 68, 68, 0.1)' 
+                    : 'rgba(255, 255, 255, 0.2)';
+                  e.currentTarget.style.color = index === activeTabIndex ? '#ef4444' : 'white';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+                title="Cerrar pestaña"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+
+          {/* Info de pestañas abiertas */}
+          <div style={{
+            marginLeft: 'auto',
+            color: 'white',
+            fontSize: '0.85rem',
+            opacity: 0.8,
+            padding: '0.5rem 1rem',
+            background: 'rgba(0, 0, 0, 0.2)',
+            borderRadius: '6px'
+          }}>
+            📊 {openTabs.length} formulario{openTabs.length !== 1 ? 's' : ''} abierto{openTabs.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+      )}
+
+      <div className="form-header-bar"  style={openTabs.length > 0 ? { borderRadius: '0 0 12px 12px', marginTop: 0 } : {}}>
         {id ? (
              <button onClick={handleCancelEdit} className="btn-back">← Cancelar Edición</button>
         ) : (
@@ -1050,6 +3586,363 @@ function FillForm() {
             {id ? 'Actualizar' : 'Guardar Formulario'}
         </button>
       </div>
+
+      {/* 🆕 BOTÓN FLOTANTE PARA AGREGAR NUEVA PESTAÑA (SIEMPRE VISIBLE) */}
+      {selectedTemplate && !id && (
+        <div style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 1001,
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          padding: '0.8rem 2rem',
+          boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: '1rem',
+          borderBottom: '3px solid rgba(255, 255, 255, 0.2)',
+          animation: 'slideDown 0.3s ease-out'
+        }}>
+          <button
+            onClick={() => {
+              // Guardar pestaña actual antes de abrir nueva
+              saveCurrentTabData();
+              
+              // Regresar a selección de plantilla
+              setSelectedTemplate(null);
+              setLotesConfirmados(false);
+            }}
+            style={{
+              background: 'rgba(255, 255, 255, 0.95)',
+              border: '2px solid rgba(255, 255, 255, 1)',
+              color: '#667eea',
+              padding: '0.7rem 1.5rem',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              fontSize: '1.1rem',
+              fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              transition: 'all 0.3s',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.transform = 'scale(1.05) translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.25)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.transform = 'scale(1) translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+            }}
+            title="Abrir una nueva pestaña con otra plantilla"
+          >
+            ➕ <span>Agregar Nueva Pestaña</span>
+          </button>
+
+          {/* Indicador de pestañas abiertas */}
+          {openTabs.length > 0 && (
+            <>
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                padding: '0.5rem 1rem',
+                borderRadius: '20px',
+                fontSize: '0.9rem',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                cursor: 'pointer',
+                transition: 'all 0.3s'
+              }}
+              onClick={() => setShowTabsPanel(!showTabsPanel)}
+              onMouseOver={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)';
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+              }}
+              title="Click para ver detalles de todas las pestañas">
+                <span>📋</span>
+                <span>{openTabs.length} pestaña{openTabs.length !== 1 ? 's' : ''} abierta{openTabs.length !== 1 ? 's' : ''}</span>
+                <span style={{ fontSize: '0.7rem' }}>{showTabsPanel ? '▲' : '▼'}</span>
+              </div>
+
+              {/* Panel desplegable con detalles de pestañas */}
+              {showTabsPanel && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: '2rem',
+                  marginTop: '0.5rem',
+                  background: 'white',
+                  borderRadius: '12px',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                  minWidth: '400px',
+                  maxWidth: '600px',
+                  maxHeight: '70vh',
+                  overflow: 'auto',
+                  zIndex: 1002,
+                  animation: 'slideDown 0.3s ease-out'
+                }}>
+                  {/* Header del panel */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    padding: '1rem 1.5rem',
+                    borderRadius: '12px 12px 0 0',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 1
+                  }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem' }}>
+                      📋 Formularios Abiertos ({openTabs.length})
+                    </h3>
+                    <button
+                      onClick={() => setShowTabsPanel(false)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.2)',
+                        border: 'none',
+                        color: 'white',
+                        borderRadius: '50%',
+                        width: '32px',
+                        height: '32px',
+                        cursor: 'pointer',
+                        fontSize: '1.2rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      title="Cerrar panel"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Lista de pestañas */}
+                  <div style={{ padding: '1rem' }}>
+                    {openTabs.map((tab, index) => (
+                      <div
+                        key={tab.id}
+                        style={{
+                          background: index === activeTabIndex 
+                            ? 'linear-gradient(135deg, #e0e7ff 0%, #f3e8ff 100%)' 
+                            : '#f9fafb',
+                          border: `2px solid ${index === activeTabIndex ? '#667eea' : '#e5e7eb'}`,
+                          borderRadius: '10px',
+                          padding: '1rem',
+                          marginBottom: '0.75rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s',
+                          position: 'relative'
+                        }}
+                        onClick={() => {
+                          switchToTab(index);
+                          setShowTabsPanel(false);
+                        }}
+                        onMouseOver={(e) => {
+                          if (index !== activeTabIndex) {
+                            e.currentTarget.style.transform = 'translateX(5px)';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                          }
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.transform = 'translateX(0)';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      >
+                        {/* Badge de pestaña activa */}
+                        {index === activeTabIndex && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '-10px',
+                            right: '10px',
+                            background: '#10b981',
+                            color: 'white',
+                            padding: '0.25rem 0.75rem',
+                            borderRadius: '20px',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold'
+                          }}>
+                            ✓ ACTIVA
+                          </div>
+                        )}
+
+                        {/* Encabezado de la pestaña */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          marginBottom: '0.5rem'
+                        }}>
+                          <span style={{ fontSize: '2rem' }}>📋</span>
+                          <div style={{ flex: 1 }}>
+                            <h4 style={{
+                              margin: 0,
+                              fontSize: '1rem',
+                              color: '#1f2937',
+                              fontWeight: 'bold'
+                            }}>
+                              {tab.templateName}
+                            </h4>
+                            <p style={{
+                              margin: '0.25rem 0 0 0',
+                              fontSize: '0.8rem',
+                              color: '#6b7280'
+                            }}>
+                              Pestaña #{index + 1} • ID: {tab.id}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Información de la pestaña */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: '0.5rem',
+                          fontSize: '0.85rem',
+                          marginTop: '0.75rem'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                          }}>
+                            <span>📝</span>
+                            <span style={{ color: '#6b7280' }}>
+                              {Object.keys(tab.headerData).filter(k => tab.headerData[k]).length} campos cabecera
+                            </span>
+                          </div>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                          }}>
+                            <span>📊</span>
+                            <span style={{ color: '#6b7280' }}>
+                              {tab.bodyData.reduce((sum, el) => {
+                                if (el.type === 'table') return sum + el.data.length;
+                                return sum + 1;
+                              }, 0)} elementos body
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Indicadores de estado */}
+                        <div style={{
+                          display: 'flex',
+                          gap: '0.5rem',
+                          marginTop: '0.75rem',
+                          flexWrap: 'wrap'
+                        }}>
+                          {tab.hasUnsavedChanges && (
+                            <span style={{
+                              background: '#fef3c7',
+                              color: '#92400e',
+                              padding: '0.25rem 0.75rem',
+                              borderRadius: '20px',
+                              fontSize: '0.75rem',
+                              fontWeight: 'bold',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}>
+                              ⚠️ Cambios sin guardar
+                            </span>
+                          )}
+                          {!tab.hasUnsavedChanges && (
+                            <span style={{
+                              background: '#d1fae5',
+                              color: '#065f46',
+                              padding: '0.25rem 0.75rem',
+                              borderRadius: '20px',
+                              fontSize: '0.75rem',
+                              fontWeight: 'bold',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem'
+                            }}>
+                              ✓ Guardado
+                            </span>
+                          )}
+                          <span style={{
+                            background: '#e0e7ff',
+                            color: '#3730a3',
+                            padding: '0.25rem 0.75rem',
+                            borderRadius: '20px',
+                            fontSize: '0.75rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}>
+                            🕐 {new Date(tab.createdAt).toLocaleTimeString('es-EC', { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            })}
+                          </span>
+                        </div>
+
+                        {/* Botón de cerrar */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            closeTab(index);
+                            if (openTabs.length === 1) {
+                              setShowTabsPanel(false);
+                            }
+                          }}
+                          style={{
+                            position: 'absolute',
+                            bottom: '1rem',
+                            right: '1rem',
+                            background: '#fee2e2',
+                            color: '#991b1b',
+                            border: 'none',
+                            padding: '0.4rem 0.8rem',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = '#ef4444';
+                            e.currentTarget.style.color = 'white';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = '#fee2e2';
+                            e.currentTarget.style.color = '#991b1b';
+                          }}
+                          title="Cerrar esta pestaña"
+                        >
+                          ✕ Cerrar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Footer del panel */}
+                  <div style={{
+                    background: '#f9fafb',
+                    padding: '1rem 1.5rem',
+                    borderTop: '1px solid #e5e7eb',
+                    borderRadius: '0 0 12px 12px',
+                    fontSize: '0.85rem',
+                    color: '#6b7280',
+                    textAlign: 'center'
+                  }}>
+                    💡 Click en cualquier formulario para activarlo
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* INDICADOR DE AUTOGUARDADO FLOTANTE Y VISIBLE */}
       {!id && (
@@ -1084,8 +3977,989 @@ function FillForm() {
       {error && <div className="error-message">❌ {error}</div>}
 
       <div className="form-document">
-        <FormHeader title={selectedTemplate.nombre} code={selectedTemplate.codigo} version={selectedTemplate.version || "1"} date={new Date().toLocaleDateString("es-EC")} />
+        {(() => {
+          // PRIORIDAD DE FECHA:
+          // 1. Si estamos editando (id existe) y tenemos createdAt, SIEMPRE usar createdAt
+          // 2. Si no hay id (formulario nuevo), usar fecha actual
+          // 3. Ignorar headerData.fecha porque puede estar auto-rellenado
+          
+          let fechaFinal;
+          if (id && formCreatedAt) {
+            // Formulario existente: usar fecha de creación
+            fechaFinal = new Date(formCreatedAt).toLocaleDateString("es-EC");
+          } else {
+            // Formulario nuevo: usar fecha actual
+            fechaFinal = new Date().toLocaleDateString("es-EC");
+          }
+          
+          console.log('🗓️ Fecha que se mostrará en FormHeader:', {
+            'id': id,
+            'formCreatedAt': formCreatedAt,
+            'headerData.fecha (IGNORADO)': headerData.fecha,
+            'fechaFinal': fechaFinal
+          });
+          
+          return (
+            <FormHeader 
+              title={selectedTemplate.nombre} 
+              code={selectedTemplate.codigo} 
+              version={selectedTemplate.version || "1"} 
+              date={fechaFinal} 
+            />
+          );
+        })()}
         
+       
+
+        {/* 🆕 MODAL DE MAPEO PERSONALIZADO DE CAMPOS */}
+        {showFieldMapper && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '2rem'
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '12px',
+              maxWidth: '1200px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
+            }}>
+              {/* Header del modal */}
+              <div style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                padding: '1.5rem',
+                borderTopLeftRadius: '12px',
+                borderTopRightRadius: '12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <h2 style={{ margin: 0, fontSize: '1.5rem' }}>
+                  🎯 Mapeo Personalizado de Campos
+                </h2>
+                <button
+                  onClick={() => setShowFieldMapper(false)}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    border: 'none',
+                    color: 'white',
+                    fontSize: '1.5rem',
+                    cursor: 'pointer',
+                    borderRadius: '50%',
+                    width: '40px',
+                    height: '40px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Contenido del modal */}
+              <div style={{ padding: '2rem' }}>
+                <p style={{ color: '#666', marginBottom: '2rem' }}>
+                  Selecciona los campos que deseas copiar del formulario origen al formulario destino actual.
+                  Puedes personalizar el mapeo de cada campo.
+                </p>
+
+                {/* SECCIÓN: Campos de Header */}
+                <div style={{ marginBottom: '2rem' }}>
+                  <h3 style={{ 
+                    color: '#333', 
+                    borderBottom: '2px solid #667eea', 
+                    paddingBottom: '0.5rem',
+                    marginBottom: '1rem'
+                  }}>
+                    📝 Campos del Header
+                  </h3>
+                  
+                  {sourceFields.header.length === 0 ? (
+                    <p style={{ color: '#999', fontStyle: 'italic' }}>No hay campos de header disponibles</p>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                      {sourceFields.header.map(sourceField => (
+                        <div key={sourceField} style={{
+                          background: '#f8f9fa',
+                          padding: '1rem',
+                          borderRadius: '8px',
+                          border: selectedHeaderFields.includes(sourceField) ? '2px solid #667eea' : '2px solid #e0e0e0'
+                        }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedHeaderFields.includes(sourceField)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedHeaderFields([...selectedHeaderFields, sourceField]);
+                                  // Auto-mapear al mismo nombre si existe
+                                  if (targetFields.header.includes(sourceField)) {
+                                    setFieldMapping(prev => ({
+                                      ...prev,
+                                      header: { ...prev.header, [sourceField]: sourceField }
+                                    }));
+                                  }
+                                } else {
+                                  setSelectedHeaderFields(selectedHeaderFields.filter(f => f !== sourceField));
+                                  // Remover del mapeo
+                                  const newHeaderMapping = { ...fieldMapping.header };
+                                  delete newHeaderMapping[sourceField];
+                                  setFieldMapping(prev => ({ ...prev, header: newHeaderMapping }));
+                                }
+                              }}
+                              style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                            />
+                            <strong style={{ color: '#333' }}>{sourceField}</strong>
+                          </label>
+                          
+                          {selectedHeaderFields.includes(sourceField) && (
+                            <div>
+                              <label style={{ fontSize: '0.85rem', color: '#666', marginBottom: '0.25rem', display: 'block' }}>
+                                Mapear a campo destino:
+                              </label>
+                              <select
+                                value={fieldMapping.header[sourceField] || ''}
+                                onChange={(e) => {
+                                  setFieldMapping(prev => ({
+                                    ...prev,
+                                    header: { ...prev.header, [sourceField]: e.target.value }
+                                  }));
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '0.5rem',
+                                  borderRadius: '4px',
+                                  border: '1px solid #ddd',
+                                  fontSize: '0.9rem'
+                                }}
+                              >
+                                <option value="">-- No mapear --</option>
+                                {targetFields.header.map(targetField => (
+                                  <option key={targetField} value={targetField}>
+                                    {targetField}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* SECCIÓN: Campos de la Tabla (Body) */}
+                <div style={{ marginBottom: '2rem' }}>
+                  <h3 style={{ 
+                    color: '#333', 
+                    borderBottom: '2px solid #f5576c', 
+                    paddingBottom: '0.5rem',
+                    marginBottom: '1rem'
+                  }}>
+                    📊 Campos de la Tabla (Datos)
+                  </h3>
+                  
+                  {sourceFields.body.length === 0 ? (
+                    <p style={{ color: '#999', fontStyle: 'italic' }}>No hay campos de tabla disponibles</p>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                      {sourceFields.body.map(sourceField => (
+                        <div key={sourceField} style={{
+                          background: '#f8f9fa',
+                          padding: '1rem',
+                          borderRadius: '8px',
+                          border: selectedBodyFields.includes(sourceField) ? '2px solid #f5576c' : '2px solid #e0e0e0'
+                        }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedBodyFields.includes(sourceField)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedBodyFields([...selectedBodyFields, sourceField]);
+                                  // Auto-mapear al mismo nombre (sin sufijo)
+                                  const baseName = sourceField.replace(/_T\d+$/, '');
+                                  if (targetFields.body.includes(baseName)) {
+                                    setFieldMapping(prev => ({
+                                      ...prev,
+                                      body: { ...prev.body, [sourceField]: baseName }
+                                    }));
+                                  }
+                                } else {
+                                  setSelectedBodyFields(selectedBodyFields.filter(f => f !== sourceField));
+                                  // Remover del mapeo
+                                  const newBodyMapping = { ...fieldMapping.body };
+                                  delete newBodyMapping[sourceField];
+                                  setFieldMapping(prev => ({ ...prev, body: newBodyMapping }));
+                                }
+                              }}
+                              style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                            />
+                            <strong style={{ color: '#333' }}>{sourceField}</strong>
+                          </label>
+                          
+                          {selectedBodyFields.includes(sourceField) && (
+                            <div>
+                              <label style={{ fontSize: '0.85rem', color: '#666', marginBottom: '0.25rem', display: 'block' }}>
+                                Mapear a campo destino:
+                              </label>
+                              <select
+                                value={fieldMapping.body[sourceField] || ''}
+                                onChange={(e) => {
+                                  setFieldMapping(prev => ({
+                                    ...prev,
+                                    body: { ...prev.body, [sourceField]: e.target.value }
+                                  }));
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '0.5rem',
+                                  borderRadius: '4px',
+                                  border: '1px solid #ddd',
+                                  fontSize: '0.9rem'
+                                }}
+                              >
+                                <option value="">-- No mapear --</option>
+                                {targetFields.body.map(targetField => (
+                                  <option key={targetField} value={targetField}>
+                                    {targetField}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Botones de acción */}
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', paddingTop: '1rem', borderTop: '2px solid #e0e0e0' }}>
+                  <button
+                    onClick={() => setShowFieldMapper(false)}
+                    style={{
+                      padding: '0.75rem 1.5rem',
+                      borderRadius: '6px',
+                      border: '2px solid #ddd',
+                      background: 'white',
+                      color: '#666',
+                      fontSize: '1rem',
+                      cursor: 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    ✕ Cancelar
+                  </button>
+                  
+                  <button
+                    onClick={applyCustomFieldMapping}
+                    disabled={selectedHeaderFields.length === 0 && selectedBodyFields.length === 0}
+                    style={{
+                      padding: '0.75rem 2rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: (selectedHeaderFields.length === 0 && selectedBodyFields.length === 0) 
+                        ? '#ccc' 
+                        : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: 'white',
+                      fontSize: '1rem',
+                      cursor: (selectedHeaderFields.length === 0 && selectedBodyFields.length === 0) ? 'not-allowed' : 'pointer',
+                      fontWeight: 'bold',
+                      boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+                    }}
+                  >
+                    ✅ Aplicar Mapeo y Cargar Datos ({selectedHeaderFields.length + selectedBodyFields.length} campos)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 🆕 MODAL DE SELECTOR INTERACTIVO DE DATOS */}
+        {showDataPicker && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '2rem'
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '12px',
+              maxWidth: '1400px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
+            }}>
+              {/* Header del modal */}
+              <div style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                padding: '1.5rem',
+                borderTopLeftRadius: '12px',
+                borderTopRightRadius: '12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                position: 'sticky',
+                top: 0,
+                zIndex: 10
+              }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '1.5rem' }}>
+                    📋 Selector de Datos - {currentFieldForPicker?.label}
+                  </h2>
+                  <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem', opacity: 0.9 }}>
+                    Haz clic en cualquier celda para copiar su valor
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDataPicker(false);
+                    setDataPickerForm(null);
+                  }}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    border: 'none',
+                    color: 'white',
+                    fontSize: '1.5rem',
+                    cursor: 'pointer',
+                    borderRadius: '50%',
+                    width: '40px',
+                    height: '40px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Contenido del modal */}
+              <div style={{ padding: '2rem' }}>
+                {/* 1. Selector de formulario */}
+                {!dataPickerForm && (
+                  <div>
+                    <h3 style={{ marginBottom: '1rem' }}>1️⃣ Selecciona un formulario guardado:</h3>
+                    
+                    {availableSourceForms.length === 0 && (
+                      <p style={{ color: '#999', fontStyle: 'italic' }}>
+                        📭 No hay formularios guardados disponibles.
+                      </p>
+                    )}
+                    
+                    {availableSourceForms.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
+                        {availableSourceForms.slice(0, 12).map((form) => {
+                          const formId = form.formID || form.FormID || form.id || form.ID;
+                          const createdAt = form.createdAt || form.CreatedAt || form.created_at;
+                          const headerData = form.headerData || form.HeaderData;
+                          const bodyData = form.bodyData || form.BodyData;
+                          const filaCount = bodyData?.[0]?.data?.length || 0;
+                          
+                          return (
+                            <div
+                              key={formId}
+                              onClick={() => loadFormDataInPicker(formId)}
+                              style={{
+                                background: '#f8f9fa',
+                                padding: '1.5rem',
+                                borderRadius: '8px',
+                                border: '2px solid #e0e0e0',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseOver={(e) => {
+                                e.currentTarget.style.borderColor = '#667eea';
+                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.2)';
+                              }}
+                              onMouseOut={(e) => {
+                                e.currentTarget.style.borderColor = '#e0e0e0';
+                                e.currentTarget.style.boxShadow = 'none';
+                              }}
+                            >
+                              <p style={{ margin: 0, fontWeight: 'bold', color: '#333', fontSize: '1.1rem' }}>
+                                📄 FormID {formId}
+                              </p>
+                              <p style={{ margin: '0.5rem 0', color: '#666', fontSize: '0.9rem' }}>
+                                📅 {new Date(createdAt).toLocaleString('es-EC')}
+                              </p>
+                              {headerData?.Código && (
+                                <p style={{ margin: '0.25rem 0', color: '#444', fontSize: '0.9rem' }}>
+                                  🔖 Código: {headerData.Código}
+                                </p>
+                              )}
+                              <p style={{ margin: '0.5rem 0 0 0', color: '#667eea', fontWeight: 'bold' }}>
+                                📊 {filaCount} filas de datos
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 2. Visualización de datos del formulario */}
+                {dataPickerForm && (
+                  <div>
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      marginBottom: '1.5rem',
+                      paddingBottom: '1rem',
+                      borderBottom: '2px solid #e0e0e0'
+                    }}>
+                      <div>
+                        <h3 style={{ margin: 0, color: '#333' }}>
+                          2️⃣ Datos del Formulario
+                        </h3>
+                        <p style={{ margin: '0.5rem 0 0 0', color: '#666', fontSize: '0.9rem' }}>
+                          Haz clic en cualquier celda para copiar su valor
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setDataPickerForm(null)}
+                        style={{
+                          background: '#f3f4f6',
+                          border: '1px solid #d1d5db',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        ← Volver a lista
+                      </button>
+                    </div>
+
+                    {/* Header Data */}
+                    {(dataPickerForm.headerData || dataPickerForm.HeaderData) && (
+                      <div style={{ marginBottom: '2rem' }}>
+                        <h4 style={{ 
+                          color: '#667eea', 
+                          marginBottom: '1rem',
+                          fontSize: '1.1rem',
+                          fontWeight: 'bold'
+                        }}>
+                          📝 Información General (Header)
+                        </h4>
+                        <div style={{ 
+                          display: 'grid', 
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', 
+                          gap: '1rem' 
+                        }}>
+                          {Object.entries(dataPickerForm.headerData || dataPickerForm.HeaderData).map(([key, value]) => (
+                            <div
+                              key={key}
+                              onClick={() => copyValueFromPicker(value)}
+                              style={{
+                                background: '#f8f9fa',
+                                padding: '1rem',
+                                borderRadius: '6px',
+                                border: '2px solid transparent',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseOver={(e) => {
+                                e.currentTarget.style.borderColor = '#667eea';
+                                e.currentTarget.style.background = '#eef2ff';
+                              }}
+                              onMouseOut={(e) => {
+                                e.currentTarget.style.borderColor = 'transparent';
+                                e.currentTarget.style.background = '#f8f9fa';
+                              }}
+                            >
+                              <div style={{ fontSize: '0.85rem', color: '#666', marginBottom: '0.25rem' }}>
+                                {key}
+                              </div>
+                              <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#333' }}>
+                                {value || '-'}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Body Data (Tabla) */}
+                    {(dataPickerForm.bodyData || dataPickerForm.BodyData)?.[0]?.data && (
+                      <div>
+                        <h4 style={{ 
+                          color: '#667eea', 
+                          marginBottom: '1rem',
+                          fontSize: '1.1rem',
+                          fontWeight: 'bold'
+                        }}>
+                          📊 Tabla de Datos
+                        </h4>
+                        <div style={{ 
+                          overflowX: 'auto',
+                          border: '1px solid #e0e0e0',
+                          borderRadius: '8px'
+                        }}>
+                          <table style={{
+                            width: '100%',
+                            borderCollapse: 'collapse',
+                            fontSize: '0.9rem'
+                          }}>
+                            <thead>
+                              <tr style={{ background: '#f3f4f6' }}>
+                                <th style={{ padding: '0.75rem', borderBottom: '2px solid #e0e0e0', textAlign: 'left', fontWeight: 'bold' }}>
+                                  #
+                                </th>
+                                {Object.keys((dataPickerForm.bodyData || dataPickerForm.BodyData)[0].data[0] || {})
+                                  .filter(key => key !== 'id' && key !== 'ID')
+                                  .map(key => (
+                                    <th key={key} style={{ 
+                                      padding: '0.75rem', 
+                                      borderBottom: '2px solid #e0e0e0',
+                                      textAlign: 'left',
+                                      fontWeight: 'bold',
+                                      minWidth: '100px'
+                                    }}>
+                                      {key}
+                                    </th>
+                                  ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(dataPickerForm.bodyData || dataPickerForm.BodyData)[0].data.map((row, rowIndex) => (
+                                <tr key={rowIndex}>
+                                  <td style={{ 
+                                    padding: '0.75rem', 
+                                    borderBottom: '1px solid #e0e0e0',
+                                    fontWeight: 'bold',
+                                    color: '#666'
+                                  }}>
+                                    {rowIndex + 1}
+                                  </td>
+                                  {Object.entries(row)
+                                    .filter(([key]) => key !== 'id' && key !== 'ID')
+                                    .map(([key, value]) => (
+                                      <td
+                                        key={key}
+                                        onClick={() => copyValueFromPicker(value)}
+                                        style={{
+                                          padding: '0.75rem',
+                                          borderBottom: '1px solid #e0e0e0',
+                                          cursor: 'pointer',
+                                          transition: 'all 0.2s',
+                                          background: 'white'
+                                        }}
+                                        onMouseOver={(e) => {
+                                          e.currentTarget.style.background = '#eef2ff';
+                                          e.currentTarget.style.fontWeight = 'bold';
+                                        }}
+                                        onMouseOut={(e) => {
+                                          e.currentTarget.style.background = 'white';
+                                          e.currentTarget.style.fontWeight = 'normal';
+                                        }}
+                                      >
+                                        {value || '-'}
+                                      </td>
+                                    ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 🚀 MODAL DE IMPORTADOR DE COLUMNAS AUTOMÁTICO */}
+        {showColumnImporter && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10001,
+            padding: '2rem'
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              maxWidth: '1200px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 25px 80px rgba(0, 0, 0, 0.4)'
+            }}>
+              {/* Header del modal */}
+              <div style={{
+                background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                color: 'white',
+                padding: '1.5rem 2rem',
+                borderTopLeftRadius: '16px',
+                borderTopRightRadius: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                position: 'sticky',
+                top: 0,
+                zIndex: 10
+              }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    📥 Importar Columna Automáticamente
+                  </h2>
+                  <p style={{ margin: '0.5rem 0 0 0', fontSize: '1rem', opacity: 0.95 }}>
+                    Copiar toda la columna desde otro formulario → <strong>"{columnImporterTarget?.columnName}"</strong>
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowColumnImporter(false);
+                    setColumnImporterForm(null);
+                  }}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    border: 'none',
+                    color: 'white',
+                    fontSize: '1.5rem',
+                    cursor: 'pointer',
+                    borderRadius: '50%',
+                    width: '45px',
+                    height: '45px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
+                  onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Contenido del modal */}
+              <div style={{ padding: '2rem' }}>
+                {/* PASO 1: Seleccionar formulario origen */}
+                {!columnImporterForm && (
+                  <div>
+                    <h3 style={{ marginBottom: '1.5rem', color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ 
+                        background: '#11998e', 
+                        color: 'white', 
+                        borderRadius: '50%', 
+                        width: '28px', 
+                        height: '28px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.9rem',
+                        fontWeight: 'bold'
+                      }}>1</span>
+                      Selecciona el formulario con los datos a importar:
+                    </h3>
+                    
+                    {columnImporterForms.length === 0 && (
+                      <p style={{ color: '#999', fontStyle: 'italic', textAlign: 'center', padding: '2rem' }}>
+                        📭 No hay formularios guardados disponibles para importar.
+                      </p>
+                    )}
+                    
+                    {columnImporterForms.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+                        {columnImporterForms.slice(0, 20).map((form) => {
+                          const formId = form.filledFormID || form.FilledFormID || form.formID || form.FormID || form.id || form.ID;
+                          const createdAt = form.createdAt || form.CreatedAt || form.created_at;
+                          const templateName = form.templateName || form.TemplateName || 'Formulario';
+                          const headerDataObj = form.headerData || form.HeaderData;
+                          const bodyDataObj = form.bodyData || form.BodyData;
+                          let parsedHeader = headerDataObj;
+                          if (typeof headerDataObj === 'string') {
+                            try { parsedHeader = JSON.parse(headerDataObj); } catch (e) { parsedHeader = {}; }
+                          }
+                          let parsedBody = bodyDataObj;
+                          if (typeof bodyDataObj === 'string') {
+                            try { parsedBody = JSON.parse(bodyDataObj); } catch (e) { parsedBody = []; }
+                          }
+                          const filaCount = parsedBody?.[0]?.data?.length || 0;
+                          
+                          return (
+                            <div
+                              key={formId}
+                              onClick={() => loadFormForColumnImport(form)}
+                              style={{
+                                background: 'linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)',
+                                padding: '1.5rem',
+                                borderRadius: '12px',
+                                border: '3px solid #e0e0e0',
+                                cursor: 'pointer',
+                                transition: 'all 0.3s ease',
+                                boxShadow: '0 2px 10px rgba(0,0,0,0.05)'
+                              }}
+                              onMouseOver={(e) => {
+                                e.currentTarget.style.borderColor = '#11998e';
+                                e.currentTarget.style.boxShadow = '0 8px 25px rgba(17, 153, 142, 0.25)';
+                                e.currentTarget.style.transform = 'translateY(-3px)';
+                              }}
+                              onMouseOut={(e) => {
+                                e.currentTarget.style.borderColor = '#e0e0e0';
+                                e.currentTarget.style.boxShadow = '0 2px 10px rgba(0,0,0,0.05)';
+                                e.currentTarget.style.transform = 'translateY(0)';
+                              }}
+                            >
+                              <p style={{ margin: 0, fontWeight: 'bold', color: '#333', fontSize: '1.1rem' }}>
+                                📄 {templateName}
+                              </p>
+                              <p style={{ margin: '0.3rem 0', color: '#666', fontSize: '0.85rem' }}>
+                                🔢 ID: {formId}
+                              </p>
+                              <p style={{ margin: '0.3rem 0', color: '#666', fontSize: '0.85rem' }}>
+                                📅 {createdAt ? new Date(createdAt).toLocaleString('es-EC') : 'Sin fecha'}
+                              </p>
+                              {parsedHeader?.Código && (
+                                <p style={{ margin: '0.3rem 0', color: '#444', fontSize: '0.9rem' }}>
+                                  🔖 Código: <strong>{parsedHeader.Código}</strong>
+                                </p>
+                              )}
+                              <p style={{ 
+                                margin: '0.75rem 0 0 0', 
+                                color: '#11998e', 
+                                fontWeight: 'bold',
+                                fontSize: '1rem' 
+                              }}>
+                                📊 {filaCount} filas disponibles
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* PASO 2: Seleccionar columna origen */}
+                {columnImporterForm && (
+                  <div>
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      marginBottom: '1.5rem',
+                      paddingBottom: '1rem',
+                      borderBottom: '3px solid #e0e0e0'
+                    }}>
+                      <h3 style={{ margin: 0, color: '#333', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ 
+                          background: '#11998e', 
+                          color: 'white', 
+                          borderRadius: '50%', 
+                          width: '28px', 
+                          height: '28px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '0.9rem',
+                          fontWeight: 'bold'
+                        }}>2</span>
+                        Selecciona la columna a importar:
+                      </h3>
+                      <button
+                        onClick={() => setColumnImporterForm(null)}
+                        style={{
+                          background: '#f3f4f6',
+                          border: '2px solid #d1d5db',
+                          padding: '0.6rem 1.2rem',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontSize: '0.95rem',
+                          fontWeight: '500',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.borderColor = '#11998e'}
+                        onMouseOut={(e) => e.currentTarget.style.borderColor = '#d1d5db'}
+                      >
+                        ← Volver a lista
+                      </button>
+                    </div>
+
+                    {/* Información del formulario seleccionado */}
+                    <div style={{
+                      background: 'linear-gradient(135deg, #eaf9f7 0%, #e0f7f4 100%)',
+                      padding: '1rem 1.5rem',
+                      borderRadius: '10px',
+                      marginBottom: '1.5rem',
+                      border: '2px solid #b8e8e3'
+                    }}>
+                      <p style={{ margin: 0, fontSize: '0.95rem' }}>
+                        <strong>📄 Formulario origen:</strong>{' '}
+                        {columnImporterForm.templateName || columnImporterForm.TemplateName || 'Formulario'}{' '}
+                        (ID: {columnImporterForm.filledFormID || columnImporterForm.FilledFormID || columnImporterForm.id})
+                      </p>
+                      <p style={{ margin: '0.3rem 0 0 0', fontSize: '0.95rem' }}>
+                        <strong>🎯 Columna destino:</strong>{' '}
+                        <span style={{ color: '#11998e', fontWeight: 'bold' }}>{columnImporterTarget?.columnName}</span>
+                      </p>
+                    </div>
+
+                    {/* Botones de columnas disponibles */}
+                    {columnImporterForm.fullData?.body?.[0]?.data?.[0] && (
+                      <div>
+                        <p style={{ marginBottom: '1rem', color: '#666', fontSize: '0.95rem' }}>
+                          Haz clic en una columna para importar <strong>todos sus valores</strong> a "{columnImporterTarget?.columnName}":
+                        </p>
+                        
+                        <div style={{ 
+                          display: 'flex', 
+                          flexWrap: 'wrap', 
+                          gap: '0.75rem',
+                          marginBottom: '2rem'
+                        }}>
+                          {Object.keys(columnImporterForm.fullData.body[0].data[0] || {})
+                            .filter(key => key !== 'id' && key !== 'ID')
+                            .map((columnName) => {
+                              // Obtener un valor de muestra
+                              const sampleValue = columnImporterForm.fullData.body[0].data[0][columnName];
+                              const valueCount = columnImporterForm.fullData.body[0].data.filter(
+                                row => row[columnName] !== null && row[columnName] !== undefined && row[columnName] !== ''
+                              ).length;
+                              
+                              return (
+                                <button
+                                  key={columnName}
+                                  onClick={() => importColumnData(columnName)}
+                                  style={{
+                                    background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    padding: '1rem 1.5rem',
+                                    cursor: 'pointer',
+                                    fontSize: '1rem',
+                                    fontWeight: 'bold',
+                                    transition: 'all 0.3s ease',
+                                    boxShadow: '0 4px 15px rgba(17, 153, 142, 0.3)',
+                                    minWidth: '150px',
+                                    textAlign: 'center'
+                                  }}
+                                  onMouseOver={(e) => {
+                                    e.currentTarget.style.transform = 'scale(1.05)';
+                                    e.currentTarget.style.boxShadow = '0 6px 20px rgba(17, 153, 142, 0.4)';
+                                  }}
+                                  onMouseOut={(e) => {
+                                    e.currentTarget.style.transform = 'scale(1)';
+                                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(17, 153, 142, 0.3)';
+                                  }}
+                                >
+                                  <div style={{ fontSize: '1.1rem', marginBottom: '0.3rem' }}>{columnName}</div>
+                                  <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
+                                    {valueCount} valores
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: '0.2rem' }}>
+                                    Ej: {String(sampleValue || '-').substring(0, 15)}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                        </div>
+
+                        {/* Vista previa de la tabla */}
+                        <div style={{ marginTop: '1rem' }}>
+                          <h4 style={{ color: '#333', marginBottom: '1rem' }}>📊 Vista previa de datos:</h4>
+                          <div style={{ 
+                            overflowX: 'auto',
+                            border: '2px solid #e0e0e0',
+                            borderRadius: '10px',
+                            maxHeight: '300px',
+                            overflow: 'auto'
+                          }}>
+                            <table style={{
+                              width: '100%',
+                              borderCollapse: 'collapse',
+                              fontSize: '0.9rem'
+                            }}>
+                              <thead>
+                                <tr style={{ background: '#f3f4f6', position: 'sticky', top: 0 }}>
+                                  <th style={{ padding: '0.75rem', borderBottom: '2px solid #e0e0e0', textAlign: 'left' }}>#</th>
+                                  {Object.keys(columnImporterForm.fullData.body[0].data[0] || {})
+                                    .filter(key => key !== 'id' && key !== 'ID')
+                                    .map(key => (
+                                      <th key={key} style={{ 
+                                        padding: '0.75rem', 
+                                        borderBottom: '2px solid #e0e0e0',
+                                        textAlign: 'left',
+                                        fontWeight: 'bold',
+                                        background: '#f3f4f6'
+                                      }}>
+                                        {key}
+                                      </th>
+                                    ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {columnImporterForm.fullData.body[0].data.slice(0, 10).map((row, rowIndex) => (
+                                  <tr key={rowIndex} style={{ background: rowIndex % 2 === 0 ? 'white' : '#f9fafb' }}>
+                                    <td style={{ padding: '0.6rem', borderBottom: '1px solid #e0e0e0', fontWeight: 'bold', color: '#666' }}>
+                                      {rowIndex + 1}
+                                    </td>
+                                    {Object.entries(row)
+                                      .filter(([key]) => key !== 'id' && key !== 'ID')
+                                      .map(([key, value]) => (
+                                        <td key={key} style={{ padding: '0.6rem', borderBottom: '1px solid #e0e0e0' }}>
+                                          {value || '-'}
+                                        </td>
+                                      ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {columnImporterForm.fullData.body[0].data.length > 10 && (
+                            <p style={{ color: '#999', fontSize: '0.85rem', marginTop: '0.5rem', textAlign: 'center' }}>
+                              ... y {columnImporterForm.fullData.body[0].data.length - 10} filas más
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* HEADER FIELDS CON ACORDEÓN */}
         {selectedTemplate.headerFields?.length > 0 && (
             <AccordionSection
@@ -1098,12 +4972,52 @@ function FillForm() {
               <div className="header-grid">
                 {selectedTemplate.headerFields.map((field, index) => (
                   <div key={index} className="form-field">
-                    <label>{field.label}{field.required && <span className="required">*</span>}</label>
-                    {renderField(
-                      field, 
-                      headerData[field.label], 
-                      (value) => handleHeaderChangeWithAutoSave(field.label, value)
-                    )}
+                    <label>
+                      {field.label}{field.required && <span className="required">*</span>}
+                    </label>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      {renderField(
+                        field, 
+                        headerData[field.label], 
+                        (value) => handleHeaderChangeWithAutoSave(field.label, value)
+                      )}
+                      {/* 🆕 Botón para abrir selector de datos */}
+                      <button
+                        onClick={() => {
+                          openDataPicker(
+                            (selectedValue) => handleHeaderChangeWithAutoSave(field.label, selectedValue),
+                            field.label
+                          );
+                        }}
+                        title="Copiar dato de un formulario guardado"
+                        style={{
+                          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '0.5rem 0.75rem',
+                          fontSize: '1.1rem',
+                          cursor: 'pointer',
+                          minWidth: '40px',
+                          height: '38px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.05)';
+                          e.currentTarget.style.boxShadow = '0 4px 8px rgba(102, 126, 234, 0.4)';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)';
+                          e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                        }}
+                      >
+                        📋
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1147,7 +5061,8 @@ function FillForm() {
               columns: element.columns?.length,
               groupedColumns: groupedColumns.length,
               rowCount,
-              firstRow: currentElementData.data?.[0]
+              firstRow: currentElementData.data?.[0],
+              firstRowKeys: Object.keys(currentElementData.data?.[0] || {})
             });
             
             return (
@@ -1160,9 +5075,50 @@ function FillForm() {
                 onToggle={() => toggleBodySection(elementIndex)}
               >
                 <div className="table-header">
-                  <button onClick={() => addTableRow(elementIndex)} className="btn-add-row">
-                    + Agregar Fila
-                  </button>
+                  <div className="table-controls-left">
+                    <button onClick={() => addTableRow(elementIndex)} className="btn-add-row">
+                      + Agregar Fila
+                    </button>
+                    {/* 🎯 Mostrar botón "Recalcular Totales" SOLO si:
+                        1. El formulario tiene auto-suma activado (15 TINAS o maestro)
+                        2. La tabla tiene columnas PESO */}
+                    {shouldEnableAutoSum() && element.columns?.some(col => {
+                      const colId = (col.id || col.name || '').toUpperCase();
+                      const colLabel = (col.label || col.header || '').toUpperCase();
+                      return colId.includes('PESO') || colLabel.includes('PESO');
+                    }) && (
+                      <button onClick={recalcularTodosLosTotales} className="btn-recalcular" title="Recalcular todos los totales">
+                        🔄 Recalcular Totales
+                      </button>
+                    )}
+                  </div>
+                  <div className="table-controls-right">
+                    <button onClick={() => addTableColumn(elementIndex)} className="btn-add-column" title="Agregar columna al final">
+                      ➕ Columna
+                    </button>
+                    <button onClick={() => removeTableColumn(elementIndex)} className="btn-remove-column" title="Eliminar última columna">
+                      ➖ Columna
+                    </button>
+                    {/* 💾 Botón para guardar cambios de estructura */}
+                    {element.columns?.some(col => {
+                      const colId = (col.id || col.name || '').toUpperCase();
+                      const colLabel = (col.label || col.header || '').toUpperCase();
+                      return colId.includes('PESO') || colLabel.includes('PESO');
+                    }) && (
+                      <button 
+                        onClick={async () => {
+                          const success = await saveTemplateToDatabase(selectedTemplate, true);
+                          if (success) {
+                            console.log('✅ Estructura del formulario guardada');
+                          }
+                        }} 
+                        className="btn-save-structure" 
+                        title="Guardar cambios de columnas en la base de datos"
+                      >
+                        💾 Guardar Estructura
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="table-wrapper">
                   <table className="data-table complex-header">
@@ -1185,14 +5141,78 @@ function FillForm() {
                             })));
                           }
                           return (
-                            <th key={colIndex} style={{ whiteSpace: 'pre-wrap' }}>
-                              {headerText}
+                            <th key={colIndex} style={{ whiteSpace: 'pre-wrap', position: 'relative' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                <span>{headerText}</span>
+                                {/* 📥 Botón para importar columna de otro formulario */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openColumnImporter(elementIndex, colIndex, headerText);
+                                  }}
+                                  title={`Importar datos para "${headerText}" desde otro formulario`}
+                                  style={{
+                                    background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    padding: '2px 6px',
+                                    fontSize: '0.75rem',
+                                    cursor: 'pointer',
+                                    opacity: 0.9,
+                                    transition: 'all 0.2s'
+                                  }}
+                                  onMouseOver={(e) => e.currentTarget.style.opacity = 1}
+                                  onMouseOut={(e) => e.currentTarget.style.opacity = 0.9}
+                                >
+                                  📥
+                                </button>
+                              </div>
                             </th>
                           );
                         })}
                       </tr>
                     </thead>
                     <tbody>
+                      {/* 🆕 GENERAR MAPA DE NOMBRES ÚNICOS PARA COLUMNAS DUPLICADAS */}
+                      {(() => {
+                        // Crear un mapa de colIndex → cellName único
+                        const columnNameMap = new Map();
+                        const seenLabels = new Map(); // label → [colIndex1, colIndex2, ...]
+                        
+                        // Primera pasada: detectar duplicados
+                        (element.columns || []).forEach((col, colIndex) => {
+                          const label = col.label || col.header || col.id || col.name || `col_${colIndex}`;
+                          
+                          if (!seenLabels.has(label)) {
+                            seenLabels.set(label, []);
+                          }
+                          seenLabels.get(label).push(colIndex);
+                        });
+                        
+                        // Segunda pasada: asignar nombres únicos
+                        (element.columns || []).forEach((col, colIndex) => {
+                          const label = col.label || col.header || col.id || col.name || `col_${colIndex}`;
+                          const isDuplicate = seenLabels.get(label).length > 1;
+                          
+                          if (isDuplicate) {
+                            // Agregar sufijo único basado en colIndex
+                            const uniqueName = `${label}_col${colIndex}`;
+                            columnNameMap.set(colIndex, uniqueName);
+                            
+                            console.log(`🔧 Columna duplicada: "${label}" (Col ${colIndex}) → "${uniqueName}"`);
+                          } else {
+                            // Nombre normal sin sufijo
+                            columnNameMap.set(colIndex, label);
+                          }
+                        });
+                        
+                        // Guardar el mapa en el elemento para usarlo después
+                        element._columnNameMap = columnNameMap;
+                        
+                        return null; // Este bloque solo ejecuta la lógica, no renderiza nada
+                      })()}
+                      
                       {(currentElementData.data || []).map((row, rowIndex) => {
                         // Si el template tiene filas pre-definidas, obtener la configuración de celdas
                         const templateRow = element.rows ? element.rows[rowIndex] : null;
@@ -1201,14 +5221,113 @@ function FillForm() {
                           <tr key={`row-${elementIndex}-${rowIndex}`}>
                             <td>{rowIndex + 1}</td>
                             {(element.columns || []).map((col, colIndex) => {
-                              // Determinar el nombre de la celda con múltiples fallbacks
-                              let cellName;
+                              // 🆕 USAR EL MAPA DE NOMBRES ÚNICOS
+                              let cellName = element._columnNameMap?.get(colIndex) || 
+                                             col.label || col.header || col.id || col.name || `col_${colIndex}`;
+                              
+                              // 🔍 Declarar variables una sola vez al inicio
+                              const colId = (col.id || col.name || '').toUpperCase();
+                              const colLabel = (col.label || col.header || '').toUpperCase();
+                              const isPesoColumn = colId.includes('PESO') || colLabel.includes('PESO');
+                              
+                              // 🎯 PRIORIDAD 1: Verificar templateRow.cells, pero validar que sea correcto
+                              const rowKeys = Object.keys(row);
+                              let cellNameFromTemplate = null;
+                              
                               if (templateRow && templateRow.cells && templateRow.cells[colIndex]) {
-                                // Usar el 'name' de la celda pre-definida
-                                cellName = templateRow.cells[colIndex].name;
+                                cellNameFromTemplate = templateRow.cells[colIndex].name;
+                                
+                                // 🐛 VALIDACIÓN CRÍTICA: Si es columna PESO, verificar que el cellName no sea de TOTAL
+                                if (isPesoColumn) {
+                                  const cellNameUpper = (cellNameFromTemplate || '').toUpperCase();
+                                  if (cellNameUpper.includes('TOTAL')) {
+                                    // ⚠️ Template corrupto: columna PESO tiene cellName de TOTAL
+                                    if (rowIndex === 0) {
+                                      console.warn(`⚠️ Template corrupto: Columna PESO "${col.label}" tiene cellName="${cellNameFromTemplate}" (contiene TOTAL)`);
+                                    }
+                                    cellNameFromTemplate = null; // Ignorar y generar uno correcto
+                                  }
+                                }
+                              }
+                              
+                              if (cellNameFromTemplate && rowKeys.includes(cellNameFromTemplate)) {
+                                // Template tiene cellName correcto y existe en el row
+                                cellName = cellNameFromTemplate;
                               } else {
-                                // Usar el nombre de la columna con múltiples fallbacks
-                                cellName = col.label || col.header || col.name || col.id || `col_${colIndex}`;
+                                // 🎯 PRIORIDAD 2: Buscar la clave en el row (para formularios especiales como 15 Tinas)
+                                
+                                if (isPesoColumn) {
+                                  // Para PESO, buscar PESO{num}_T1, PESO{num}, "PESO {num}", etc en el row
+                                  const pesoMatch = (col.id || col.label || '').match(/\d+/);
+                                  const pesoNum = pesoMatch ? pesoMatch[0] : '';
+                                  
+                                  const pesoKey = rowKeys.find(key => {
+                                    const keyUpper = key.toUpperCase();
+                                    // 🔧 FIX: Buscar con Y sin espacio: "PESO6" o "PESO 6"
+                                    return (keyUpper.includes(`PESO${pesoNum}`) || keyUpper.includes(`PESO ${pesoNum}`)) && !keyUpper.includes('TOTAL');
+                                  });
+                                  
+                                  // 🐛 DEBUG CRÍTICO
+                                  if (rowIndex === 0 && pesoNum === '6') {
+                                    console.log(`🔍 BÚSQUEDA PESO ${pesoNum}:`);
+                                    console.log(`   rowKeys disponibles:`, rowKeys);
+                                    console.log(`   cellNameFromTemplate="${cellNameFromTemplate}" (rechazado)`);
+                                    console.log(`   Buscando clave que incluya: "PESO${pesoNum}" o "PESO ${pesoNum}" sin "TOTAL"`);
+                                    console.log(`   pesoKey encontrada:`, pesoKey);
+                                  }
+                                  
+                                  if (pesoKey) {
+                                    cellName = pesoKey;
+                                  } else {
+                                    // No se encontró la clave en el row: GENERAR cellName correcto
+                                    const firstKey = rowKeys[0] || '';
+                                    const suffixMatch = firstKey.match(/_T(\d+)$/);
+                                    const suffix = suffixMatch ? suffixMatch[0] : '';
+                                    cellName = `PESO${pesoNum}${suffix}`;
+                                    
+                                    if (rowIndex === 0 && pesoNum === '6') {
+                                      console.log(`⚠️ PESO ${pesoNum} NO encontrada en row! Generando: "${cellName}"`);
+                                    }
+                                  }
+                                } else if (colId.includes('TOTAL') || colLabel.includes('TOTAL')) {
+                                  // Para TOTAL, buscar clave con TOTAL en el row
+                                  const totalKey = rowKeys.find(key => key.toUpperCase().includes('TOTAL'));
+                                  cellName = totalKey || col.id || col.name || `col_${colIndex}`;
+                                } else {
+                                  // 🔧 FIX: Buscar la clave EXACTA en el row (puede tener espacios, asteriscos, etc.)
+                                  const colLabel = (col.label || col.header || '').trim();
+                                  const colId = (col.id || col.name || '').trim();
+                                  
+                                  // 1. Buscar por label exacto (ej: "TINA *", "PESO BRUTO")
+                                  if (colLabel && rowKeys.includes(colLabel)) {
+                                    cellName = colLabel;
+                                  }
+                                  // 2. Buscar por ID
+                                  else if (colId && rowKeys.includes(colId)) {
+                                    cellName = colId;
+                                  }
+                                  // 3. Buscar por label sin emojis
+                                  else {
+                                    const labelWithoutEmojis = colLabel.replace(/[⏰🔵⚖️📊✨💰🏷️]/g, '').trim();
+                                    if (labelWithoutEmojis && rowKeys.includes(labelWithoutEmojis)) {
+                                      cellName = labelWithoutEmojis;
+                                    }
+                                    // 4. Buscar por coincidencia parcial (case-insensitive)
+                                    else {
+                                      const matchingKey = rowKeys.find(key => 
+                                        key.toUpperCase().includes(labelWithoutEmojis.toUpperCase()) ||
+                                        labelWithoutEmojis.toUpperCase().includes(key.toUpperCase())
+                                      );
+                                      if (matchingKey) {
+                                        cellName = matchingKey;
+                                      } else {
+                                        // 5. Usar el índice de columna como último recurso
+                                        cellName = rowKeys[colIndex] || colLabel || colId || `col_${colIndex}`;
+                                        console.warn(`⚠️ No se encontró cellName para columna "${colLabel}", usando fallback: "${cellName}"`);
+                                      }
+                                    }
+                                  }
+                                }
                               }
                               
                               // Asegurarse de que cellName nunca sea undefined
@@ -1217,9 +5336,112 @@ function FillForm() {
                                 cellName = `col_${elementIndex}_${colIndex}`;
                               }
                               
+                              // � SOLUCIÓN PARA COLUMNAS DUPLICADAS:
+                              // Si ya existe este cellName en la fila, agregar sufijo único basado en colIndex
+                              if (rowKeys.filter(k => k === cellName).length > 1 || 
+                                  (rowIndex === 0 && element.columns.filter((c, idx) => {
+                                    const cName = c.label || c.header || c.id || c.name || '';
+                                    return cName === cellName && idx !== colIndex;
+                                  }).length > 0)) {
+                                // Hay duplicados - usar cellName con sufijo único
+                                const originalCellName = cellName;
+                                cellName = `${cellName}_col${colIndex}`;
+                                
+                                if (rowIndex === 0) {
+                                  console.log(`🔧 Columna duplicada detectada: "${originalCellName}" → "${cellName}"`);
+                                }
+                                
+                                // Inicializar vacío si no existe (esto solo afecta el objeto row local, no el estado)
+                                if (row[cellName] === undefined) {
+                                  row[cellName] = "";
+                                }
+                              }
+                              
+                              // �🎯 Verificar si es una columna TOTAL (solo lectura)
+                              // REGLA: Solo bloquear columnas TOTAL si la tabla tiene columnas PESO (es tabla de cálculo)
+                              
+                              // Verificar si esta TABLA tiene alguna columna PESO
+                              const tableTienePeso = element.columns?.some(c => {
+                                const cId = (c.id || c.name || '').toUpperCase();
+                                const cLabel = (c.label || c.header || '').toUpperCase();
+                                return cId.includes('PESO') || cLabel.includes('PESO');
+                              });
+                              
+                              // Solo bloquear si:
+                              // 1. La tabla TIENE columnas PESO (es tabla de cálculo automático)
+                              // 2. Esta columna es TOTAL (por id o label)
+                              // 3. Y NO es una columna PESO
+                              const isTotalById = colId.includes('-TOTAL') || colId.includes('TOTAL_') || colId.includes('_TOTAL');
+                              const isTotalByLabel = colLabel === 'TOTAL' || colLabel === '📊 TOTAL';
+                              
+                              const isTotalColumn = tableTienePeso && (isTotalById || isTotalByLabel) && !isPesoColumn;
+                              
+                              // 🐛 DEBUG: Ver qué está pasando con PESO 6 y TOTAL
+                              if (rowIndex === 0 && (colLabel.includes('PESO 6') || colLabel.includes('PESO 7') || colLabel === 'TOTAL')) {
+                                console.log(`🔍 Columna "${col.label}" (colIndex=${colIndex}):`);
+                                console.log(`   colId="${colId}", colLabel="${colLabel}"`);
+                                console.log(`   isPesoColumn=${isPesoColumn}`);
+                                console.log(`   isTotalById=${isTotalById}, isTotalByLabel=${isTotalByLabel}`);
+                                console.log(`   isTotalColumn=${isTotalColumn}`);
+                                console.log(`   cellName="${cellName}"`);
+                                console.log(`   valor en row[cellName]="${row[cellName]}"`);
+                              }
+                              
+                              // 🐛 DEBUG: Log del valor actual para esta celda
+                              if (rowIndex === 0) {
+                                console.log(`🔍 Renderizando [Fila ${rowIndex + 1}][Col ${colIndex}]: cellName="${cellName}", valor="${row[cellName]}"`);
+                              }
+                              
                               return (
                                 <td key={`cell-${elementIndex}-${rowIndex}-${colIndex}-${cellName}`}>
-                                  {renderField(col, row[cellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, cellName, value))}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    {isTotalColumn ? (
+                                      // Columna TOTAL: solo lectura, muestra el valor calculado
+                                      <input 
+                                        type="text" 
+                                        value={row[cellName] || '0.00'} 
+                                        readOnly 
+                                        className="total-readonly"
+                                        style={{ 
+                                          backgroundColor: '#f0f0f0', 
+                                          fontWeight: 'bold',
+                                          textAlign: 'right',
+                                          cursor: 'not-allowed',
+                                          flex: 1
+                                        }}
+                                      />
+                                    ) : (
+                                      // Columnas normales: editables
+                                      <div style={{ flex: 1 }}>
+                                        {renderField(col, row[cellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, cellName, value))}
+                                      </div>
+                                    )}
+                                    {/* 📋 Botón de copiar */}
+                                    <button
+                                      onClick={(e) => copyToClipboard(row[cellName], e)}
+                                      className="btn-copy-cell"
+                                      title={`Copiar "${cellName}: ${row[cellName] || '(vacío)'}"`}
+                                      style={{
+                                        background: '#10b981',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        width: '28px',
+                                        height: '28px',
+                                        cursor: 'pointer',
+                                        fontSize: '14px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'all 0.2s',
+                                        flexShrink: 0
+                                      }}
+                                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#059669'}
+                                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#10b981'}
+                                    >
+                                      📋
+                                    </button>
+                                  </div>
                                 </td>
                               );
                             })}

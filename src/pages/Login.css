@@ -6,7 +6,8 @@
   justify-content: center;
   position: relative;
   overflow: hidden;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  /* Colores Frigolab: Verde y Amarillo */
+  background: linear-gradient(135deg, #10b981 0%, #22c55e 50%, #fbbf24 100%);
 }
 
 /* Animated Background */
@@ -99,6 +100,53 @@
   }
 }
 
+/* 🆕 Título Principal Grande */
+.main-title {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+}
+
+.frigolab-title {
+  font-size: 3.5rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #fbbf24 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+  letter-spacing: -1px;
+  text-transform: uppercase;
+  animation: titlePulse 3s ease-in-out infinite;
+}
+
+.title-underline {
+  width: 120px;
+  height: 4px;
+  background: linear-gradient(90deg, #10b981 0%, #fbbf24 100%);
+  margin: 0.75rem auto 0;
+  border-radius: 2px;
+  animation: underlineGrow 2s ease-in-out infinite;
+}
+
+@keyframes titlePulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+@keyframes underlineGrow {
+  0%, 100% {
+    width: 120px;
+  }
+  50% {
+    width: 180px;
+  }
+}
+
 /* Login Header */
 .login-header {
   text-align: center;
@@ -130,17 +178,40 @@
 .logo-text {
   font-size: 2.5rem;
   font-weight: bold;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  /* Colores Frigolab */
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #fbbf24 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   margin: 0;
 }
 
+/* 🆕 Estilos para el logo como imagen */
+.logo-image {
+  max-width: 280px;
+  height: auto;
+  animation: float 3s ease-in-out infinite;
+}
+
+.logo-fallback {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .login-subtitle {
   color: #666;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   margin: 0.5rem 0 0 0;
+  font-weight: 600;
+}
+
+.login-description {
+  color: #059669;
+  font-size: 1rem;
+  margin: 0.5rem 0 0 0;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 /* Form Styles */
@@ -180,9 +251,10 @@
 
 .form-group input:focus {
   outline: none;
-  border-color: #667eea;
+  /* Color verde Frigolab */
+  border-color: #10b981;
   background: white;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
 }
 
 .form-group input:disabled {
@@ -248,7 +320,8 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 1rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  /* Colores Frigolab: Verde a Amarillo */
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #fbbf24 100%);
   color: white;
   border: none;
   border-radius: 10px;
@@ -256,12 +329,13 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .login-button:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5);
 }
 
 .login-button:active:not(:disabled) {

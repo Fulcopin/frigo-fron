@@ -32,6 +32,7 @@
     "terser": "latest",
     "tsx": "latest",
     "tw-animate-css": "latest",
+    "xlsx": "^0.18.5",
     "yaml": "latest"
   },
   "devDependencies": {

@@ -1,0 +1,102 @@
+{
+  "nombre": "CONTROL DE PRODUCTOS CONGELADOS (LIBERACIÓN DE TÚNELES)",
+  "structureJSON": {
+    "headerData": [
+      {
+        "id": "fecha",
+        "label": "Fecha",
+        "type": "date",
+        "required": true,
+        "editable": false
+      },
+      {
+        "id": "turno",
+        "label": "Turno",
+        "type": "text",
+        "required": false
+      },
+      {
+        "id": "responsable",
+        "label": "Responsable",
+        "type": "text",
+        "required": false
+      }
+    ],
+    "bodyElements": [
+      {
+        "id": "tabla-principal",
+        "type": "table",
+        "defaultRows": 10,
+        "columns": [
+          {
+            "id": "hora",
+            "label": "HORA",
+            "type": "time"
+          },
+          {
+            "id": "tina",
+            "label": "TINA *",
+            "type": "text",
+            "required": true
+          },
+          {
+            "id": "codigos",
+            "label": "CÓDIGOS DE MAT. PRIMA",
+            "type": "text"
+          },
+          {
+            "id": "especie",
+            "label": "ESPECIE / PRESENTACIÓN",
+            "type": "text"
+          },
+          {
+            "id": "peso-bruto-1",
+            "name": "PESO BRUTO 1",
+            "label": "PESO BRUTO",
+            "type": "number",
+            "header": "PESO BRUTO"
+          },
+          {
+            "id": "peso-bruto-2",
+            "name": "PESO BRUTO 2",
+            "label": "PESO BRUTO",
+            "type": "number",
+            "header": "PESO BRUTO"
+          }
+        ]
+      },
+      {
+        "id": "tabla-insumos",
+        "type": "table",
+        "defaultRows": 10,
+        "columns": [
+          {
+            "id": "insumo",
+            "label": "Insumo",
+            "type": "text"
+          },
+          {
+            "id": "cantidad",
+            "label": "Cantidad",
+            "type": "number"
+          }
+        ]
+      }
+    ],
+    "firmasData": [
+      {
+        "puesto": "elaboro",
+        "titulo": "Elaboró"
+      },
+      {
+        "puesto": "reviso",
+        "titulo": "Revisó"
+      },
+      {
+        "puesto": "aprobo",
+        "titulo": "Aprobó"
+      }
+    ]
+  },
+  "isMasterForm": false
+}

@@ -245,37 +245,104 @@
   margin: 4px 0 12px 0;
 }
 
-.fecha-input-group {
+/* 📅 Atajos rápidos de fechas */
+.atajos-fechas {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+  margin: 15px 0;
+  padding: 12px;
+  background: #fff8e1;
+  border-radius: 8px;
+  border: 1px solid #ffe082;
+}
+
+.atajos-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: #f57c00;
+  margin-right: 5px;
+}
+
+.btn-atajo {
+  padding: 6px 12px;
+  background: white;
+  color: #f57c00;
+  border: 2px solid #ffb74d;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-atajo:hover {
+  background: #f57c00;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 6px rgba(245, 124, 0, 0.3);
+}
+
+.btn-atajo:active {
+  transform: translateY(0);
+}
+
+/* 📅 NUEVO: Contenedor de rango de fechas */
+.fecha-rango-container {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 2px solid #e9ecef;
+}
+
+.fecha-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 150px;
 }
 
 .fecha-input-group label {
-  font-weight: 500;
-  font-size: 14px;
-  color: #2c3e50;
-  min-width: 180px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #495057;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.fecha-separador {
+  font-size: 24px;
+  font-weight: bold;
+  color: #3498db;
+  margin: 0 10px;
+  align-self: flex-end;
+  padding-bottom: 10px;
 }
 
 .fecha-input {
-  flex: 1;
-  min-width: 150px;
-  padding: 10px;
+  padding: 10px 12px;
   border: 2px solid #dee2e6;
   border-radius: 6px;
   font-size: 14px;
-  transition: border-color 0.3s ease;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  background: white;
 }
 
 .fecha-input:focus {
   outline: none;
   border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
 .btn-buscar {
-  padding: 10px 20px;
+  padding: 11px 24px;
   background: linear-gradient(135deg, #27ae60, #229954);
   color: white;
   border: none;
@@ -485,19 +552,52 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   cursor: pointer;
 }
 
-.movimiento-lote,
-.movimiento-proveedor {
-  font-size: 13px;
+/* 📦 NUEVO: Header con lote y fecha en línea */
+.movimiento-header-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
 }
 
-.movimiento-lote strong,
-.movimiento-proveedor strong {
+.movimiento-lote,
+.movimiento-proveedor,
+.movimiento-fecha {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.movimiento-lote .label,
+.movimiento-proveedor .label,
+.movimiento-fecha .label {
+  color: #7f8c8d;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.movimiento-lote .valor,
+.movimiento-proveedor .valor {
   color: #2c3e50;
-  margin-right: 4px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.movimiento-fecha {
+  background: #e8f5e9;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.movimiento-fecha .valor-fecha {
+  color: #27ae60;
+  font-weight: 600;
 }
 
 .btn-elegir-lote {

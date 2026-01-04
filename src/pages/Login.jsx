@@ -55,12 +55,31 @@ const Login = () => {
       </div>
 
       <div className="login-card">
+        {/* 🆕 Título principal grande */}
+        <div className="main-title">
+          <h1 className="frigolab-title">Frigolab Docs</h1>
+          <div className="title-underline"></div>
+        </div>
+
         <div className="login-header">
           <div className="logo-container">
-            <div className="logo-icon">🐟</div>
-            <h1 className="logo-text">FishCort</h1>
+            {/* Logo de Frigolab Docs */}
+            <img 
+              src="/logo-frigolab-docs.png" 
+              alt="Frigolab Docs Logo" 
+              className="logo-image"
+              onError={(e) => {
+                // Fallback si no se encuentra la imagen
+                e.target.style.display = 'none';
+                e.target.nextElementSibling.style.display = 'block';
+              }}
+            />
+            <div className="logo-fallback" style={{ display: 'none' }}>
+              <div className="logo-icon">🐟</div>
+            </div>
           </div>
-          <p className="login-subtitle">Sistema de Gestión Frigorífica</p>
+          <p className="login-subtitle">Sistema de Formularios Dinámicos</p>
+          <p className="login-description">Frigolab "San Mateo"</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
@@ -140,7 +159,7 @@ const Login = () => {
             👷 operador / fishcort2025
           </p>
           <p className="company-info">
-            Frigolab "San Mateo" © 2025
+            Frigolab "San Mateo" © 2026
           </p>
         </div>
       </div>

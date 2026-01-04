@@ -55,6 +55,10 @@ export const crearRegistro = async (registro) => {
     // Convertir al formato FilledForms
     const bodyData = {};
     
+    // Guardar el número de columnas de peso (importante para reconstruir el formulario)
+    bodyData['NUM_COLUMNAS_PESO'] = registro.numColumnasPeso || 5;
+    bodyData['NUM_TINAS'] = registro.tinas.length;
+    
     // Convertir tinas al formato del backend
     registro.tinas.forEach((tina, index) => {
       const num = index + 1;
@@ -116,6 +120,10 @@ export const actualizarRegistro = async (id, registro) => {
   try {
     // Convertir al formato FilledForms
     const bodyData = {};
+    
+    // Guardar el número de columnas de peso (importante para reconstruir el formulario)
+    bodyData['NUM_COLUMNAS_PESO'] = registro.numColumnasPeso || 5;
+    bodyData['NUM_TINAS'] = registro.tinas.length;
     
     // Convertir tinas al formato del backend
     registro.tinas.forEach((tina, index) => {
