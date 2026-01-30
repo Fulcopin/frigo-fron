@@ -62,8 +62,10 @@ function CreateTemplate() {
 
   const updateBodyElement = (elementIndex, field, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => i === elementIndex ? { ...el, [field]: value } : el) }));
   const removeBodyElement = (elementIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.filter((_, i) => i !== elementIndex) }));
+  
+  // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' a los campos de sección ---
   const addFieldToSection = (elementIndex) => {
-    const newField = { label: "", type: "text", required: false, options: [] };
+    const newField = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: [...el.fields, newField] } : el)) }));
   };
 
@@ -78,7 +80,8 @@ function CreateTemplate() {
   const removeFieldFromSection = (elementIndex, fieldIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.filter((_, j) => j !== fieldIndex) } : el)) }));
   const removeColumnFromTable = (elementIndex, colIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.filter((_, j) => j !== colIndex) } : el)) }));
 
-  const addFirma = () => setTemplate((prev) => ({ ...prev, firmas: [...prev.firmas, { puesto: "" }] }));
+  // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' a las firmas ---
+  const addFirma = () => setTemplate((prev) => ({ ...prev, firmas: [...prev.firmas, { puesto: "", apiMap: "", apiEndpoint: "" }] }));
   const updateFirma = (index, field, value) => setTemplate((prev) => ({ ...prev, firmas: prev.firmas.map((item, i) => (i === index ? { ...item, [field]: value } : item)) }));
   const removeFirma = (index) => setTemplate((prev) => ({ ...prev, firmas: prev.firmas.filter((_, i) => i !== index) }));
 
@@ -207,7 +210,18 @@ function CreateTemplate() {
               <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required} onChange={(e) => updateHeaderField(index, "required", e.target.checked)}/>Requerido</label></div>
               <button onClick={() => removeHeaderField(index)} className="btn-remove" title="Eliminar campo">🗑️</button>
             </div>
-            {field.type === "select" && (<div className="form-group"><label>Opciones (separadas por coma)</label><input type="text" value={field.options?.join(", ") || ""} onChange={(e) => updateHeaderField(index, "options", e.target.value.split(",").map((o) => o.trim()))} placeholder="Opción 1, Opción 2, Opción 3"/></div>)}
+            {/* 📝 OPCIONES MANUALES: Solo si es select Y no tiene API seleccionada */}
+            {field.type === "select" && !field.apiMap && !field.apiEndpoint && (
+              <div className="form-group">
+                <label>📝 Opciones Personalizadas (separadas por coma)</label>
+                <input 
+                  type="text" 
+                  value={field.options?.join(", ") || ""} 
+                  onChange={(e) => updateHeaderField(index, "options", e.target.value.split(",").map((o) => o.trim()))} 
+                  placeholder="Opción 1, Opción 2, Opción 3"
+                />
+              </div>
+            )}
           </div>
         ))}
         {template.headerFields.length === 0 && (<p className="empty-state">No hay campos de encabezado. Agrega al menos uno.</p>)}
@@ -235,11 +249,66 @@ function CreateTemplate() {
                     <div className="field-grid">
                       <div className="form-group"><label>Etiqueta</label><input type="text" value={field.label} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "label", e.target.value)} placeholder="Ej: Observación"/></div>
                       <div className="form-group"><label>Tipo</label><select value={field.type} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "type", e.target.value)}>{fieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+                      
+                      {/* --- DROPDOWN 1: API LOTES (DATOS DE DETALLES/MOVIMIENTOS) --- */}
+                      <div className="form-group">
+                        <label>🔄 API Lotes (Autocompletar desde Movimientos)</label>
+                        <select value={field.apiMap || ""} onChange={(e) => {
+                          updateFieldInSection(elementIndex, fieldIndex, "apiMap", e.target.value);
+                          if (e.target.value) updateFieldInSection(elementIndex, fieldIndex, "apiEndpoint", "");
+                        }}>
+                          <option value="">-- Ninguno --</option>
+                          
+                          {/* 🎯 CABECERAS */}
+                          <optgroup label="📋 Datos de Cabecera (Info General del Lote)">
+                            {MAPPABLE_API_FIELDS.header.map(apiField => (
+                              <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                            ))}
+                          </optgroup>
+                          
+                          {/* 🎯 DETALLES */}
+                          <optgroup label="📦 Datos de Detalles (Items del Lote)">
+                            {MAPPABLE_API_FIELDS.details.map(apiField => (
+                              <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
+
+                      {/* 🆕 DROPDOWN 2: API CATÁLOGOS (DATOS DE API EXTERNA) --- */}
+                      <div className="form-group">
+                        <label>📚 API Catálogos (Opciones desde API Externa)</label>
+                        <select value={field.apiEndpoint || ""} onChange={(e) => {
+                          updateFieldInSection(elementIndex, fieldIndex, "apiEndpoint", e.target.value);
+                          if (e.target.value) updateFieldInSection(elementIndex, fieldIndex, "apiMap", "");
+                        }}>
+                          {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
+                            <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)}/>Requerido</label></div>
                       <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
                     </div>
+                    
+                    {/* 🆕 OPCIONES PERSONALIZADAS PARA SELECT: Solo si NO tiene API */}
+                    {field.type === "select" && !field.apiMap && !field.apiEndpoint && (
+                      <div className="form-group" style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
+                        <label>📝 Opciones Personalizadas (separadas por coma)</label>
+                        <input 
+                          type="text" 
+                          value={field.options?.join(", ") || ""} 
+                          onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "options", e.target.value.split(",").map((o) => o.trim()))} 
+                          placeholder="Ej: Sí, No  o  Opción 1, Opción 2, Opción 3"
+                          style={{ width: '100%' }}
+                        />
+                        <small style={{ color: '#666', fontSize: '12px' }}>💡 Solo si NO usas API. Ejemplo: Sí, No</small>
+                      </div>
+                    )}
                   </div>
                 ))}
+
               </div>
             )}
             {element.type === 'table' && (
@@ -292,6 +361,21 @@ function CreateTemplate() {
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={column.required} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "required", e.target.checked)}/>Requerido</label></div>
                       <button onClick={() => removeColumnFromTable(elementIndex, colIndex)} className="btn-remove" title="Eliminar columna">🗑️</button>
                     </div>
+                    
+                    {/* 🆕 OPCIONES PERSONALIZADAS PARA SELECT: Solo si NO tiene API */}
+                    {column.type === "select" && !column.apiMap && !column.apiEndpoint && (
+                      <div className="form-group" style={{ gridColumn: '1 / -1', marginTop: '10px' }}>
+                        <label>📝 Opciones Personalizadas (separadas por coma)</label>
+                        <input 
+                          type="text" 
+                          value={column.options?.join(", ") || ""} 
+                          onChange={(e) => updateColumnInTable(elementIndex, colIndex, "options", e.target.value.split(",").map((o) => o.trim()))} 
+                          placeholder="Ej: Sí, No  o  Opción 1, Opción 2, Opción 3"
+                          style={{ width: '100%' }}
+                        />
+                        <small style={{ color: '#666', fontSize: '12px' }}>💡 Solo si NO usas API. Ejemplo: Sí, No</small>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -312,6 +396,45 @@ function CreateTemplate() {
                 <label>Puesto</label>
                 <input type="text" value={firma.puesto} onChange={(e) => updateFirma(index, "puesto", e.target.value)} placeholder="Ej: Supervisor de Calidad"/>
               </div>
+
+              {/* --- DROPDOWN 1: API LOTES (DATOS DE DETALLES/MOVIMIENTOS) --- */}
+              <div className="form-group">
+                <label>🔄 API Lotes (Autocompletar desde Movimientos)</label>
+                <select value={firma.apiMap || ""} onChange={(e) => {
+                  updateFirma(index, "apiMap", e.target.value);
+                  if (e.target.value) updateFirma(index, "apiEndpoint", ""); // Limpiar apiEndpoint
+                }}>
+                  <option value="">-- Ninguno --</option>
+                  
+                  {/* 🎯 CABECERAS */}
+                  <optgroup label="📋 Datos de Cabecera (Info General del Lote)">
+                    {MAPPABLE_API_FIELDS.header.map(apiField => (
+                      <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                    ))}
+                  </optgroup>
+                  
+                  {/* 🎯 DETALLES */}
+                  <optgroup label="📦 Datos de Detalles (Items del Lote)">
+                    {MAPPABLE_API_FIELDS.details.map(apiField => (
+                      <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* 🆕 DROPDOWN 2: API CATÁLOGOS (DATOS DE API EXTERNA) --- */}
+              <div className="form-group">
+                <label>📚 API Catálogos (Opciones desde API Externa)</label>
+                <select value={firma.apiEndpoint || ""} onChange={(e) => {
+                  updateFirma(index, "apiEndpoint", e.target.value);
+                  if (e.target.value) updateFirma(index, "apiMap", ""); // Limpiar apiMap
+                }}>
+                  {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
+                    <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                  ))}
+                </select>
+              </div>
+
               <button onClick={() => removeFirma(index)} className="btn-remove" title="Eliminar firma">🗑️</button>
             </div>
           </div>

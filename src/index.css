@@ -5,17 +5,27 @@
 }
 
 :root {
-  --primary: #1e40af;
-  --primary-dark: #1e3a8a;
-  --secondary: #64748b;
-  --background: #f8fafc;
-  --surface: #ffffff;
-  --border: #e2e8f0;
-  --text: #0f172a;
-  --text-secondary: #475569;
-  --success: #16a34a;
-  --error: #dc2626;
-  --warning: #ea580c;
+  /* 🎨 Paleta de Colores Profesional */
+  --primary: #035b8d;           /* Azul principal */
+  --primary-dark: #024a73;      /* Azul oscuro (hover) */
+  --primary-light: #0475b3;     /* Azul claro */
+  --secondary: #2b2b2b;         /* Gris oscuro */
+  --background: #f5f5f5;        /* Fondo general */
+  --surface: #ffffff;           /* Tarjetas/contenedores */
+  --border: #e1e1e1;            /* Bordes - Gris claro */
+  --text: #2b2b2b;              /* Texto principal - Gris oscuro */
+  --text-secondary: #666666;    /* Texto secundario */
+  --text-light: #999999;        /* Texto deshabilitado */
+  --success: #16a34a;           /* Verde éxito */
+  --error: #dc2626;             /* Rojo error */
+  --warning: #ea580c;           /* Naranja advertencia */
+  --info: #035b8d;              /* Info (mismo azul) */
+  
+  /* 🎨 Sombras profesionales */
+  --shadow-sm: 0 1px 2px 0 rgba(3, 91, 141, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(3, 91, 141, 0.1), 0 2px 4px -1px rgba(3, 91, 141, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(3, 91, 141, 0.1), 0 4px 6px -2px rgba(3, 91, 141, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(3, 91, 141, 0.1), 0 10px 10px -5px rgba(3, 91, 141, 0.04);
 }
 
 body {
@@ -23,13 +33,16 @@ body {
     "Droid Sans", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: var(--background);
+  background: #e1e1e1;
+  background-attachment: fixed;
   color: var(--text);
-  line-height: 1.6;
+  line-height: 1.5;
+  min-height: 100vh;
 }
 
 #root {
   min-height: 100vh;
+  background: transparent;
 }
 
 button {
@@ -52,5 +65,5 @@ input:focus,
 textarea:focus,
 select:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+  box-shadow: 0 0 0 3px rgba(3, 91, 141, 0.15);
 }

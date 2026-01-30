@@ -572,127 +572,79 @@ Template: ${template?.nombre}
                       </tr>
                     </thead>
                     <tbody>
-                      {formData.bodyData[elementIndex]?.rows?.map((row, rowIndex) => {
-                        // 🐛 DEBUG: Mostrar una vez las columnas del template y las claves del row
-                        if (rowIndex === 0) {
-                          console.log('📋 Template tiene estas columnas:', element.columns?.map(c => ({
-                            label: c.label,
-                            id: c.id,
-                            name: c.name
-                          })));
-                          console.log('📦 Fila 1 tiene estas claves:', Object.keys(row));
-                          console.log('📦 Fila 1 datos completos:', row);
-                        }
-                        
-                        return (
-                        <tr key={rowIndex}>
-                          {element.columns?.map((column, colIndex) => {
-                            // 🔧 BUSCAR LA CLAVE CORRECTA EN EL ROW
-                            const rowKeys = Object.keys(row);
-                            const colId = (column.id || column.name || '').toUpperCase();
-                            const colLabel = (column.label || column.header || '').toUpperCase();
-                            
-                            let cellName;
-                            
-                            // 🎯 PRIORIDAD 1: Usar column.label si la clave existe en row (funcionaba antes)
-                            if (row.hasOwnProperty(column.label)) {
-                              cellName = column.label;
-                            }
-                            // 🎯 PRIORIDAD 2: Si column.label no existe, buscar variaciones (para 15 Tinas)
-                            else if (colId.includes('PESO') || colLabel.includes('PESO')) {
-                              const pesoMatch = (column.id || column.label || '').match(/\d+/);
-                              const pesoNum = pesoMatch ? pesoMatch[0] : '';
-                              const pesoKey = rowKeys.find(key => {
-                                const keyUpper = key.toUpperCase();
-                                return keyUpper.includes(`PESO${pesoNum}`) && !keyUpper.includes('TOTAL');
-                              });
-                              cellName = pesoKey || column.label;
-                              
-                              // 🐛 DEBUG para PESO 6
-                              if (rowIndex === 0 && pesoNum === '6') {
-                                console.log(`🔍 EditFilledForm - PESO ${pesoNum} (colIndex=${colIndex}):`);
-                                console.log(`   Column.id="${column.id}", Column.label="${column.label}"`);
-                                console.log(`   rowKeys = [${rowKeys.join(', ')}]`);
-                                console.log(`   pesoKey encontrada = "${pesoKey}"`);
-                                console.log(`   cellName final = "${cellName}"`);
-                                console.log(`   Valor en row[cellName] = "${row[cellName]}"`);
-                              }
-                            } 
-                            else if (colId.includes('TOTAL') || colLabel.includes('TOTAL')) {
-                              const totalKey = rowKeys.find(key => key.toUpperCase().includes('TOTAL'));
-                              cellName = totalKey || column.label;
-                              
-                              // 🐛 DEBUG para TOTAL
-                              if (rowIndex === 0) {
-                                console.log(`🔍 EditFilledForm - TOTAL (colIndex=${colIndex}):`);
-                                console.log(`   Column.id="${column.id}", Column.label="${column.label}"`);
-                                console.log(`   totalKey encontrada = "${totalKey}"`);
-                                console.log(`   cellName final = "${cellName}"`);
-                                console.log(`   Valor en row[cellName] = "${row[cellName]}"`);
-                              }
-                            }
-                            else {
-                              cellName = column.label;
-                            }
-                            
-                            // Verificar si es columna TOTAL (solo lectura)
-                            // REGLA: Solo bloquear columnas TOTAL si la tabla tiene columnas PESO
-                            const tableTienePeso = element.columns?.some(c => {
-                              const cId = (c.id || c.name || '').toUpperCase();
-                              const cLabel = (c.label || c.header || '').toUpperCase();
-                              return cId.includes('PESO') || cLabel.includes('PESO');
-                            });
-                            
-                            const isTotalById = colId.includes('-TOTAL') || colId.includes('TOTAL_') || colId.includes('_TOTAL');
-                            const isTotalByLabel = colLabel === 'TOTAL' || colLabel === '📊 TOTAL';
-                            const isPeso = colId.includes('PESO') || colLabel.includes('PESO');
-                            const isTotalColumn = tableTienePeso && (isTotalById || isTotalByLabel) && !isPeso;
-                            
-                            return (
-                              <td key={colIndex}>
-                                {isTotalColumn ? (
-                                  // Columna TOTAL: solo lectura
-                                  <input 
-                                    type="text" 
-                                    value={row[cellName] || '0.00'} 
-                                    readOnly 
-                                    className="total-readonly"
-                                    style={{ 
-                                      backgroundColor: '#d4edda', 
-                                      fontWeight: 'bold',
-                                      cursor: 'not-allowed'
-                                    }}
-                                  />
-                                ) : (
-                                  renderField(
-                                    column,
-                                    row[cellName],
-                                    (value) => updateTableCell(elementIndex, rowIndex, cellName, value)
-                                  )
-                                )}
-                              </td>
-                            );
-                          })}
-                          <td>
-                            <button
-                              type="button"
-                              onClick={() => removeTableRow(elementIndex, rowIndex)}
-                              className="btn-remove-row"
-                            >
-                              🗑️
-                            </button>
-                          </td>
-                        </tr>
-                        );
-                      })}
-                      {(!formData.bodyData[elementIndex]?.rows || formData.bodyData[elementIndex].rows.length === 0) && (
-                        <tr>
-                          <td colSpan={element.columns?.length + 1} className="no-data">
-                            No hay datos. Haga clic en "Agregar Fila" para comenzar.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
+  {/* 1. Primero recorremos cada FILA (row) de la tabla */}
+  {formData.bodyData[elementIndex]?.rows?.map((row, rowIndex) => (
+    <tr key={rowIndex}>
+      {/* 2. Luego recorremos cada COLUMNA del template */}
+      {element.columns?.map((column, colIndex) => {
+        const rowKeys = Object.keys(row);
+        const colLabel = (column.label || column.header || "").trim();
+        
+        // 🎯 LÓGICA DE RESCATE: ¿Cómo se llama esta celda en la base de datos?
+        let cellName = column.label; // Por defecto el nombre normal
+
+        // Si el valor está vacío o no existe, buscamos el nombre con sufijo (ej: _col7)
+        if (!row.hasOwnProperty(cellName) || row[cellName] === "" || row[cellName] === null) {
+          const suffix = `_col${colIndex}`;
+          const foundKey = rowKeys.find(k => k.endsWith(suffix));
+          
+          if (foundKey) {
+            cellName = foundKey;
+          } else if (colLabel.toUpperCase().includes("TOTAL")) {
+            // Si es columna de total, buscamos cualquier llave que diga TOTAL
+            const totalKey = rowKeys.find(k => k.toUpperCase().includes("TOTAL"));
+            if (totalKey) cellName = totalKey;
+          }
+        }
+
+        // Determinar si es columna de solo lectura (totales calculados)
+        const colLabelUpper = colLabel.toUpperCase();
+        const tableTienePeso = element.columns?.some(c => (c.id || c.label || '').toUpperCase().includes('PESO'));
+        const isTotalColumn = tableTienePeso && colLabelUpper.includes('TOTAL') && !colLabelUpper.includes('PESO');
+
+        return (
+          <td key={colIndex}>
+            {isTotalColumn ? (
+              <input 
+                type="text" 
+                value={row[cellName] || '0.00'} 
+                readOnly 
+                className="total-readonly"
+                style={{ backgroundColor: '#f0fdf4', fontWeight: 'bold', cursor: 'not-allowed', border: '1px solid #bbf7d0' }}
+              />
+            ) : (
+              renderField(
+                column,
+                row[cellName],
+                (value) => updateTableCell(elementIndex, rowIndex, cellName, value)
+              )
+            )}
+          </td>
+        );
+      })}
+
+      {/* 3. Columna de acción (Eliminar fila) */}
+      <td>
+        <button
+          type="button"
+          onClick={() => removeTableRow(elementIndex, rowIndex)}
+          className="btn-remove-row"
+        >
+          🗑️
+        </button>
+      </td>
+    </tr>
+  ))}
+
+  {/* 4. Si la tabla está vacía, mostramos el mensaje */}
+  {(!formData.bodyData[elementIndex]?.rows || formData.bodyData[elementIndex].rows.length === 0) && (
+    <tr>
+      <td colSpan={element.columns?.length + 1} className="no-data">
+        No hay datos. Haga clic en "Agregar Fila" para comenzar.
+      </td>
+    </tr>
+  )}
+</tbody>
                   </table>
                 </div>
               )}

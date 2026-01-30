@@ -36,13 +36,13 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-/* BOTÓN PARA COLAPSAR EL MENÚ */
+/* BOTÓN PARA COLAPSAR EL MENÚ - Estilo Profesional */
 .navbar-toggle-btn {
   position: absolute;
   right: 15px;
   top: 8px;
   z-index: 101;
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  background: linear-gradient(135deg, #035b8d 0%, #024a73 100%);
   color: white;
   border: none;
   border-radius: 8px;
@@ -51,7 +51,7 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.4);
+  box-shadow: 0 3px 10px rgba(3, 91, 141, 0.4);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -59,9 +59,9 @@
 }
 
 .navbar-toggle-btn:hover {
-  background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+  background: linear-gradient(135deg, #024a73 0%, #013a5c 100%);
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 5px 15px rgba(3, 91, 141, 0.5);
 }
 
 .navbar-toggle-btn:active {
@@ -74,21 +74,21 @@
 }
 
 .navbar.collapsed .navbar-toggle-btn {
-  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
-  box-shadow: 0 3px 10px rgba(5, 150, 105, 0.4);
+  background: linear-gradient(135deg, #035b8d 0%, #0475b3 100%);
+  box-shadow: 0 3px 10px rgba(3, 91, 141, 0.4);
   animation: pulse-menu 2s infinite;
 }
 
 .navbar.collapsed .navbar-toggle-btn:hover {
-  background: linear-gradient(135deg, #047857 0%, #059669 100%);
+  background: linear-gradient(135deg, #024a73 0%, #035b8d 100%);
 }
 
 @keyframes pulse-menu {
   0%, 100% {
-    box-shadow: 0 3px 10px rgba(5, 150, 105, 0.4);
+    box-shadow: 0 3px 10px rgba(3, 91, 141, 0.4);
   }
   50% {
-    box-shadow: 0 3px 18px rgba(5, 150, 105, 0.6);
+    box-shadow: 0 3px 18px rgba(3, 91, 141, 0.6);
   }
 }
 
@@ -97,15 +97,15 @@
   white-space: nowrap;
 }
 
-/* Barra colapsada con información */
+/* Barra colapsada con información - Estilo Profesional */
 .navbar-collapsed-info {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 180px 0.75rem 1.5rem;
   height: 50px;
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  border-bottom: 2px solid #93c5fd;
+  background: linear-gradient(135deg, #e8f4f8 0%, #d1e7ed 100%);
+  border-bottom: 2px solid #035b8d;
   animation: slideDown 0.3s ease;
 }
 
@@ -123,13 +123,13 @@
 .collapsed-brand {
   font-weight: 700;
   font-size: 1.125rem;
-  color: #1e40af;
+  color: #035b8d;
 }
 
 .collapsed-page {
   font-size: 0.9375rem;
   font-weight: 600;
-  color: #374151;
+  color: #2b2b2b;
   background: white;
   padding: 0.375rem 0.75rem;
   border-radius: 6px;

@@ -1,4 +1,4 @@
-/* Login Container */
+/* Login Container - Estilo Profesional con Imagen de Fondo */
 .login-container {
   min-height: 100vh;
   display: flex;
@@ -6,8 +6,11 @@
   justify-content: center;
   position: relative;
   overflow: hidden;
-  /* Colores Frigolab: Verde y Amarillo */
-  background: linear-gradient(135deg, #10b981 0%, #22c55e 50%, #fbbf24 100%);
+  /* Fondo con imagen de containers (como en tu diseño) */
+  background: linear-gradient(135deg, rgba(3, 91, 141, 0.95) 0%, rgba(3, 91, 141, 0.85) 50%, rgba(43, 43, 43, 0.90) 100%),
+              url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800"><rect fill="%232b2b2b" width="1200" height="800"/></svg>');
+  background-size: cover;
+  background-position: center;
 }
 
 /* Animated Background */
@@ -100,7 +103,7 @@
   }
 }
 
-/* 🆕 Título Principal Grande */
+/* 🆕 Título Principal Grande - Estilo Profesional */
 .main-title {
   text-align: center;
   margin-bottom: 1.5rem;
@@ -110,20 +113,19 @@
 .frigolab-title {
   font-size: 3.5rem;
   font-weight: 900;
-  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #fbbf24 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  /* Azul profesional #035b8d */
+  color: #035b8d;
   margin: 0;
-  letter-spacing: -1px;
+  letter-spacing: 2px;
   text-transform: uppercase;
   animation: titlePulse 3s ease-in-out infinite;
+  text-shadow: 2px 2px 4px rgba(3, 91, 141, 0.2);
 }
 
 .title-underline {
   width: 120px;
   height: 4px;
-  background: linear-gradient(90deg, #10b981 0%, #fbbf24 100%);
+  background: linear-gradient(90deg, #035b8d 0%, #0475b3 100%);
   margin: 0.75rem auto 0;
   border-radius: 2px;
   animation: underlineGrow 2s ease-in-out infinite;
@@ -313,29 +315,32 @@
   font-size: 1.2rem;
 }
 
-/* Login Button */
+/* Login Button - Estilo Profesional Azul */
 .login-button {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 1rem;
-  /* Colores Frigolab: Verde a Amarillo */
-  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #fbbf24 100%);
+  padding: 1rem 2rem;
+  /* Azul profesional #035b8d */
+  background: linear-gradient(135deg, #035b8d 0%, #0475b3 100%);
   color: white;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+  box-shadow: 0 4px 15px rgba(3, 91, 141, 0.3);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 .login-button:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5);
+  box-shadow: 0 6px 20px rgba(3, 91, 141, 0.4);
+  background: linear-gradient(135deg, #024a73 0%, #035b8d 100%);
 }
 
 .login-button:active:not(:disabled) {

@@ -1,0 +1,139 @@
+.erp-dashboard {
+  padding: 20px;
+  background: #f1f5f9;
+  height: calc(100vh - 60px); /* Ajustar según navbar */
+  display: flex;
+  flex-direction: column;
+}
+
+.erp-header {
+  background: white;
+  padding: 15px 20px;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.erp-title h1 { margin: 0; color: #1e293b; font-size: 1.5rem; }
+.erp-title p { margin: 0; color: #64748b; font-size: 0.9rem; }
+
+.erp-controls {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.control-group label { font-size: 0.75rem; font-weight: 600; color: #475569; }
+.control-group input, .control-group select {
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.btn-refresh {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  height: 38px;
+}
+
+.btn-excel-erp {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  height: 38px;
+}
+
+.erp-stats {
+  display: flex;
+  gap: 15px;
+  margin: 15px 0;
+}
+
+.stat-box {
+  background: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.stat-val { font-weight: 800; font-size: 1.2rem; color: #0f172a; }
+.stat-lbl { font-size: 0.85rem; color: #64748b; text-transform: uppercase; }
+
+/* GRID AREA */
+.erp-grid-wrapper {
+  flex: 1;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+  overflow: auto; /* IMPORTANTE: Permite scroll */
+  border: 1px solid #e2e8f0;
+}
+
+.erp-table {
+  width: 100%;
+  border-collapse: separate; /* Necesario para sticky headers */
+  border-spacing: 0;
+  font-size: 0.85rem;
+}
+
+.erp-table th {
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 700;
+  padding: 12px;
+  text-align: left;
+  border-bottom: 2px solid #e2e8f0;
+  border-right: 1px solid #f1f5f9;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+.erp-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  border-right: 1px solid #f1f5f9;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.erp-table tr:hover td {
+  background-color: #f1f5f9;
+}
+
+/* Columnas fijas (ID, Fecha, Lote) */
+.th-fixed, .td-fixed {
+  background-color: #f8fafc; /* Fondo para que no sea transparente al scrollear */
+  position: sticky;
+  left: 0;
+  z-index: 20; /* Mayor que el header normal */
+}
+
+/* Alternancia sutil */
+.erp-table tr:nth-child(even) td:not(.td-fixed) {
+  background-color: #fcfcfc;
+}

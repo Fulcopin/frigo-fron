@@ -1,20 +1,20 @@
 /* En ManageTemplates.css */
 
 .manage-templates {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem;
+  max-width: 100%;
+  margin: 0;
+  padding: 1rem;
 }
 
 .templates-list {
   display: grid;
-  gap: 1.5rem;
+  gap: 1rem;
 }
 
 .template-card-manage {
-  background: var(--surface);
+  background: white;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 0;
   padding: 1.5rem;
   display: flex;
   justify-content: space-between;
@@ -46,12 +46,14 @@
 .template-card-info h3 {
   margin: 0;
   font-size: 1.25rem;
-  color: var(--text);
+  color: #035b8d;
+  font-weight: 700;
 }
 
 .template-card-info .template-version {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
+    font-size: 0.9rem;
+    color: #2b2b2b;
+    font-weight: 500;
 }
 
 .template-card-actions {

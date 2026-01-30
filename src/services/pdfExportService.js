@@ -10,7 +10,7 @@
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import logoUrl from '../assets/logo-8.png';
+import logoUrl from '../assets/logo-9.svg';
 
 /**
  * Convierte imagen a Base64 para incrustar en PDF
@@ -378,10 +378,15 @@ const drawSignaturesSection = (doc, firmasData, startY) => {
       // Extraer nombre y fecha
       let nombre = '';
       let fecha = '';
+      let firmaImg = null;
       
       if (typeof data === 'object' && data !== null) {
         nombre = data.nombre || '';
         fecha = data.fecha || '';
+        // 🆕 Extraer información de la firma PNG
+        if (data.firma && data.firma.url) {
+          firmaImg = data.firma.url;
+        }
       } else {
         nombre = data || '';
       }
@@ -423,18 +428,54 @@ const drawSignaturesSection = (doc, firmasData, startY) => {
       // Espacio antes de la línea
       localY += 2;
       
-      // Línea de firma ALINEADA Y UNIFORME
-      doc.setDrawColor(80, 80, 80);
-      doc.setLineWidth(0.3);
-      const firmaLineWidth = anchoColumna - 8;
-      doc.line(xPos, localY, xPos + firmaLineWidth, localY);
-      
-      // Texto "Firma" centrado bajo la línea
-      doc.setFontSize(7);
-      doc.setTextColor(100, 100, 100);
-      const firmaTextWidth = doc.getTextWidth('Firma');
-      doc.text('Firma', xPos + (firmaLineWidth - firmaTextWidth) / 2, localY + 3.5);
-      doc.setTextColor(...COLORS.text);
+      // 🆕 Renderizar firma PNG si existe
+      if (firmaImg) {
+        try {
+          // Dimensiones de la imagen de firma
+          const firmaImgWidth = anchoColumna - 8;
+          const firmaImgHeight = 20; // Altura fija para mantener consistencia
+          
+          // Añadir imagen de firma
+          doc.addImage(firmaImg, 'PNG', xPos, localY, firmaImgWidth, firmaImgHeight);
+          localY += firmaImgHeight + 2;
+          
+          // Texto "Firma Digital" centrado bajo la imagen
+          doc.setFontSize(7);
+          doc.setTextColor(100, 100, 100);
+          const firmaTextWidth = doc.getTextWidth('Firma Digital');
+          doc.text('Firma Digital', xPos + (firmaImgWidth - firmaTextWidth) / 2, localY + 3.5);
+          doc.setTextColor(...COLORS.text);
+          localY += 5;
+        } catch (error) {
+          console.error('Error al agregar imagen de firma:', error);
+          // Si hay error, mostrar línea tradicional
+          doc.setDrawColor(80, 80, 80);
+          doc.setLineWidth(0.3);
+          const firmaLineWidth = anchoColumna - 8;
+          doc.line(xPos, localY, xPos + firmaLineWidth, localY);
+          
+          doc.setFontSize(7);
+          doc.setTextColor(100, 100, 100);
+          const firmaTextWidth = doc.getTextWidth('Firma');
+          doc.text('Firma', xPos + (firmaLineWidth - firmaTextWidth) / 2, localY + 3.5);
+          doc.setTextColor(...COLORS.text);
+          localY += 5;
+        }
+      } else {
+        // 📝 Línea de firma tradicional si no hay imagen
+        doc.setDrawColor(80, 80, 80);
+        doc.setLineWidth(0.3);
+        const firmaLineWidth = anchoColumna - 8;
+        doc.line(xPos, localY, xPos + firmaLineWidth, localY);
+        
+        // Texto "Firma" centrado bajo la línea
+        doc.setFontSize(7);
+        doc.setTextColor(100, 100, 100);
+        const firmaTextWidth = doc.getTextWidth('Firma');
+        doc.text('Firma', xPos + (firmaLineWidth - firmaTextWidth) / 2, localY + 3.5);
+        doc.setTextColor(...COLORS.text);
+        localY += 5;
+      }
       
       // Actualizar currentY al máximo de todas las columnas de esta fila
       if (columna === firmasPorFila - 1 || index === totalFirmas - 1) {
@@ -571,13 +612,33 @@ export const exportFormToPDF = async (form, template) => {
           console.log(`📋 Primera fila de datos:`, tableData[0]);
           
           // Construir filas para autoTable
-          const rows = tableData.map(row => {
-            return columns.map(col => {
-              // Buscar el valor usando el label/nombre de la columna
-              const value = row[col.dataKey] || row[col.header] || '';
-              return String(value);
-            });
-          });
+    // Construir filas para autoTable
+// Construir filas para autoTable con depuración de llaves
+const rows = tableData.map((row, rowIndex) => {
+  return columns.map((col, colIndex) => {
+    const rowKeys = Object.keys(row);
+    const colHeader = (col.header || col.label || "").trim().toUpperCase();
+    
+    // 1. Intento normal
+    let value = row[col.dataKey] ?? row[col.header] ?? row[col.label];
+
+    // 2. 🎯 SI ES LA COLUMNA DE "TOTAL" (Lógica copiada del ViewForms que sí funciona)
+    if (colHeader.includes("TOTAL") && (!value || value === "")) {
+      // Buscamos cualquier llave en la data que contenga la palabra TOTAL
+      const totalKey = rowKeys.find(key => key.toUpperCase().includes('TOTAL'));
+      if (totalKey) value = row[totalKey];
+    }
+    
+    // 3. Si sigue vacío, búsqueda por índice (por si el nombre cambió a _col7)
+    if (!value || value === "") {
+      const suffix = `_col${colIndex}`;
+      const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
+      if (keyWithSuffix) value = row[keyWithSuffix];
+    }
+
+    return String(value ?? "");
+  });
+});
           
           console.log(`📊 Filas procesadas para "${sectionTitle}":`, rows);
           

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Limpiar Sesión Antigua</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .info-box {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .info-box h2 {
+            color: #856404;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        
+        .info-box p {
+            color: #856404;
+            line-height: 1.6;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 15px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            color: #155724;
+            display: block;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            color: #721c24;
+            display: block;
+        }
+        
+        .credentials {
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .credentials h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .credential-item {
+            background: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .credential-item.valid {
+            border-left: 4px solid #28a745;
+        }
+        
+        .credential-item.invalid {
+            border-left: 4px solid #dc3545;
+            text-decoration: line-through;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Limpiar Sesión Antigua</h1>
+        <p class="subtitle">Elimina la sesión guardada de usuarios demo</p>
+        
+        <div class="info-box">
+            <h2>⚠️ ¿Por qué necesito esto?</h2>
+            <p>
+                Tu navegador tiene guardada una sesión antigua de cuando se usaban usuarios demo 
+                (admin/fishcort2025). Aunque el código ya está actualizado para usar solo la API, 
+                el navegador sigue recordando esa sesión antigua.
+            </p>
+        </div>
+        
+        <button class="btn" onclick="limpiarSesion()">
+            🗑️ Limpiar Sesión Ahora
+        </button>
+        
+        <button class="btn btn-secondary" onclick="verificarSesion()">
+            🔍 Ver Sesión Actual
+        </button>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="credentials">
+            <h3>✅ Nuevas Credenciales (API)</h3>
+            <div class="credential-item valid">
+                <strong>ADMIN:</strong> tadmin / Tadmin26*
+            </div>
+            <div class="credential-item valid">
+                <strong>SUPERVISOR:</strong> tsupervisor / Tsupervisor26**
+            </div>
+            <div class="credential-item valid">
+                <strong>OPERADOR:</strong> toperador / Toperador26**
+            </div>
+            
+            <h3 style="margin-top: 20px;">❌ Credenciales Eliminadas</h3>
+            <div class="credential-item invalid">
+                <strong>ADMIN:</strong> admin / fishcort2025
+            </div>
+            <div class="credential-item invalid">
+                <strong>SUPERVISOR:</strong> supervisor / fishcort2025
+            </div>
+            <div class="credential-item invalid">
+                <strong>TRABAJADOR:</strong> trabajador / fishcort2025
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function limpiarSesion() {
+            const status = document.getElementById('status');
+            
+            try {
+                // Eliminar todas las claves relacionadas
+                localStorage.removeItem('fishcort_user');
+                localStorage.removeItem('fishcort_token');
+                localStorage.removeItem('fishcort_token_expiration');
+                
+                status.className = 'status success';
+                status.innerHTML = `
+                    <h3>✅ ¡Sesión limpiada exitosamente!</h3>
+                    <p>Se eliminaron las siguientes claves:</p>
+                    <ul>
+                        <li>fishcort_user</li>
+                        <li>fishcort_token</li>
+                        <li>fishcort_token_expiration</li>
+                    </ul>
+                    <p style="margin-top: 15px;">
+                        <strong>Próximos pasos:</strong><br>
+                        1. Cierra esta ventana<br>
+                        2. Ve a http://localhost:5173<br>
+                        3. Deberías ver la pantalla de login<br>
+                        4. Intenta con: <strong>tadmin / Tadmin26*</strong>
+                    </p>
+                `;
+                
+                console.log('✅ Sesión limpiada correctamente');
+                
+            } catch (error) {
+                status.className = 'status error';
+                status.innerHTML = `
+                    <h3>❌ Error al limpiar sesión</h3>
+                    <p>${error.message}</p>
+                `;
+            }
+        }
+        
+        function verificarSesion() {
+            const status = document.getElementById('status');
+            
+            const user = localStorage.getItem('fishcort_user');
+            const token = localStorage.getItem('fishcort_token');
+            const expiration = localStorage.getItem('fishcort_token_expiration');
+            
+            if (!user && !token && !expiration) {
+                status.className = 'status success';
+                status.innerHTML = `
+                    <h3>✅ No hay sesión guardada</h3>
+                    <p>El localStorage está limpio. Puedes proceder al login.</p>
+                `;
+            } else {
+                let userObj = null;
+                try {
+                    userObj = JSON.parse(user);
+                } catch (e) {
+                    console.error('Error al parsear usuario:', e);
+                }
+                
+                status.className = 'status error';
+                status.innerHTML = `
+                    <h3>⚠️ Sesión encontrada</h3>
+                    <p><strong>Usuario:</strong> ${userObj?.username || 'N/A'}</p>
+                    <p><strong>Rol:</strong> ${userObj?.rol || 'N/A'}</p>
+                    <p><strong>Nombre:</strong> ${userObj?.nombre || 'N/A'}</p>
+                    <p style="margin-top: 15px;">
+                        Esta es una sesión <strong>${userObj?.username?.includes('admin') || userObj?.username?.includes('supervisor') || userObj?.username?.includes('trabajador') ? 'ANTIGUA (demo)' : 'ACTUAL (API)'}</strong>.
+                    </p>
+                    ${userObj?.username?.includes('admin') || userObj?.username?.includes('supervisor') || userObj?.username?.includes('trabajador') ? 
+                        '<p style="color: #dc3545; font-weight: 600;">🗑️ Debes limpiarla usando el botón de arriba.</p>' : 
+                        '<p style="color: #28a745; font-weight: 600;">✅ Esta sesión es válida (de la API).</p>'
+                    }
+                `;
+            }
+        }
+        
+        // Verificar automáticamente al cargar
+        window.onload = function() {
+            verificarSesion();
+        };
+    </script>
+</body>
+</html>

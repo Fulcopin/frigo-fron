@@ -448,93 +448,64 @@ function ViewForms() {
                           return (
                             <tr key={`row-${rowIndex}`}>
                               <td>{rowIndex + 1}</td>
-                              {templateElement.columns.map((col, colIndex) => {
-                                // Determinar el nombre de la celda
-                                let cellName;
-                                const rowKeys = Object.keys(row);
-                                const colId = (col.id || col.name || '').toUpperCase();
-                                const colLabel = (col.label || col.header || '').toUpperCase();
-                                const isPesoColumn = colId.includes('PESO') || colLabel.includes('PESO');
-                                
-                                // Obtener cellName del template
-                                let cellNameFromTemplate = null;
-                                if (templateRow && templateRow.cells && templateRow.cells[colIndex]) {
-                                  cellNameFromTemplate = templateRow.cells[colIndex].name;
+                             {templateElement.columns.map((col, colIndex) => {
+                              const rowKeys = Object.keys(row);
+                              const colLabel = (col.label || col.header || "").trim();
+                              const colId = (col.id || col.name || "").trim();
+                              const colIdUpper = colId.toUpperCase();
+                              const colLabelUpper = colLabel.toUpperCase();
+
+                              // 1. 🎯 INTENTO DE BÚSQUEDA DIRECTA (EXACTA)
+                              // Probamos todas las combinaciones posibles de nombres que vienen en el template
+                              let cellValue = row[colLabel] ?? row[col.header] ?? row[colId] ?? row[col.name];
+
+                              // 2. 🔍 BÚSQUEDA INTELIGENTE (Si el primer intento falló)
+                              if (cellValue === undefined || cellValue === null || cellValue === "") {
+                                // Normalizamos el objetivo: "TEMP. °C" -> "TEMPC"
+                                const targetClean = colLabelUpper.replace(/[^A-Z0-9]/g, "");
+
+                                const foundKey = rowKeys.find(key => {
+                                  const keyUpper = key.toUpperCase();
+                                  const keyClean = keyUpper.replace(/[^A-Z0-9]/g, "");
                                   
-                                  // 🐛 VALIDACIÓN: Si es columna PESO, verificar que el cellName no sea de TOTAL
-                                  if (isPesoColumn) {
-                                    const cellNameUpper = (cellNameFromTemplate || '').toUpperCase();
-                                    if (cellNameUpper.includes('TOTAL')) {
-                                      // Template corrupto: columna PESO tiene cellName de TOTAL
-                                      cellNameFromTemplate = null;
-                                    }
-                                  }
+                                  // Coincidencia exacta de texto limpio (ej: "TEMP. °C" con "TEMP C")
+                                  if (keyClean === targetClean && targetClean !== "") return true;
+                                  
+                                  // Coincidencia con sufijos (ej: "TOTAL CAJAS/TINAS_col7" contiene "TOTAL CAJAS/TINAS")
+                                  if (keyUpper.includes(colLabelUpper) && colLabelUpper !== "") return true;
+                                  
+                                  return false;
+                                });
+
+                                if (foundKey) cellValue = row[foundKey];
+                              }
+
+                              // 3. ⚖️ LÓGICA ESPECÍFICA PARA PESOS/TINAS (Si el valor sigue vacío)
+                              // Esto mantiene la compatibilidad con el formato de 15 tinas
+                              if (cellValue === undefined || cellValue === null || cellValue === "") {
+                                const isPesoColumn = colIdUpper.includes('PESO') || colLabelUpper.includes('PESO');
+                                const isTotalColumn = colIdUpper.includes('TOTAL') || colLabelUpper.includes('TOTAL');
+
+                                if (isPesoColumn) {
+                                  const pesoMatch = (colId || colLabel).match(/\d+/);
+                                  const pesoNum = pesoMatch ? pesoMatch[0] : '';
+                                  const pesoKey = rowKeys.find(k => k.toUpperCase().includes(`PESO${pesoNum}`) && !k.toUpperCase().includes('TOTAL'));
+                                  if (pesoKey) cellValue = row[pesoKey];
+                                } 
+                                else if (isTotalColumn) {
+                                  const totalKey = rowKeys.find(k => k.toUpperCase().includes('TOTAL'));
+                                  if (totalKey) cellValue = row[totalKey];
                                 }
-                                
-                                // Validar que el cellName existe en el row
-                                if (cellNameFromTemplate && rowKeys.includes(cellNameFromTemplate)) {
-                                  cellName = cellNameFromTemplate;
-                                } else {
-                                  // Buscar la clave correcta en el row
-                                  if (isPesoColumn) {
-                                    // Para PESO, buscar PESO{num}_T1, PESO6_T2, etc en el row
-                                    const pesoMatch = (col.id || col.label || '').match(/\d+/);
-                                    const pesoNum = pesoMatch ? pesoMatch[0] : '';
-                                    
-                                    const pesoKey = rowKeys.find(key => {
-                                      const keyUpper = key.toUpperCase();
-                                      return keyUpper.includes(`PESO${pesoNum}`) && !keyUpper.includes('TOTAL');
-                                    });
-                                    
-                                    if (pesoKey) {
-                                      cellName = pesoKey;
-                                    } else {
-                                      // Generar cellName correcto con sufijo
-                                      const firstKey = rowKeys[0] || '';
-                                      const suffixMatch = firstKey.match(/_T(\d+)$/);
-                                      const suffix = suffixMatch ? suffixMatch[0] : '';
-                                      cellName = `PESO${pesoNum}${suffix}`;
-                                    }
-                                  } else if (colId.includes('TOTAL') || colLabel.includes('TOTAL')) {
-                                    // Para TOTAL, buscar clave con TOTAL
-                                    const totalKey = rowKeys.find(key => key.toUpperCase().includes('TOTAL'));
-                                    cellName = totalKey || col.id || col.name || col.label;
-                                  } else {
-                                    // Otras columnas: HORA, TINA, etc
-                                    // Intentar buscar por id base (col-hora → HORA_T1)
-                                    const baseId = (col.id || '').replace('col-', '').toUpperCase();
-                                    const baseLabel = (col.label || col.header || '').replace(/[⏰🔵⚖️📊\s]/g, '').toUpperCase();
-                                    
-                                    // Buscar clave que contenga el nombre base
-                                    let matchingKey = null;
-                                    if (baseId) {
-                                      matchingKey = rowKeys.find(key => key.toUpperCase().startsWith(baseId + '_'));
-                                    }
-                                    if (!matchingKey && baseLabel) {
-                                      matchingKey = rowKeys.find(key => key.toUpperCase().startsWith(baseLabel + '_'));
-                                    }
-                                    
-                                    if (matchingKey) {
-                                      cellName = matchingKey;
-                                    } else {
-                                      // Fallback: generar cellName con sufijo
-                                      const firstKey = rowKeys[0] || '';
-                                      const suffixMatch = firstKey.match(/_T(\d+)$/);
-                                      const suffix = suffixMatch ? suffixMatch[0] : '';
-                                      const nameToUse = baseId || baseLabel || col.id || col.name;
-                                      cellName = nameToUse ? `${nameToUse}${suffix}` : (col.label || col.header || col.name || col.id);
-                                    }
-                                  }
-                                }
-                                
-                                const cellValue = row[cellName];
-                                
-                                return (
-                                  <td key={`cell-${rowIndex}-${colIndex}`}>
-                                    {cellValue !== undefined && cellValue !== null && cellValue !== "" ? cellValue : "-"}
-                                  </td>
-                                );
-                              })}
+                              }
+
+                              return (
+                                <td key={`cell-${rowIndex}-${colIndex}`} style={{ textAlign: 'center', minWidth: '100px' }}>
+                                  {cellValue !== undefined && cellValue !== null && cellValue !== "" 
+                                    ? String(cellValue) 
+                                    : "-"}
+                                </td>
+                              );
+                            })}
                             </tr>
                           );
                         })}
@@ -555,11 +526,33 @@ function ViewForms() {
             <div className="data-section"><h3>Observaciones</h3><div className="observations-box">{selectedForm.observaciones}</div></div>
           )}
 
-          {Object.keys(selectedForm.firmasData).length > 0 && (
+         {Object.keys(selectedForm.firmasData).length > 0 && (
             <div className="data-section">
               <h3>Firmas y Aprobaciones</h3>
               <div className="signatures-grid">
-                {Object.entries(selectedForm.firmasData).map(([puesto, data]) => (<div key={puesto} className="signature-box-view"><h4>{puesto}</h4><div className="signature-data"><p><strong>Nombre:</strong> {data.nombre || "-"}</p><p><strong>Fecha:</strong> {data.fecha || "-"}</p></div><div className="signature-line">Firma: _______________________</div></div>))}
+                {Object.entries(selectedForm.firmasData).map(([puesto, data]) => (
+                  <div key={puesto} className="signature-box-view">
+                    <h4>{puesto}</h4>
+                    <div className="signature-data">
+                      {/* Mostrar imagen si existe */}
+                      {data.firma && (data.firma.url || data.firma.base64) ? (
+                        <div className="signature-image-container" style={{ textAlign: 'center', marginBottom: '10px' }}>
+                          <img 
+                            src={data.firma.url || data.firma.base64} 
+                            alt={`Firma ${puesto}`} 
+                            style={{ maxHeight: '100px', maxWidth: '100%', border: '1px solid #eee' }} 
+                          />
+                        </div>
+                      ) : (
+                        <p style={{ fontStyle: 'italic', color: '#999' }}>(Sin firma digital)</p>
+                      )}
+                      
+                      <p><strong>Nombre:</strong> {data.nombre || "-"}</p>
+                      <p><strong>Fecha:</strong> {data.fecha || "-"}</p>
+                    </div>
+                    <div className="signature-line">Firma: _______________________</div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

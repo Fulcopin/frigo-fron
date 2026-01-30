@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Login - Frigolab</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+        }
+        .credential-test {
+            margin: 20px 0;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+        }
+        .credential-test h3 {
+            margin-top: 0;
+            color: #2d3748;
+        }
+        .test-info {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .label {
+            font-weight: bold;
+            color: #4a5568;
+        }
+        .value {
+            color: #2d3748;
+            font-family: 'Courier New', monospace;
+            background: #f7fafc;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .result.success {
+            background: #c6f6d5;
+            border: 1px solid #48bb78;
+            color: #22543d;
+            display: block;
+        }
+        .result.error {
+            background: #fed7d7;
+            border: 1px solid #e53e3e;
+            color: #742a2a;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Test de Credenciales - Frigolab Docs</h1>
+        
+        <!-- Admin -->
+        <div class="credential-test">
+            <h3>👑 Admin (Acceso Total)</h3>
+            <div class="test-info">
+                <span class="label">Usuario:</span>
+                <span class="value">admin</span>
+                <span class="label">Contraseña:</span>
+                <span class="value">fishcort2025</span>
+                <span class="label">Rol:</span>
+                <span class="value">admin</span>
+            </div>
+            <button onclick="testLogin('admin', 'fishcort2025', 'admin-result')">
+                Probar Login Admin
+            </button>
+            <div id="admin-result" class="result"></div>
+        </div>
+
+        <!-- Supervisor -->
+        <div class="credential-test">
+            <h3>👔 Supervisor (Acceso Total)</h3>
+            <div class="test-info">
+                <span class="label">Usuario:</span>
+                <span class="value">supervisor</span>
+                <span class="label">Contraseña:</span>
+                <span class="value">fishcort2025</span>
+                <span class="label">Rol:</span>
+                <span class="value">supervisor</span>
+            </div>
+            <button onclick="testLogin('supervisor', 'fishcort2025', 'supervisor-result')">
+                Probar Login Supervisor
+            </button>
+            <div id="supervisor-result" class="result"></div>
+        </div>
+
+        <!-- Trabajador -->
+        <div class="credential-test">
+            <h3>👷 Trabajador (Solo Formularios)</h3>
+            <div class="test-info">
+                <span class="label">Usuario:</span>
+                <span class="value">trabajador</span>
+                <span class="label">Contraseña:</span>
+                <span class="value">fishcort2025</span>
+                <span class="label">Rol:</span>
+                <span class="value">trabajador</span>
+            </div>
+            <button onclick="testLogin('trabajador', 'fishcort2025', 'trabajador-result')">
+                Probar Login Trabajador
+            </button>
+            <div id="trabajador-result" class="result"></div>
+        </div>
+
+        <!-- Operador (compatibilidad) -->
+        <div class="credential-test">
+            <h3>👷 Operador (Compatibilidad - como Trabajador)</h3>
+            <div class="test-info">
+                <span class="label">Usuario:</span>
+                <span class="value">operador</span>
+                <span class="label">Contraseña:</span>
+                <span class="value">fishcort2025</span>
+                <span class="label">Rol:</span>
+                <span class="value">trabajador</span>
+            </div>
+            <button onclick="testLogin('operador', 'fishcort2025', 'operador-result')">
+                Probar Login Operador
+            </button>
+            <div id="operador-result" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        function testLogin(username, password, resultId) {
+            const resultDiv = document.getElementById(resultId);
+            
+            // Simular la lógica del authService
+            let success = false;
+            let userData = null;
+            
+            if (username === 'admin' && password === 'fishcort2025') {
+                success = true;
+                userData = {
+                    id: 1,
+                    username: username,
+                    nombre: 'Administrador FishCort',
+                    rol: 'admin',
+                    email: 'admin@fishcort.com',
+                    permisos: ['all']
+                };
+            } else if (username === 'supervisor' && password === 'fishcort2025') {
+                success = true;
+                userData = {
+                    id: 3,
+                    username: username,
+                    nombre: 'Supervisor FishCort',
+                    rol: 'supervisor',
+                    email: 'supervisor@fishcort.com',
+                    permisos: ['all']
+                };
+            } else if (username === 'trabajador' && password === 'fishcort2025') {
+                success = true;
+                userData = {
+                    id: 2,
+                    username: username,
+                    nombre: 'Trabajador FishCort',
+                    rol: 'trabajador',
+                    email: 'trabajador@fishcort.com',
+                    permisos: ['fill-form', 'view-forms']
+                };
+            } else if (username === 'operador' && password === 'fishcort2025') {
+                success = true;
+                userData = {
+                    id: 4,
+                    username: username,
+                    nombre: 'Operador FishCort',
+                    rol: 'trabajador',
+                    email: 'operador@fishcort.com',
+                    permisos: ['fill-form', 'view-forms']
+                };
+            }
+            
+            if (success) {
+                resultDiv.className = 'result success';
+                resultDiv.innerHTML = `
+                    ✅ <strong>Login exitoso!</strong><br>
+                    Nombre: ${userData.nombre}<br>
+                    Rol: ${userData.rol}<br>
+                    Email: ${userData.email}<br>
+                    Permisos: ${userData.permisos.join(', ')}
+                `;
+            } else {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = '❌ <strong>Credenciales inválidas</strong>';
+            }
+            
+            console.log('Test result:', { username, password, success, userData });
+        }
+    </script>
+</body>
+</html>

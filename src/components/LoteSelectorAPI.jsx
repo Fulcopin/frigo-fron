@@ -33,30 +33,46 @@ function LoteSelectorAPI({
     isInternalUpdate.current = false;
   }, [selectedLotes]);
 
-  // � Obtener token de autenticación
+  // 🔐 Obtener token de autenticación
   const ensureApiToken = async () => {
     if (apiToken) return apiToken;
     
     setLoading(true);
+    console.log('🔐 [LoteSelector] Intentando autenticar con API externa...');
+    
     try {
       const response = await fetch(loginEndpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({ 
-          username: "iflogin", 
-          password: "ifpwd25" 
+          username: "l-admin", 
+          password: "Infor-Web001" 
         }),
       });
       
-      if (!response.ok) throw new Error("Error de autenticación");
+      console.log(`📨 [LoteSelector] Respuesta: ${response.status} ${response.statusText}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ [LoteSelector] Error de autenticación:', errorText);
+        throw new Error(`Error ${response.status}: ${errorText || 'Credenciales inválidas'}`);
+      }
       
       const data = await response.json();
-      console.log('✅ Token obtenido');
+      console.log('✅ [LoteSelector] Token obtenido exitosamente');
+      
+      if (!data.token) {
+        throw new Error('La respuesta no contiene un token');
+      }
+      
       setApiToken(data.token);
       return data.token;
     } catch (err) {
-      console.error('❌ Error de autenticación:', err);
-      setError('Error de autenticación con la API');
+      console.error('❌ [LoteSelector] Error completo de autenticación:', err);
+      setError('⚠️ No se pudo conectar con la API. Puedes continuar sin lotes.');
       return null;
     } finally {
       setLoading(false);

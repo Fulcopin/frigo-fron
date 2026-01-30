@@ -153,10 +153,16 @@ const Login = () => {
 
         <div className="login-footer">
           <p className="demo-credentials">
-            <strong>Credenciales de acceso:</strong><br/>
-            👑 admin / fishcort2025<br/>
-            🔑 iflogin / ifpwd25<br/>
-            👷 operador / fishcort2025
+            <strong>🔑 Credenciales de acceso:</strong><br/>
+            <br/>
+            <strong>👑 Admin (Acceso Total):</strong><br/>
+            Usuario: admin / Contraseña: fishcort2025<br/>
+            <br/>
+            <strong>� Supervisor (Acceso Total):</strong><br/>
+            Usuario: supervisor / Contraseña: fishcort2025<br/>
+            <br/>
+            <strong>👷 Trabajador (Solo Formularios):</strong><br/>
+            Usuario: trabajador / Contraseña: fishcort2025
           </p>
           <p className="company-info">
             Frigolab "San Mateo" © 2026

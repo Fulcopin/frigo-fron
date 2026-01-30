@@ -10,7 +10,7 @@
 
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import logoUrl from '../assets/logo.png';
+import logoUrl from '../assets/logo-9.svg';
 
 /**
  * 🎨 COLORES CORPORATIVOS DE FRIGOLAB
@@ -334,17 +334,36 @@ const createBodyTable = (worksheet, bodyData, bodyElements, startRow) => {
     currentRow++;
     
     // Filas de datos
-    tableData.forEach((row, rowIndex) => {
-      columns.forEach((col, colIndex) => {
-        const dataCell = worksheet.getCell(currentRow, colIndex + 1);
-        // Buscar el valor usando label o name
-        const value = row[col.label] || row[col.name] || '';
-        dataCell.value = value;
-        applyCellStyle(dataCell, rowIndex % 2 === 1);
-      });
-      worksheet.getRow(currentRow).height = 18;
-      currentRow++;
+    // Dentro de createBodyTable, busca el bucle de filas:
+// Dentro de createBodyTable:
+  tableData.forEach((row, rowIndex) => {
+    columns.forEach((col, colIndex) => {
+      const dataCell = worksheet.getCell(currentRow, colIndex + 1);
+      const rowKeys = Object.keys(row);
+      const colLabel = (col.label || col.header || "").trim();
+      
+      // 1. Intento por nombre exacto
+      let value = row[col.label] ?? row[col.name] ?? row[col.header];
+
+      // 2. 🎯 RESCATE PARA EXCEL: Si está vacío, buscar por índice (_colX)
+      if (value === undefined || value === null || value === "") {
+        const suffix = `_col${colIndex}`;
+        const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
+        if (keyWithSuffix) {
+          value = row[keyWithSuffix];
+        } else if (colLabel.toUpperCase().includes("TOTAL")) {
+          // Si es total, buscar cualquier llave que diga TOTAL
+          const totalKey = rowKeys.find(k => k.toUpperCase().includes("TOTAL"));
+          if (totalKey) value = row[totalKey];
+        }
+      }
+
+      dataCell.value = value ?? "";
+      applyCellStyle(dataCell, rowIndex % 2 === 1);
     });
+    worksheet.getRow(currentRow).height = 18;
+    currentRow++;
+  });
     
     // Espacio entre secciones
     currentRow++;
@@ -390,10 +409,15 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
       const [puesto1, firmaData1] = firma1;
       let nombre1 = '';
       let fecha1 = '';
+      let firmaImg1 = null;
       
       if (typeof firmaData1 === 'object' && firmaData1 !== null) {
         nombre1 = firmaData1.nombre || '';
         fecha1 = firmaData1.fecha || '';
+        // 🆕 Extraer URL de firma PNG
+        if (firmaData1.firma && firmaData1.firma.url) {
+          firmaImg1 = firmaData1.firma.url;
+        }
       } else {
         nombre1 = firmaData1 || '';
       }
@@ -432,13 +456,27 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
         currentRow++;
       }
       
-      // Línea de firma
-      worksheet.mergeCells(currentRow, 1, currentRow, 4);
-      const firmaCell1 = worksheet.getCell(currentRow, 1);
-      firmaCell1.value = '________________________';
-      firmaCell1.font = { size: 8, color: { argb: 'FF999999' } };
-      firmaCell1.alignment = { vertical: 'middle', horizontal: 'center' };
-      worksheet.getRow(currentRow).height = 14;
+      // 🆕 Imagen de firma PNG o línea tradicional
+      if (firmaImg1) {
+        // Mostrar URL de la firma (en Excel, mostraremos la URL como hipervínculo)
+        worksheet.mergeCells(currentRow, 1, currentRow, 4);
+        const firmaCell1 = worksheet.getCell(currentRow, 1);
+        firmaCell1.value = {
+          text: '🖼️ Ver Firma Digital',
+          hyperlink: firmaImg1
+        };
+        firmaCell1.font = { size: 9, color: { argb: 'FF0066CC' }, underline: true };
+        firmaCell1.alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getRow(currentRow).height = 16;
+      } else {
+        // Línea de firma tradicional
+        worksheet.mergeCells(currentRow, 1, currentRow, 4);
+        const firmaCell1 = worksheet.getCell(currentRow, 1);
+        firmaCell1.value = '________________________';
+        firmaCell1.font = { size: 8, color: { argb: 'FF999999' } };
+        firmaCell1.alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getRow(currentRow).height = 14;
+      }
     }
     
     // COLUMNA DERECHA (Firma 2)
@@ -448,10 +486,15 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
       const [puesto2, firmaData2] = firma2;
       let nombre2 = '';
       let fecha2 = '';
+      let firmaImg2 = null;
       
       if (typeof firmaData2 === 'object' && firmaData2 !== null) {
         nombre2 = firmaData2.nombre || '';
         fecha2 = firmaData2.fecha || '';
+        // 🆕 Extraer URL de firma PNG
+        if (firmaData2.firma && firmaData2.firma.url) {
+          firmaImg2 = firmaData2.firma.url;
+        }
       } else {
         nombre2 = firmaData2 || '';
       }
@@ -487,12 +530,25 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
         currentRow++;
       }
       
-      // Línea de firma
-      worksheet.mergeCells(currentRow, 5, currentRow, 8);
-      const firmaCell2 = worksheet.getCell(currentRow, 5);
-      firmaCell2.value = '________________________';
-      firmaCell2.font = { size: 8, color: { argb: 'FF999999' } };
-      firmaCell2.alignment = { vertical: 'middle', horizontal: 'center' };
+      // 🆕 Imagen de firma PNG o línea tradicional
+      if (firmaImg2) {
+        // Mostrar URL de la firma (en Excel, mostraremos la URL como hipervínculo)
+        worksheet.mergeCells(currentRow, 5, currentRow, 8);
+        const firmaCell2 = worksheet.getCell(currentRow, 5);
+        firmaCell2.value = {
+          text: '🖼️ Ver Firma Digital',
+          hyperlink: firmaImg2
+        };
+        firmaCell2.font = { size: 9, color: { argb: 'FF0066CC' }, underline: true };
+        firmaCell2.alignment = { vertical: 'middle', horizontal: 'center' };
+      } else {
+        // Línea de firma tradicional
+        worksheet.mergeCells(currentRow, 5, currentRow, 8);
+        const firmaCell2 = worksheet.getCell(currentRow, 5);
+        firmaCell2.value = '________________________';
+        firmaCell2.font = { size: 8, color: { argb: 'FF999999' } };
+        firmaCell2.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
     }
     
     // Avanzar a la siguiente fila después del par

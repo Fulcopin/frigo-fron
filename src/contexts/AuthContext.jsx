@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import authService from '../services/authService'; // ✅ IMPORTANTE: Importar el servicio
 
 const AuthContext = createContext(null);
 
@@ -14,83 +15,49 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Verificar si hay sesión guardada al cargar
+  // Verificar si hay sesión guardada al cargar la página
   useEffect(() => {
-    const storedUser = localStorage.getItem('fishcort_user');
-    const storedToken = localStorage.getItem('fishcort_token');
-    const tokenExpiration = localStorage.getItem('fishcort_token_expiration');
-
-    if (storedUser && storedToken && tokenExpiration) {
-      const expirationDate = new Date(tokenExpiration);
-      if (expirationDate > new Date()) {
-        setUser(JSON.parse(storedUser));
-      } else {
-        // Token expirado, limpiar
-        localStorage.removeItem('fishcort_user');
-        localStorage.removeItem('fishcort_token');
-        localStorage.removeItem('fishcort_token_expiration');
-      }
+    // Usamos el servicio para verificar la sesión, no lo hacemos manual aquí
+    if (authService.isSessionActive()) {
+      const currentUser = authService.getCurrentUser();
+      setUser(currentUser);
+    } else {
+      // Si la sesión no es válida o expiró, limpiamos
+      authService.logout();
+      setUser(null);
     }
     setLoading(false);
   }, []);
 
   const login = async (username, password) => {
     try {
-      // Aquí puedes conectar con tu API real
-      // Por ahora, validación simple de ejemplo
-      
-      // Credenciales válidas
-      const validCredentials = [
-        { user: 'admin', pass: 'fishcort2025', rol: 'admin', nombre: 'Administrador' },
-        { user: 'iflogin', pass: 'ifpwd25', rol: 'admin', nombre: 'Admin IFrigolab' },
-        { user: 'operador', pass: 'fishcort2025', rol: 'operador', nombre: 'Operador' }
-      ];
+      // ✅ AHORA: Llamamos a la API a través del servicio
+      const result = await authService.login(username, password);
 
-      const credential = validCredentials.find(
-        c => c.user === username && c.pass === password
-      );
-
-      if (credential) {
-        const userData = {
-          id: 1,
-          username: username,
-          nombre: credential.nombre,
-          rol: credential.rol,
-          email: `${username}@fishcort.com`
-        };
-
-        const token = btoa(`${username}:${Date.now()}`); // Token simple para demo
-        const expirationDate = new Date();
-        expirationDate.setHours(expirationDate.getHours() + 8); // 8 horas de sesión
-
-        localStorage.setItem('fishcort_user', JSON.stringify(userData));
-        localStorage.setItem('fishcort_token', token);
-        localStorage.setItem('fishcort_token_expiration', expirationDate.toISOString());
-
-        setUser(userData);
-        return { success: true, user: userData };
+      if (result.success) {
+        // Si la API responde OK, actualizamos el estado global de React
+        setUser(result.user);
+        return { success: true, user: result.user };
       } else {
-        return { success: false, error: 'Credenciales inválidas' };
+        return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error('Error en login:', error);
-      return { success: false, error: 'Error al iniciar sesión' };
+      console.error('Error en AuthContext:', error);
+      return { success: false, error: 'Error inesperado al iniciar sesión' };
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('fishcort_user');
-    localStorage.removeItem('fishcort_token');
-    localStorage.removeItem('fishcort_token_expiration');
-    setUser(null);
+    authService.logout(); // Limpia localStorage
+    setUser(null); // Limpia estado de React
   };
 
   const getToken = () => {
-    return localStorage.getItem('fishcort_token');
+    return authService.getToken();
   };
 
   const isAuthenticated = () => {
-    return user !== null;
+    return user !== null && authService.isSessionActive();
   };
 
   const value = {

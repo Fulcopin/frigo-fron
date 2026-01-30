@@ -3,7 +3,9 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
 import Login from "./pages/Login"
 import ProtectedRoute from "./components/ProtectedRoute"
+import RoleBasedRoute from "./components/RoleBasedRoute"
 import UserInfo from "./components/UserInfo"
+import authService from "./services/authService"
 import Home from "./pages/Home"
 import CreateTemplate from "./pages/CreateTemplate"
 import EditTemplate from "./pages/EditTemplate"
@@ -12,12 +14,17 @@ import EditFilledForm from "./pages/EditFilledForm"
 import ViewForms from "./pages/ViewForms"
 import ManageTemplates from './pages/ManageTemplates';
 import DailyForms from './pages/DailyForms';
+import ERPDashboard from "./pages/ERPDashboard";
 import "./App.css"
 
 function Navigation() {
   const location = useLocation()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const { logout, isAuthenticated } = useAuth()
+  
+  // Obtener usuario actual y su rol
+  const currentUser = authService.getCurrentUser()
+  const userRole = currentUser?.rol || ''
 
   const isActive = (path) => location.pathname === path
 
@@ -31,6 +38,9 @@ function Navigation() {
   if (!isAuthenticated()) {
     return null
   }
+
+  // Determinar qué links mostrar según el rol
+  const isAdminOrSupervisor = userRole === 'admin' || userRole === 'supervisor'
 
   return (
     <nav className={`navbar ${isCollapsed ? 'collapsed' : 'expanded'}`}>
@@ -55,24 +65,46 @@ function Navigation() {
           </div>
         </div>
         <div className="nav-links">
+          {/* Inicio - visible para todos */}
           <Link to="/" className={isActive("/") ? "active" : ""}>
             🏠 Inicio
           </Link>
-          <Link to="/create-template" className={isActive("/create-template") ? "active" : ""}>
-            ➕ Crear Plantilla
-          </Link>
+          
+          {/* Crear Plantilla - solo Admin y Supervisor */}
+          {isAdminOrSupervisor && (
+            <Link to="/create-template" className={isActive("/create-template") ? "active" : ""}>
+              ➕ Crear Plantilla
+            </Link>
+          )}
+          
+          {/* Llenar Formulario - visible para todos */}
           <Link to="/fill-form" className={isActive("/fill-form") ? "active" : ""}>
             📝 Llenar Formulario
           </Link>
-          <Link to="/manage-templates" className={isActive("/manage-templates") ? "active" : ""}>
-            ⚙️ Administrar Plantillas
-          </Link>
+          
+          {/* Administrar Plantillas - solo Admin y Supervisor */}
+          {isAdminOrSupervisor && (
+            <Link to="/manage-templates" className={isActive("/manage-templates") ? "active" : ""}>
+              ⚙️ Administrar Plantillas
+            </Link>
+          )}
+          
+          {/* Ver Formularios - visible para todos */}
           <Link to="/view-forms" className={isActive("/view-forms") ? "active" : ""}>
             👁️ Ver Formularios
           </Link>
-          <Link to="/daily-forms" className={isActive("/daily-forms") ? "active" : ""}>
-            📅 Formularios por Fecha
+          
+          {/* Formularios por Fecha - solo Admin y Supervisor */}
+          {isAdminOrSupervisor && (
+            <Link to="/daily-forms" className={isActive("/daily-forms") ? "active" : ""}>
+              📅 Formularios por Fecha
+            </Link>
+          )}
+          {isAdminOrSupervisor && (
+          <Link to="/dashboard-erp" className={isActive("/dashboard-erp") ? "active" : ""}>
+            📊 Dashboard ERP
           </Link>
+        )}
           
           <UserInfo />
           
@@ -89,7 +121,7 @@ function Navigation() {
       {/* Barra compacta cuando está colapsado */}
       {isCollapsed && (
         <div className="navbar-collapsed-info">
-          <span className="collapsed-brand">� FishCort - Frigolab "San Mateo"</span>
+          <span className="collapsed-brand">🐟 FishCort - Frigolab "San Mateo"</span>
           <span className="collapsed-page">{getPageName(location.pathname)}</span>
         </div>
       )}
@@ -126,46 +158,66 @@ function App() {
               <Route path="/login" element={<Login />} />
               
               {/* Rutas protegidas */}
+              {/* Inicio - Acceso para todos los roles autenticados */}
               <Route path="/" element={
                 <ProtectedRoute>
                   <Home />
                 </ProtectedRoute>
               } />
+              
+              {/* Crear Plantilla - Solo Admin y Supervisor */}
               <Route path="/create-template" element={
-                <ProtectedRoute>
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
                   <CreateTemplate />
-                </ProtectedRoute>
+                </RoleBasedRoute>
               } />
+              
+              {/* Editar Plantilla - Solo Admin y Supervisor */}
               <Route path="/edit-template/:id" element={
-                <ProtectedRoute>
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
                   <EditTemplate />
-                </ProtectedRoute>
+                </RoleBasedRoute>
               } />
+              
+              {/* Llenar Formulario - Acceso para todos los roles */}
               <Route path="/fill-form" element={
                 <ProtectedRoute>
                   <FillForm />
                 </ProtectedRoute>
               } />
+              
+              {/* Editar Formulario Lleno - Acceso para todos los roles */}
               <Route path="/edit-filled-form/:id" element={
                 <ProtectedRoute>
                   <EditFilledForm />
                 </ProtectedRoute>
               } />
+              
+              {/* Ver Formularios - Acceso para todos los roles */}
               <Route path="/view-forms" element={
                 <ProtectedRoute>
                   <ViewForms />
                 </ProtectedRoute>
               } />
+              
+              {/* Administrar Plantillas - Solo Admin y Supervisor */}
               <Route path="/manage-templates" element={
-                <ProtectedRoute>
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
                   <ManageTemplates />
-                </ProtectedRoute>
+                </RoleBasedRoute>
               } />
+              
+              {/* Formularios por Fecha - Solo Admin y Supervisor */}
               <Route path="/daily-forms" element={
-                <ProtectedRoute>
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
                   <DailyForms />
-                </ProtectedRoute>
+                </RoleBasedRoute>
               } />
+              <Route path="/dashboard-erp" element={
+          <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+            <ERPDashboard />
+          </RoleBasedRoute>
+        } />
             </Routes>
           </main>
         </div>
