@@ -297,18 +297,24 @@ body {
 }
 
 .btn-back {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  color: #495057;
+  border: 2px solid #dee2e6;
   padding: 0.625rem 1.25rem;
   border-radius: 6px;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 0.95rem;
   transition: all 0.2s;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
 .btn-back:hover {
-  background: var(--background);
-  border-color: var(--primary);
+  background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+  border-color: #adb5bd;
+  color: #212529;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
 }
 
 .form-document {
@@ -454,44 +460,48 @@ body {
 
 
 .btn-add-column {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
   color: white;
-  padding: 0.5rem 1rem;
+  padding: 0.6rem 1.2rem;
   border-radius: 6px;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.875rem;
   transition: all 0.2s;
   border: none;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
 }
 
 .btn-add-column:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
 }
 
 .btn-remove-column {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
   color: white;
-  padding: 0.5rem 1rem;
+  padding: 0.6rem 1.2rem;
   border-radius: 6px;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.875rem;
   transition: all 0.2s;
   border: none;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(236, 72, 153, 0.3);
 }
 
 .btn-remove-column:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+  background: linear-gradient(135deg, #db2777 0%, #be185d 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.4);
 }
 
 /* 💾 Botón para guardar estructura del formulario */
 .btn-save-structure {
-  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
   color: white;
-  padding: 0.5rem 1rem;
+  padding: 0.6rem 1.2rem;
   border-radius: 6px;
   font-weight: 600;
   font-size: 0.875rem;
@@ -499,11 +509,13 @@ body {
   border: none;
   cursor: pointer;
   margin-left: 0.5rem;
+  box-shadow: 0 2px 6px rgba(20, 184, 166, 0.3);
 }
 
 .btn-save-structure:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(17, 153, 142, 0.4);
+  background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.4);
 }
 
 /* 🎯 COLUMNA TOTAL: Solo lectura con estilo especial */
@@ -526,22 +538,23 @@ body {
 
 /* 🔄 BOTÓN RECALCULAR TOTALES */
 .btn-recalcular {
-  background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: white;
-  padding: 0.5rem 1rem;
+  padding: 0.6rem 1.2rem;
   border-radius: 6px;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.875rem;
   transition: all 0.2s;
   border: none;
   cursor: pointer;
   margin-left: 0.5rem;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
 }
 
 .btn-recalcular:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
-  background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
 }
 
 .btn-recalcular:active {
@@ -710,30 +723,34 @@ body {
 /* Botón Eliminar (Basurero) */
 .btn-remove-row {
   background-color: #fee2e2;
-  color: #ef4444;
-  border: none;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
   width: 32px;
   height: 32px;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
   margin: 0 auto;
+  font-weight: 600;
 }
 
 .btn-remove-row:hover {
   background-color: #ef4444;
+  border-color: #dc2626;
   color: white;
+  transform: scale(1.1);
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
 }
 
 /* Botón Agregar Fila (Arriba de la tabla) */
 .btn-add-row {
-  background: #10b981;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: white;
-  padding: 8px 16px;
-  border-radius: 3px;
+  padding: 10px 18px;
+  border-radius: 6px;
   font-weight: 600;
   font-size: 0.875rem;
   border: none;
@@ -742,11 +759,14 @@ body {
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
 }
 
 .btn-add-row:hover {
-  background: #059669;
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
 }
 
 /* Scroll suave y moderno - MÁS ANCHO Y VISIBLE */
@@ -812,20 +832,27 @@ body {
   scroll-snap-align: none !important;
 }
 
-.btn-remove-row {
-  background: var(--error);
-  color: white;
+/* 🗑️ Botón eliminar fila - alternativo (si existe duplicado) */
+.btn-remove-row-alt {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  color: #dc2626;
   padding: 0.375rem 0.75rem;
   border-radius: 4px;
   font-size: 0.875rem;
+  border: 1px solid #fca5a5;
   transition: all 0.2s;
+  cursor: pointer;
+  font-weight: 600;
 }
 
-.btn-remove-row:hover:not(:disabled) {
-  background: #b91c1c;
+.btn-remove-row-alt:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border-color: #dc2626;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.3);
 }
 
-.btn-remove-row:disabled {
+.btn-remove-row-alt:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -865,6 +892,22 @@ body {
   flex-direction: column;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+/* 👥 Estilos para hints de usuario */
+.loading-hint {
+  font-size: 11px;
+  color: #3b82f6;
+  font-style: italic;
+  margin-left: 8px;
+  animation: pulse 2s infinite;
+}
+
+.error-hint {
+  font-size: 11px;
+  color: #ef4444;
+  font-style: italic;
+  margin-left: 8px;
 }
 
 .signature-line {
@@ -1750,6 +1793,11 @@ body {
 }
 
 /* Botón outline primario */
+/* ================================================
+   BOTONES CON VISIBILIDAD MEJORADA
+   ================================================ */
+
+/* Botón primario outline */
 .btn-outline-primary {
   display: inline-flex;
   align-items: center;
@@ -1776,6 +1824,127 @@ body {
 .btn-outline-primary:active {
   transform: translateY(0);
   box-shadow: 0 2px 6px rgba(59, 130, 246, 0.2);
+}
+
+/* Botón secundario - gris con mejor visibilidad */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: #f8f9fa;
+  color: #495057;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 44px;
+}
+
+.btn-secondary:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+  color: #212529;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.btn-secondary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+/* Botón primario sólido - azul vibrante */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 44px;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+}
+
+/* Botón de éxito - verde vibrante */
+.btn-success {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 44px;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+.btn-success:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+.btn-success:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+}
+
+/* Botón de peligro - rojo vibrante */
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 44px;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.btn-danger:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.3);
 }
 
 /* Responsive para tablets */

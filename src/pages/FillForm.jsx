@@ -6,16 +6,17 @@ import FormHeader from "../components/FormHeader"
 import AccordionSection from "../components/AccordionSection"
 import LoteSelectorAPI from "../components/LoteSelectorAPI"
 import SignatureUploader from "../components/SignatureUploader"
+import UserSelector from "../components/UserSelector"
 import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
+import { fetchUsers, filterUsersByPuesto } from "../services/userService"
 import "./FillForm.css"
 import "./FillForm.tablet.css"  // 📱 Estilos optimizados para tablets
-import { API_BASE_URL } from "../apiConfig"
+import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import authService from "../services/authService";
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
-const API_EXTERNAL_BASE_URL = "http://188.40.197.172:8094/api"; 
 
 const AUTOSAVE_INTERVAL = 30000;
 const AUTOSAVE_KEY_PREFIX = 'autosave_form_';
@@ -75,6 +76,11 @@ function FillForm() {
   const [headerData, setHeaderData] = useState({})
   const [bodyData, setBodyData] = useState([]); 
   const [firmasData, setFirmasData] = useState({})
+  
+  // 👥 Estados para usuarios de la API
+  const [allUsers, setAllUsers] = useState([]) // Todos los usuarios de la API
+  const [loadingUsers, setLoadingUsers] = useState(false)
+  const [usersError, setUsersError] = useState(null)
   
   // Estados de UI/Guardado
   const [showSuccess, setShowSuccess] = useState(false)
@@ -291,6 +297,40 @@ useEffect(() => {
     return () => clearTimeout(timeoutId);
   }
 }, [headerData, bodyData, firmasData, lotesConfirmados, selectedLotes, apiDetailsData, apiMovimientoData, activeTabIndex]);
+
+  // 👥 NUEVO: Cargar usuarios de la API al montar el componente
+  useEffect(() => {
+    const loadUsers = async () => {
+      setLoadingUsers(true);
+      setUsersError(null);
+      
+      try {
+        console.log('👥 Cargando usuarios de la API...');
+        
+        // 🔐 Obtener token de autenticación primero
+        const token = await ensureApiToken();
+        
+        if (!token) {
+          throw new Error('No se pudo obtener token de autenticación');
+        }
+        
+        // 📡 Cargar usuarios con el token
+        const users = await fetchUsers(token);
+        setAllUsers(users);
+        console.log(`✅ ${users.length} usuarios cargados exitosamente`);
+      } catch (err) {
+        console.error('❌ Error al cargar usuarios:', err);
+        setUsersError(err.message);
+        // No bloqueamos el formulario, solo mostramos un warning
+        console.warn('⚠️ Los usuarios no están disponibles, pero el formulario funcionará normalmente');
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+    
+    loadUsers();
+  }, []); // Solo cargar una vez al montar
+
 
   // 🔧 FUNCIÓN: Normalizar sufijos en bodyData (corregir datos guardados con sufijos incorrectos)
   const normalizeBodyDataSuffixes = (bodyData) => {
@@ -3467,7 +3507,7 @@ useEffect(() => {
       {/* 🆕 BARRA DE PESTAÑAS (TABS) */}
       {openTabs.length > 0 && (
         <div className="tabs-container" style={{
-          background: '#035b8d',
+          background: 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)',
           padding: '0.75rem 1.5rem',
           borderRadius: '0',
           marginBottom: '0',
@@ -3475,7 +3515,8 @@ useEffect(() => {
           gap: '0.5rem',
           flexWrap: 'wrap',
           alignItems: 'center',
-          borderBottom: '1px solid #e1e1e1'
+          borderBottom: '2px solid #3b82f6',
+          boxShadow: '0 2px 8px rgba(30, 64, 175, 0.3)'
         }}>
           {/* Botón para agregar nueva pestaña */}
           <button
@@ -3658,13 +3699,14 @@ useEffect(() => {
           position: 'sticky',
           top: 0,
           zIndex: 1001,
-          background: '#035b8d',
+          background: 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)',
           padding: '0.75rem 1.5rem',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
           gap: '1rem',
-          borderBottom: '1px solid #e1e1e1'
+          borderBottom: '2px solid #3b82f6',
+          boxShadow: '0 2px 8px rgba(30, 64, 175, 0.3)'
         }}>
           <button
             onClick={() => {
@@ -3676,11 +3718,11 @@ useEffect(() => {
               setLotesConfirmados(false);
             }}
             style={{
-              background: 'white',
-              border: '1px solid #e1e1e1',
-              color: '#035b8d',
+              background: 'rgba(255, 255, 255, 0.95)',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              color: '#1e40af',
               padding: '0.5rem 1rem',
-              borderRadius: '3px',
+              borderRadius: '4px',
               cursor: 'pointer',
               fontSize: '0.875rem',
               fontWeight: '600',
@@ -4039,25 +4081,25 @@ useEffect(() => {
 
       <div className="form-document">
         {(() => {
-          // PRIORIDAD DE FECHA:
-          // 1. Si estamos editando (id existe) y tenemos createdAt, SIEMPRE usar createdAt
-          // 2. Si no hay id (formulario nuevo), usar fecha actual
-          // 3. Ignorar headerData.fecha porque puede estar auto-rellenado
+          // 📅 FECHA DE VERSIÓN DE LA PLANTILLA (NO la fecha de llenado)
+          // Siempre usar fechaVersion del template, que es la fecha de la versión registrada
           
           let fechaFinal;
-          if (id && formCreatedAt) {
-            // Formulario existente: usar fecha de creación
-            fechaFinal = new Date(formCreatedAt).toLocaleDateString("es-EC");
+          
+          // Verificar si el template tiene fechaVersion
+          if (selectedTemplate.fechaVersion) {
+            // Usar la fecha de versión de la plantilla
+            fechaFinal = new Date(selectedTemplate.fechaVersion).toLocaleDateString("es-EC");
+            console.log('✅ Usando fechaVersion de la plantilla:', selectedTemplate.fechaVersion);
           } else {
-            // Formulario nuevo: usar fecha actual
+            // Fallback: usar fecha actual solo si no hay fechaVersion
+            console.warn('⚠️ Template sin fechaVersion, usando fecha actual como fallback');
             fechaFinal = new Date().toLocaleDateString("es-EC");
           }
           
           console.log('🗓️ Fecha que se mostrará en FormHeader:', {
-            'id': id,
-            'formCreatedAt': formCreatedAt,
-            'headerData.fecha (IGNORADO)': headerData.fecha,
-            'fechaFinal': fechaFinal
+            'fechaVersion del template': selectedTemplate.fechaVersion,
+            'fechaFinal formateada': fechaFinal
           });
           
           return (
@@ -5161,7 +5203,25 @@ useEffect(() => {
       type="button"
       onClick={() => addTableColumn(elementIndex)} 
       className="btn-add-column"
-      style={{ background: '#667eea', color: 'white', padding: '5px 10px', borderRadius: '4px' }}
+      style={{ 
+        background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', 
+        color: 'white', 
+        padding: '8px 14px', 
+        borderRadius: '6px',
+        fontWeight: '600',
+        border: 'none',
+        cursor: 'pointer',
+        boxShadow: '0 2px 6px rgba(139, 92, 246, 0.3)',
+        transition: 'all 0.2s'
+      }}
+      onMouseOver={(e) => {
+        e.currentTarget.style.transform = 'translateY(-2px)';
+        e.currentTarget.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.4)';
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style.transform = 'translateY(0)';
+        e.currentTarget.style.boxShadow = '0 2px 6px rgba(139, 92, 246, 0.3)';
+      }}
     >
       ➕ Columna
     </button>
@@ -5169,7 +5229,25 @@ useEffect(() => {
       type="button"
       onClick={() => removeTableColumn(elementIndex)} 
       className="btn-remove-column"
-      style={{ background: '#f5576c', color: 'white', padding: '5px 10px', borderRadius: '4px' }}
+      style={{ 
+        background: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)', 
+        color: 'white', 
+        padding: '8px 14px', 
+        borderRadius: '6px',
+        fontWeight: '600',
+        border: 'none',
+        cursor: 'pointer',
+        boxShadow: '0 2px 6px rgba(236, 72, 153, 0.3)',
+        transition: 'all 0.2s'
+      }}
+      onMouseOver={(e) => {
+        e.currentTarget.style.transform = 'translateY(-2px)';
+        e.currentTarget.style.boxShadow = '0 4px 12px rgba(236, 72, 153, 0.4)';
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style.transform = 'translateY(0)';
+        e.currentTarget.style.boxShadow = '0 2px 6px rgba(236, 72, 153, 0.3)';
+      }}
     >
       ➖ Columna
     </button>
@@ -5180,7 +5258,25 @@ useEffect(() => {
         if (success) alert("Estructura guardada");
       }} 
       className="btn-save-structure"
-      style={{ background: '#11998e', color: 'white', padding: '5px 10px', borderRadius: '4px' }}
+      style={{ 
+        background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)', 
+        color: 'white', 
+        padding: '8px 14px', 
+        borderRadius: '6px',
+        fontWeight: '600',
+        border: 'none',
+        cursor: 'pointer',
+        boxShadow: '0 2px 6px rgba(20, 184, 166, 0.3)',
+        transition: 'all 0.2s'
+      }}
+      onMouseOver={(e) => {
+        e.currentTarget.style.transform = 'translateY(-2px)';
+        e.currentTarget.style.boxShadow = '0 4px 12px rgba(20, 184, 166, 0.4)';
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style.transform = 'translateY(0)';
+        e.currentTarget.style.boxShadow = '0 2px 6px rgba(20, 184, 166, 0.3)';
+      }}
     >
       💾 Guardar Estructura
     </button>
@@ -5402,40 +5498,54 @@ useEffect(() => {
             onToggle={() => toggleSection('signatures')}
           >
             <div className="signatures-grid">
-              {selectedTemplate.firmas.map((firma, index) => (
-                <div key={index} className="signature-box">
-                  <h4>{firma.puesto}</h4>
-                  
-                  {/* Campos de texto: Nombre y Fecha */}
-                  <div className="signature-fields">
-                    <div className="form-field">
-                      <label>Nombre:</label>
-                      <input 
-                        type="text" 
-                        value={firmasData[firma.puesto]?.nombre || ""} 
-                        onChange={(e) => handleFirmaChange(firma.puesto, "nombre", e.target.value)} 
-                      />
+              {selectedTemplate.firmas.map((firma, index) => {
+                // Filtrar usuarios según el rol del puesto
+                const filteredUsers = filterUsersByPuesto(allUsers, firma.puesto);
+                
+                return (
+                  <div key={index} className="signature-box">
+                    <h4>{firma.puesto}</h4>
+                    
+                    {/* Campos de texto: Nombre y Fecha */}
+                    <div className="signature-fields">
+                      <div className="form-field">
+                        <label>
+                          Nombre:
+                          {loadingUsers && <span className="loading-hint"> (Cargando usuarios...)</span>}
+                          {usersError && <span className="error-hint"> (Error: {usersError})</span>}
+                        </label>
+                        
+                        {/* 👥 Selector de usuarios con filtro por rol */}
+                        <UserSelector
+                          users={filteredUsers}
+                          value={firmasData[firma.puesto]?.nombre || ""}
+                          onChange={(nombreCompleto) => handleFirmaChange(firma.puesto, "nombre", nombreCompleto)}
+                          placeholder={loadingUsers ? "Cargando..." : "Buscar o escribir nombre..."}
+                          disabled={loadingUsers}
+                          puesto={firma.puesto}
+                        />
+                      </div>
+                      <div className="form-field">
+                        <label>Fecha:</label>
+                        <input 
+                          type="date" 
+                          value={firmasData[firma.puesto]?.fecha || ""} 
+                          onChange={(e) => handleFirmaChange(firma.puesto, "fecha", e.target.value)} 
+                        />
+                      </div>
                     </div>
-                    <div className="form-field">
-                      <label>Fecha:</label>
-                      <input 
-                        type="date" 
-                        value={firmasData[firma.puesto]?.fecha || ""} 
-                        onChange={(e) => handleFirmaChange(firma.puesto, "fecha", e.target.value)} 
-                      />
-                    </div>
-                  </div>
 
-                  {/* 🆕 Componente de carga de firma PNG */}
-                  <SignatureUploader
-                    puesto={firma.puesto}
-                    firmaData={firmasData[firma.puesto]}
-                    onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
-                    cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
-                    cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
-                  />
-                </div>
-              ))}
+                    {/* 🆕 Componente de carga de firma PNG */}
+                    <SignatureUploader
+                      puesto={firma.puesto}
+                      firmaData={firmasData[firma.puesto]}
+                      onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
+                      cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
+                      cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </AccordionSection>
         )}

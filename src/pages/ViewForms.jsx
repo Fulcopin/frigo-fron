@@ -310,7 +310,29 @@ function ViewForms() {
           </div>
         </div>
         <div className="form-viewer-document">
-          <FormHeader title={selectedForm.templateNombre} code={selectedForm.templateCodigo} version="1" date={new Date(selectedForm.createdAt).toLocaleDateString("es-EC")} />
+          {(() => {
+            // 📅 FECHA DE VERSIÓN: Usar fechaVersion del template, NO createdAt del formulario
+            let fechaFinal;
+            
+            if (correspondingTemplate?.fechaVersion) {
+              // Usar la fecha de versión de la plantilla
+              fechaFinal = new Date(correspondingTemplate.fechaVersion).toLocaleDateString("es-EC");
+              console.log('✅ ViewForms usando fechaVersion de la plantilla:', correspondingTemplate.fechaVersion);
+            } else {
+              // Fallback: usar fecha de creación del formulario
+              console.warn('⚠️ Template sin fechaVersion, usando createdAt del formulario como fallback');
+              fechaFinal = new Date(selectedForm.createdAt).toLocaleDateString("es-EC");
+            }
+            
+            return (
+              <FormHeader 
+                title={selectedForm.templateNombre} 
+                code={selectedForm.templateCodigo} 
+                version={correspondingTemplate?.version || "1"} 
+                date={fechaFinal} 
+              />
+            );
+          })()}
           
           {/* NUEVO: Indicador de versión de plantilla */}
           {selectedFormVersionInfo && (
@@ -530,7 +552,23 @@ function ViewForms() {
             <div className="data-section">
               <h3>Firmas y Aprobaciones</h3>
               <div className="signatures-grid">
-                {Object.entries(selectedForm.firmasData).map(([puesto, data]) => (
+                {(() => {
+                  // 🔧 FILTRAR: Solo mostrar firmas que existen en la plantilla actual
+                  const templateFirmas = correspondingTemplate?.firmas || [];
+                  const puestosValidos = templateFirmas.map(f => f.puesto);
+                  
+                  console.log('🔍 Firmas en template:', puestosValidos);
+                  console.log('🔍 Firmas en formulario guardado:', Object.keys(selectedForm.firmasData));
+                  
+                  // Filtrar firmasData para solo incluir puestos que están en la plantilla
+                  const firmasFiltradas = Object.entries(selectedForm.firmasData)
+                    .filter(([puesto]) => puestosValidos.includes(puesto));
+                  
+                  if (firmasFiltradas.length === 0) {
+                    return <p style={{ color: '#666', fontStyle: 'italic' }}>No hay firmas registradas</p>;
+                  }
+                  
+                  return firmasFiltradas.map(([puesto, data]) => (
                   <div key={puesto} className="signature-box-view">
                     <h4>{puesto}</h4>
                     <div className="signature-data">
@@ -540,8 +578,26 @@ function ViewForms() {
                           <img 
                             src={data.firma.url || data.firma.base64} 
                             alt={`Firma ${puesto}`} 
-                            style={{ maxHeight: '100px', maxWidth: '100%', border: '1px solid #eee' }} 
+                            style={{ 
+                              maxHeight: '100px', 
+                              maxWidth: '100%', 
+                              border: '1px solid #eee',
+                              padding: '5px',
+                              backgroundColor: 'white',
+                              borderRadius: '4px'
+                            }} 
                           />
+                          {/* Indicador del método de firma */}
+                          <div style={{ 
+                            fontSize: '10px', 
+                            color: '#666', 
+                            marginTop: '4px',
+                            fontStyle: 'italic'
+                          }}>
+                            {data.firma.provider === 'cloudinary' && '☁️ Firma subida'}
+                            {data.firma.provider === 'base64' && '💾 Firma subida (local)'}
+                            {data.firma.provider === 'base64-drawn' && '✍️ Firma dibujada'}
+                          </div>
                         </div>
                       ) : (
                         <p style={{ fontStyle: 'italic', color: '#999' }}>(Sin firma digital)</p>
@@ -552,7 +608,8 @@ function ViewForms() {
                     </div>
                     <div className="signature-line">Firma: _______________________</div>
                   </div>
-                ))}
+                  ));
+                })()}
               </div>
             </div>
           )}

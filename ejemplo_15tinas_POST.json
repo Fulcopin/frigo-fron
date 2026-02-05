@@ -1,0 +1,170 @@
+{
+  "templateID": 123,
+  "headerData": {
+    "Fecha": "2026-02-05",
+    "Lote": "L-2026-001",
+    "Turno": "Mañana",
+    "Responsable": "Juan Pérez",
+    "Hora Inicio": "08:00",
+    "Hora Fin": "16:00"
+  },
+  "bodyData": [
+    {
+      "rows": [
+        {
+          "Tina": "T1",
+          "Peso Ingreso (kg)": "1200.50",
+          "Peso Salida (kg)": "1100.25",
+          "Merma (kg)": "100.25",
+          "Merma (%)": "8.35",
+          "Temperatura (°C)": "-18.5",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T2",
+          "Peso Ingreso (kg)": "1300.00",
+          "Peso Salida (kg)": "1180.50",
+          "Merma (kg)": "119.50",
+          "Merma (%)": "9.19",
+          "Temperatura (°C)": "-19.0",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T3",
+          "Peso Ingreso (kg)": "1250.75",
+          "Peso Salida (kg)": "1160.00",
+          "Merma (kg)": "90.75",
+          "Merma (%)": "7.26",
+          "Temperatura (°C)": "-18.0",
+          "Observaciones": "Revisar sello"
+        },
+        {
+          "Tina": "T4",
+          "Peso Ingreso (kg)": "1400.00",
+          "Peso Salida (kg)": "1290.00",
+          "Merma (kg)": "110.00",
+          "Merma (%)": "7.86",
+          "Temperatura (°C)": "-18.5",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T5",
+          "Peso Ingreso (kg)": "1150.50",
+          "Peso Salida (kg)": "1050.25",
+          "Merma (kg)": "100.25",
+          "Merma (%)": "8.71",
+          "Temperatura (°C)": "-19.5",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T6",
+          "Peso Ingreso (kg)": "1320.00",
+          "Peso Salida (kg)": "1210.00",
+          "Merma (kg)": "110.00",
+          "Merma (%)": "8.33",
+          "Temperatura (°C)": "-18.0",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T7",
+          "Peso Ingreso (kg)": "1280.50",
+          "Peso Salida (kg)": "1175.00",
+          "Merma (kg)": "105.50",
+          "Merma (%)": "8.24",
+          "Temperatura (°C)": "-18.5",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T8",
+          "Peso Ingreso (kg)": "1350.00",
+          "Peso Salida (kg)": "1240.50",
+          "Merma (kg)": "109.50",
+          "Merma (%)": "8.11",
+          "Temperatura (°C)": "-19.0",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T9",
+          "Peso Ingreso (kg)": "1220.00",
+          "Peso Salida (kg)": "1115.00",
+          "Merma (kg)": "105.00",
+          "Merma (%)": "8.61",
+          "Temperatura (°C)": "-18.5",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T10",
+          "Peso Ingreso (kg)": "1380.00",
+          "Peso Salida (kg)": "1270.00",
+          "Merma (kg)": "110.00",
+          "Merma (%)": "7.97",
+          "Temperatura (°C)": "-18.0",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T11",
+          "Peso Ingreso (kg)": "1290.50",
+          "Peso Salida (kg)": "1185.00",
+          "Merma (kg)": "105.50",
+          "Merma (%)": "8.18",
+          "Temperatura (°C)": "-19.0",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T12",
+          "Peso Ingreso (kg)": "1310.00",
+          "Peso Salida (kg)": "1200.00",
+          "Merma (kg)": "110.00",
+          "Merma (%)": "8.40",
+          "Temperatura (°C)": "-18.5",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T13",
+          "Peso Ingreso (kg)": "1270.00",
+          "Peso Salida (kg)": "1165.00",
+          "Merma (kg)": "105.00",
+          "Merma (%)": "8.27",
+          "Temperatura (°C)": "-18.0",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T14",
+          "Peso Ingreso (kg)": "1340.00",
+          "Peso Salida (kg)": "1230.00",
+          "Merma (kg)": "110.00",
+          "Merma (%)": "8.21",
+          "Temperatura (°C)": "-19.5",
+          "Observaciones": "Normal"
+        },
+        {
+          "Tina": "T15",
+          "Peso Ingreso (kg)": "1260.00",
+          "Peso Salida (kg)": "1155.00",
+          "Merma (kg)": "105.00",
+          "Merma (%)": "8.33",
+          "Temperatura (°C)": "-18.5",
+          "Observaciones": "Normal"
+        }
+      ]
+    }
+  ],
+  "firmasData": {
+    "Operario": {
+      "nombre": "Juan Pérez",
+      "fecha": "2026-02-05",
+      "firma": "https://res.cloudinary.com/tu-cuenta/image/upload/v123456/firmas/juan_perez.png"
+    },
+    "Supervisor": {
+      "nombre": "María García",
+      "fecha": "2026-02-05",
+      "firma": "https://res.cloudinary.com/tu-cuenta/image/upload/v123456/firmas/maria_garcia.png"
+    },
+    "Jefe de Producción": {
+      "nombre": "Carlos Rodríguez",
+      "fecha": "2026-02-05",
+      "firma": "https://res.cloudinary.com/tu-cuenta/image/upload/v123456/firmas/carlos_rodriguez.png"
+    }
+  },
+  "observaciones": "Control de tinas - Proceso de congelación normal. Merma promedio: 8.29%"
+}

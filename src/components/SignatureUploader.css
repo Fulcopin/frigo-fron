@@ -409,3 +409,212 @@
     transform: translateY(0);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   🆕 TABS PARA ELEGIR MÉTODO DE FIRMA
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.signature-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e2e8f0;
+  width: 100%;
+}
+
+.signature-tab {
+  flex: 1;
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: #718096;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.signature-tab:hover {
+  color: #4299e1;
+  background-color: rgba(66, 153, 225, 0.05);
+}
+
+.signature-tab.active {
+  color: #2b6cb0;
+  border-bottom-color: #4299e1;
+  background-color: rgba(66, 153, 225, 0.1);
+}
+
+.signature-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  animation: slideInTab 0.3s ease;
+}
+
+@keyframes slideInTab {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   📤 CONTENIDO TAB: SUBIR IMAGEN
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.signature-upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.3s ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ✍️ CONTENIDO TAB: DIBUJAR FIRMA
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.signature-draw-content {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 20px;
+  animation: fadeIn 0.3s ease;
+}
+
+.canvas-container {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  height: 200px;
+  margin: 0 auto;
+  border: 2px solid #cbd5e0;
+  border-radius: 8px;
+  background-color: white;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.signature-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none; /* Prevenir scroll en móviles */
+}
+
+.canvas-placeholder {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 16px;
+  color: #cbd5e0;
+  pointer-events: none;
+  user-select: none;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.canvas-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn-canvas-action {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-clear {
+  background: linear-gradient(135deg, #fc8181 0%, #f56565 100%);
+  color: white;
+}
+
+.btn-clear:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(245, 101, 101, 0.4);
+}
+
+.btn-save {
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: white;
+}
+
+.btn-save:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(72, 187, 120, 0.4);
+}
+
+.btn-canvas-action:active {
+  transform: translateY(0);
+}
+
+.btn-canvas-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   📱 Responsive para tabs y canvas
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .signature-tab {
+    padding: 10px 15px;
+    font-size: 13px;
+  }
+
+  .canvas-container {
+    height: 150px;
+  }
+
+  .canvas-placeholder {
+    font-size: 14px;
+  }
+
+  .canvas-actions {
+    flex-direction: column;
+  }
+
+  .btn-canvas-action {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .signature-tabs {
+    flex-direction: column;
+  }
+
+  .signature-tab {
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .signature-tab.active {
+    border-bottom-color: #4299e1;
+  }
+}

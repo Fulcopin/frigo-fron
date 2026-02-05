@@ -11,7 +11,8 @@ import {
   kilogramsToPounds 
 } from '../utils/unitConversion';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5074/api';
+// Importar desde apiConfig centralizado
+import { API_BASE_URL } from '../apiConfig';
 
 /**
  * Servicio de Formularios con Conversión Automática

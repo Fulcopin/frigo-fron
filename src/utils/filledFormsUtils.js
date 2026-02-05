@@ -294,6 +294,60 @@ export const autosaveForm = async (formId, partialData) => {
 };
 
 /**
+ * Función para crear un nuevo formulario llenado (POST)
+ * @param {object} formData - Datos del formulario a crear
+ * @param {number} formData.templateID - ID de la plantilla
+ * @param {object} formData.headerData - Datos del encabezado
+ * @param {array} formData.bodyData - Datos del cuerpo (tabla)
+ * @param {object} formData.firmasData - Datos de firmas
+ * @param {string} formData.observaciones - Observaciones opcionales
+ * @returns {Promise<object>} - Respuesta del servidor con el formulario creado
+ */
+export const createFilledForm = async (formData) => {
+  try {
+    console.log('📝 Creando nuevo formulario llenado...');
+    console.log('🌐 URL del endpoint:', API_URL_FILLED_FORMS);
+    
+    const payload = {
+      templateID: formData.templateID,
+      headerData: JSON.stringify(formData.headerData || {}),
+      bodyData: JSON.stringify(formData.bodyData || []),
+      firmasData: JSON.stringify(formData.firmasData || {}),
+      observaciones: formData.observaciones || ''
+    };
+
+    console.log('📦 Payload a enviar:', payload);
+
+    const response = await fetch(API_URL_FILLED_FORMS, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Error del servidor:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorText
+      });
+      throw new Error(`Error del servidor: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Formulario creado exitosamente:', result);
+    
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Error al crear formulario:', error);
+    throw new Error(`Error al crear formulario: ${error.message}`);
+  }
+};
+
+/**
  * ============================================
  * FUNCIONES PARA VERSIONAMIENTO DE PLANTILLAS
  * ============================================

@@ -28,17 +28,19 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 1rem;
-  background: #035b8d;
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
   cursor: pointer;
   user-select: none;
-  transition: none;
+  transition: all 0.2s;
   border-bottom: none;
   gap: 0.75rem;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
 }
 
 .accordion-section.expanded .accordion-header {
-  background: #035b8d;
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 100%);
   border-bottom: none;
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
 }
 
 .accordion-section.expanded .accordion-header .accordion-title,
@@ -51,11 +53,14 @@
 }
 
 .accordion-header:hover {
-  background: #024a73;
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
 }
 
 .accordion-section.expanded .accordion-header:hover {
-  background: #024a73;
+  background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
 }
 
 .accordion-header:active {
@@ -95,20 +100,23 @@
 
 .accordion-badge {
   display: inline-block;
-  background: white;
-  color: #035b8d;
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  color: #78350f;
   font-size: 0.75rem;
-  padding: 0.25rem 0.625rem;
-  border-radius: 12px;
-  font-weight: 600;
+  padding: 0.3rem 0.7rem;
+  border-radius: 14px;
+  font-weight: 700;
   margin-left: 0.5rem;
   white-space: nowrap;
   flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(251, 191, 36, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .accordion-section.expanded .accordion-badge {
-  background: white;
-  color: #035b8d;
+  background: linear-gradient(135deg, #fcd34d 0%, #fbbf24 100%);
+  color: #78350f;
+  box-shadow: 0 2px 6px rgba(251, 191, 36, 0.4);
 }
 
 .accordion-toggle {
@@ -116,35 +124,40 @@
   align-items: center;
   gap: 0.3rem;
   font-size: 0.75rem;
-  color: white;
-  font-weight: 500;
+  font-weight: 600;
   flex-shrink: 0;
-  padding: 0.4rem 0.7rem;
-  background: white;
-  border: 1px solid white;
-  border-radius: 3px;
-  transition: background 0.2s;
+  padding: 0.45rem 0.8rem;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  transition: all 0.2s;
   cursor: pointer;
   white-space: nowrap;
-  color: #035b8d;
+  color: #1e40af;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .accordion-toggle:hover {
-  background: #f5f5f5;
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
 }
 
 .accordion-toggle:active {
-  transform: none;
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .accordion-section.expanded .accordion-toggle {
-  background: white;
-  border-color: white;
-  color: #035b8d;
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #1e3a8a;
 }
 
 .accordion-section.expanded .accordion-toggle:hover {
-  background: #f5f5f5;
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
 }
 
 .toggle-text {

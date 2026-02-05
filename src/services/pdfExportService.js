@@ -64,7 +64,7 @@ const PAGE_CONFIG = {
  * 🖼️ Dibuja el encabezado de Frigolab (igual que en el formulario web)
  */
 const drawFrigolabHeader = async (doc, templateData) => {
-  const { codigo, nombre, version, headerData, createdAt } = templateData;
+  const { codigo, nombre, version, fechaVersion, headerData, createdAt } = templateData;
   
   // Fondo azul para el header
   doc.setFillColor(...COLORS.headerBg);
@@ -119,31 +119,41 @@ const drawFrigolabHeader = async (doc, templateData) => {
   const versionFinal = headerData?.version || headerData?.Versión || String(version || '1.0');
   doc.text(versionFinal, 175, 19);
   
-  // ✅ FECHA: Usar headerData.fecha (editable) o fecha de creación del formulario
+  // ✅ FECHA: Usar fechaVersion de la plantilla (NO la fecha de llenado)
   console.log('🔍 DEBUG FECHA PDF:', {
-    'headerData.fecha': headerData?.fecha,
-    'headerData.Fecha': headerData?.Fecha,
-    'createdAt': createdAt,
-    'createdAt type': typeof createdAt
+    'fechaVersion (de la plantilla)': fechaVersion,
+    'headerData.fecha (editable)': headerData?.fecha,
+    'createdAt (llenado del form)': createdAt
   });
   
   let fechaFinal = headerData?.fecha || headerData?.Fecha;
   
-  // Si no hay fecha editada, usar la fecha de creación del formulario
+  // Si no hay fecha editada manualmente, usar fechaVersion de la plantilla
+  if (!fechaFinal && fechaVersion) {
+    console.log('📅 Usando fechaVersion de la plantilla:', fechaVersion);
+    const versionDate = new Date(fechaVersion);
+    fechaFinal = versionDate.toLocaleDateString('es-EC', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+    console.log('📅 Fecha de versión formateada:', fechaFinal);
+  }
+  
+  // Fallback 1: Si no hay fechaVersion, usar createdAt (fecha de llenado)
   if (!fechaFinal && createdAt) {
-    console.log('📅 Usando createdAt:', createdAt);
+    console.log('⚠️ No hay fechaVersion, usando createdAt como fallback');
     const createdDate = new Date(createdAt);
     fechaFinal = createdDate.toLocaleDateString('es-EC', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'
     });
-    console.log('📅 Fecha formateada:', fechaFinal);
   }
   
-  // Si aún no hay fecha, usar la fecha actual
+  // Fallback 2: Si aún no hay fecha, usar la fecha actual
   if (!fechaFinal) {
-    console.log('⚠️ FALLBACK: Usando fecha actual');
+    console.log('⚠️ ÚLTIMO FALLBACK: Usando fecha actual');
     fechaFinal = new Date().toLocaleDateString('es-EC');
   }
   
@@ -329,8 +339,14 @@ const drawBodyTable = (doc, bodyData, bodyElements, startY) => {
 /**
  * ✍️ Dibuja sección de firmas
  */
-const drawSignaturesSection = (doc, firmasData, startY) => {
+const drawSignaturesSection = async (doc, firmasData, startY, template) => {
   let currentY = startY;
+  
+  console.log('📝 === INICIO DEBUG FIRMAS PDF ===');
+  console.log('firmasData recibido:', firmasData);
+  console.log('template recibido:', template);
+  console.log('Tipo de firmasData:', typeof firmasData);
+  console.log('Es array?:', Array.isArray(firmasData));
   
   // Verificar si hay espacio suficiente
   if (currentY > 220) {
@@ -349,14 +365,44 @@ const drawSignaturesSection = (doc, firmasData, startY) => {
   
   // Si firmasData es un objeto con estructura de puestos
   if (firmasData && typeof firmasData === 'object' && !Array.isArray(firmasData)) {
-    const firmasArray = Object.entries(firmasData);
+    // 🔧 FILTRAR: Solo incluir firmas que están en la plantilla actual
+    const templateFirmas = template?.firmas || [];
+    const puestosValidos = templateFirmas.map(f => f.puesto);
+    
+    console.log('🔍 Puestos válidos en template:', puestosValidos);
+    console.log('🔍 Puestos en formulario guardado:', Object.keys(firmasData));
+    
+    // Filtrar firmasData para solo incluir puestos que están en la plantilla
+    const firmasArray = Object.entries(firmasData)
+      .filter(([puesto]) => puestosValidos.includes(puesto));
+    
     const totalFirmas = firmasArray.length;
+    
+    console.log('📋 Total de firmas FILTRADAS:', totalFirmas);
+    console.log('📋 Firmas array FILTRADAS:', firmasArray);
+    
+    if (totalFirmas === 0) {
+      console.warn('⚠️ No hay firmas válidas para renderizar en el PDF');
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(150, 150, 150);
+      doc.text('No hay firmas registradas', 17, currentY);
+      return currentY + 10;
+    }
     
     // Calcular cuántas firmas por fila (máximo 2)
     const firmasPorFila = Math.min(2, totalFirmas);
     const anchoColumna = 175 / firmasPorFila;
     
-    firmasArray.forEach(([puesto, data], index) => {
+    // Usar for...of para soportar await
+    for (let index = 0; index < firmasArray.length; index++) {
+      const [puesto, data] = firmasArray[index];
+      
+      console.log(`\n🔍 Procesando firma ${index + 1}/${totalFirmas}`);
+      console.log('   Puesto:', puesto);
+      console.log('   Data completo:', data);
+      console.log('   Tipo de data:', typeof data);
+      
       // Determinar posición (columna izquierda o derecha)
       const columna = index % firmasPorFila;
       const xPos = 15 + (columna * anchoColumna) + 2;
@@ -383,12 +429,27 @@ const drawSignaturesSection = (doc, firmasData, startY) => {
       if (typeof data === 'object' && data !== null) {
         nombre = data.nombre || '';
         fecha = data.fecha || '';
-        // 🆕 Extraer información de la firma PNG
-        if (data.firma && data.firma.url) {
-          firmaImg = data.firma.url;
+        // 🆕 Extraer información de la firma PNG (URL o Base64)
+        if (data.firma) {
+          // Prioridad: url > base64
+          firmaImg = data.firma.url || data.firma.base64 || null;
+          
+          console.log('   ✅ Tiene objeto firma:', {
+            tieneFirma: !!firmaImg,
+            provider: data.firma.provider,
+            tieneUrl: !!data.firma.url,
+            tieneBase64: !!data.firma.base64,
+            urlType: typeof data.firma.url,
+            base64Type: typeof data.firma.base64,
+            urlPreview: data.firma.url ? data.firma.url.substring(0, 50) + '...' : 'null',
+            base64Preview: data.firma.base64 ? data.firma.base64.substring(0, 50) + '...' : 'null'
+          });
+        } else {
+          console.log('   ❌ NO tiene objeto firma');
         }
       } else {
         nombre = data || '';
+        console.log('   ⚠️ Data no es objeto, es string directo:', nombre);
       }
       
       // Puesto (en negrita y mayúsculas)
@@ -430,13 +491,49 @@ const drawSignaturesSection = (doc, firmasData, startY) => {
       
       // 🆕 Renderizar firma PNG si existe
       if (firmaImg) {
+        console.log('   🖼️ Intentando renderizar imagen de firma...');
+        console.log('   firmaImg length:', firmaImg.length);
+        console.log('   firmaImg preview:', firmaImg.substring(0, 100));
+        
         try {
           // Dimensiones de la imagen de firma
           const firmaImgWidth = anchoColumna - 8;
           const firmaImgHeight = 20; // Altura fija para mantener consistencia
           
-          // Añadir imagen de firma
-          doc.addImage(firmaImg, 'PNG', xPos, localY, firmaImgWidth, firmaImgHeight);
+          console.log('   📐 Dimensiones:', { width: firmaImgWidth, height: firmaImgHeight, x: xPos, y: localY });
+          
+          // 🔧 FIX: Si es URL de Cloudinary, convertir a Base64 primero para evitar problemas CORS y encoding
+          let imageToAdd = firmaImg;
+          
+          if (firmaImg.startsWith('http')) {
+            console.log('   🌐 Detectada URL externa, convirtiendo a Base64...');
+            try {
+              // Descargar imagen y convertir a Base64
+              const response = await fetch(firmaImg);
+              if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+              }
+              const blob = await response.blob();
+              
+              // Convertir blob a Base64
+              imageToAdd = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              
+              console.log('   ✅ Convertido a Base64 exitosamente');
+            } catch (fetchError) {
+              console.error('   ❌ Error al descargar imagen:', fetchError);
+              throw new Error(`No se pudo descargar la imagen: ${fetchError.message}`);
+            }
+          }
+          
+          // Añadir imagen de firma (ahora en Base64)
+          doc.addImage(imageToAdd, 'PNG', xPos, localY, firmaImgWidth, firmaImgHeight);
+          console.log('   ✅ Imagen agregada exitosamente');
+          
           localY += firmaImgHeight + 2;
           
           // Texto "Firma Digital" centrado bajo la imagen
@@ -447,7 +544,8 @@ const drawSignaturesSection = (doc, firmasData, startY) => {
           doc.setTextColor(...COLORS.text);
           localY += 5;
         } catch (error) {
-          console.error('Error al agregar imagen de firma:', error);
+          console.error('   ❌ Error al agregar imagen de firma:', error);
+          console.error('   Error completo:', error.message, error.stack);
           // Si hay error, mostrar línea tradicional
           doc.setDrawColor(80, 80, 80);
           doc.setLineWidth(0.3);
@@ -462,6 +560,7 @@ const drawSignaturesSection = (doc, firmasData, startY) => {
           localY += 5;
         }
       } else {
+        console.log('   ⚠️ NO hay imagen de firma para renderizar');
         // 📝 Línea de firma tradicional si no hay imagen
         doc.setDrawColor(80, 80, 80);
         doc.setLineWidth(0.3);
@@ -481,7 +580,9 @@ const drawSignaturesSection = (doc, firmasData, startY) => {
       if (columna === firmasPorFila - 1 || index === totalFirmas - 1) {
         currentY = Math.max(currentY, localY + 5);
       }
-    });
+    }
+    
+    console.log('📝 === FIN DEBUG FIRMAS PDF ===\n');
     
     currentY += 5;
   } else {
@@ -524,8 +625,9 @@ export const exportFormToPDF = async (form, template) => {
       codigo: template?.codigo || form.templateCodigo || 'N/A',
       nombre: template?.nombre || form.templateNombre || 'Formulario',
       version: template?.version || form.version || 1,
+      fechaVersion: template?.fechaVersion || form.fechaVersion, // ✅ FECHA DE VERSIÓN DE LA PLANTILLA
       headerData: form.headerData || {},
-      createdAt: form.createdAt || new Date().toISOString() // ✅ Fecha de creación del formulario
+      createdAt: form.createdAt || new Date().toISOString() // Fecha de creación del formulario (para referencia)
     };
     
     console.log('📋 Template Data:', templateData);
@@ -730,7 +832,7 @@ const rows = tableData.map((row, rowIndex) => {
     
     // 5. Dibujar firmas
     console.log('✍️ Dibujando firmas...');
-    drawSignaturesSection(doc, firmasData, currentY);
+    await drawSignaturesSection(doc, firmasData, currentY, template);
     
     // 6. Generar nombre del archivo
     const timestamp = new Date(form.createdAt || Date.now()).toISOString().split('T')[0];
@@ -787,7 +889,7 @@ export const exportMultipleFormsToPDF = async (forms, templates) => {
       currentY += 10;
       
       currentY = drawBodyTable(doc, bodyData, bodyElements, currentY);
-      drawSignaturesSection(doc, firmasData, currentY);
+      await drawSignaturesSection(doc, firmasData, currentY, template);
     }
     
     const fileName = `Formularios_Frigolab_${new Date().toISOString().split('T')[0]}.pdf`;
