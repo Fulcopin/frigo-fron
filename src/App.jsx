@@ -5,6 +5,8 @@ import Login from "./pages/Login"
 import ProtectedRoute from "./components/ProtectedRoute"
 import RoleBasedRoute from "./components/RoleBasedRoute"
 import UserInfo from "./components/UserInfo"
+import SessionTimer from "./components/SessionTimer"
+import ErrorBoundary from "./components/ErrorBoundary"
 import authService from "./services/authService"
 import Home from "./pages/Home"
 import CreateTemplate from "./pages/CreateTemplate"
@@ -15,6 +17,12 @@ import ViewForms from "./pages/ViewForms"
 import ManageTemplates from './pages/ManageTemplates';
 import DailyForms from './pages/DailyForms';
 import ERPDashboard from "./pages/ERPDashboard";
+import SignatureManagement from "./pages/SignatureManagement";
+import MySignature from "./pages/MySignature";
+import AlertManagement from "./pages/AlertManagement";
+import ConsumptionDashboard from "./pages/ConsumptionDashboard";
+import CatalogoFirmas from "./pages/CatalogoFirmas";
+import SessionHistory from "./pages/SessionHistory";
 import "./App.css"
 
 function Navigation() {
@@ -94,18 +102,55 @@ function Navigation() {
             👁️ Ver Formularios
           </Link>
           
-          {/* Formularios por Fecha - solo Admin y Supervisor */}
+         
+          
+          {/* Dashboard ERP - solo Admin y Supervisor */}
           {isAdminOrSupervisor && (
-            <Link to="/daily-forms" className={isActive("/daily-forms") ? "active" : ""}>
-              📅 Formularios por Fecha
+            <Link to="/dashboard-erp" className={isActive("/dashboard-erp") ? "active" : ""}>
+              📊 Descargar Datos
             </Link>
           )}
-          {isAdminOrSupervisor && (
-          <Link to="/dashboard-erp" className={isActive("/dashboard-erp") ? "active" : ""}>
-            📊 Dashboard ERP
-          </Link>
-        )}
           
+          {/* NUEVOS MÓDULOS */}
+          {/* Gestión de Firmas - visible para todos */}
+          <Link to="/signatures" className={isActive("/signatures") ? "active" : ""}>
+            ✍️ Firmas
+          </Link>
+          
+          {/* Catálogo de Firmas - solo Admin y Supervisor */}
+          {isAdminOrSupervisor && (
+            <Link to="/catalogo-firmas" className={isActive("/catalogo-firmas") ? "active" : ""}>
+              📋 Catálogo Firmas
+            </Link>
+          )}
+          
+          {/* Mi Firma Personal - visible para todos */}
+          <Link to="/my-signature" className={isActive("/my-signature") ? "active" : ""}>
+            🖊️ Mi Firma
+          </Link>
+          
+          {/* Gestión de Alertas - solo Admin y Supervisor */}
+          {isAdminOrSupervisor && (
+            <Link to="/alerts" className={isActive("/alerts") ? "active" : ""}>
+              🔔 Alertas
+            </Link>
+          )}
+          
+          {/* Dashboard de Consumos - solo Admin y Supervisor */}
+          {isAdminOrSupervisor && (
+            <Link to="/consumptions" className={isActive("/consumptions") ? "active" : ""}>
+              📊 Consumos
+            </Link>
+          )}
+          
+          {/* Registro de Tiempos - solo Admin y Supervisor */}
+          {isAdminOrSupervisor && (
+            <Link to="/session-history" className={isActive("/session-history") ? "active" : ""}>
+              ⏱️ Tiempos
+            </Link>
+          )}
+          
+          <SessionTimer />
           <UserInfo />
           
           <button 
@@ -138,11 +183,19 @@ function getPageName(pathname) {
     '/manage-templates': 'Administrar Plantillas',
     '/view-forms': 'Ver Formularios',
     '/daily-forms': 'Formularios por Fecha',
+    '/signatures': 'Gestión de Firmas',
+    '/catalogo-firmas': 'Catálogo de Firmas',
+    '/my-signature': 'Mi Firma Personal',
+    '/alerts': 'Gestión de Alertas',
+    '/dashboard-erp': 'Dashboard ERP',
+    '/consumption-dashboard': 'Dashboard de Consumos',
+    '/session-history': 'Registro de Tiempos'
   }
   
   // Para rutas dinámicas como /edit-template/:id
   if (pathname.includes('/edit-template')) return 'Editar Plantilla'
   if (pathname.includes('/edit-filled-form')) return 'Editar Formulario'
+  if (pathname.includes('/view-form')) return 'Ver Formulario'
   
   return routes[pathname] || 'Sistema de Formularios'
 }
@@ -182,14 +235,18 @@ function App() {
               {/* Llenar Formulario - Acceso para todos los roles */}
               <Route path="/fill-form" element={
                 <ProtectedRoute>
-                  <FillForm />
+                  <ErrorBoundary>
+                    <FillForm />
+                  </ErrorBoundary>
                 </ProtectedRoute>
               } />
               
               {/* Editar Formulario Lleno - Acceso para todos los roles */}
               <Route path="/edit-filled-form/:id" element={
                 <ProtectedRoute>
-                  <EditFilledForm />
+                  <ErrorBoundary>
+                    <EditFilledForm />
+                  </ErrorBoundary>
                 </ProtectedRoute>
               } />
               
@@ -213,11 +270,56 @@ function App() {
                   <DailyForms />
                 </RoleBasedRoute>
               } />
+              
+              {/* Dashboard ERP - Solo Admin y Supervisor */}
               <Route path="/dashboard-erp" element={
-          <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
-            <ERPDashboard />
-          </RoleBasedRoute>
-        } />
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <ERPDashboard />
+                </RoleBasedRoute>
+              } />
+              
+              {/* NUEVAS RUTAS */}
+              {/* Gestión de Firmas - Acceso para todos los roles */}
+              <Route path="/signatures" element={
+                <ProtectedRoute>
+                  <SignatureManagement />
+                </ProtectedRoute>
+              } />
+              
+              {/* Catálogo de Firmas - Solo Admin y Supervisor */}
+              <Route path="/catalogo-firmas" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <CatalogoFirmas />
+                </RoleBasedRoute>
+              } />
+              
+              {/* Mi Firma Personal - Acceso para todos los roles */}
+              <Route path="/my-signature" element={
+                <ProtectedRoute>
+                  <MySignature />
+                </ProtectedRoute>
+              } />
+              
+              {/* Gestión de Alertas - Solo Admin y Supervisor */}
+              <Route path="/alerts" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <AlertManagement />
+                </RoleBasedRoute>
+              } />
+              
+              {/* Dashboard de Consumos - Solo Admin y Supervisor */}
+              <Route path="/consumptions" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <ConsumptionDashboard />
+                </RoleBasedRoute>
+              } />
+              
+              {/* Registro de Tiempos - Solo Admin y Supervisor */}
+              <Route path="/session-history" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <SessionHistory />
+                </RoleBasedRoute>
+              } />
             </Routes>
           </main>
         </div>

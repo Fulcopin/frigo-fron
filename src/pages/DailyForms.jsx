@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
+import ScrollButton from "../components/ScrollButton";
 import "../styles/DailyForms.css";
 
 // Configuración API
@@ -702,6 +703,9 @@ function DailyForms() {
           </div>
         </div>
       )}
+
+      {/* 🔼🔽 Botones de scroll */}
+      <ScrollButton />
     </div>
   );
 }

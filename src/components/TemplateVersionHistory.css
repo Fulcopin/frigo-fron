@@ -43,44 +43,56 @@
 }
 
 /* Modal Header */
-.modal-header {
+.version-history-modal .modal-header {
   padding: 1.5rem 2rem;
   border-bottom: 2px solid #e5e7eb;
   position: relative;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: linear-gradient(135deg, #1e3a5f 0%, #2c5282 100%) !important;
+  color: white !important;
   border-radius: 12px 12px 0 0;
 }
 
-.modal-header h2 {
+.version-history-modal .modal-header h2 {
   margin: 0 0 0.5rem 0;
   font-size: 1.8rem;
+  color: white !important;
 }
 
-.modal-header .template-name {
+.version-history-modal .modal-header .subtitle {
   margin: 0;
   opacity: 0.9;
   font-size: 1rem;
+  color: #bfdbfe !important;
 }
 
-.close-button {
+.version-history-modal .modal-header .template-name {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 1rem;
+  color: #bfdbfe !important;
+}
+
+.version-history-modal .close-button {
   position: absolute;
   top: 1rem;
   right: 1rem;
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
+  background: #ef4444 !important;
+  border: 2px solid white;
   border-radius: 50%;
   width: 40px;
   height: 40px;
   font-size: 1.5rem;
   cursor: pointer;
-  color: white;
+  color: white !important;
   transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.close-button:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: rotate(90deg);
+.version-history-modal .close-button:hover {
+  background: #dc2626 !important;
+  transform: rotate(90deg) scale(1.1);
 }
 
 /* Modal Content */
@@ -295,6 +307,29 @@
   padding: 1.5rem;
   border: 2px solid #e5e7eb;
   transition: all 0.3s;
+}
+
+.version-content h4 {
+  margin: 0 0 0.5rem 0;
+  color: #1e3a5f !important;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.version-content p {
+  color: #2563eb !important;
+  font-size: 0.9rem;
+  margin: 0.25rem 0;
+}
+
+.version-content .label-actual {
+  background: #10b981;
+  color: white !important;
+  padding: 0.2rem 0.6rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-left: 0.5rem;
 }
 
 .version-content:hover {
@@ -844,12 +879,13 @@
     max-height: 90vh;
   }
 
-  .modal-header {
+  .version-history-modal .modal-header {
     padding: 1rem;
   }
 
-  .modal-header h2 {
+  .version-history-modal .modal-header h2 {
     font-size: 1.5rem;
+    color: white !important;
   }
 
   .modal-content {

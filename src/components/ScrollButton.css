@@ -1,0 +1,221 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   🔼🔽 ScrollButton.css - Botones flotantes de scroll
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.scroll-btn {
+  position: fixed;
+  right: 2rem;
+  z-index: 9998;
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  animation: fadeInScale 0.4s ease;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   🔼 BOTÓN SUBIR
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.scroll-btn-top {
+  bottom: 2rem;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+}
+
+.scroll-btn-top:hover {
+  transform: translateY(-8px) scale(1.05);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+.scroll-btn-top:active {
+  transform: translateY(-6px) scale(1.02);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   🔽 BOTÓN BAJAR
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.scroll-btn-bottom {
+  bottom: 6rem; /* Arriba del botón "Subir" */
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.scroll-btn-bottom:hover {
+  transform: translateY(8px) scale(1.05);
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+}
+
+.scroll-btn-bottom:active {
+  transform: translateY(6px) scale(1.02);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   📝 TEXTO DEL BOTÓN
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.scroll-btn-text {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  margin-top: -2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ✨ ANIMACIONES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.scroll-btn:hover svg {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   📱 RESPONSIVE - Tablets y Móviles
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Tablets */
+@media (max-width: 1024px) {
+  .scroll-btn {
+    width: 52px;
+    height: 52px;
+    right: 1.5rem;
+  }
+
+  .scroll-btn-top {
+    bottom: 1.5rem;
+  }
+
+  .scroll-btn-bottom {
+    bottom: 5rem;
+  }
+
+  .scroll-btn-text {
+    font-size: 8px;
+  }
+}
+
+/* Móviles */
+@media (max-width: 768px) {
+  .scroll-btn {
+    width: 48px;
+    height: 48px;
+    right: 1rem;
+  }
+
+  .scroll-btn-top {
+    bottom: 1rem;
+  }
+
+  .scroll-btn-bottom {
+    bottom: 4rem;
+  }
+
+  .scroll-btn-text {
+    font-size: 8px;
+  }
+
+  /* Iconos más pequeños en móviles */
+  .scroll-btn svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* Móviles pequeños */
+@media (max-width: 480px) {
+  .scroll-btn {
+    width: 44px;
+    height: 44px;
+    right: 0.75rem;
+  }
+
+  .scroll-btn-top {
+    bottom: 0.75rem;
+  }
+
+  .scroll-btn-bottom {
+    bottom: 3.5rem;
+  }
+
+  .scroll-btn-text {
+    font-size: 7px;
+  }
+
+  .scroll-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   🌙 MODO OSCURO (Opcional - si lo implementas en el futuro)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-color-scheme: dark) {
+  .scroll-btn {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  .scroll-btn-top:hover {
+    box-shadow: 0 8px 20px rgba(59, 130, 246, 0.6);
+  }
+
+  .scroll-btn-bottom:hover {
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.6);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ♿ ACCESIBILIDAD
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.scroll-btn:focus {
+  outline: 3px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 3px;
+}
+
+.scroll-btn:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Reducir animaciones si el usuario lo prefiere */
+@media (prefers-reduced-motion: reduce) {
+  .scroll-btn,
+  .scroll-btn svg {
+    animation: none !important;
+    transition: none !important;
+  }
+}

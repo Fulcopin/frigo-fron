@@ -26,8 +26,14 @@ const PUESTO_TO_ROL_MAP = {
   
   'JEFE DE CALIDAD': 'CALIDAD',
   'JEFE CALIDAD': 'CALIDAD',
+  'JEFE ASEGURAMIENTO CALIDAD': 'CALIDAD',
+  'JEFE DE ASEGURAMIENTO CALIDAD': 'CALIDAD',
   'SUPERVISOR DE CALIDAD': 'CALIDAD',
   'SUPERVISOR CALIDAD': 'CALIDAD',
+  'ANALISTA ASEGURAMIENTO CALIDAD': 'CALIDAD',
+  'ANALISTA DE ASEGURAMIENTO CALIDAD': 'CALIDAD',
+  'ANALISTA CALIDAD': 'CALIDAD',
+  'ANALISTA DE CALIDAD': 'CALIDAD',
   
   'JEFE DE MANTENIMIENTO': 'MANTENIMIENTO',
   'JEFE MANTENIMIENTO': 'MANTENIMIENTO',
@@ -110,37 +116,60 @@ export const detectRolFromPuesto = (puesto) => {
 };
 
 /**
- * 🔍 Filtrar usuarios por rol
+ * 🔍 Filtrar usuarios por rol (SOLO PARA MOSTRAR EN DROPDOWN)
  * @param {Array} users - Lista completa de usuarios
  * @param {string} puesto - Nombre del puesto para filtrar
- * @returns {Array} Usuarios filtrados por rol (o todos si no hay coincidencia)
+ * @returns {Array} TODOS los usuarios (sin filtro) para que aparezcan en el selector
  */
 export const filterUsersByPuesto = (users, puesto) => {
   if (!users || users.length === 0) {
     return [];
   }
   
-  const rol = detectRolFromPuesto(puesto);
-  
-  // Si no se detectó rol, devolver todos los usuarios
-  if (!rol) {
-    console.log('📋 Mostrando todos los usuarios (sin filtro de rol)');
-    return users;
+  // 📋 SIEMPRE devolver todos los usuarios para el dropdown
+  // El filtrado por rol solo se usa para validación de firma
+  console.log(`📋 Mostrando todos los ${users.length} usuarios en el selector`);
+  return users;
+};
+
+/**
+ * 🔐 Validar si un usuario puede firmar para un puesto específico
+ * @param {Array} users - Lista completa de usuarios
+ * @param {string} puesto - Nombre del puesto
+ * @param {string} userName - Nombre del usuario actual
+ * @returns {boolean} true si el usuario puede firmar
+ */
+export const canUserSignForPuesto = (users, puesto, userName) => {
+  if (!users || users.length === 0 || !userName) {
+    return false;
   }
   
-  // Filtrar por rol
-  const filtered = users.filter(user => 
+  const rol = detectRolFromPuesto(puesto);
+  
+  // Si no se detectó rol, permitir a todos
+  if (!rol) {
+    console.log(`ℹ️ No se detectó rol específico para: ${puesto}, permitiendo a todos`);
+    return true;
+  }
+  
+  // Filtrar usuarios con el rol específico
+  const usersWithRole = users.filter(user => 
     user.rol && user.rol.toUpperCase() === rol.toUpperCase()
   );
   
-  // Si no hay usuarios con ese rol, devolver todos
-  if (filtered.length === 0) {
-    console.log(`⚠️ No se encontraron usuarios con rol ${rol}, mostrando todos`);
-    return users;
-  }
+  // Verificar si el usuario actual está en la lista de usuarios con ese rol
+  const canSign = usersWithRole.some(user => 
+    (user.nombre || user.username)?.toLowerCase() === userName.toLowerCase()
+  );
   
-  console.log(`✅ ${filtered.length} usuarios filtrados para rol: ${rol}`);
-  return filtered;
+  console.log(`🔐 Validación de firma para "${puesto}":`, {
+    rol: rol,
+    usuariosConRol: usersWithRole.length,
+    usuarioActual: userName,
+    puedeFiremar: canSign
+  });
+  
+  return canSign;
 };
 
 /**

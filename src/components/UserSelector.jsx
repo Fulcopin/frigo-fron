@@ -76,7 +76,8 @@ const UserSelector = ({ users, value, onChange, placeholder, disabled, puesto })
   // Manejar selección de usuario
   const handleSelectUser = (user) => {
     setSearchTerm(user.nombreCompleto);
-    onChange(user.nombreCompleto);
+    // Pasar nombre y email: onChange(nombreCompleto, email, userObj)
+    onChange(user.nombreCompleto, user.email, user);
     setIsOpen(false);
     setSelectedIndex(-1);
   };

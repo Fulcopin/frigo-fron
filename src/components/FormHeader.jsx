@@ -2,7 +2,7 @@ import { useState } from "react"
 import "./FormHeader.css"
 import logoUrl from "../assets/logo.png"; 
 
-export default function FormHeader({ title, code, version, date }) {
+export default function FormHeader({ title, code, version, date, tipoProducto }) {
   const [isCollapsed, setIsCollapsed] = useState(true); // Empezar colapsado para ahorrar espacio
 
   // ⚡ CONTROL MANUAL - Sin scroll automático
@@ -34,17 +34,13 @@ export default function FormHeader({ title, code, version, date }) {
       <div className="form-header-content">
         <div className="form-header-left">
           <div className="company-logo">
-            <div className="logo-text">Frigolab "San Mateo"</div>
-            <div className="logo-subtitle">Exportadores de mariscos frescos y congelados</div>
-            
             <img 
               src={logoUrl} 
               className="logo-icon" 
               alt="Logo de Frigolab San Mateo" 
             />
-            <div className="company-contact">
-              <div>📍 Avenida San Vía a Rocafuerte - Parque del Atún</div>
-              <div>📞 593-5-3701161 ✉️ frigolab@frigolab.com.ec</div>
+            <div className="logo-text" style={{ color: '#1565c0', fontWeight: 'bold', fontSize: '1.1rem', marginTop: '6px' }}>
+              Frigolab "San Mateo"
             </div>
           </div>
         </div>
@@ -67,6 +63,13 @@ export default function FormHeader({ title, code, version, date }) {
               <span className="metadata-label">Fecha:</span>
               <span className="metadata-value">{date}</span>
             </div>
+            {/* 🦐🐟 NUEVO: Mostrar tipo de producto si existe */}
+            {tipoProducto && (
+              <div className="metadata-row">
+                <span className="metadata-label">Tipo Producto:</span>
+                <span className="metadata-value" style={{ fontWeight: 'bold', color: '#2563eb' }}>{tipoProducto}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

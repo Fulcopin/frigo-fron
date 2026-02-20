@@ -679,9 +679,26 @@
    📱 RESPONSIVE
    ======================================== */
 
+/* 📱 TABLETS - Más espacio lateral para movilización */
+@media (max-width: 1024px) {
+  .daily-forms-container {
+    padding: 2rem 2.5rem; /* Espacios laterales amplios */
+  }
+  
+  .forms-grid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 2rem; /* Más espacio entre cards */
+    padding: 0 1rem; /* Padding adicional para el grid */
+  }
+  
+  .form-card {
+    margin: 0 0.5rem; /* Margen lateral en cada card */
+  }
+}
+
 @media (max-width: 768px) {
   .daily-forms-container {
-    padding: 1rem;
+    padding: 1.5rem 2rem; /* Mantener espacio lateral generoso */
   }
 
   .page-title {
@@ -690,6 +707,7 @@
 
   .filter-section {
     flex-direction: column;
+    padding: 1.5rem 1rem; /* Espaciado interno */
   }
 
   .filter-group {
@@ -708,6 +726,12 @@
 
   .forms-grid {
     grid-template-columns: 1fr;
+    gap: 1.5rem;
+    padding: 0 1.5rem; /* Más espacio lateral en móviles */
+  }
+  
+  .form-card {
+    margin: 0 0.75rem; /* Margen lateral adicional */
   }
 
   .form-card-actions {
@@ -733,6 +757,21 @@
 
   .modal-btn {
     width: 100%;
+  }
+}
+
+/* 📱 MÓVILES PEQUEÑOS - Aún más espacio */
+@media (max-width: 480px) {
+  .daily-forms-container {
+    padding: 1rem 1.5rem; /* Espacios laterales generosos */
+  }
+  
+  .forms-grid {
+    padding: 0 1rem;
+  }
+  
+  .form-card {
+    margin: 0 0.5rem;
   }
 }
 

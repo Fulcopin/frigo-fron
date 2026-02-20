@@ -1,0 +1,359 @@
+/* ====================================
+   ESTILOS - DASHBOARD DE CONSUMOS
+   ==================================== */
+
+.consumption-dashboard {
+  padding: 2rem;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* Filtros */
+.filters-section {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.filters-container {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-label {
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.9rem;
+}
+
+.filter-input, .filter-select {
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+.filter-input:focus, .filter-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Vistas */
+.view-content {
+  margin-top: 2rem;
+}
+
+/* Tabla de Consumos */
+.consumption-table-container, .details-table-container {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.consumption-table, .details-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.consumption-table thead, .details-table thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.consumption-table th, .details-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.consumption-table td, .details-table td {
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  color: #4b5563;
+}
+
+.consumption-table tbody tr:hover, .details-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+.product-name {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.quantity {
+  font-weight: 600;
+  color: #3b82f6;
+  font-size: 1.1rem;
+}
+
+.consumption-table tfoot {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+.total-row td {
+  padding: 1rem;
+  font-size: 1.1rem;
+  color: #1f2937;
+}
+
+/* Selectores de Producto/Área */
+.product-selector, .area-selector {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.product-select, .area-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  margin-top: 0.5rem;
+}
+
+.product-details, .area-details {
+  margin-top: 2rem;
+}
+
+.product-details h3, .area-details h3 {
+  margin: 0 0 1rem 0;
+  color: #1f2937;
+  font-size: 1.3rem;
+}
+
+/* Comparación */
+.comparison-view {
+  padding: 1rem 0;
+}
+
+.comparison-controls {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  gap: 2rem;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.period-selector {
+  flex: 1;
+  min-width: 250px;
+}
+
+.period-selector h3 {
+  margin: 0 0 1rem 0;
+  color: #1f2937;
+}
+
+.period-inputs {
+  display: flex;
+  gap: 1rem;
+  flex-direction: column;
+}
+
+.btn-compare {
+  padding: 0.75rem 2rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1rem;
+  white-space: nowrap;
+  transition: transform 0.2s;
+}
+
+.btn-compare:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Resultados de Comparación */
+.comparison-results {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.comparison-results h3 {
+  margin: 0 0 1.5rem 0;
+  color: #1f2937;
+  font-size: 1.3rem;
+}
+
+.comparison-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.comparison-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.comparison-card h4 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  opacity: 0.9;
+}
+
+.comparison-value {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0.5rem 0;
+}
+
+.comparison-label {
+  margin: 0.5rem 0 0 0;
+  opacity: 0.9;
+  font-size: 0.95rem;
+}
+
+.comparison-card.difference {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.comparison-card.difference .comparison-value.positive {
+  color: #fff;
+}
+
+.comparison-card.difference .comparison-value.negative {
+  color: #fff;
+}
+
+.comparison-details-table {
+  margin-top: 2rem;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.comparison-table thead {
+  background: #f3f4f6;
+}
+
+.comparison-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.comparison-table td {
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  color: #4b5563;
+}
+
+.comparison-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+.comparison-table .positive {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.comparison-table .negative {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+/* Estadísticas adicionales */
+.stat-card.consumption {
+  border-left-color: #8b5cf6;
+}
+
+.stat-card.forms {
+  border-left-color: #ec4899;
+}
+
+.stat-card.areas {
+  border-left-color: #f59e0b;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .consumption-dashboard {
+    padding: 1.5rem;
+  }
+
+  .comparison-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 768px) {
+  .consumption-dashboard {
+    padding: 1rem;
+  }
+
+  .filters-container {
+    flex-direction: column;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .consumption-table-container, .details-table-container {
+    overflow-x: auto;
+  }
+
+  .consumption-table, .details-table {
+    min-width: 600px;
+  }
+
+  .comparison-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .period-inputs {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .stat-card {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .stat-icon {
+    font-size: 2rem;
+  }
+}

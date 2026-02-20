@@ -54,32 +54,41 @@
   
   /* Tabla con scroll horizontal suave */
   .table-wrapper {
-    overflow-x: auto;
+    overflow-x: auto !important;
     overflow-y: auto;
-    max-height: 500px; /* Más bajo para tablets */
+    max-height: 500px;
     -webkit-overflow-scrolling: touch; /* Scroll suave en iOS */
     border-radius: 10px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    padding: 1rem;
+    padding: 0; /* ❌ Quitar padding: evita que el scroll quede bloqueado */
     margin: 1.25rem 0;
-    /* ✅ PREVENIR SCROLL AUTOMÁTICO DE LA PÁGINA */
-    scroll-behavior: smooth;
     overflow-anchor: none;
-    contain: layout style paint;
+    /* ❌ ELIMINAR contain: layout style paint — bloquea el scroll horizontal */
+    touch-action: pan-x pan-y pinch-zoom; /* ✅ Permitir scroll horizontal táctil */
+    display: block;
+    width: 100%;
+  }
+
+  /* La tabla siempre ocupa su ancho real (no se comprime) */
+  .data-table {
+    min-width: 900px !important; /* Ancho mínimo fijo para que scrollee */
+    width: max-content !important;
+    table-layout: auto !important;
   }
 
   /* Celdas más espaciadas */
   .data-table th,
   .data-table td {
-    padding: 16px 14px !important;
-    min-width: 140px; /* Ancho mínimo para legibilidad */
+    padding: 12px 10px !important;
+    min-width: 110px !important; /* Suficiente para ser legible */
+    white-space: nowrap;
   }
 
   /* Inputs dentro de tablas */
   .data-table input,
   .data-table select,
   .data-table textarea {
-    min-width: 130px !important;
+    min-width: 90px !important;
     min-height: 44px !important;
     font-size: 15px !important;
     /* ✅ PREVENIR SCROLL AUTOMÁTICO AL HACER FOCUS EN TABLAS */
@@ -441,15 +450,27 @@
    ============================================ */
 @media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
   
-  /* Layout de una columna para mejor legibilidad */
+  /* Layout de una columna para mejor legibilidad en campos */
   .header-grid,
   .signatures-grid {
     grid-template-columns: 1fr !important;
   }
 
-  /* Tabla con más altura disponible */
+  /* ✅ TABLA EN PORTRAIT: scroll horizontal obligatorio */
   .table-wrapper {
     max-height: 600px;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-x pan-y pinch-zoom !important;
+    display: block !important;
+    width: 100% !important;
+  }
+
+  /* Tabla ocupa su ancho real y scrollea */
+  .data-table {
+    min-width: 900px !important;
+    width: max-content !important;
   }
 
   /* Botones apilados verticalmente */
@@ -507,13 +528,31 @@
 
   /* Bordes redondeados consistentes */
   .form-section,
-  .table-wrapper,
   .accordion-section,
   button,
   input,
   select,
   textarea {
     border-radius: 10px;
+  }
+
+  /* ✅ table-wrapper NO debe tener border-radius si queremos que el scroll funcione bien */
+  .table-wrapper {
+    border-radius: 8px;
+    overflow-x: auto !important;
+  }
+
+  /* Scrollbar visible en tablet para guiar al usuario */
+  .table-wrapper::-webkit-scrollbar {
+    height: 12px !important;
+    background: #e2e8f0;
+    border-radius: 8px;
+  }
+
+  .table-wrapper::-webkit-scrollbar-thumb {
+    background: linear-gradient(90deg, #2563eb, #1e40af) !important;
+    border-radius: 8px;
+    border: 2px solid #e2e8f0;
   }
 
   /* Espaciado vertical consistente */

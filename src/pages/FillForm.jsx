@@ -7,8 +7,9 @@ import AccordionSection from "../components/AccordionSection"
 import LoteSelectorAPI from "../components/LoteSelectorAPI"
 import SignatureUploader from "../components/SignatureUploader"
 import UserSelector from "../components/UserSelector"
+import ScrollButton from "../components/ScrollButton"
 import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
-import { fetchUsers, filterUsersByPuesto } from "../services/userService"
+import { fetchUsers, filterUsersByPuesto, canUserSignForPuesto } from "../services/userService"
 import "./FillForm.css"
 import "./FillForm.tablet.css"  // 📱 Estilos optimizados para tablets
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
@@ -43,10 +44,17 @@ const calcularFormulaDinamica = (formula, formData) => {
   try {
     const variables = formula.replace('sum(', '').replace(')', '').split(',').map(v => v.trim());
     const total = variables.reduce((acc, nombreVariable) => {
-      // Busca claves que coincidan exactamente o con sufijos
-      const key = Object.keys(formData).find(k => k === nombreVariable || k.startsWith(nombreVariable + '_'));
-      const numero = parseFloat(formData[key]);
-      return acc + (isNaN(numero) ? 0 : numero);
+      // Normalizar: quitar espacios y convertir a minúsculas para comparación flexible
+      // Esto permite que "peso1" matchee "PESO 1", "Peso 1", "peso1", etc.
+      const normalizar = (s) => (s || '').toLowerCase().replace(/[\s_-]/g, '');
+      const varNorm = normalizar(nombreVariable);
+      
+      const key = Object.keys(formData).find(k => {
+        const keyNorm = normalizar(k);
+        return keyNorm === varNorm || k === nombreVariable || k.startsWith(nombreVariable + '_');
+      });
+      const numero = Number.parseFloat(formData[key]);
+      return acc + (Number.isNaN(numero) ? 0 : numero);
     }, 0);
     return total === 0 ? "0.00" : total.toFixed(2);
   } catch (e) { return ""; }
@@ -79,6 +87,7 @@ function FillForm() {
   
   // 👥 Estados para usuarios de la API
   const [allUsers, setAllUsers] = useState([]) // Todos los usuarios de la API
+  const [catalogoFirmas, setCatalogoFirmas] = useState([]) // 📋 Firmas del catálogo
   const [loadingUsers, setLoadingUsers] = useState(false)
   const [usersError, setUsersError] = useState(null)
   
@@ -118,7 +127,8 @@ function FillForm() {
     }
     
     // 1️⃣ Verificar si el backend marcó este formulario como "maestro"
-    const isMasterFormFromBackend = selectedTemplate.isMasterForm === true;
+    // Checar ambas variantes de casing por seguridad (camelCase y PascalCase)
+    const isMasterFormFromBackend = selectedTemplate.isMasterForm === true || selectedTemplate.IsMasterForm === true;
     
     // 2️⃣ FALLBACK: Detectar por nombre si el backend no tiene el campo
     const formName = (selectedTemplate.nombre || '').toUpperCase();
@@ -128,15 +138,6 @@ function FillForm() {
     // - El backend lo marcó como maestro, O
     // - Es un formulario de Tinas (fallback por nombre)
     const shouldEnable = isMasterFormFromBackend || isTinasForm;
-    
-    console.log(`🔍 shouldEnableAutoSum - DETALLE COMPLETO:`, {
-      nombre: selectedTemplate.nombre,
-      templateID: selectedTemplate.templateID,
-      isMasterForm: selectedTemplate.isMasterForm,
-      isMasterFormType: typeof selectedTemplate.isMasterForm,
-      isTinasForm: isTinasForm,
-      resultado: shouldEnable ? '✅ ACTIVADO' : '⛔ DESACTIVADO'
-    });
     
     return shouldEnable;
   }, [selectedTemplate]);
@@ -298,7 +299,7 @@ useEffect(() => {
   }
 }, [headerData, bodyData, firmasData, lotesConfirmados, selectedLotes, apiDetailsData, apiMovimientoData, activeTabIndex]);
 
-  // 👥 NUEVO: Cargar usuarios de la API al montar el componente
+  // 👥 NUEVO: Cargar usuarios de la API + Catálogo de Firmas al montar el componente
   useEffect(() => {
     const loadUsers = async () => {
       setLoadingUsers(true);
@@ -318,6 +319,21 @@ useEffect(() => {
         const users = await fetchUsers(token);
         setAllUsers(users);
         console.log(`✅ ${users.length} usuarios cargados exitosamente`);
+        
+        // 📋 Cargar firmas del catálogo
+        try {
+          console.log('📋 Cargando catálogo de firmas...');
+          const catalogoResponse = await fetch(`${API_BASE_URL}/CatalogoFirmas?soloActivos=true`);
+          if (catalogoResponse.ok) {
+            const catalogoData = await catalogoResponse.json();
+            const firmasArray = Array.isArray(catalogoData) ? catalogoData : (catalogoData.$values || []);
+            setCatalogoFirmas(firmasArray);
+            console.log(`✅ ${firmasArray.length} firmas del catálogo cargadas`);
+          }
+        } catch (catalogoErr) {
+          console.warn('⚠️ No se pudo cargar el catálogo de firmas:', catalogoErr);
+        }
+        
       } catch (err) {
         console.error('❌ Error al cargar usuarios:', err);
         setUsersError(err.message);
@@ -392,16 +408,33 @@ useEffect(() => {
     }
   }, [apiCatalogData]);
 
-  // 1. CARGAR PLANTILLAS
+  // 1. CARGAR PLANTILLAS (PÚBLICAS + BORRADORES)
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const response = await fetch(API_URL_TEMPLATES);
-        if (!response.ok) throw new Error('No se pudo cargar la lista de plantillas');
-        let data = await response.json();
-        const templatesArray = Array.isArray(data) ? data : data.$values || [];
+        // 🆕 Cargar plantillas públicas Y borradores
+        const [publicResponse, draftsResponse] = await Promise.all([
+          fetch(API_URL_TEMPLATES),
+          fetch(`${API_URL_TEMPLATES}/drafts`)
+        ]);
         
-        const parsedData = templatesArray.map(template => ({
+        if (!publicResponse.ok) throw new Error('No se pudo cargar la lista de plantillas');
+        
+        let publicData = await publicResponse.json();
+        const publicArray = Array.isArray(publicData) ? publicData : publicData.$values || [];
+        
+        // 🆕 Cargar borradores (pueden fallar si el endpoint no existe)
+        let draftsArray = [];
+        if (draftsResponse.ok) {
+          const draftsData = await draftsResponse.json();
+          draftsArray = Array.isArray(draftsData) ? draftsData : draftsData.$values || [];
+          console.log('📝 Borradores cargados:', draftsArray.length);
+        }
+        
+        // 🆕 Combinar ambas listas
+        const allTemplates = [...publicArray, ...draftsArray];
+        
+        const parsedData = allTemplates.map(template => ({
           ...template,
           headerFields: typeof template.headerFields === 'string' ? JSON.parse(template.headerFields || '[]') : template.headerFields,
           bodyElements: typeof template.bodyElements === 'string' ? JSON.parse(template.bodyElements || '[]') : template.bodyElements,
@@ -519,6 +552,9 @@ useEffect(() => {
         const sectionData = {};
         (element.fields || []).forEach(field => { sectionData[field.label] = ""; });
         return { id: element.id, type: 'section', data: sectionData };
+      }
+      if (element.type === 'observaciones') {
+        return { id: element.id, type: 'observaciones', data: { texto: "" } };
       }
       if (element.type === 'table') {
         const numRows = element.defaultRows || 10;
@@ -2616,7 +2652,33 @@ useEffect(() => {
 
   // 🆕 FUNCIÓN PARA ACTUALIZAR FIRMA COMPLETA (con imagen)
   const handleFirmaUpdate = (puesto, firmaData) => {
-    setFirmasData(prev => ({...prev, [puesto]: firmaData}));
+    console.log('🔍 handleFirmaUpdate llamado:', { puesto, tieneFirma: !!firmaData?.firma });
+    
+    let updatedFirmaData = { ...firmaData };
+    
+    // Si se está subiendo/cargando una firma, capturar fecha y hora automáticamente
+    // Respetar configuración de la plantilla (capturaFecha / capturaHora)
+    if (firmaData.firma) {
+      const ahora = new Date();
+      const fechaActual = ahora.toISOString().split('T')[0]; // YYYY-MM-DD
+      const horaActual = ahora.toTimeString().slice(0, 5); // HH:MM
+      
+      // Buscar la config de esta firma en el template
+      const firmaConfig = (template?.firmas || []).find(f => f.puesto === puesto);
+      const capFecha = firmaConfig?.capturaFecha !== false; // default true
+      const capHora = firmaConfig?.capturaHora !== false;   // default true
+      
+      updatedFirmaData = {
+        ...firmaData,
+        ...(capFecha ? { fecha: fechaActual } : {}),
+        ...(capHora ? { hora: horaActual } : {}),
+        fechaHoraCapturada: true
+      };
+      
+      console.log(`📅 ✅ CAPTURA AUTOMÁTICA para ${puesto}: fecha=${capFecha ? fechaActual : 'desactivado'}, hora=${capHora ? horaActual : 'desactivado'}`);
+    }
+    
+    setFirmasData(prev => ({...prev, [puesto]: updatedFirmaData}));
     setHasUnsavedChanges(true);
   };
 
@@ -2767,20 +2829,129 @@ useEffect(() => {
     handleSafeExit(() => navigate('/historial'));
   };
 
-  // Autoguardado
+  // Autoguardado con manejo de errores y limpieza automática
   const saveToLocalStorage = () => {
     if (!selectedTemplate || id) return; 
-    const autosaveData = {
-      templateID: selectedTemplate.templateID,
-      headerData,
-      bodyData,
-      firmasData,
-      timestamp: new Date().toISOString()
-    };
-    const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
-    localStorage.setItem(key, JSON.stringify(autosaveData));
-    setAutoSaveStatus('saved');
-    setTimeout(() => setAutoSaveStatus(''), 2000);
+    
+    try {
+      // Preparar datos sin firmas (solo IDs) para reducir tamaño
+      const autosaveData = {
+        templateID: selectedTemplate.templateID,
+        headerData,
+        bodyData,
+        // NO guardar firmasData completo (contiene Base64 pesado)
+        // firmasData es un objeto {puesto: {datos}}, convertir a objeto sin firmas
+        firmasData: Object.keys(firmasData).reduce((acc, puesto) => {
+          const firma = firmasData[puesto];
+          acc[puesto] = {
+            nombre: firma?.nombre,
+            fecha: firma?.fecha,
+            hora: firma?.hora,
+            email: firma?.email,
+            // Solo indicar si tiene firma, no el contenido
+            hasFirma: !!firma?.firma
+          };
+          return acc;
+        }, {}),
+        timestamp: new Date().toISOString()
+      };
+      
+      const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
+      const dataString = JSON.stringify(autosaveData);
+      
+      // Verificar tamaño antes de guardar
+      const sizeInMB = new Blob([dataString]).size / (1024 * 1024);
+      console.log(`💾 Autoguardando (${sizeInMB.toFixed(2)} MB)...`);
+      
+      if (sizeInMB > 4) {
+        console.warn('⚠️ Datos muy grandes, limpiando autosaves antiguos...');
+        cleanOldAutosaves();
+      }
+      
+      localStorage.setItem(key, dataString);
+      setAutoSaveStatus('saved');
+      console.log('✅ Autoguardado exitoso');
+      setTimeout(() => setAutoSaveStatus(''), 2000);
+      
+    } catch (error) {
+      console.error('❌ Error al autoguardar:', error);
+      
+      if (error.name === 'QuotaExceededError') {
+        console.warn('🗑️ localStorage lleno, limpiando datos antiguos...');
+        cleanOldAutosaves();
+        
+        // Intentar guardar nuevamente después de limpiar
+        try {
+          const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
+          const autosaveData = {
+            templateID: selectedTemplate.templateID,
+            headerData,
+            bodyData,
+            firmasData: Object.keys(firmasData).reduce((acc, puesto) => {
+              const firma = firmasData[puesto];
+              acc[puesto] = {
+                nombre: firma?.nombre,
+                fecha: firma?.fecha,
+                hora: firma?.hora,
+                email: firma?.email,
+                hasFirma: !!firma?.firma
+              };
+              return acc;
+            }, {}),
+            timestamp: new Date().toISOString()
+          };
+          localStorage.setItem(key, JSON.stringify(autosaveData));
+          setAutoSaveStatus('saved');
+          console.log('✅ Autoguardado exitoso después de limpiar');
+        } catch (retryError) {
+          console.error('❌ No se pudo autoguardar incluso después de limpiar:', retryError);
+          setAutoSaveStatus('error');
+          // Mostrar mensaje al usuario
+          alert('⚠️ No se pudo autoguardar. localStorage está lleno. Los cambios se guardarán al enviar el formulario.');
+        }
+      } else {
+        setAutoSaveStatus('error');
+      }
+    }
+  };
+
+  // Función para limpiar autosaves antiguos
+  const cleanOldAutosaves = () => {
+    try {
+      const keysToRemove = [];
+      
+      // Buscar todas las claves de autosave
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(AUTOSAVE_KEY_PREFIX)) {
+          try {
+            const data = JSON.parse(localStorage.getItem(key));
+            const timestamp = new Date(data.timestamp);
+            const now = new Date();
+            const hoursDiff = (now - timestamp) / (1000 * 60 * 60);
+            
+            // Eliminar autosaves de más de 24 horas
+            if (hoursDiff > 24) {
+              keysToRemove.push(key);
+            }
+          } catch (e) {
+            // Si no se puede parsear, eliminar
+            keysToRemove.push(key);
+          }
+        }
+      }
+      
+      // Eliminar claves antiguas
+      keysToRemove.forEach(key => {
+        localStorage.removeItem(key);
+        console.log(`🗑️ Eliminado autosave antiguo: ${key}`);
+      });
+      
+      console.log(`✅ Limpieza completada. Eliminados ${keysToRemove.length} autosaves antiguos.`);
+      
+    } catch (error) {
+      console.error('❌ Error al limpiar autosaves:', error);
+    }
   };
 
   // Autoguardado periódico
@@ -2851,23 +3022,34 @@ useEffect(() => {
             // 🔥 PRIMERO: Actualizar el valor que el usuario escribió
             const updatedRow = { ...row, [columnLabel]: value };
             
-            // 🎯 VERIFICAR SI DEBEMOS CALCULAR AUTO-SUMA
+            // 🔥 PASO 1: Calcular columnas "calculated" con formula
+            // Si la tabla tiene "autoCalculate": true O si el template es maestro
+            const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+            if ((tableTemplate?.autoCalculate === true || selectedTemplate?.isMasterForm === true || selectedTemplate?.IsMasterForm === true) && tableTemplate?.columns) {
+              tableTemplate.columns.forEach(col => {
+                if (col.type === 'calculated' && col.formula) {
+                  const cellKey = col.label || col.id || col.name;
+                  const result = calcularFormulaDinamica(col.formula, updatedRow);
+                  if (result !== "") {
+                    updatedRow[cellKey] = result;
+                    console.log(`      🧮 [formula] ${cellKey} = ${result} (fórmula: ${col.formula})`);
+                  }
+                }
+              });
+            }
+
+            // 🎯 PASO 2: Auto-suma por nombre PESO/TOTAL (solo para formularios 15 tinas u otros marcados)
             const isAutoSumEnabled = shouldEnableAutoSum();
             
             console.log(`   🔍 ¿Auto-suma habilitado? ${isAutoSumEnabled ? '✅ SÍ' : '⛔ NO'}`);
-            console.log(`   🔍 Template actual:`, {
-              nombre: selectedTemplate?.nombre,
-              isMasterForm: selectedTemplate?.isMasterForm
-            });
             
-            // ⛔ SI AUTO-SUMA ESTÁ DESACTIVADO, RETORNAR INMEDIATAMENTE
+            // ⛔ SI AUTO-SUMA ESTÁ DESACTIVADO, RETORNAR (ya se calcularon las fórmulas arriba)
             if (!isAutoSumEnabled) {
-              console.log(`   ⏭️ Auto-suma DESACTIVADO - El usuario puede escribir libremente en TOTAL`);
-              return updatedRow; // ✅ SALIR SIN MODIFICAR NADA
+              console.log(`   ⏭️ Auto-suma por nombre DESACTIVADO`);
+              return updatedRow;
             }
             
             // 🎯 VERIFICAR SI ESTA TABLA TIENE COLUMNAS PESO (en la plantilla, NO en el row)
-            const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
             const tienePeso = tableTemplate?.columns?.some(col => {
               const colId = (col.id || col.name || '').toUpperCase();
               const colLabel = (col.label || col.header || '').toUpperCase();
@@ -3091,6 +3273,155 @@ useEffect(() => {
     const shouldBeInteger = labelLower.includes('cajas') || labelLower.includes('unidades') || labelLower.includes('piezas') || labelLower.includes('cantidad') || labelLower.includes('número');
     
     switch (field.type) {
+        // ✅ NUEVO: Campo de imagen
+        case "image":
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <input 
+                type="file" 
+                accept="image/*"
+                capture="environment"
+                onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (file) {
+                    // Verificar tamaño (max 5MB)
+                    if (file.size > 5 * 1024 * 1024) {
+                      alert('⚠️ La imagen es muy grande. Máximo 5MB.');
+                      return;
+                    }
+                    
+                    // Convertir a Base64
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      const base64String = reader.result;
+                      onChange(base64String);
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+                required={field.required}
+                style={{
+                  padding: '8px',
+                  border: '2px dashed #3b82f6',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              />
+              {value && (
+                <div style={{ position: 'relative' }}>
+                  <img 
+                    src={value} 
+                    alt="Preview" 
+                    style={{ 
+                      maxWidth: '100%', 
+                      maxHeight: '300px',
+                      borderRadius: '6px',
+                      border: '1px solid #e5e7eb'
+                    }} 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onChange('')}
+                    style={{
+                      position: 'absolute',
+                      top: '5px',
+                      right: '5px',
+                      background: '#ef4444',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      padding: '5px 10px',
+                      cursor: 'pointer',
+                      fontSize: '12px'
+                    }}
+                  >
+                    🗑️ Eliminar
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        
+        // ✅ NUEVO: Radio buttons (casillas de selección única)
+        case "radio":
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {options.map((option, index) => (
+                <label 
+                  key={`radio-${field.label}-${index}`}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    padding: '8px 12px',
+                    border: value === option ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    backgroundColor: value === option ? '#eff6ff' : 'white',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name={`radio-${field.label}`}
+                    value={option}
+                    checked={value === option}
+                    onChange={(e) => onChange(e.target.value)}
+                    required={field.required && index === 0}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '14px' }}>{option}</span>
+                </label>
+              ))}
+            </div>
+          );
+        
+        // ✅ NUEVO: Checkbox (casillas de selección múltiple)
+        case "checkbox":
+          // Valor es un array de strings separadas por coma
+          const selectedValues = value ? value.split(',').map(v => v.trim()) : [];
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {options.map((option, index) => {
+                const isChecked = selectedValues.includes(option);
+                return (
+                  <label 
+                    key={`checkbox-${field.label}-${index}`}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '8px',
+                      padding: '8px 12px',
+                      border: isChecked ? '2px solid #10b981' : '1px solid #e5e7eb',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      backgroundColor: isChecked ? '#d1fae5' : 'white',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      value={option}
+                      checked={isChecked}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        let newValues = [...selectedValues];
+                        if (checked) {
+                          newValues.push(option);
+                        } else {
+                          newValues = newValues.filter(v => v !== option);
+                        }
+                        onChange(newValues.join(', '));
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '14px' }}>{option}</span>
+                  </label>
+                );
+              })}
+            </div>
+          );
+        
         case "textarea": return <textarea {...commonProps} rows="3" />;
         case "date": return <input type="date" {...commonProps} />;
         case "time": return <input type="time" {...commonProps} />;
@@ -3163,11 +3494,20 @@ useEffect(() => {
       }
     }
     
+    // 🆕 Obtener datos del usuario logueado para guardar quién creó el formulario
+    const currentUser = authService.getCurrentUser();
+    
     const payload = {
       templateID: selectedTemplate.templateID,
       headerData: JSON.stringify(finalHeaderData),
       bodyData: JSON.stringify(bodyData),
       firmasData: JSON.stringify(firmasData),
+      // 🆕 NUEVOS CAMPOS: Guardar quién creó, el proceso y el área
+      filledBy: currentUser?.nombre || currentUser?.username || 'Usuario desconocido',
+      filledByEmail: currentUser?.email || '',
+      filledByRole: currentUser?.rol || '',
+      proceso: selectedTemplate.proceso || '',
+      area: selectedTemplate.proceso || '', // El "proceso" del template actúa como área
     };
 
     const method = id ? 'PUT' : 'POST';
@@ -3293,10 +3633,63 @@ useEffect(() => {
                 <div className="template-selection">
                     <div className="templates-grid">
                         {filteredTemplates.map((template) => (
-                            <div key={template.templateID} className="template-card" onClick={() => handleTemplateSelect(template.templateID)}>
+                            <div 
+                                key={template.templateID} 
+                                className="template-card" 
+                                onClick={() => handleTemplateSelect(template.templateID)}
+                                style={{
+                                    position: 'relative',
+                                    border: template.isDraft ? '3px solid #f59e0b' : undefined,
+                                    background: template.isDraft ? 'linear-gradient(135deg, #fef3c7 0%, #ffffff 100%)' : undefined
+                                }}
+                            >
+                                {/* 🆕 BADGE DE BORRADOR */}
+                                {template.isDraft && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '-10px',
+                                        right: '-10px',
+                                        background: '#f59e0b',
+                                        color: 'white',
+                                        padding: '4px 12px',
+                                        borderRadius: '12px',
+                                        fontSize: '12px',
+                                        fontWeight: 'bold',
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                                        zIndex: 10
+                                    }}>
+                                        📝 BORRADOR
+                                    </div>
+                                )}
+                                
                                 <div className="template-code">{template.codigo}</div>
-                                <h3>{template.nombre}</h3>
-                                {template.proceso && <p className="template-meta">Proceso: {template.proceso}</p>}
+                                <h3>
+                                    {template.nombre}
+                                    {template.isDraft && (
+                                        <span style={{
+                                            marginLeft: '8px',
+                                            fontSize: '16px'
+                                        }}>📝</span>
+                                    )}
+                                </h3>
+                                {template.proceso && <p className="template-meta">📂 Proceso: {template.proceso}</p>}
+                                {template.frecuencia && <p className="template-meta">📅 Frecuencia: {template.frecuencia}</p>}
+                                
+                                {/* 🆕 MENSAJE DE BORRADOR */}
+                                {template.isDraft && (
+                                    <p style={{
+                                        marginTop: '8px',
+                                        padding: '6px 10px',
+                                        background: '#fbbf24',
+                                        color: '#78350f',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        fontWeight: 'bold',
+                                        textAlign: 'center'
+                                    }}>
+                                        ⚠️ Plantilla en Borrador
+                                    </p>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -3557,8 +3950,8 @@ useEffect(() => {
               style={{
                 background: index === activeTabIndex 
                   ? 'white' 
-                  : 'rgba(255, 255, 255, 0.1)',
-                color: index === activeTabIndex ? '#035b8d' : 'white',
+                  : 'rgba(255, 255, 255, 0.92)',
+                color: index === activeTabIndex ? '#035b8d' : '#1e40af',
                 padding: '0.5rem 0.875rem',
                 borderRadius: '3px',
                 cursor: 'pointer',
@@ -3566,22 +3959,29 @@ useEffect(() => {
                 alignItems: 'center',
                 gap: '0.5rem',
                 transition: 'background 0.2s',
-                fontWeight: index === activeTabIndex ? '600' : 'normal',
+                fontWeight: index === activeTabIndex ? '700' : '500',
                 position: 'relative',
                 minWidth: '120px',
                 maxWidth: '200px',
                 fontSize: '0.875rem',
-                border: index === activeTabIndex ? '1px solid #e1e1e1' : '1px solid transparent'
+                border: index === activeTabIndex 
+                  ? '2px solid #3b82f6' 
+                  : '1px solid rgba(255,255,255,0.7)',
+                boxShadow: index === activeTabIndex 
+                  ? '0 2px 6px rgba(30,64,175,0.2)' 
+                  : 'none'
               }}
               onClick={() => switchToTab(index)}
               onMouseOver={(e) => {
                 if (index !== activeTabIndex) {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                  e.currentTarget.style.background = 'white';
+                  e.currentTarget.style.color = '#035b8d';
                 }
               }}
               onMouseOut={(e) => {
                 if (index !== activeTabIndex) {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.92)';
+                  e.currentTarget.style.color = '#1e40af';
                 }
               }}
             >
@@ -3623,7 +4023,7 @@ useEffect(() => {
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: index === activeTabIndex ? '#ef4444' : 'white',
+                  color: '#ef4444',
                   borderRadius: '3px',
                   width: '20px',
                   height: '20px',
@@ -3641,7 +4041,7 @@ useEffect(() => {
                 }}
                 onMouseOut={(e) => {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = index === activeTabIndex ? '#ef4444' : 'white';
+                  e.currentTarget.style.color = '#ef4444';
                 }}
                 title="Cerrar pestaña"
               >
@@ -3653,12 +4053,13 @@ useEffect(() => {
           {/* Info de pestañas abiertas */}
           <div style={{
             marginLeft: 'auto',
-            color: 'white',
+            color: '#1e40af',
             fontSize: '0.85rem',
-            opacity: 0.8,
+            fontWeight: '600',
             padding: '0.5rem 1rem',
-            background: 'rgba(0, 0, 0, 0.2)',
-            borderRadius: '6px'
+            background: 'rgba(255, 255, 255, 0.95)',
+            borderRadius: '6px',
+            border: '1px solid rgba(255,255,255,0.8)'
           }}>
             📊 {openTabs.length} formulario{openTabs.length !== 1 ? 's' : ''} abierto{openTabs.length !== 1 ? 's' : ''}
           </div>
@@ -3746,8 +4147,8 @@ useEffect(() => {
           {openTabs.length > 0 && (
             <>
               <div style={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                color: 'white',
+                background: 'rgba(255, 255, 255, 0.95)',
+                color: '#1e40af',
                 padding: '0.5rem 0.875rem',
                 borderRadius: '3px',
                 fontSize: '0.875rem',
@@ -3757,14 +4158,16 @@ useEffect(() => {
                 gap: '0.5rem',
                 cursor: 'pointer',
                 transition: 'background 0.2s',
-                border: '1px solid rgba(255, 255, 255, 0.2)'
+                border: '1px solid rgba(255, 255, 255, 0.8)'
               }}
               onClick={() => setShowTabsPanel(!showTabsPanel)}
               onMouseOver={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                e.currentTarget.style.background = 'white';
+                e.currentTarget.style.color = '#035b8d';
               }}
               onMouseOut={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.95)';
+                e.currentTarget.style.color = '#1e40af';
               }}
               title="Click para ver detalles de todas las pestañas">
                 <span>📋</span>
@@ -4074,6 +4477,29 @@ useEffect(() => {
       )}
 
       <div className="form-header-bar">
+        {selectedTemplate.proceso && (
+          <span style={{ 
+            marginRight: '15px', 
+            fontSize: '0.9rem', 
+            color: '#555',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px'
+          }}>
+            📂 <strong>Proceso:</strong> {selectedTemplate.proceso}
+          </span>
+        )}
+        {selectedTemplate.frecuencia && (
+          <span style={{ 
+            fontSize: '0.9rem', 
+            color: '#555',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '5px'
+          }}>
+            📅 <strong>Frecuencia:</strong> {selectedTemplate.frecuencia}
+          </span>
+        )}
       </div>
 
       {showSuccess && <div className="success-message">✅ {id ? 'Actualizado' : 'Guardado'} exitosamente</div>}
@@ -5132,6 +5558,47 @@ useEffect(() => {
           const currentElementData = bodyData[elementIndex];
           if (!currentElementData) return null;
 
+          if (element.type === 'observaciones') {
+            return (
+              <AccordionSection
+                key={element.id}
+                title={element.title || 'Observaciones'}
+                icon="📝"
+                badge="texto libre"
+                isExpanded={expandedSections[`body_${elementIndex}`] !== false}
+                onToggle={() => toggleBodySection(elementIndex)}
+              >
+                <textarea
+                  value={currentElementData?.data?.texto || ""}
+                  onChange={(e) => {
+                    const newBodyData = [...bodyData];
+                    newBodyData[elementIndex] = {
+                      ...newBodyData[elementIndex],
+                      data: { texto: e.target.value }
+                    };
+                    setBodyData(newBodyData);
+                  }}
+                  placeholder={`Escriba las ${element.title || 'observaciones'} aquí...`}
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    fontSize: '0.95rem',
+                    border: '2px solid #c4b5fd',
+                    borderRadius: '8px',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={(e) => { e.target.style.borderColor = '#7c3aed'; }}
+                  onBlur={(e) => { e.target.style.borderColor = '#c4b5fd'; }}
+                />
+              </AccordionSection>
+            );
+          }
+
           if (element.type === 'section') {
             return (
               <AccordionSection
@@ -5203,53 +5670,15 @@ useEffect(() => {
       type="button"
       onClick={() => addTableColumn(elementIndex)} 
       className="btn-add-column"
-      style={{ 
-        background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', 
-        color: 'white', 
-        padding: '8px 14px', 
-        borderRadius: '6px',
-        fontWeight: '600',
-        border: 'none',
-        cursor: 'pointer',
-        boxShadow: '0 2px 6px rgba(139, 92, 246, 0.3)',
-        transition: 'all 0.2s'
-      }}
-      onMouseOver={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.4)';
-      }}
-      onMouseOut={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 2px 6px rgba(139, 92, 246, 0.3)';
-      }}
     >
-      ➕ Columna
+      + Columna
     </button>
     <button 
       type="button"
       onClick={() => removeTableColumn(elementIndex)} 
       className="btn-remove-column"
-      style={{ 
-        background: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)', 
-        color: 'white', 
-        padding: '8px 14px', 
-        borderRadius: '6px',
-        fontWeight: '600',
-        border: 'none',
-        cursor: 'pointer',
-        boxShadow: '0 2px 6px rgba(236, 72, 153, 0.3)',
-        transition: 'all 0.2s'
-      }}
-      onMouseOver={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow = '0 4px 12px rgba(236, 72, 153, 0.4)';
-      }}
-      onMouseOut={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 2px 6px rgba(236, 72, 153, 0.3)';
-      }}
     >
-      ➖ Columna
+      − Columna
     </button>
     <button 
       type="button"
@@ -5258,25 +5687,6 @@ useEffect(() => {
         if (success) alert("Estructura guardada");
       }} 
       className="btn-save-structure"
-      style={{ 
-        background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)', 
-        color: 'white', 
-        padding: '8px 14px', 
-        borderRadius: '6px',
-        fontWeight: '600',
-        border: 'none',
-        cursor: 'pointer',
-        boxShadow: '0 2px 6px rgba(20, 184, 166, 0.3)',
-        transition: 'all 0.2s'
-      }}
-      onMouseOver={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow = '0 4px 12px rgba(20, 184, 166, 0.4)';
-      }}
-      onMouseOut={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 2px 6px rgba(20, 184, 166, 0.3)';
-      }}
     >
       💾 Guardar Estructura
     </button>
@@ -5418,6 +5828,18 @@ useEffect(() => {
             );
           }
 
+          // 3b. 🧮 COLUMNA CALCULATED CON FORMULA (si la tabla tiene autoCalculate O el template es maestro)
+          if ((element.autoCalculate === true || selectedTemplate?.isMasterForm === true || selectedTemplate?.IsMasterForm === true) && col.type === 'calculated' && col.formula) {
+            // Recalcular en tiempo real directo desde los valores del row
+            const valorCalculado = calcularFormulaDinamica(col.formula, row);
+            return (
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
+                  style={{backgroundColor: '#e6fffa', textAlign: 'right', fontWeight: 'bold', color: '#1f5c1f'}}>
+                {valorCalculado || row[cellName] || '0.00'}
+              </td>
+            );
+          }
+
           // 4. CASO NORMAL (Resto de formularios o columnas normales)
           return (
             <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border">
@@ -5499,9 +5921,72 @@ useEffect(() => {
           >
             <div className="signatures-grid">
               {selectedTemplate.firmas.map((firma, index) => {
-                // Filtrar usuarios según el rol del puesto
+                // 🔐 OBTENER USUARIO ACTUAL DE LA SESIÓN
+                const currentUser = authService.getCurrentUser();
+                
+                // 📋 TODOS los usuarios de la API (para mostrar en el dropdown)
                 const filteredUsers = filterUsersByPuesto(allUsers, firma.puesto);
                 
+                // � DEBUG: Ver qué hay en el catálogo
+                console.log(`🔍 Buscando en catálogo para "${firma.puesto}":`, {
+                  totalEnCatalogo: catalogoFirmas.length,
+                  puestosEnCatalogo: catalogoFirmas.map(f => f.puesto),
+                  buscando: firma.puesto
+                });
+                
+                // �📋 Firmas del catálogo que coincidan con este puesto
+                const firmasCatalogo = catalogoFirmas
+                  .filter(f => f.puesto.toLowerCase().includes(firma.puesto.toLowerCase()) || 
+                               firma.puesto.toLowerCase().includes(f.puesto.toLowerCase()))
+                  .map(f => ({
+                    id: `catalogo-${f.catalogoFirmaID}`,
+                    nombreCompleto: f.nombreCompleto || f.puesto,
+                    email: f.correo || '',
+                    rol: f.puesto,
+                    nombreEmpresa: f.area || 'Catálogo de Firmas',
+                    puesto: f.puesto,
+                    area: f.area || '',
+                    source: 'catalogo'
+                  }));
+                
+                // ✅ MOSTRAR TODOS: Combinar API + Catálogo (sin duplicados)
+                const combinedUsers = [...filteredUsers, ...firmasCatalogo];
+                const uniqueUsers = Array.from(
+                  new Map(combinedUsers.map(u => [u.nombreCompleto?.toLowerCase() || u.id, u])).values()
+                );
+                
+                // 🔐 VERIFICAR SI USUARIO PUEDE FIRMAR
+                // Primero verificar si el nombre seleccionado es del catálogo
+                const nombreSeleccionado = firmasData[firma.puesto]?.nombre || '';
+                const esUsuarioDeCatalogo = firmasCatalogo.some(
+                  f => f.nombreCompleto?.toLowerCase() === nombreSeleccionado.toLowerCase()
+                );
+                
+                // Si es del catálogo → siempre puede firmar
+                // Si es de la API → validar por rol
+                const userCanSign = esUsuarioDeCatalogo || canUserSignForPuesto(
+                  allUsers, 
+                  firma.puesto, 
+                  currentUser?.nombre || currentUser?.username
+                );
+                
+                console.log(`👥 Usuarios disponibles para "${firma.puesto}":`, {
+                  apiTotal: filteredUsers.length,
+                  catalogoTotal: firmasCatalogo.length,
+                  combinadosAntesDedup: combinedUsers.length,
+                  uniqueUsersTotal: uniqueUsers.length,
+                  usuarioActual: currentUser?.nombre,
+                  nombreSeleccionado: nombreSeleccionado,
+                  esDelCatalogo: esUsuarioDeCatalogo,
+                  puedeFiremar: userCanSign,
+                  razon: esUsuarioDeCatalogo ? '✅ Usuario del catálogo (sin restricción)' : (userCanSign ? '✅ Usuario con rol correcto' : '❌ Usuario sin rol para este puesto'),
+                  usuariosAPI: filteredUsers.map(u => `${u.nombreCompleto} (${u.source || 'api'})`),
+                  usuariosCatalogo: firmasCatalogo.map(u => `${u.nombreCompleto} (${u.source})`)
+                });
+                
+                if (uniqueUsers.length === 0) {
+                  console.warn(`⚠️ No hay usuarios disponibles para "${firma.puesto}". Agregar en /catalogo-firmas`);
+                }
                 return (
                   <div key={index} className="signature-box">
                     <h4>{firma.puesto}</h4>
@@ -5515,33 +6000,64 @@ useEffect(() => {
                           {usersError && <span className="error-hint"> (Error: {usersError})</span>}
                         </label>
                         
-                        {/* 👥 Selector de usuarios con filtro por rol */}
+                        {/* 👥 Selector de usuarios con filtro por rol + catálogo */}
                         <UserSelector
-                          users={filteredUsers}
+                          users={uniqueUsers}
                           value={firmasData[firma.puesto]?.nombre || ""}
-                          onChange={(nombreCompleto) => handleFirmaChange(firma.puesto, "nombre", nombreCompleto)}
+                          onChange={(nombreCompleto, email) => {
+                            setFirmasData(prev => ({
+                              ...prev,
+                              [firma.puesto]: {
+                                ...prev[firma.puesto],
+                                nombre: nombreCompleto,
+                                ...(email ? { email } : {})
+                              }
+                            }));
+                            setHasUnsavedChanges(true);
+                          }}
                           placeholder={loadingUsers ? "Cargando..." : "Buscar o escribir nombre..."}
                           disabled={loadingUsers}
                           puesto={firma.puesto}
                         />
                       </div>
+                      {firma.capturaFecha !== false && (
                       <div className="form-field">
-                        <label>Fecha:</label>
+                        <label>
+                          Fecha: <span className="auto-hint">(Captura automática - editable)</span>
+                        </label>
                         <input 
                           type="date" 
                           value={firmasData[firma.puesto]?.fecha || ""} 
-                          onChange={(e) => handleFirmaChange(firma.puesto, "fecha", e.target.value)} 
+                          onChange={(e) => handleFirmaChange(firma.puesto, "fecha", e.target.value)}
+                          title="Fecha capturada automáticamente al firmar (editable)"
                         />
                       </div>
+                      )}
+                      {firma.capturaHora !== false && (
+                      <div className="form-field">
+                        <label>
+                          Hora: <span className="auto-hint">(Captura automática - editable)</span>
+                        </label>
+                        <input 
+                          type="time" 
+                          value={firmasData[firma.puesto]?.hora || ""} 
+                          onChange={(e) => handleFirmaChange(firma.puesto, "hora", e.target.value)}
+                          title="Hora capturada automáticamente al firmar (editable)"
+                        />
+                      </div>
+                      )}
                     </div>
 
                     {/* 🆕 Componente de carga de firma PNG */}
                     <SignatureUploader
+                      key={`${firma.puesto}-${firmasData[firma.puesto]?.nombre || 'sin-nombre'}`}
                       puesto={firma.puesto}
                       firmaData={firmasData[firma.puesto]}
                       onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
                       cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
                       cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
+                      currentUser={currentUser}
+                      canSign={userCanSign}
                     />
                   </div>
                 );
@@ -5556,6 +6072,9 @@ useEffect(() => {
           </button>
         </div>
       </div>
+
+      {/* 🔼🔽 Botones de scroll */}
+      <ScrollButton />
     </div>
   );
 }

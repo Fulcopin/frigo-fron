@@ -1,11 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom"; // Asumiendo que usas react-router-dom
-import "./ManageTemplates.css"; // Crearemos este archivo CSS a continuación
+import { Link } from "react-router-dom";
+import "./ManageTemplates.css";
 import { API_BASE_URL } from "../apiConfig";
 import TemplateVersionHistory from "../components/TemplateVersionHistory";
-//const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
+import authService from "../services/authService";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 
 function ManageTemplates() {
@@ -14,6 +14,24 @@ function ManageTemplates() {
   const [error, setError] = useState(null);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // 📝 Historial manual
+  const [showManualHistory, setShowManualHistory] = useState(false);
+  const [manualHistoryTemplate, setManualHistoryTemplate] = useState(null);
+  const [manualHistoryEntries, setManualHistoryEntries] = useState([]);
+  const [newHistoryMotivo, setNewHistoryMotivo] = useState('');
+  const [newHistoryCambio, setNewHistoryCambio] = useState('');
+  const [newHistoryResponsable, setNewHistoryResponsable] = useState('');
+
+  // 👁️ Pre-visualización
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewTemplate, setPreviewTemplate] = useState(null);
+
+  const currentUser = authService.getCurrentUser();
+  
+  // 🔒 Solo admin puede eliminar (SGI y tu persona)
+  const canDelete = currentUser?.rol === 'admin';
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -35,14 +53,27 @@ function ManageTemplates() {
     fetchTemplates();
   }, []);
 
+  // 🔍 Filtrar plantillas por búsqueda
+  const filteredTemplates = templates.filter(t => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      (t.nombre || '').toLowerCase().includes(term) ||
+      (t.codigo || '').toLowerCase().includes(term) ||
+      (t.proceso || '').toLowerCase().includes(term)
+    );
+  });
+
   const handleDeleteTemplate = async (templateId) => {
-    // 1. Pedir confirmación al usuario
-    if (!window.confirm("¿Estás seguro de que quieres eliminar esta PLANTILLA? Esta acción es permanente y no se puede deshacer.")) {
+    if (!canDelete) {
+      alert("⚠️ Solo el personal de Sistema de Gestión Integrado puede eliminar plantillas.");
+      return;
+    }
+    if (!globalThis.confirm("¿Estás seguro de que quieres eliminar esta PLANTILLA? Esta acción es permanente y no se puede deshacer.")) {
       return;
     }
 
     try {
-      // 2. Enviar la petición DELETE al backend
       const response = await fetch(`${API_URL_TEMPLATES}/${templateId}`, {
         method: 'DELETE',
       });
@@ -51,7 +82,6 @@ function ManageTemplates() {
         throw new Error("Error al eliminar la plantilla desde el servidor.");
       }
 
-      // 3. Actualizar el estado local para remover la plantilla de la lista
       setTemplates(prevTemplates => prevTemplates.filter(t => t.templateID !== templateId));
       alert("Plantilla eliminada exitosamente.");
 
@@ -71,6 +101,170 @@ function ManageTemplates() {
     setSelectedTemplate(null);
   };
 
+  // ========== 📝 HISTORIAL MANUAL ==========
+  const MANUAL_HISTORY_KEY = 'fishcort_manual_template_history';
+
+  const loadManualHistory = (templateId) => {
+    try {
+      const all = JSON.parse(localStorage.getItem(MANUAL_HISTORY_KEY) || '{}');
+      return all[templateId] || [];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveManualHistory = (templateId, entries) => {
+    try {
+      const all = JSON.parse(localStorage.getItem(MANUAL_HISTORY_KEY) || '{}');
+      all[templateId] = entries;
+      localStorage.setItem(MANUAL_HISTORY_KEY, JSON.stringify(all));
+    } catch (e) {
+      console.error('Error guardando historial manual:', e);
+    }
+  };
+
+  const handleOpenManualHistory = (template) => {
+    setManualHistoryTemplate(template);
+    setManualHistoryEntries(loadManualHistory(template.templateID));
+    setNewHistoryMotivo('');
+    setNewHistoryCambio('');
+    setNewHistoryResponsable(currentUser?.nombre || currentUser?.username || '');
+    setShowManualHistory(true);
+  };
+
+  const handleAddManualEntry = () => {
+    if (!newHistoryMotivo.trim() || !newHistoryCambio.trim()) {
+      alert('Por favor completa el motivo y el cambio realizado.');
+      return;
+    }
+    const newEntry = {
+      id: Date.now(),
+      fecha: new Date().toISOString(),
+      motivo: newHistoryMotivo.trim(),
+      cambioRealizado: newHistoryCambio.trim(),
+      responsable: newHistoryResponsable.trim() || 'N/A',
+      version: manualHistoryTemplate.version || 'N/A'
+    };
+    const updated = [newEntry, ...manualHistoryEntries];
+    setManualHistoryEntries(updated);
+    saveManualHistory(manualHistoryTemplate.templateID, updated);
+    setNewHistoryMotivo('');
+    setNewHistoryCambio('');
+  };
+
+  const handleDeleteManualEntry = (entryId) => {
+    if (!globalThis.confirm('¿Eliminar este registro del historial?')) return;
+    const updated = manualHistoryEntries.filter(e => e.id !== entryId);
+    setManualHistoryEntries(updated);
+    saveManualHistory(manualHistoryTemplate.templateID, updated);
+  };
+
+  // ========== 👁️ PRE-VISUALIZACIÓN ==========
+  const handlePreview = async (template) => {
+    try {
+      const response = await fetch(`${API_URL_TEMPLATES}/${template.templateID}`);
+      if (!response.ok) throw new Error('Error al cargar plantilla');
+      const data = await response.json();
+      
+      const parsed = {
+        ...data,
+        headerFields: data.headerFields ? JSON.parse(data.headerFields) : [],
+        bodyElements: data.bodyElements ? JSON.parse(data.bodyElements) : [],
+        firmas: data.firmas ? JSON.parse(data.firmas) : [],
+      };
+      setPreviewTemplate(parsed);
+      setShowPreview(true);
+    } catch (err) {
+      alert('Error al cargar la vista previa: ' + err.message);
+    }
+  };
+
+  // ========== 📄 DESCARGAR PLANTILLA VACÍA ==========
+  const handleDownloadEmpty = async (template) => {
+    try {
+      const response = await fetch(`${API_URL_TEMPLATES}/${template.templateID}`);
+      if (!response.ok) throw new Error('Error al cargar plantilla');
+      const data = await response.json();
+      
+      const parsed = {
+        ...data,
+        headerFields: data.headerFields ? JSON.parse(data.headerFields) : [],
+        bodyElements: data.bodyElements ? JSON.parse(data.bodyElements) : [],
+        firmas: data.firmas ? JSON.parse(data.firmas) : [],
+      };
+
+      // Generar HTML para imprimir como PDF
+      const printWindow = globalThis.open('', '_blank');
+      if (!printWindow) {
+        alert('Por favor permite las ventanas emergentes para descargar');
+        return;
+      }
+
+      const headerFieldsHtml = parsed.headerFields.map(f => 
+        `<tr><td style="font-weight:600;width:200px;background:#f0f4ff;padding:8px;border:1px solid #ccc;">${f.label || 'Campo'}</td><td style="padding:8px;border:1px solid #ccc;min-width:250px;">&nbsp;</td></tr>`
+      ).join('');
+
+      const bodyHtml = parsed.bodyElements.map(el => {
+        if (el.type === 'table') {
+          const cols = el.columns || [];
+          const headerRow = cols.map(c => `<th style="padding:6px 8px;border:1px solid #ccc;background:#e8eef6;font-size:11px;">${c.label || ''}</th>`).join('');
+          const emptyRows = Array.from({ length: 10 }, () => 
+            cols.map(() => `<td style="padding:6px 8px;border:1px solid #ccc;min-height:24px;">&nbsp;</td>`).join('')
+          ).map(r => `<tr>${r}</tr>`).join('');
+          return `<div style="margin-top:16px;"><h3 style="font-size:13px;margin-bottom:6px;">${el.title || 'Tabla'}</h3><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>${headerRow}</tr></thead><tbody>${emptyRows}</tbody></table></div>`;
+        }
+        if (el.type === 'section') {
+          const fields = (el.fields || []).map(f => 
+            `<tr><td style="font-weight:600;width:180px;background:#f9fafb;padding:6px;border:1px solid #ccc;font-size:11px;">${f.label || ''}</td><td style="padding:6px;border:1px solid #ccc;">&nbsp;</td></tr>`
+          ).join('');
+          return `<div style="margin-top:16px;"><h3 style="font-size:13px;margin-bottom:6px;">${el.title || 'Sección'}</h3><table style="width:100%;border-collapse:collapse;">${fields}</table></div>`;
+        }
+        return '';
+      }).join('');
+
+      const firmasHtml = parsed.firmas.length > 0 ? `
+        <div style="margin-top:30px;display:flex;justify-content:space-around;flex-wrap:wrap;">
+          ${parsed.firmas.map(f => `
+            <div style="text-align:center;min-width:150px;margin:10px;">
+              <div style="border-bottom:1px solid #333;height:60px;margin-bottom:5px;"></div>
+              <div style="font-size:11px;font-weight:600;">${f.puesto || 'Firma'}</div>
+              <div style="font-size:10px;color:#666;">Nombre: ____________</div>
+              <div style="font-size:10px;color:#666;">Fecha: __/__/____</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : '';
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>${parsed.codigo} - ${parsed.nombre}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+            @media print { body { padding: 10px; } }
+          </style>
+        </head>
+        <body>
+          <div style="text-align:center;margin-bottom:20px;">
+            <h1 style="font-size:16px;margin:0;">${parsed.nombre}</h1>
+            <p style="font-size:12px;color:#666;margin:4px 0;">Código: ${parsed.codigo} | Versión: ${parsed.version || 'N/A'}</p>
+            ${parsed.objetivo ? `<p style="font-size:11px;color:#555;">${parsed.objetivo}</p>` : ''}
+          </div>
+          ${headerFieldsHtml ? `<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${headerFieldsHtml}</table>` : ''}
+          ${bodyHtml}
+          ${firmasHtml}
+          <script>window.onload = function() { window.print(); }</script>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+
+    } catch (err) {
+      alert('Error al generar la descarga: ' + err.message);
+    }
+  };
+
   if (loading) return <div className="manage-templates"><h1>Cargando plantillas...</h1></div>;
   if (error) return <div className="manage-templates"><h1 className="error-message">Error: {error}</h1></div>;
 
@@ -83,20 +277,65 @@ function ManageTemplates() {
         </Link>
       </div>
 
-      {templates.length === 0 ? (
+      {/* 🔍 BUSCADOR */}
+      <div className="search-bar-manage">
+        <span className="search-icon-manage">🔍</span>
+        <input
+          type="text"
+          placeholder="Buscar por nombre, código o proceso..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="search-input-manage"
+        />
+        {searchTerm && (
+          <button className="search-clear-manage" onClick={() => setSearchTerm('')}>✕</button>
+        )}
+        <span className="search-count-manage">{filteredTemplates.length} de {templates.length}</span>
+      </div>
+
+      {filteredTemplates.length === 0 ? (
         <div className="empty-state-card">
-          <p>No hay plantillas disponibles. ¡Crea la primera!</p>
+          <p>{searchTerm ? `No se encontraron plantillas con "${searchTerm}"` : 'No hay plantillas disponibles. ¡Crea la primera!'}</p>
         </div>
       ) : (
         <div className="templates-list">
-          {templates.map((template) => (
+          {filteredTemplates.map((template) => (
             <div key={template.templateID} className="template-card-manage">
               <div className="template-card-info">
                 <span className="template-code">{template.codigo}</span>
                 <h3>{template.nombre}</h3>
                 <span className="template-version">Versión: {template.version}</span>
+                {template.proceso && <span className="template-proceso">📁 {template.proceso}</span>}
               </div>
               <div className="template-card-actions">
+                {/* 👁️ Vista previa */}
+                <button 
+                  onClick={() => handlePreview(template)} 
+                  className="btn-preview"
+                  title="Vista previa del formulario"
+                >
+                  👁️ Vista Previa
+                </button>
+
+                {/* 📄 Descargar vacía */}
+                <button 
+                  onClick={() => handleDownloadEmpty(template)} 
+                  className="btn-download-empty"
+                  title="Descargar plantilla vacía como PDF"
+                >
+                  📄 Descargar Vacía
+                </button>
+
+                {/* 📝 Historial manual */}
+                <button 
+                  onClick={() => handleOpenManualHistory(template)} 
+                  className="btn-manual-history"
+                  title="Registro manual de cambios"
+                >
+                  📝 Registro Cambios
+                </button>
+
+                {/* 📚 Historial automático (comparativo) */}
                 <button 
                   onClick={() => handleViewVersionHistory(template)} 
                   className="btn-info"
@@ -104,31 +343,256 @@ function ManageTemplates() {
                 >
                   📚 Historial
                 </button>
+
                 <Link 
                   to={`/edit-template/${template.templateID}`} 
                   className="btn-secondary"
                 >
                   ✏️ Editar
                 </Link>
-                <button 
-                  onClick={() => handleDeleteTemplate(template.templateID)} 
-                  className="btn-danger"
-                >
-                  🗑️ Eliminar
-                </button>
+                
+                {/* 🔒 Solo admin puede eliminar */}
+                {canDelete && (
+                  <button 
+                    onClick={() => handleDeleteTemplate(template.templateID)} 
+                    className="btn-danger"
+                  >
+                    🗑️ Eliminar
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Modal de Historial de Versiones */}
+      {/* Modal de Historial de Versiones (comparativo automático) */}
       {showVersionHistory && selectedTemplate && (
         <TemplateVersionHistory
           templateId={selectedTemplate.templateID}
           templateName={selectedTemplate.nombre}
           onClose={handleCloseVersionHistory}
         />
+      )}
+
+      {/* ========== MODAL: HISTORIAL MANUAL ========== */}
+      {showManualHistory && manualHistoryTemplate && (
+        <div className="modal-overlay" onClick={() => setShowManualHistory(false)}>
+          <div className="modal-manual-history" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header-mh">
+              <div>
+                <h2>📝 Registro de Cambios</h2>
+                <p className="modal-subtitle-mh">{manualHistoryTemplate.codigo} — {manualHistoryTemplate.nombre}</p>
+              </div>
+              <button className="modal-close-mh" onClick={() => setShowManualHistory(false)}>✕</button>
+            </div>
+
+            {/* Formulario para agregar nuevo registro */}
+            <div className="mh-form">
+              <h3>➕ Agregar Nuevo Registro</h3>
+              <div className="mh-form-grid">
+                <div className="mh-field">
+                  <label>Motivo del cambio *</label>
+                  <input 
+                    type="text" 
+                    value={newHistoryMotivo} 
+                    onChange={(e) => setNewHistoryMotivo(e.target.value)}
+                    placeholder="Ej: Solicitud de SGI, Revisión periódica..."
+                  />
+                </div>
+                <div className="mh-field">
+                  <label>Cambio realizado *</label>
+                  <textarea 
+                    value={newHistoryCambio} 
+                    onChange={(e) => setNewHistoryCambio(e.target.value)}
+                    placeholder="Describe qué se modificó..."
+                    rows={3}
+                  />
+                </div>
+                <div className="mh-field">
+                  <label>Responsable</label>
+                  <input 
+                    type="text" 
+                    value={newHistoryResponsable} 
+                    onChange={(e) => setNewHistoryResponsable(e.target.value)}
+                    placeholder="Nombre de quien solicita/realiza"
+                  />
+                </div>
+              </div>
+              <button className="btn-add-mh" onClick={handleAddManualEntry}>
+                💾 Agregar Registro
+              </button>
+            </div>
+
+            {/* Lista de registros */}
+            <div className="mh-entries">
+              <h3>📋 Historial ({manualHistoryEntries.length})</h3>
+              {manualHistoryEntries.length === 0 ? (
+                <p className="mh-empty">No hay registros aún. Agrega el primero arriba.</p>
+              ) : (
+                <div className="mh-entries-list">
+                  {manualHistoryEntries.map((entry) => (
+                    <div key={entry.id} className="mh-entry-card">
+                      <div className="mh-entry-header">
+                        <span className="mh-entry-date">
+                          📅 {new Date(entry.fecha).toLocaleDateString('es-EC', {
+                            day: '2-digit', month: 'short', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit'
+                          })}
+                        </span>
+                        <span className="mh-entry-version">v{entry.version}</span>
+                        <button 
+                          className="mh-entry-delete" 
+                          onClick={() => handleDeleteManualEntry(entry.id)}
+                          title="Eliminar registro"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                      <div className="mh-entry-body">
+                        <div className="mh-entry-field">
+                          <strong>Motivo:</strong> {entry.motivo}
+                        </div>
+                        <div className="mh-entry-field">
+                          <strong>Cambio:</strong> {entry.cambioRealizado}
+                        </div>
+                        <div className="mh-entry-field mh-entry-responsable">
+                          👤 {entry.responsable}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== MODAL: PRE-VISUALIZACIÓN ========== */}
+      {showPreview && previewTemplate && (
+        <div className="modal-overlay" onClick={() => setShowPreview(false)}>
+          <div className="modal-preview" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header-preview">
+              <div>
+                <h2>👁️ Vista Previa del Formulario</h2>
+                <p className="modal-subtitle-mh">{previewTemplate.codigo} — {previewTemplate.nombre} (v{previewTemplate.version})</p>
+              </div>
+              <button className="modal-close-mh" onClick={() => setShowPreview(false)}>✕</button>
+            </div>
+
+            <div className="preview-content">
+              {/* Info general */}
+              {previewTemplate.objetivo && (
+                <div className="preview-info-box">
+                  <strong>Objetivo:</strong> {previewTemplate.objetivo}
+                </div>
+              )}
+
+              {/* Campos de encabezado */}
+              {previewTemplate.headerFields.length > 0 && (
+                <div className="preview-section">
+                  <h3>📝 Encabezado</h3>
+                  <table className="preview-table">
+                    <tbody>
+                      {previewTemplate.headerFields.map((f, i) => (
+                        <tr key={i}>
+                          <td className="preview-label">{f.label || 'Campo'}</td>
+                          <td className="preview-value">
+                            {f.type === 'select' ? (
+                              <select disabled><option>— Seleccionar —</option>{(f.options || []).map((o, j) => <option key={j}>{o}</option>)}</select>
+                            ) : f.type === 'date' ? (
+                              <input type="date" disabled />
+                            ) : f.type === 'time' ? (
+                              <input type="time" disabled />
+                            ) : f.type === 'textarea' ? (
+                              <textarea disabled placeholder={f.label} rows={2} />
+                            ) : (
+                              <input type={f.type || 'text'} disabled placeholder={f.label} />
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Body elements */}
+              {previewTemplate.bodyElements.map((el, idx) => (
+                <div key={idx} className="preview-section">
+                  <h3>{el.type === 'table' ? '📊' : '📝'} {el.title || 'Sección'}</h3>
+                  
+                  {el.type === 'table' && (
+                    <div className="preview-table-wrapper">
+                      <table className="preview-table preview-table-body">
+                        <thead>
+                          <tr>
+                            {(el.columns || []).map((c, ci) => (
+                              <th key={ci}>{c.label || `Col ${ci + 1}`}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[0, 1, 2].map(rowIdx => (
+                            <tr key={rowIdx}>
+                              {(el.columns || []).map((c, ci) => (
+                                <td key={ci}>
+                                  {c.type === 'select' ? (
+                                    <select disabled style={{ width: '100%' }}>
+                                      <option>—</option>
+                                      {(c.options || []).map((o, j) => <option key={j}>{o}</option>)}
+                                    </select>
+                                  ) : (
+                                    <input type={c.type || 'text'} disabled placeholder="..." style={{ width: '100%' }} />
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {el.type === 'section' && (
+                    <table className="preview-table">
+                      <tbody>
+                        {(el.fields || []).map((f, fi) => (
+                          <tr key={fi}>
+                            <td className="preview-label">{f.label || 'Campo'}</td>
+                            <td className="preview-value">
+                              <input type={f.type || 'text'} disabled placeholder={f.label} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ))}
+
+              {/* Firmas */}
+              {previewTemplate.firmas.length > 0 && (
+                <div className="preview-section">
+                  <h3>✍️ Firmas</h3>
+                  <div className="preview-firmas">
+                    {previewTemplate.firmas.map((f, i) => (
+                      <div key={i} className="preview-firma-box">
+                        <div className="preview-firma-area">Firma</div>
+                        <div className="preview-firma-puesto">{f.puesto || 'Cargo'}</div>
+                        <div className="preview-firma-fields">
+                          <span>Nombre: ____________</span>
+                          <span>Fecha: __/__/____</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

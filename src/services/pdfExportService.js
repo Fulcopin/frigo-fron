@@ -476,6 +476,17 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
         localY += 5;
       }
       
+      // 🆕 Mostrar email del firmante (si existe)
+      const email = typeof data === 'object' && data !== null ? (data.email || '') : '';
+      if (email) {
+        doc.setFontSize(7);
+        doc.setTextColor(0, 102, 204);
+        doc.text(`📧 ${email}`, xPos, localY);
+        doc.setTextColor(...COLORS.text);
+        doc.setFontSize(9);
+        localY += 4;
+      }
+      
       // Mostrar fecha (si existe)
       if (fecha) {
         doc.setFontSize(8);

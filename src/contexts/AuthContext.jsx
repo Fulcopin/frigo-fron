@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import authService from '../services/authService'; // ✅ IMPORTANTE: Importar el servicio
+import sessionTimeService from '../services/sessionTimeService'; // ⏱️ Servicio de tiempo
 
 const AuthContext = createContext(null);
 
@@ -17,16 +18,33 @@ export const AuthProvider = ({ children }) => {
 
   // Verificar si hay sesión guardada al cargar la página
   useEffect(() => {
-    // Usamos el servicio para verificar la sesión, no lo hacemos manual aquí
     if (authService.isSessionActive()) {
       const currentUser = authService.getCurrentUser();
       setUser(currentUser);
+      // ⏱️ Solo iniciar cronómetro si NO hay uno ya activo (no sobreescribir al recargar)
+      if (!sessionTimeService.getSessionStart() && currentUser) {
+        sessionTimeService.startSession(currentUser);
+      }
     } else {
-      // Si la sesión no es válida o expiró, limpiamos
+      // Si la sesión no es válida o expiró, guardar registro y limpiar
+      sessionTimeService.endSession();
       authService.logout();
       setUser(null);
     }
     setLoading(false);
+  }, []);
+
+  // ⏱️ Guardar snapshot de sesión automáticamente al cerrar la pestaña/navegador
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Guardar el tiempo transcurrido SIN borrar el cronómetro
+      // → si el usuario recarga, el cronómetro continúa desde el inicio original
+      // → si cierra el navegador, el historial ya tiene el registro guardado
+      sessionTimeService.saveSessionSnapshot();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
   const login = async (username, password) => {
@@ -37,6 +55,8 @@ export const AuthProvider = ({ children }) => {
       if (result.success) {
         // Si la API responde OK, actualizamos el estado global de React
         setUser(result.user);
+        // ⏱️ Iniciar cronómetro de sesión
+        sessionTimeService.startSession(result.user);
         return { success: true, user: result.user };
       } else {
         return { success: false, error: result.error };
@@ -48,6 +68,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    // ⏱️ Detener cronómetro y guardar registro
+    sessionTimeService.endSession();
     authService.logout(); // Limpia localStorage
     setUser(null); // Limpia estado de React
   };

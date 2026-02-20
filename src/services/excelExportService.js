@@ -445,6 +445,18 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
       worksheet.getRow(currentRow).height = 16;
       currentRow++;
       
+      // 🆕 Email del firmante (si existe)
+      const email1 = (typeof firmaData1 === 'object' && firmaData1 !== null) ? (firmaData1.email || '') : '';
+      if (email1) {
+        worksheet.mergeCells(currentRow, 1, currentRow, 4);
+        const emailCell1 = worksheet.getCell(currentRow, 1);
+        emailCell1.value = `📧 ${email1}`;
+        emailCell1.font = { size: 8, color: { argb: 'FF0066CC' } };
+        emailCell1.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+        worksheet.getRow(currentRow).height = 14;
+        currentRow++;
+      }
+      
       // Fecha (si existe)
       if (fecha1) {
         worksheet.mergeCells(currentRow, 1, currentRow, 4);
@@ -519,6 +531,17 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
       nombreCell2.font = { size: 9, italic: !nombre2 };
       nombreCell2.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
       currentRow++;
+      
+      // 🆕 Email del firmante (si existe)
+      const email2 = (typeof firmaData2 === 'object' && firmaData2 !== null) ? (firmaData2.email || '') : '';
+      if (email2) {
+        worksheet.mergeCells(currentRow, 5, currentRow, 8);
+        const emailCell2 = worksheet.getCell(currentRow, 5);
+        emailCell2.value = `📧 ${email2}`;
+        emailCell2.font = { size: 8, color: { argb: 'FF0066CC' } };
+        emailCell2.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+        currentRow++;
+      }
       
       // Fecha (si existe)
       if (fecha2) {

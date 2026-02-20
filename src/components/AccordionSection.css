@@ -43,9 +43,13 @@
   box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
 }
 
-.accordion-section.expanded .accordion-header .accordion-title,
-.accordion-section.expanded .accordion-header .accordion-toggle {
+.accordion-section.expanded .accordion-header .accordion-title {
   color: white;
+}
+
+.accordion-section.expanded .accordion-header .accordion-toggle {
+  color: #1e3a8a;
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .accordion-section.expanded .accordion-header .accordion-icon {
@@ -185,12 +189,13 @@
   scroll-margin: 0 !important;
   scroll-padding: 0 !important;
   overscroll-behavior: none !important;
-  contain: layout style paint !important;
 }
 
 .accordion-section.expanded .accordion-content {
-  max-height: 10000px;
+  max-height: none; /* ✅ Sin límite de altura — dejar que el contenido defina su tamaño */
   padding: 1rem;
+  overflow-x: auto; /* ✅ Scroll horizontal para tablas anchas */
+  overflow-y: visible;
   animation: slideDown 0.3s ease;
 }
 

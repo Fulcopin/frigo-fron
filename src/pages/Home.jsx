@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
+import ScrollButton from "../components/ScrollButton"
 import "./Home.css"
 import { API_BASE_URL } from "../apiConfig";
 
@@ -166,6 +167,9 @@ function Home() {
           </div>
         </div>
       </div>
+
+      {/* 🔼🔽 Botones de scroll */}
+      <ScrollButton />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import './SignatureUploader.css';
 
@@ -16,32 +16,68 @@ import './SignatureUploader.css';
  * @param {function} onFirmaChange - Callback cuando cambia la firma
  * @param {string} cloudinaryCloudName - (Opcional) Cloud name de Cloudinary
  * @param {string} cloudinaryUploadPreset - (Opcional) Upload preset de Cloudinary
+ * @param {object} currentUser - (Opcional) Usuario actual de la sesión
+ * @param {boolean} canSign - (Opcional) Si el usuario puede firmar este puesto
  */
 const SignatureUploader = ({
   puesto,
   firmaData,
   onFirmaChange,
   cloudinaryCloudName,
-  cloudinaryUploadPreset
+  cloudinaryUploadPreset,
+  currentUser,
+  canSign = true
 }) => {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [activeTab, setActiveTab] = useState('upload'); // 'upload' o 'draw'
+  const [activeTab, setActiveTab] = useState('upload');
   const [isDrawing, setIsDrawing] = useState(false);
+  const [autoLoadedSignature, setAutoLoadedSignature] = useState(false);
   
-  // Refs para canvas
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
+  const isDrawingRef = useRef(false);
 
-  // Determinar modo de operación
   const useCloudinary = cloudinaryCloudName && cloudinaryUploadPreset;
   const firmaUrl = firmaData?.firma?.url || firmaData?.firma?.base64;
   const hasFirma = !!firmaUrl;
 
-  /**
-   * 🔥 MÉTODO 1: Subir a Cloudinary
-   */
+  // 🔐 VALIDACIÓN: ¿El usuario actual puede firmar?
+  const selectedName = firmaData?.nombre || '';
+  const currentUserName = currentUser?.nombre || currentUser?.username || '';
+  const isCurrentUserSelected = selectedName && selectedName.toLowerCase() === currentUserName.toLowerCase();
+  const canUploadSignature = !selectedName || canSign || isCurrentUserSelected;
+
+  // Auto-carga de firma guardada cuando el nombre seleccionado coincide con el usuario actual
+  useEffect(() => {
+    if (hasFirma || autoLoadedSignature) return;
+    if (!selectedName) return; // No hay nombre seleccionado aún
+    if (!isCurrentUserSelected) return; // El nombre seleccionado NO es el usuario actual
+
+    // Usar el prop currentUser directamente (viene de authService.getCurrentUser())
+    if (!currentUser?.username && !currentUser?.email) return;
+
+    const signatureKey = `signature_${(currentUser.username || currentUser.email || '').toLowerCase()}`;
+    const savedSignature = localStorage.getItem(signatureKey);
+
+    if (savedSignature) {
+      console.log(`✅ Auto-cargando firma guardada para: ${currentUser.nombre || currentUser.username} en puesto: ${puesto}`);
+      
+      onFirmaChange({
+        ...firmaData,
+        firma: {
+          base64: savedSignature,
+          url: savedSignature,
+          provider: 'mysignature-auto',
+          uploaded_at: new Date().toISOString()
+        }
+      });
+
+      setAutoLoadedSignature(true);
+    }
+  }, [selectedName, isCurrentUserSelected, hasFirma, autoLoadedSignature]);
+
   const uploadToCloudinary = async (file) => {
     console.log('📤 Subiendo a Cloudinary:', file.name);
     
@@ -82,9 +118,6 @@ const SignatureUploader = ({
     }
   };
 
-  /**
-   * 🔥 MÉTODO 2: Convertir a Base64 (Fallback)
-   */
   const convertToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       console.log('📝 Convirtiendo a Base64:', file.name);
@@ -95,7 +128,7 @@ const SignatureUploader = ({
         console.log('✅ Conversión a Base64 completada');
         resolve({
           base64: reader.result,
-          url: reader.result, // Para compatibilidad con preview
+          url: reader.result,
           filename: file.name,
           size: file.size,
           uploaded_at: new Date().toISOString(),
@@ -112,23 +145,93 @@ const SignatureUploader = ({
     });
   };
 
-  /**
-   * 🎯 Handler principal de carga de archivo
-   */
+  const handleLoadSavedSignature = async () => {
+    try {
+      setUploading(true);
+      setError(null);
+
+      // Usar el prop currentUser directamente (viene de authService.getCurrentUser())
+      if (!currentUser?.username && !currentUser?.email) {
+        setError('⚠️ No hay usuario logueado');
+        setUploading(false);
+        return;
+      }
+
+      const signatureKey = `signature_${(currentUser.username || currentUser.email || '').toLowerCase()}`;
+      const savedSignature = localStorage.getItem(signatureKey);
+      const savedDate = localStorage.getItem(`${signatureKey}_date`);
+
+      if (!savedSignature) {
+        setError('⚠️ No tienes una firma guardada. Ve a "Mi Firma" para guardar una.');
+        setUploading(false);
+        return;
+      }
+
+      console.log(`✅ Cargando firma guardada de: ${currentUser.nombre || currentUser.username}`);
+
+      const response = await fetch(savedSignature);
+      const blob = await response.blob();
+      const file = new File(
+        [blob], 
+        `firma_${currentUser.username}_${Date.now()}.png`, 
+        { type: 'image/png' }
+      );
+
+      console.log('📤 Subiendo firma guardada a Cloudinary...');
+
+      let firmaInfo;
+
+      if (useCloudinary) {
+        try {
+          firmaInfo = await uploadToCloudinary(file);
+          console.log('✅ Firma guardada subida a Cloudinary:', firmaInfo.url);
+        } catch (cloudinaryError) {
+          console.warn('⚠️ Cloudinary falló, usando Base64:', cloudinaryError.message);
+          firmaInfo = {
+            base64: savedSignature,
+            url: savedSignature,
+            provider: 'base64',
+            uploaded_at: savedDate || new Date().toISOString()
+          };
+        }
+      } else {
+        firmaInfo = {
+          base64: savedSignature,
+          url: savedSignature,
+          provider: 'base64',
+          uploaded_at: savedDate || new Date().toISOString()
+        };
+        console.log('💾 Usando firma en Base64 (Cloudinary no configurado)');
+      }
+
+      onFirmaChange({
+        ...firmaData,
+        firma: firmaInfo
+      });
+
+      setError(null);
+      setUploading(false);
+      console.log('🎉 Firma guardada aplicada exitosamente');
+
+    } catch (err) {
+      console.error('❌ Error al cargar firma guardada:', err);
+      setError('❌ Error al cargar tu firma guardada');
+      setUploading(false);
+    }
+  };
+
   const handleFileUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     console.log('📁 Archivo seleccionado:', file.name, `(${(file.size / 1024).toFixed(2)} KB)`);
 
-    // Validar tipo de archivo
     if (!file.type.includes('png')) {
       setError('❌ Solo se permiten archivos PNG');
       return;
     }
 
-    // Validar tamaño (máximo 5MB)
-    const maxSize = 5 * 1024 * 1024; // 5MB
+    const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
       setError(`❌ El archivo es muy grande (${(file.size / 1024 / 1024).toFixed(2)} MB). Máximo: 5MB`);
       return;
@@ -141,7 +244,6 @@ const SignatureUploader = ({
       let firmaInfo;
 
       if (useCloudinary) {
-        // Intentar Cloudinary primero
         try {
           firmaInfo = await uploadToCloudinary(file);
           console.log('✅ Cloudinary exitoso');
@@ -150,12 +252,10 @@ const SignatureUploader = ({
           firmaInfo = await convertToBase64(file);
         }
       } else {
-        // Usar Base64 directamente si no hay configuración de Cloudinary
         console.log('ℹ️ Usando Base64 (Cloudinary no configurado)');
         firmaInfo = await convertToBase64(file);
       }
 
-      // Actualizar datos de la firma
       onFirmaChange({
         ...firmaData,
         firma: firmaInfo
@@ -170,21 +270,24 @@ const SignatureUploader = ({
     }
   };
 
-  /**
-   * 🗑️ Eliminar firma
-   */
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  
   const handleRemoveFirma = () => {
-    if (confirm(`¿Eliminar la firma de ${puesto}?`)) {
-      const updatedFirma = { ...firmaData };
-      delete updatedFirma.firma;
-      onFirmaChange(updatedFirma);
-      console.log('🗑️ Firma eliminada:', puesto);
-    }
+    setShowDeleteConfirm(true);
   };
 
-  /**
-   * ⬇️ Descargar firma
-   */
+  const confirmRemoveFirma = () => {
+    const updatedFirma = { ...firmaData };
+    delete updatedFirma.firma;
+    onFirmaChange(updatedFirma);
+    setShowDeleteConfirm(false);
+    console.log('🗑️ Firma eliminada:', puesto);
+  };
+
+  const cancelRemoveFirma = () => {
+    setShowDeleteConfirm(false);
+  };
+
   const handleDownloadFirma = () => {
     if (!firmaUrl) return;
 
@@ -198,18 +301,15 @@ const SignatureUploader = ({
     console.log('⬇️ Firma descargada:', puesto);
   };
 
-  /**
-   * 🎨 FUNCIONES DE CANVAS PARA DIBUJAR FIRMA
-   */
-  
-  // Inicializar canvas
   useEffect(() => {
     if (activeTab === 'draw' && canvasRef.current) {
       const canvas = canvasRef.current;
-      canvas.width = canvas.offsetWidth * 2; // Mejor resolución
-      canvas.height = canvas.offsetHeight * 2;
-      canvas.style.width = `${canvas.offsetWidth}px`;
-      canvas.style.height = `${canvas.offsetHeight}px`;
+      const rect = canvas.getBoundingClientRect();
+      const displayWidth = rect.width || 300;
+      const displayHeight = rect.height || 150;
+      
+      canvas.width = displayWidth * 2;
+      canvas.height = displayHeight * 2;
       
       const context = canvas.getContext('2d');
       context.scale(2, 2);
@@ -219,53 +319,152 @@ const SignatureUploader = ({
       contextRef.current = context;
       
       console.log('🎨 Canvas inicializado para dibujar firma');
+
+      const getTouchCoords = (e) => {
+        const r = canvas.getBoundingClientRect();
+        if (e.touches && e.touches.length > 0) {
+          return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+        }
+        return { x: 0, y: 0 };
+      };
+
+      const handleTouchStart = (e) => {
+        e.preventDefault();
+        if (!contextRef.current) return;
+        const { x, y } = getTouchCoords(e);
+        contextRef.current.beginPath();
+        contextRef.current.moveTo(x, y);
+        isDrawingRef.current = true;
+        setIsDrawing(true);
+        console.log('👆 Touch start:', x, y);
+      };
+
+      const handleTouchMove = (e) => {
+        e.preventDefault();
+        if (!isDrawingRef.current || !contextRef.current) return;
+        const { x, y } = getTouchCoords(e);
+        contextRef.current.lineTo(x, y);
+        contextRef.current.stroke();
+      };
+
+      const handleTouchEnd = (e) => {
+        e.preventDefault();
+        if (contextRef.current) {
+          contextRef.current.closePath();
+        }
+        isDrawingRef.current = false;
+        setIsDrawing(false);
+        console.log('✋ Touch end');
+      };
+
+      canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+      canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+      canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+      return () => {
+        canvas.removeEventListener('touchstart', handleTouchStart);
+        canvas.removeEventListener('touchmove', handleTouchMove);
+        canvas.removeEventListener('touchend', handleTouchEnd);
+        contextRef.current = null;
+        isDrawingRef.current = false;
+        setIsDrawing(false);
+      };
     }
+    
+    return () => {
+      contextRef.current = null;
+      isDrawingRef.current = false;
+      setIsDrawing(false);
+    };
   }, [activeTab]);
 
-  // Iniciar dibujo
-  const startDrawing = ({ nativeEvent }) => {
-    const { offsetX, offsetY } = nativeEvent;
-    contextRef.current.beginPath();
-    contextRef.current.moveTo(offsetX, offsetY);
-    setIsDrawing(true);
+  const getEventCoords = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    
+    if (e.touches && e.touches.length > 0) {
+      return {
+        x: e.touches[0].clientX - rect.left,
+        y: e.touches[0].clientY - rect.top
+      };
+    }
+    if (e.nativeEvent) {
+      return {
+        x: (e.nativeEvent.offsetX !== undefined) ? e.nativeEvent.offsetX : (e.clientX - rect.left),
+        y: (e.nativeEvent.offsetY !== undefined) ? e.nativeEvent.offsetY : (e.clientY - rect.top)
+      };
+    }
+    return {
+      x: (e.clientX || 0) - rect.left,
+      y: (e.clientY || 0) - rect.top
+    };
   };
 
-  // Dibujar
-  const draw = ({ nativeEvent }) => {
-    if (!isDrawing) return;
-    const { offsetX, offsetY } = nativeEvent;
-    contextRef.current.lineTo(offsetX, offsetY);
+  const startDrawing = (e) => {
+    if (!contextRef.current) return;
+    e.preventDefault();
+    const { x, y } = getEventCoords(e);
+    contextRef.current.beginPath();
+    contextRef.current.moveTo(x, y);
+    setIsDrawing(true);
+    isDrawingRef.current = true;
+    console.log('🖱️ Mouse start:', x, y);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing || !contextRef.current) return;
+    e.preventDefault();
+    const { x, y } = getEventCoords(e);
+    contextRef.current.lineTo(x, y);
     contextRef.current.stroke();
   };
 
-  // Finalizar dibujo
-  const stopDrawing = () => {
-    contextRef.current.closePath();
+  const stopDrawing = (e) => {
+    if (e) e.preventDefault();
+    if (contextRef.current) {
+      contextRef.current.closePath();
+    }
     setIsDrawing(false);
+    isDrawingRef.current = false;
+    console.log('🛑 Drawing stopped');
   };
 
-  // Limpiar canvas
   const clearCanvas = () => {
+    if (!canvasRef.current) return;
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
     context.clearRect(0, 0, canvas.width, canvas.height);
     console.log('🧹 Canvas limpiado');
   };
 
-  // Guardar firma dibujada
   const saveDrawnSignature = async () => {
+    if (!canvasRef.current) {
+      setError('⚠️ Canvas no disponible');
+      return;
+    }
     const canvas = canvasRef.current;
     
-    // Verificar que hay algo dibujado
     const context = canvas.getContext('2d');
+    if (!context) {
+      setError('⚠️ No se pudo obtener contexto del canvas');
+      return;
+    }
+    
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-    const hasContent = imageData.data.some((channel, index) => {
-      // Verificar si hay píxeles con alpha > 0
-      return index % 4 === 3 && channel > 0;
-    });
+    let hasContent = false;
+    
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const alpha = imageData.data[i + 3];
+      if (alpha > 0) {
+        hasContent = true;
+        break;
+      }
+    }
     
     if (!hasContent) {
       setError('⚠️ Por favor dibuja tu firma antes de guardar');
+      console.warn('⚠️ Canvas vacío - no hay contenido para guardar');
       return;
     }
 
@@ -273,21 +472,19 @@ const SignatureUploader = ({
     setError(null);
 
     try {
-      // Convertir canvas a blob
       const dataUrl = canvas.toDataURL('image/png');
+      console.log('📸 Canvas convertido a dataURL, tamaño:', dataUrl.length, 'bytes');
       
       let firmaInfo;
 
       if (useCloudinary) {
-        // Intentar subir a Cloudinary
         try {
-          // Convertir dataURL a File
           const response = await fetch(dataUrl);
           const blob = await response.blob();
           const file = new File([blob], `firma_${puesto}_${Date.now()}.png`, { type: 'image/png' });
           
           firmaInfo = await uploadToCloudinary(file);
-          console.log('✅ Firma dibujada subida a Cloudinary');
+          console.log('✅ Firma dibujada subida a Cloudinary:', firmaInfo.url);
         } catch (cloudinaryError) {
           console.warn('⚠️ Cloudinary falló, usando Base64 como fallback:', cloudinaryError.message);
           firmaInfo = {
@@ -298,22 +495,26 @@ const SignatureUploader = ({
           };
         }
       } else {
-        // Guardar como Base64
         firmaInfo = {
           base64: dataUrl,
           url: dataUrl,
           uploaded_at: new Date().toISOString(),
           provider: 'base64-drawn'
         };
+        console.log('💾 Firma dibujada guardada como Base64');
       }
 
-      // Actualizar datos de la firma
       onFirmaChange({
         ...firmaData,
         firma: firmaInfo
       });
 
       console.log('🎉 Firma dibujada guardada para:', puesto);
+      
+      setTimeout(() => {
+        setUploading(false);
+      }, 500);
+      
     } catch (err) {
       console.error('❌ Error al guardar firma dibujada:', err);
       setError(`Error: ${err.message}`);
@@ -326,27 +527,52 @@ const SignatureUploader = ({
     <div className="signature-uploader">
       <label className="signature-label">Firma Digital:</label>
       
-      {/* ℹ️ Nota informativa si faltan nombre o fecha */}
-      {!hasFirma && (!firmaData?.nombre || !firmaData?.fecha) && (
-        <div className="signature-info-warning" style={{
-          padding: '8px 12px',
-          marginBottom: '10px',
+      {!canUploadSignature && selectedName ? (
+        <div style={{
+          padding: '15px',
+          marginTop: '10px',
           backgroundColor: '#fff3cd',
-          border: '1px solid #ffc107',
-          borderRadius: '6px',
-          fontSize: '12px',
-          color: '#856404'
+          border: '2px solid #ffc107',
+          borderRadius: '8px',
+          textAlign: 'center'
         }}>
-          ⚠️ <strong>Importante:</strong> Completa el Nombre y Fecha arriba antes de firmar.
+          <div style={{
+            fontSize: '14px',
+            color: '#856404',
+            fontWeight: '600',
+            marginBottom: '8px'
+          }}>
+            🔒 <strong>{selectedName}</strong> debe firmar este documento
+          </div>
+          <div style={{
+            fontSize: '12px',
+            color: '#856404',
+            fontStyle: 'italic'
+          }}>
+            Solo esta persona puede subir o dibujar su firma.
+          </div>
         </div>
-      )}
+      ) : (
+        <>
+          {!hasFirma && (!firmaData?.nombre || !firmaData?.fecha) && (
+            <div className="signature-info-warning" style={{
+              padding: '8px 12px',
+              marginBottom: '10px',
+              backgroundColor: '#fff3cd',
+              border: '1px solid #ffc107',
+              borderRadius: '6px',
+              fontSize: '12px',
+              color: '#856404'
+            }}>
+              ⚠️ <strong>Importante:</strong> Completa el Nombre y Fecha arriba antes de firmar.
+            </div>
+          )}
 
       {!hasFirma ? (
-        // 📤 Estado: Sin firma - Mostrar tabs para elegir método
         <div className="signature-empty">
           
-          {/* 🆕 TABS PARA ELEGIR MÉTODO DE FIRMA */}
-          <div className="signature-tabs">
+          {/* Ocultar tabs en tablets/móviles - solo mostrar "Subir Imagen" */}
+          <div className="signature-tabs signature-tabs-desktop">
             <button
               className={`signature-tab ${activeTab === 'upload' ? 'active' : ''}`}
               onClick={() => setActiveTab('upload')}
@@ -355,21 +581,82 @@ const SignatureUploader = ({
             </button>
             <button
               className={`signature-tab ${activeTab === 'draw' ? 'active' : ''}`}
-              onClick={() => setActiveTab('draw')}
+              onClick={() => canUploadSignature && setActiveTab('draw')}
+              disabled={!canUploadSignature}
+              title={!canUploadSignature ? `Solo ${selectedName} puede dibujar su firma` : ''}
+              style={{
+                opacity: canUploadSignature ? 1 : 0.5,
+                cursor: canUploadSignature ? 'pointer' : 'not-allowed'
+              }}
             >
               ✍️ Dibujar Firma
             </button>
           </div>
 
-          {/* CONTENIDO DEL TAB ACTIVO */}
           {activeTab === 'upload' ? (
-            // TAB 1: Subir imagen
             <div className="signature-upload-content">
               <div className="signature-empty-icon">📷</div>
               <p className="signature-empty-text">Sin firma cargada</p>
               
-              <label htmlFor={`upload-${puesto}`} className="btn-upload">
-                {uploading ? '⏳ Subiendo...' : '📤 Subir PNG'}
+              <button
+                onClick={handleLoadSavedSignature}
+                className="btn-load-saved"
+                disabled={uploading || !canUploadSignature}
+                title={!canUploadSignature ? `Solo ${selectedName} puede subir su firma` : ''}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  marginBottom: '10px',
+                  backgroundColor: uploading || !canUploadSignature ? '#95a5a6' : '#1cc88a',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: uploading || !canUploadSignature ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.3s ease',
+                  boxShadow: '0 2px 4px rgba(28, 200, 138, 0.3)',
+                  opacity: uploading || !canUploadSignature ? 0.5 : 1
+                }}
+                onMouseOver={(e) => {
+                  if (!uploading && canUploadSignature) {
+                    e.target.style.backgroundColor = '#17a673';
+                    e.target.style.transform = 'translateY(-1px)';
+                    e.target.style.boxShadow = '0 4px 8px rgba(28, 200, 138, 0.4)';
+                  }
+                }}
+                onMouseOut={(e) => {
+                  if (!uploading && canUploadSignature) {
+                    e.target.style.backgroundColor = '#1cc88a';
+                    e.target.style.transform = 'translateY(0)';
+                    e.target.style.boxShadow = '0 2px 4px rgba(28, 200, 138, 0.3)';
+                  }
+                }}
+              >
+                {uploading ? '⏳ Cargando firma a Cloudinary...' : '📥 Usar Mi Firma Guardada'}
+              </button>
+
+              <div style={{ 
+                textAlign: 'center', 
+                margin: '10px 0', 
+                color: '#6c757d',
+                fontSize: '12px',
+                fontWeight: '500'
+              }}>
+                - O -
+              </div>
+              
+              <label 
+                htmlFor={canUploadSignature ? `upload-${puesto}` : undefined}
+                className="btn-upload"
+                title={!canUploadSignature ? `Solo ${selectedName} puede subir su firma` : ''}
+                style={{
+                  opacity: canUploadSignature ? 1 : 0.5,
+                  cursor: canUploadSignature ? 'pointer' : 'not-allowed',
+                  backgroundColor: canUploadSignature ? undefined : '#95a5a6'
+                }}
+              >
+                {uploading ? '⏳ Subiendo...' : '📤 Subir Nueva PNG'}
               </label>
               
               <input
@@ -377,9 +664,30 @@ const SignatureUploader = ({
                 type="file"
                 accept=".png,image/png"
                 onChange={handleFileUpload}
-                disabled={uploading}
+                disabled={uploading || !canUploadSignature}
                 style={{ display: 'none' }}
               />
+
+              {!canUploadSignature && selectedName && (
+                <div style={{
+                  marginTop: '15px',
+                  padding: '12px',
+                  backgroundColor: '#fff3cd',
+                  border: '2px solid #ffc107',
+                  borderRadius: '8px',
+                  color: '#856404',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  textAlign: 'center',
+                  lineHeight: '1.5'
+                }}>
+                  🔒 <strong>Solo {selectedName}</strong> puede subir su firma para este puesto.
+                  <br />
+                  <span style={{ fontSize: '12px', fontWeight: 'normal' }}>
+                    No puedes firmar por otra persona.
+                  </span>
+                </div>
+              )}
 
               {useCloudinary && (
                 <p className="signature-info">
@@ -393,7 +701,6 @@ const SignatureUploader = ({
               )}
             </div>
           ) : (
-            // TAB 2: Dibujar firma
             <div className="signature-draw-content">
               <div className="canvas-container">
                 <canvas
@@ -403,9 +710,7 @@ const SignatureUploader = ({
                   onMouseMove={draw}
                   onMouseUp={stopDrawing}
                   onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
+                  style={{ touchAction: 'none' }}
                 />
                 <div className="canvas-placeholder">✍️ Dibuja tu firma aquí</div>
               </div>
@@ -441,7 +746,6 @@ const SignatureUploader = ({
           )}
         </div>
       ) : (
-        // ✅ Estado: Firma cargada
         <div className="signature-loaded">
           <div 
             className="signature-preview"
@@ -504,7 +808,6 @@ const SignatureUploader = ({
         </div>
       )}
 
-      {/* ❌ Mensaje de error */}
       {error && (
         <div className="signature-error">
           <span>{error}</span>
@@ -512,7 +815,6 @@ const SignatureUploader = ({
         </div>
       )}
 
-      {/* 🔍 Modal de vista previa completa */}
       {showPreview && firmaUrl && (
         <div className="signature-modal" onClick={() => setShowPreview(false)}>
           <div className="signature-modal-content" onClick={(e) => e.stopPropagation()}>
@@ -531,11 +833,35 @@ const SignatureUploader = ({
           </div>
         </div>
       )}
+
+      {showDeleteConfirm && (
+        <div className="signature-modal" onClick={cancelRemoveFirma}>
+          <div className="signature-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '350px', textAlign: 'center' }}>
+            <h3 style={{ marginBottom: '12px' }}>🗑️ Eliminar Firma</h3>
+            <p style={{ marginBottom: '16px', color: '#555' }}>¿Estás seguro de eliminar la firma de <strong>{puesto}</strong>?</p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button 
+                onClick={cancelRemoveFirma}
+                style={{ padding: '8px 20px', border: '1px solid #ddd', borderRadius: '6px', background: '#f5f5f5', cursor: 'pointer', fontSize: '13px' }}
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={confirmRemoveFirma}
+                style={{ padding: '8px 20px', border: 'none', borderRadius: '6px', background: '#ef5350', color: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}
+              >
+                🗑️ Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </>
+      )}
     </div>
   );
 };
 
-// PropTypes para validación
 SignatureUploader.propTypes = {
   puesto: PropTypes.string.isRequired,
   firmaData: PropTypes.shape({

@@ -104,8 +104,20 @@ function TemplateVersionHistory({ templateId, templateName, onClose }) {
   const renderHistoryTab = () => (
     <div className="version-history-tab">
       <div className="tab-header">
-        <h3>📚 Línea de Tiempo</h3>
-        <button className={`btn-secondary-small ${compareMode ? 'active' : ''}`} onClick={() => setCompareMode(!compareMode)}>
+        <h3 style={{ color: '#1e3a5f', margin: 0, fontSize: '1.5rem' }}>📚 Línea de Tiempo</h3>
+        <button 
+          className={`btn-secondary-small ${compareMode ? 'active' : ''}`} 
+          onClick={() => setCompareMode(!compareMode)}
+          style={{
+            background: compareMode ? '#ef4444' : '#2563eb',
+            color: 'white',
+            padding: '0.5rem 1rem',
+            borderRadius: '6px',
+            border: 'none',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
           {compareMode ? '❌ Cancelar Comparación' : '🔍 Modo Comparar'}
         </button>
       </div>
@@ -133,8 +145,18 @@ function TemplateVersionHistory({ templateId, templateName, onClose }) {
           <div key={v.version} className={`version-item ${v.isCurrentVersion ? 'current-version' : ''}`}>
             <div className="version-badge">{v.isCurrentVersion ? '✅' : '📜'}</div>
             <div className="version-content">
-              <h4>v{v.version} {v.isCurrentVersion && <span className="label-actual">ACTUAL</span>}</h4>
-              <p>Formularios: {v.formCount} | Creada: {formatDate(v.versionCreatedAt)}</p>
+              <h4 style={{ color: '#1e3a5f', fontWeight: 700, margin: '0 0 0.5rem 0' }}>
+                v{v.version} {v.isCurrentVersion && <span style={{
+                  background: '#10b981',
+                  color: 'white',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '10px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  marginLeft: '0.5rem'
+                }}>ACTUAL</span>}
+              </h4>
+              <p style={{ color: '#2563eb', fontSize: '0.9rem', margin: '0.25rem 0' }}>Formularios: {v.formCount} | Creada: {formatDate(v.versionCreatedAt)}</p>
               <div className="version-actions">
                 {compareMode ? (
                   <div className="btn-group-compare">
@@ -253,12 +275,33 @@ function TemplateVersionHistory({ templateId, templateName, onClose }) {
   return (
     <div className="version-history-modal-overlay">
       <div className="version-history-modal">
-        <div className="modal-header">
+        <div className="modal-header" style={{
+          background: 'linear-gradient(135deg, #1e3a5f 0%, #2c5282 100%)',
+          padding: '1.5rem 2rem',
+          borderRadius: '12px 12px 0 0',
+          position: 'relative',
+          borderBottom: '2px solid #1e3a5f'
+        }}>
           <div>
-            <h2>Historial de Versiones</h2>
-            <p className="subtitle">{templateName}</p>
+            <h2 style={{ color: 'white', margin: '0 0 0.5rem 0', fontSize: '1.8rem' }}>Historial de Versiones</h2>
+            <p className="subtitle" style={{ color: '#93c5fd', margin: 0, fontSize: '1rem' }}>{templateName}</p>
           </div>
-          <button className="close-button" onClick={onClose}>×</button>
+          <button className="close-button" onClick={onClose} style={{
+            position: 'absolute',
+            top: '1rem',
+            right: '1rem',
+            background: '#ef4444',
+            color: 'white',
+            border: '2px solid white',
+            borderRadius: '50%',
+            width: '40px',
+            height: '40px',
+            fontSize: '1.5rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>✕</button>
         </div>
         <div className="modal-content">
           {error && <div className="error-banner">⚠️ {error}</div>}

@@ -4,11 +4,13 @@ import { useState, useEffect } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import FormHeader from "../components/FormHeader"
 import VersionIndicator from "../components/VersionIndicator"
+import ScrollButton from "../components/ScrollButton"
 import { loadFormWithVersionInfo } from "../utils/filledFormsUtils"
 import { exportFormToPDF } from "../services/pdfExportService"
 import { exportFormToExcel } from "../services/excelExportService"
 import "./ViewForms.css"
 import { API_BASE_URL } from "../apiConfig"; 
+import authService from "../services/authService";
 //const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
 //const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -18,6 +20,11 @@ function ViewForms() {
   const navigate = useNavigate();
   const location = useLocation();
   
+  // 🔐 Usuario actual y permisos
+  const currentUser = authService.getCurrentUser();
+  const canEdit   = currentUser?.rol === 'admin' || currentUser?.rol === 'supervisor';
+  const canDelete = currentUser?.rol === 'admin';
+
   // 🎯 NUEVO: Obtener formId pre-seleccionado desde el state de navegación
   const preSelectedFormId = location.state?.viewFormId;
   
@@ -33,6 +40,12 @@ function ViewForms() {
   // 📅 NUEVO: Estados para filtro por rango de fechas
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
+
+  // 📧 NUEVO: Estados para enviar formulario por correo
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [emailTo, setEmailTo] = useState("")
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [emailFormTarget, setEmailFormTarget] = useState(null)
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -65,7 +78,7 @@ function ViewForms() {
           firmasData: JSON.parse(form.firmasData || '{}'),
         }));
 
-        setForms(parsedForms.reverse());
+        setForms(parsedForms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
         setTemplates(parsedTemplates); 
       } catch (err) {
         setError(err.message);
@@ -109,6 +122,46 @@ function ViewForms() {
 
   const editForm = (formId) => {
     navigate(`/edit-filled-form/${formId}`);
+  };
+
+  // 📋 Duplicar/Copiar formulario como uno nuevo
+  const duplicateForm = async (form) => {
+    if (!window.confirm('¿Deseas crear una copia de este formulario?')) return;
+    try {
+      // Obtener datos completos del formulario
+      const response = await fetch(`${API_URL_FILLED_FORMS}/${form.formID}`);
+      if (!response.ok) throw new Error('No se pudo obtener el formulario');
+      const data = await response.json();
+
+      const currentUser = authService.getCurrentUser();
+      const payload = {
+        templateID: data.templateID,
+        headerData: data.headerData,
+        bodyData: data.bodyData,
+        firmasData: '{}',
+        filledBy: currentUser?.nombre || currentUser?.username || 'Usuario desconocido',
+        filledByEmail: currentUser?.email || '',
+        filledByRole: currentUser?.rol || '',
+        proceso: data.proceso || '',
+        area: data.area || '',
+      };
+
+      const createResponse = await fetch(API_URL_FILLED_FORMS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!createResponse.ok) throw new Error('No se pudo duplicar el formulario');
+      const newForm = await createResponse.json();
+      alert('✅ Formulario duplicado exitosamente');
+      // Recargar lista
+      const allForms = await fetch(API_URL_FILLED_FORMS).then(r => r.json());
+      setForms(allForms.$values || allForms || []);
+      // Abrir el nuevo formulario para editar
+      navigate(`/edit-filled-form/${newForm.formID || newForm.FormID}`);
+    } catch (err) {
+      alert('❌ Error al duplicar: ' + err.message);
+    }
   };
 
   // NUEVO: Función para ver formulario con información de versión
@@ -173,6 +226,7 @@ function ViewForms() {
         formID: formData.formID,
         templateID: formData.templateID,
         createdAt: formData.createdAt,
+        tipoProducto: formData.tipoProducto, // 🦐🐟 NUEVO: Tipo de producto
         observaciones: formData.observaciones,
         templateCodigo: formData.template.codigo,
         templateNombre: formData.template.nombre,
@@ -223,6 +277,7 @@ function ViewForms() {
         formID: formData.formID,
         templateID: formData.templateID,
         createdAt: formData.createdAt,
+        tipoProducto: formData.tipoProducto, // 🦐🐟 NUEVO: Tipo de producto
         observaciones: formData.observaciones,
         templateCodigo: formData.template.codigo,
         templateNombre: formData.template.nombre,
@@ -251,6 +306,143 @@ function ViewForms() {
     } catch (error) {
       console.error('Error al exportar Excel:', error);
       alert(`❌ Error al generar Excel: ${error.message}`);
+    }
+  };
+
+  // 📧 NUEVO: Enviar formulario por correo electrónico
+  const openEmailModal = (form) => {
+    setEmailFormTarget(form);
+    // 🆕 Pre-llenar destinatarios con emails de los firmantes
+    const firmaEmails = [];
+    if (form.firmasData && typeof form.firmasData === 'object') {
+      Object.values(form.firmasData).forEach(data => {
+        if (data && data.email && data.email.includes('@')) {
+          firmaEmails.push(data.email);
+        }
+      });
+    }
+    setEmailTo(firmaEmails.length > 0 ? firmaEmails.join(', ') : '');
+    setShowEmailModal(true);
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailTo || !emailTo.includes('@')) {
+      alert('⚠️ Ingresa un email válido');
+      return;
+    }
+
+    setSendingEmail(true);
+    try {
+      const form = emailFormTarget;
+      const correspondingTpl = templates.find(t => t.templateID === form.templateID);
+
+      // Construir header data
+      const headerData = {};
+      if (form.headerData && typeof form.headerData === 'object') {
+        Object.entries(form.headerData).forEach(([key, value]) => {
+          headerData[key] = value || '';
+        });
+      }
+
+      // Construir body sections
+      const bodySections = [];
+      if (correspondingTpl && form.bodyData && Array.isArray(form.bodyData)) {
+        form.bodyData.forEach((elementData, idx) => {
+          const templateElement = correspondingTpl.bodyElements?.[idx];
+          if (!templateElement) return;
+
+          if (templateElement.type === 'table') {
+            let tableRows = [];
+            if (elementData?.rows && Array.isArray(elementData.rows)) {
+              tableRows = elementData.rows;
+            } else if (elementData?.data && Array.isArray(elementData.data)) {
+              tableRows = elementData.data;
+            } else if (Array.isArray(elementData)) {
+              tableRows = elementData;
+            }
+
+            const columns = (templateElement.columns || []).map(col => col.label || col.header || col.name || col.id || '');
+            
+            // Mapear rows a columnas correctas
+            const mappedRows = tableRows.map(row => {
+              const mapped = {};
+              columns.forEach(colLabel => {
+                // Buscar valor con lógica similar a la de renderizado
+                let val = row[colLabel];
+                if (val === undefined || val === null || val === '') {
+                  const foundKey = Object.keys(row).find(k => 
+                    k.toUpperCase().replace(/[^A-Z0-9]/g, '') === colLabel.toUpperCase().replace(/[^A-Z0-9]/g, '')
+                  );
+                  if (foundKey) val = row[foundKey];
+                }
+                mapped[colLabel] = val !== undefined && val !== null ? String(val) : '-';
+              });
+              return mapped;
+            });
+
+            bodySections.push({
+              title: templateElement.title || `Tabla ${idx + 1}`,
+              type: 'table',
+              columns: columns,
+              rows: mappedRows,
+            });
+          } else if (templateElement.type === 'section') {
+            const sectionData = elementData?.data || {};
+            bodySections.push({
+              title: templateElement.title || `Sección ${idx + 1}`,
+              type: 'section',
+              data: sectionData,
+            });
+          }
+        });
+      }
+
+      // Construir firmas
+      const firmas = [];
+      if (form.firmasData && typeof form.firmasData === 'object') {
+        Object.entries(form.firmasData).forEach(([puesto, data]) => {
+          firmas.push({
+            puesto: puesto,
+            nombre: data?.nombre || null,
+            fecha: data?.fecha || null,
+            tieneFirma: !!(data?.firma?.url || data?.firma?.base64),
+          });
+        });
+      }
+
+      const requestBody = {
+        email: emailTo,
+        formName: form.templateNombre || 'Formulario',
+        formCode: form.templateCodigo || 'N/A',
+        createdAt: new Date(form.createdAt).toLocaleString('es-EC'),
+        observaciones: form.observaciones || '',
+        headerData: headerData,
+        bodySections: bodySections,
+        firmas: firmas,
+      };
+
+      console.log('📧 Enviando formulario por correo:', requestBody);
+
+      const response = await fetch(`${API_BASE_URL}/Alerts/send-form`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        alert(`✅ ${result.message}`);
+        setShowEmailModal(false);
+        setEmailTo('');
+      } else {
+        alert(`❌ ${result.message || 'Error al enviar el correo'}`);
+      }
+    } catch (error) {
+      console.error('❌ Error al enviar email:', error);
+      alert(`❌ Error al enviar el correo: ${error.message}`);
+    } finally {
+      setSendingEmail(false);
     }
   };
 
@@ -304,9 +496,17 @@ function ViewForms() {
             <button onClick={printForm} className="btn-secondary">🖨️ Imprimir</button>
             <button onClick={() => handleExportPDF(selectedForm)} className="btn-pdf" title="Exportar a PDF">📄 PDF</button>
             <button onClick={() => handleExportExcel(selectedForm)} className="btn-excel" title="Exportar a Excel">📊 Excel</button>
+            <button onClick={() => openEmailModal(selectedForm)} className="btn-email" title="Enviar por correo">📧 Correo</button>
             <button onClick={() => exportToJSON(selectedForm)} className="btn-secondary">📥 JSON</button>
-            <button onClick={() => editForm(selectedForm.formID)} className="btn-primary">✏️ Editar</button>
-            <button onClick={() => deleteForm(selectedForm.formID)} className="btn-danger">🗑️ Eliminar</button>
+            {canEdit && (
+              <button onClick={() => duplicateForm(selectedForm)} className="btn-secondary" title="Duplicar formulario">📋 Copiar</button>
+            )}
+            {canEdit && (
+              <button onClick={() => editForm(selectedForm.formID)} className="btn-primary">✏️ Editar</button>
+            )}
+            {canDelete && (
+              <button onClick={() => deleteForm(selectedForm.formID)} className="btn-danger">🗑️ Eliminar</button>
+            )}
           </div>
         </div>
         <div className="form-viewer-document">
@@ -329,7 +529,8 @@ function ViewForms() {
                 title={selectedForm.templateNombre} 
                 code={selectedForm.templateCodigo} 
                 version={correspondingTemplate?.version || "1"} 
-                date={fechaFinal} 
+                date={fechaFinal}
+                tipoProducto={selectedForm.tipoProducto} // 🦐🐟 NUEVO: Pasar tipo de producto
               />
             );
           })()}
@@ -604,7 +805,16 @@ function ViewForms() {
                       )}
                       
                       <p><strong>Nombre:</strong> {data.nombre || "-"}</p>
+                      {data.email && (
+                        <p><strong>📧 Email:</strong> <a href={`mailto:${data.email}`} style={{ color: '#1976d2' }}>{data.email}</a></p>
+                      )}
                       <p><strong>Fecha:</strong> {data.fecha || "-"}</p>
+                      <p style={{ marginTop: '4px' }}>
+                        {data.firma && (data.firma.url || data.firma.base64) 
+                          ? <span style={{ color: '#2e7d32', fontWeight: 'bold' }}>✅ Firmado</span>
+                          : <span style={{ color: '#e65100' }}>⏳ Pendiente de firma</span>
+                        }
+                      </p>
                     </div>
                     <div className="signature-line">Firma: _______________________</div>
                   </div>
@@ -713,6 +923,7 @@ function ViewForms() {
                   >
                     👁️ Ver
                   </button>
+                  {canEdit && (
                   <button 
                     onClick={() => editForm(form.formID)} 
                     className="btn-edit"
@@ -720,6 +931,7 @@ function ViewForms() {
                   >
                     ✏️ Editar
                   </button>
+                  )}
                   <button 
                     onClick={() => handleExportPDF(form)} 
                     className="btn-pdf"
@@ -735,12 +947,29 @@ function ViewForms() {
                     📊 Excel
                   </button>
                   <button 
+                    onClick={() => openEmailModal(form)} 
+                    className="btn-email"
+                    title="Enviar por correo"
+                  >
+                    📧
+                  </button>
+                  <button 
                     onClick={() => exportToJSON(form)} 
                     className="btn-export"
                     title="Exportar a JSON"
                   >
                     📥
                   </button>
+                  {canEdit && (
+                  <button 
+                    onClick={() => duplicateForm(form)} 
+                    className="btn-edit"
+                    title="Duplicar formulario"
+                  >
+                    📋
+                  </button>
+                  )}
+                  {canDelete && (
                   <button 
                     onClick={() => deleteForm(form.formID)} 
                     className="btn-delete"
@@ -748,10 +977,17 @@ function ViewForms() {
                   >
                     🗑️
                   </button>
+                  )}
                 </div>
               </div>
               <div className="form-card-meta">
                 <span>📅 {new Date(form.createdAt).toLocaleString("es-EC")}</span>
+                <span>👤 {form.filledBy || 'No registrado'}</span>
+                {(() => {
+                  const template = templates.find(t => t.templateID === form.templateID);
+                  const proceso = form.proceso || template?.proceso;
+                  return proceso ? <span>🏢 {proceso}</span> : null;
+                })()}
                 {form.updatedAt && form.updatedAt !== form.createdAt && (
                   <span className="updated-badge">🔄 Editado</span>
                 )}
@@ -760,6 +996,65 @@ function ViewForms() {
           ))}
         </div>
       )}
+
+      {/* 📧 MODAL: Enviar formulario por correo */}
+      {showEmailModal && (
+        <div className="email-modal-overlay" onClick={() => !sendingEmail && setShowEmailModal(false)}>
+          <div className="email-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="email-modal-header">
+              <h3>📧 Enviar Formulario por Correo</h3>
+              <button 
+                className="email-modal-close" 
+                onClick={() => !sendingEmail && setShowEmailModal(false)}
+                disabled={sendingEmail}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="email-modal-body">
+              <div className="email-form-info">
+                <p><strong>📋 Formulario:</strong> {emailFormTarget?.templateNombre}</p>
+                <p><strong>🔖 Código:</strong> {emailFormTarget?.templateCodigo}</p>
+                <p><strong>📅 Fecha:</strong> {emailFormTarget ? new Date(emailFormTarget.createdAt).toLocaleString('es-EC') : ''}</p>
+              </div>
+              <div className="email-input-group">
+                <label htmlFor="emailTo">📧 Correo del destinatario:</label>
+                <input
+                  id="emailTo"
+                  type="email"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="ejemplo@correo.com"
+                  disabled={sendingEmail}
+                  autoFocus
+                />
+              </div>
+              <p className="email-modal-note">
+                💡 Se enviará un resumen completo del formulario con todos sus datos, tablas y firmas al correo indicado.
+              </p>
+            </div>
+            <div className="email-modal-footer">
+              <button 
+                className="btn-secondary" 
+                onClick={() => setShowEmailModal(false)}
+                disabled={sendingEmail}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="btn-email-send" 
+                onClick={handleSendEmail}
+                disabled={sendingEmail || !emailTo}
+              >
+                {sendingEmail ? '⏳ Enviando...' : '📧 Enviar Correo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔼🔽 Botones de scroll */}
+      <ScrollButton />
     </div>
   );
 }

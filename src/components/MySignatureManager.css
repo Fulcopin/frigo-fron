@@ -1,0 +1,244 @@
+.my-signature-manager {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.my-signature-manager h3 {
+  margin: 0 0 20px 0;
+  color: #2c3e50;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Tarjeta de firma guardada */
+.saved-signature-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.signature-preview {
+  background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+  border: 2px dashed #cbd5e0;
+  border-radius: 10px;
+  padding: 30px;
+  text-align: center;
+  margin-bottom: 20px;
+  min-height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.signature-preview img {
+  max-width: 100%;
+  max-height: 150px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+
+.signature-info {
+  text-align: center;
+}
+
+.signature-date,
+.signature-source {
+  color: #6c757d;
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.signature-source {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.signature-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.btn-use-signature,
+.btn-delete-signature {
+  padding: 12px 28px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.btn-use-signature {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.btn-use-signature:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-use-signature:active {
+  transform: translateY(0);
+}
+
+.btn-delete-signature {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+}
+
+.btn-delete-signature:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
+}
+
+/* Tarjeta sin firma */
+.no-signature-card {
+  background: white;
+  border: 3px dashed #cbd5e0;
+  border-radius: 12px;
+  padding: 40px 30px;
+  text-align: center;
+}
+
+.no-signature-text {
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.no-signature-subtext {
+  color: #6c757d;
+  font-size: 14px;
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+.upload-signature-section {
+  margin-top: 20px;
+}
+
+.btn-upload-signature {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 14px 36px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.btn-upload-signature:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5);
+}
+
+.btn-upload-signature:active {
+  transform: translateY(-1px);
+}
+
+.btn-upload-signature .spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error */
+.signature-error {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+  color: white;
+  padding: 14px 18px;
+  border-radius: 8px;
+  margin-top: 16px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(238, 90, 111, 0.3);
+  animation: shake 0.5s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* Ayuda */
+.signature-help {
+  margin-top: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 100%);
+  border-left: 4px solid #00acc1;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.signature-help p {
+  margin: 0 0 12px 0;
+  color: #006064;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.signature-help ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #004d40;
+}
+
+.signature-help li {
+  margin: 8px 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Responsivo */
+@media (max-width: 600px) {
+  .my-signature-manager {
+    padding: 16px;
+  }
+
+  .signature-actions {
+    flex-direction: column;
+  }
+
+  .btn-use-signature,
+  .btn-delete-signature {
+    width: 100%;
+  }
+}

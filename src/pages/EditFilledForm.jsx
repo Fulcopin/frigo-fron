@@ -3,8 +3,13 @@
 import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import FormHeader from "../components/FormHeader"
+import SignatureUploader from "../components/SignatureUploader"
+import UserSelector from "../components/UserSelector"
+import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
+import { fetchUsers, filterUsersByPuesto } from "../services/userService"
 import "./FillForm.css" // Reutilizamos los estilos de FillForm
 import { loadFormForEdit, updateFilledForm, autosaveForm } from "../utils/filledFormsUtils"
+import { API_EXTERNAL_BASE_URL } from "../apiConfig"
 
 // Configuración para autoguardado
 const AUTOSAVE_INTERVAL = 30000; // 30 segundos
@@ -30,6 +35,78 @@ function EditFilledForm() {
   // Estados para autoguardado
   const [autoSaveStatus, setAutoSaveStatus] = useState('') // 'saving', 'saved', 'error'
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
+  // Estados para usuarios y firmas
+  const [allUsers, setAllUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [usersError, setUsersError] = useState(null);
+  const [apiToken, setApiToken] = useState(null);
+
+  // 🔐 Obtener token de autenticación para la API externa
+  const ensureApiToken = async () => {
+    if (apiToken) {
+      return apiToken;
+    }
+    
+    console.log('🔐 Autenticando con API externa...');
+    
+    try {
+      const response = await fetch(`${API_EXTERNAL_BASE_URL}/Auth/login`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ 
+          username: "l-admin", 
+          password: "Infor-Web001" 
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error ${response.status}: ${errorText || 'Credenciales inválidas'}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data.token) {
+        throw new Error('La respuesta de autenticación no contiene un token');
+      }
+      
+      console.log('✅ Token de API obtenido correctamente');
+      setApiToken(data.token);
+      return data.token;
+    } catch (err) {
+      console.error('❌ Error de autenticación:', err);
+      return null;
+    }
+  };
+
+  // Cargar usuarios para el selector de firmas (CON TOKEN)
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        setLoadingUsers(true);
+        
+        // 🔐 Obtener token primero
+        const token = await ensureApiToken();
+        if (!token) {
+          throw new Error('No se pudo obtener token de autenticación');
+        }
+        
+        const users = await fetchUsers(token);
+        setAllUsers(users);
+        console.log(`✅ ${users.length} usuarios cargados en EditFilledForm`);
+      } catch (err) {
+        console.warn('⚠️ No se pudieron cargar usuarios:', err);
+        setUsersError('No se pudieron cargar');
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+    loadUsers();
+  }, []);
 
   // Cargar el formulario llenado existente
   useEffect(() => {
@@ -231,10 +308,25 @@ function EditFilledForm() {
     setHasUnsavedChanges(true);
   };
 
-  const updateFirma = (puesto, value) => {
+  const updateFirma = (puesto, field, value) => {
     setFormData(prev => ({
       ...prev,
-      firmasData: { ...prev.firmasData, [puesto]: value }
+      firmasData: { 
+        ...prev.firmasData, 
+        [puesto]: {
+          ...(typeof prev.firmasData[puesto] === 'object' ? prev.firmasData[puesto] : {}),
+          [field]: value
+        }
+      }
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  // Actualizar firma completa (con imagen desde SignatureUploader)
+  const handleFirmaUpdate = (puesto, firmaData) => {
+    setFormData(prev => ({
+      ...prev,
+      firmasData: { ...prev.firmasData, [puesto]: firmaData }
     }));
     setHasUnsavedChanges(true);
   };
@@ -651,22 +743,72 @@ Template: ${template?.nombre}
             </div>
           ))}
 
-          {/* Firmas */}
+          {/* Firmas - Misma interfaz que FillForm */}
           {template?.firmas?.length > 0 && (
             <div className="form-section">
-              <h3>Firmas</h3>
-              <div className="firmas-container">
-                {template.firmas.map((firma, index) => (
-                  <div key={index} className="firma-group">
-                    <label>{firma.puesto}</label>
-                    <input
-                      type="text"
-                      value={formData.firmasData[firma.puesto] || ""}
-                      onChange={(e) => updateFirma(firma.puesto, e.target.value)}
-                      placeholder="Nombre y firma"
-                    />
-                  </div>
-                ))}
+              <h3>✍️ Firmas y Aprobaciones</h3>
+              <div className="signatures-grid">
+                {template.firmas.map((firma, index) => {
+                  // Asegurar que firmasData[puesto] sea un objeto
+                  const firmaObj = typeof formData.firmasData[firma.puesto] === 'object' 
+                    ? formData.firmasData[firma.puesto] 
+                    : { nombre: '', fecha: '' };
+                  const filteredUsers = filterUsersByPuesto(allUsers, firma.puesto);
+                  
+                  return (
+                    <div key={index} className="signature-box">
+                      <h4>{firma.puesto}</h4>
+                      
+                      {/* Campos de texto: Nombre y Fecha */}
+                      <div className="signature-fields">
+                        <div className="form-field">
+                          <label>
+                            Nombre:
+                            {loadingUsers && <span style={{fontSize:'11px',color:'#999'}}> (Cargando...)</span>}
+                          </label>
+                          <UserSelector
+                            users={filteredUsers}
+                            value={firmaObj?.nombre || ""}
+                            onChange={(nombreCompleto, email) => {
+                              setFormData(prev => ({
+                                ...prev,
+                                firmasData: {
+                                  ...prev.firmasData,
+                                  [firma.puesto]: {
+                                    ...(typeof prev.firmasData[firma.puesto] === 'object' ? prev.firmasData[firma.puesto] : {}),
+                                    nombre: nombreCompleto,
+                                    ...(email ? { email } : {})
+                                  }
+                                }
+                              }));
+                              setHasUnsavedChanges(true);
+                            }}
+                            placeholder={loadingUsers ? "Cargando..." : "Buscar o escribir nombre..."}
+                            disabled={loadingUsers}
+                            puesto={firma.puesto}
+                          />
+                        </div>
+                        <div className="form-field">
+                          <label>Fecha:</label>
+                          <input 
+                            type="date" 
+                            value={firmaObj?.fecha || ""} 
+                            onChange={(e) => updateFirma(firma.puesto, "fecha", e.target.value)} 
+                          />
+                        </div>
+                      </div>
+
+                      {/* Componente de carga de firma PNG */}
+                      <SignatureUploader
+                        puesto={firma.puesto}
+                        firmaData={firmaObj}
+                        onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
+                        cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
+                        cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

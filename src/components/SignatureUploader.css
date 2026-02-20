@@ -581,6 +581,23 @@
    📱 Responsive para tabs y canvas
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* 🚫 OCULTAR "Dibujar Firma" en tablets y móviles */
+@media (max-width: 1024px) {
+  /* Ocultar tabs completamente en tablets/móviles */
+  .signature-tabs-desktop {
+    display: none !important;
+  }
+  
+  /* Forzar siempre el modo "upload" en móviles */
+  .signature-draw-content {
+    display: none !important;
+  }
+  
+  .signature-upload-content {
+    display: flex !important;
+  }
+}
+
 @media (max-width: 768px) {
   .signature-tab {
     padding: 10px 15px;
@@ -589,6 +606,9 @@
 
   .canvas-container {
     height: 150px;
+    /* Agregar más espacio lateral para scrolling en tablets */
+    margin: 0 20px;
+    padding: 15px;
   }
 
   .canvas-placeholder {
@@ -603,6 +623,22 @@
     width: 100%;
     justify-content: center;
   }
+  
+  /* Más espacio en la signature-empty para mejor touch */
+  .signature-empty {
+    padding: 40px 25px;
+  }
+  
+  /* Botones más grandes para touch en móviles */
+  .btn-upload {
+    padding: 14px 24px;
+    font-size: 15px;
+    min-height: 48px; /* Tamaño mínimo recomendado para touch */
+  }
+  
+  .btn-load-saved {
+    min-height: 48px !important;
+  }
 }
 
 @media (max-width: 480px) {
@@ -616,5 +652,15 @@
 
   .signature-tab.active {
     border-bottom-color: #4299e1;
+  }
+  
+  /* Aún más espacio lateral en móviles pequeños */
+  .canvas-container {
+    margin: 0 15px;
+    padding: 20px;
+  }
+  
+  .signature-empty {
+    padding: 35px 20px;
   }
 }

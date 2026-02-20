@@ -107,6 +107,9 @@
   background: var(--surface);
   color: #2b2b2b;
   font-weight: 500;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
 }
 
 .form-group input[type="checkbox"] {
@@ -126,6 +129,8 @@
   border-radius: 8px;
   padding: 1.5rem;
   margin-bottom: 1rem;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .field-grid {
@@ -133,6 +138,8 @@
   grid-template-columns: 2fr 1.5fr auto auto;
   gap: 1rem;
   align-items: end;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .empty-state {
@@ -247,6 +254,68 @@
   .header-actions button {
     width: 100%;
   }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-group input[type="text"],
+  .form-group input[type="number"],
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .table-config {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .table-config .form-group {
+    width: 100%;
+  }
+
+  .table-config .form-group input {
+    width: 100%;
+  }
+}
+
+/* Media query adicional para móviles pequeños */
+@media (max-width: 480px) {
+  .create-template {
+    padding: 0.5rem;
+  }
+
+  .page-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .form-section {
+    padding: 1rem;
+  }
+
+  .field-item {
+    padding: 1rem;
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-add,
+  .btn-remove {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    width: 100%;
+  }
+
+  .form-grid {
+    gap: 0.75rem;
+  }
+
+  .field-grid {
+    gap: 0.75rem;
+  }
 }
 /* Estilos para los nuevos contenedores de bloques dinámicos */
 .body-element-container {
@@ -256,6 +325,9 @@
   margin-bottom: 24px;
   background-color: #fcfcfc;
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
 }
 
 .body-element-header {
@@ -265,6 +337,8 @@
   margin-bottom: 16px;
   border-bottom: 1px solid #eee;
   padding-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .section-title-input {
@@ -275,6 +349,8 @@
   padding: 4px 8px;
   width: 80%;
   transition: border-color 0.2s;
+  box-sizing: border-box;
+  min-width: 200px;
 }
 
 .section-title-input:focus {
@@ -284,6 +360,8 @@
 
 .body-element-content {
   padding-left: 8px;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .section-header-inner {
@@ -311,4 +389,342 @@
 
 .btn-add-small:hover {
   background-color: #e0e0e0;
+}
+
+/* ========================================
+   ESTILOS PARA BLOQUES DE OPCIONES
+   ======================================== */
+
+/* Contenedor principal de opciones */
+.options-container {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 25px;
+  margin-bottom: 15px;
+}
+
+/* Bloque de entrada de opciones (Azul) */
+.options-input-block {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  padding: 20px;
+  border-radius: 12px;
+  border: 2px solid #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.options-input-block label {
+  color: #1e40af;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 15px;
+}
+
+.options-input-block input {
+  width: 100%;
+  padding: 12px;
+  font-size: 14px;
+  border: 2px solid #60a5fa;
+  border-radius: 8px;
+  background: white;
+  box-sizing: border-box;
+  transition: all 0.3s ease;
+}
+
+.options-input-block input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.options-hint {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+/* Bloque de debug/contador (Amarillo) */
+.options-debug-block {
+  margin-top: 15px;
+  padding: 12px;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Bloque de vista previa (Blanco) */
+.options-preview-block {
+  margin-top: 15px;
+  padding: 15px;
+  background: white;
+  border-radius: 8px;
+  border: 2px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.options-preview-block strong {
+  color: #374151;
+  font-size: 14px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.options-preview-block select {
+  width: 100%;
+  padding: 10px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: 2px solid #d1d5db;
+  background: #f9fafb;
+  cursor: not-allowed;
+  box-sizing: border-box;
+}
+
+/* Responsive para bloques de opciones */
+@media (max-width: 768px) {
+  .options-input-block {
+    padding: 15px;
+  }
+
+  .options-input-block label {
+    font-size: 14px;
+  }
+
+  .options-input-block input {
+    padding: 10px;
+    font-size: 13px;
+  }
+
+  .options-debug-block {
+    padding: 10px;
+    font-size: 12px;
+  }
+
+  .options-preview-block {
+    padding: 12px;
+  }
+
+  .options-preview-block strong {
+    font-size: 13px;
+  }
+
+  .options-preview-block select {
+    padding: 8px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .options-container {
+    margin-top: 20px;
+    margin-bottom: 10px;
+  }
+
+  .options-input-block {
+    padding: 12px;
+    border-radius: 8px;
+  }
+
+  .options-input-block label {
+    font-size: 13px;
+    gap: 6px;
+  }
+
+  .options-input-block input {
+    padding: 8px;
+    font-size: 12px;
+  }
+
+  .options-hint {
+    font-size: 11px;
+  }
+
+  .options-debug-block {
+    padding: 8px;
+    font-size: 11px;
+    margin-top: 12px;
+  }
+
+  .options-preview-block {
+    padding: 10px;
+    margin-top: 12px;
+  }
+
+  .options-preview-block strong {
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+
+  .options-preview-block select {
+    padding: 8px;
+    font-size: 12px;
+  }
+}
+
+/* ========================================
+   MEDIA QUERIES ADICIONALES
+   ======================================== */
+
+/* Tablet y pantallas medianas */
+@media (max-width: 768px) {
+  .body-element-container {
+    padding: 12px;
+  }
+
+  .body-element-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .section-title-input {
+    width: 100%;
+    font-size: 1.1em;
+  }
+
+  .btn-add-small {
+    width: 100%;
+    margin-top: 8px;
+  }
+}
+
+/* Móviles pequeños */
+@media (max-width: 480px) {
+  .body-element-container {
+    padding: 10px;
+    margin-bottom: 16px;
+  }
+
+  .section-title-input {
+    font-size: 1em;
+    min-width: auto;
+  }
+
+  .section-header-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+/* ========================================
+   ESTILOS DE REORDENAR (↑↓)
+   ======================================== */
+
+.field-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.element-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reorder-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-move-up,
+.btn-move-down {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.btn-move-up:hover:not(:disabled),
+.btn-move-down:hover:not(:disabled) {
+  background: #035b8d;
+  color: white;
+  border-color: #035b8d;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(3, 91, 141, 0.3);
+}
+
+.btn-move-up:disabled,
+.btn-move-down:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+.btn-remove-small {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.btn-remove-small:hover {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+}
+
+/* Responsive para reorder */
+@media (max-width: 768px) {
+  .reorder-buttons {
+    gap: 3px;
+  }
+
+  .btn-move-up,
+  .btn-move-down,
+  .btn-remove-small {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 3px 6px;
+    font-size: 0.8rem;
+  }
+
+  .field-header,
+  .element-header {
+    gap: 0.35rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .btn-move-up,
+  .btn-move-down,
+  .btn-remove-small {
+    min-width: 26px;
+    min-height: 26px;
+    padding: 2px 5px;
+    font-size: 0.75rem;
+  }
 }
