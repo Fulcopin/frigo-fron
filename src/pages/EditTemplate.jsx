@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import "./CreateTemplate.css"
-import { API_BASE_URL } from "../apiConfig"
+import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import { MAPPABLE_API_FIELDS } from "../api/apiMappings";
+import UserSelector from "../components/UserSelector";
+import { fetchUsers } from "../services/userService";
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
@@ -18,7 +20,7 @@ function EditTemplate() {
     nombre: "",
     version: "1",
     fechaVersion: null,
-    objetivo: "",
+    supervisa: "",
     proceso: "",
     cuandoSeUsa: "",
     quienLoLlena: "",
@@ -36,6 +38,10 @@ function EditTemplate() {
   const [isDraft, setIsDraft] = useState(false);
   const [puestosDisponibles, setPuestosDisponibles] = useState([]);
   const [loadingPuestos, setLoadingPuestos] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const [catalogoFirmas, setCatalogoFirmas] = useState([]);
+  const [apiToken, setApiToken] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   // ✅ Todos los tipos de campo (igual que CreateTemplate)
   const fieldTypes = [
@@ -73,6 +79,50 @@ function EditTemplate() {
       }
     };
     fetchPuestos();
+  }, []);
+
+  // 🔐 Cargar usuarios desde API externa (para selector de firmantes)
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        // Autenticar con API externa
+        const authRes = await fetch(`${API_EXTERNAL_BASE_URL}/Auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: "l-admin", password: "Infor-Web001" }),
+        });
+        if (authRes.ok) {
+          const authData = await authRes.json();
+          if (authData.token) {
+            setApiToken(authData.token);
+            const users = await fetchUsers(authData.token);
+            setAllUsers(users);
+            console.log(`✅ ${users.length} usuarios cargados en EditTemplate`);
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ No se pudieron cargar usuarios:', err);
+      }
+    };
+    loadUsers();
+  }, []);
+
+  // 📋 Cargar catálogo de firmas
+  useEffect(() => {
+    const loadCatalogo = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/CatalogoFirmas?soloActivos=true`);
+        if (response.ok) {
+          const data = await response.json();
+          const firmasArray = Array.isArray(data) ? data : data.$values || [];
+          setCatalogoFirmas(firmasArray);
+          console.log(`📋 ${firmasArray.length} firmas del catálogo cargadas en EditTemplate`);
+        }
+      } catch (err) {
+        console.warn('⚠️ No se pudo cargar catálogo de firmas:', err);
+      }
+    };
+    loadCatalogo();
   }, []);
 
   // Cargar template existente
@@ -251,6 +301,25 @@ function EditTemplate() {
     navigate('/manage-templates');
   };
 
+  const handlePreview = () => setShowPreview(true);
+
+  const handleDownloadEmpty = () => {
+    const hf = Array.isArray(template.headerFields) ? template.headerFields : [];
+    const be = Array.isArray(template.bodyElements) ? template.bodyElements : [];
+    const fi = Array.isArray(template.firmas) ? template.firmas : [];
+    const printWindow = globalThis.open('', '_blank');
+    if (!printWindow) { alert('Permite las ventanas emergentes para descargar'); return; }
+    const headerHtml = hf.map(f => `<tr><td style="font-weight:600;width:200px;background:#f0f4ff;padding:8px;border:1px solid #ccc;">${f.label||''}</td><td style="padding:8px;border:1px solid #ccc;min-width:250px;">&nbsp;</td></tr>`).join('');
+    const bodyHtml = be.map(el => {
+      if (el.type==='table') { const cols=el.columns||[]; const hr=cols.map(c=>`<th style="padding:6px;border:1px solid #ccc;background:#e8eef6;font-size:11px;">${c.label||''}</th>`).join(''); const rows=Array.from({length:10},()=>cols.map(()=>`<td style="padding:6px;border:1px solid #ccc;"></td>`).join('')).map(r=>`<tr>${r}</tr>`).join(''); return `<div style="margin-top:16px;"><h3 style="font-size:13px;">${el.title||'Tabla'}</h3><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>${hr}</tr></thead><tbody>${rows}</tbody></table></div>`; }
+      if (el.type==='section') { const fields=(el.fields||[]).map(f=>`<tr><td style="font-weight:600;width:180px;background:#f9fafb;padding:6px;border:1px solid #ccc;font-size:11px;">${f.label||''}</td><td style="padding:6px;border:1px solid #ccc;">&nbsp;</td></tr>`).join(''); return `<div style="margin-top:16px;"><h3 style="font-size:13px;">${el.title||'Secci\u00f3n'}</h3><table style="width:100%;border-collapse:collapse;">${fields}</table></div>`; }
+      return '';
+    }).join('');
+    const firmasHtml = fi.length>0 ? `<div style="margin-top:30px;display:flex;justify-content:space-around;flex-wrap:wrap;">${fi.map(f=>`<div style="text-align:center;min-width:150px;margin:10px;"><div style="border-bottom:1px solid #333;height:60px;margin-bottom:5px;"></div><div style="font-size:11px;font-weight:600;">${f.puesto||''}</div><div style="font-size:10px;color:#666;">Fecha: __/__/____</div></div>`).join('')}</div>` : '';
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>${template.codigo} - ${template.nombre}</title><style>body{font-family:Arial,sans-serif;padding:20px;}</style></head><body><h2 style="text-align:center;">${template.nombre}</h2><p style="text-align:center;font-size:12px;">C\u00f3digo: ${template.codigo} | Versi\u00f3n: ${template.version||'1'}</p>${headerHtml?`<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${headerHtml}</table>`:''}${bodyHtml}${firmasHtml}<script>window.onload=function(){window.print();}<\/script></body></html>`);
+    printWindow.document.close();
+  };
+
   if (loading) return <div className="create-template"><h1>Cargando plantilla...</h1></div>;
   if (error && !template.templateID) return <div className="create-template"><h1 className="error-message">Error: {error}</h1><button onClick={() => navigate('/manage-templates')} className="btn-secondary">Volver a Plantillas</button></div>;
 
@@ -343,6 +412,8 @@ function EditTemplate() {
         </h1>
         <div className="header-actions">
           <button onClick={handleCancel} className="btn-secondary">← Cancelar</button>
+          <button onClick={handlePreview} className="btn-secondary" style={{background:'#0ea5e9',color:'white',border:'none'}}>👁️ Vista Previa</button>
+          <button onClick={handleDownloadEmpty} className="btn-secondary" style={{background:'#16a34a',color:'white',border:'none'}}>📄 Descargar Vacía</button>
           <button 
             onClick={() => setIsDraft(!isDraft)} 
             className="btn-secondary"
@@ -395,7 +466,7 @@ function EditTemplate() {
             </small>
           </div>
           <div className="form-group full-width"><label>Nombre del Registro *</label><input type="text" value={template.nombre} onChange={(e) => handleInputChange("nombre", e.target.value)} placeholder="Ej: CONTROL DE TEMPERATURA DE TÚNELES"/></div>
-          <div className="form-group full-width"><label>Objetivo</label><textarea value={template.objetivo} onChange={(e) => handleInputChange("objetivo", e.target.value)} placeholder="Describe el objetivo del formulario" rows="3"/></div>
+          <div className="form-group full-width"><label>Quién Supervisa</label><input type="text" value={template.supervisa} onChange={(e) => handleInputChange("supervisa", e.target.value)} placeholder="Ej: Jefe de Producción, Supervisor de Calidad"/></div>
           <div className="form-group"><label>Proceso</label><input type="text" value={template.proceso} onChange={(e) => handleInputChange("proceso", e.target.value)} placeholder="Ej: Producción, Calidad, Recepción"/></div>
           <div className="form-group"><label>Cuándo se usa</label><input type="text" value={template.cuandoSeUsa} onChange={(e) => handleInputChange("cuandoSeUsa", e.target.value)} placeholder="Ej: Posterior a congelación"/></div>
           <div className="form-group"><label>Quién lo llena</label><input type="text" value={template.quienLoLlena} onChange={(e) => handleInputChange("quienLoLlena", e.target.value)} placeholder="Ej: Asistente de Cámara"/></div>
@@ -433,6 +504,21 @@ function EditTemplate() {
               🧮 Formulario Maestro (Auto-suma de totales)
             </label>
             {template.isMasterForm && <span style={{ fontSize: '0.85em', color: '#38a169', fontWeight: '500' }}>✅ Activado — Las columnas TOTAL se calcularán automáticamente</span>}
+          </div>
+
+          {/* ✅ NUEVO: Usa API Externa */}
+          <div className="form-group full-width" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', backgroundColor: template.usaApi ? '#eff6ff' : '#f8f9fa', borderRadius: '8px', border: template.usaApi ? '2px solid #3b82f6' : '1px solid #e2e8f0' }}>
+            <input 
+              type="checkbox" 
+              id="usaApi" 
+              checked={template.usaApi || false} 
+              onChange={(e) => handleInputChange("usaApi", e.target.checked)} 
+              style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+            />
+            <label htmlFor="usaApi" style={{ cursor: 'pointer', margin: 0, fontWeight: '600', color: template.usaApi ? '#1e40af' : '#4a5568' }}>
+              📡 Usa API Externa (Cargar datos del ERP)
+            </label>
+            {template.usaApi && <span style={{ fontSize: '0.85em', color: '#2563eb', fontWeight: '500' }}>✅ Al llenar este formulario se mostrará la pantalla de selección de lotes</span>}
           </div>
         </div>
       </div>
@@ -622,7 +708,7 @@ function EditTemplate() {
                   <div className="table-config">
                     <div className="form-group">
                       <label>Filas por defecto</label>
-                      <input type="number" value={element.defaultRows || 5} onChange={(e) => updateBodyElement(elementIndex, 'defaultRows', parseInt(e.target.value) || 5)} min="1" max="20"/>
+                      <input type="number" value={element.defaultRows || 5} onChange={(e) => updateBodyElement(elementIndex, 'defaultRows', parseInt(e.target.value) || 5)} min="1" max="50"/>
                     </div>
                   </div>
                 </div>
@@ -733,6 +819,41 @@ function EditTemplate() {
                 )}
               </div>
 
+              {/* 👤 Nombre del Firmante - Selector con autocompletado */}
+              <div className="form-group">
+                <label>👤 Nombre del Firmante</label>
+                {(() => {
+                  // Combinar usuarios de API + catálogo de firmas
+                  const firmasCatalogo = catalogoFirmas.map(f => ({
+                    id: `cat-${f.id || f.catalogoFirmaId}`,
+                    nombreCompleto: f.nombreCompleto || f.nombre,
+                    email: f.email || '',
+                    rol: 'Catálogo de Firmas',
+                    nombreEmpresa: f.empresa || '',
+                    userName: f.nombreCompleto || f.nombre
+                  }));
+                  const seen = new Set();
+                  const uniqueUsers = [...allUsers, ...firmasCatalogo].filter(u => {
+                    const key = u.nombreCompleto?.toLowerCase();
+                    if (!key || seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                  });
+                  return (
+                    <UserSelector
+                      users={uniqueUsers}
+                      value={firma.nombreCompleto || ''}
+                      onChange={(nombre) => updateFirma(index, "nombreCompleto", nombre)}
+                      placeholder="Buscar o escribir nombre del firmante..."
+                      puesto={firma.puesto}
+                    />
+                  );
+                })()}
+                {firma.nombreCompleto && (
+                  <small style={{ color: '#16a34a', marginTop: '4px', display: 'block' }}>✅ Firmante asignado: {firma.nombreCompleto}</small>
+                )}
+              </div>
+
               {/* API Lotes */}
               <div className="form-group">
                 <label>🔄 API Lotes (Autocompletar desde Movimientos)</label>
@@ -800,9 +921,46 @@ function EditTemplate() {
 
       {/* ===== ACCIONES FINALES ===== */}
       <div className="form-actions">
+        <button onClick={handlePreview} className="btn-secondary" style={{background:'#0ea5e9',color:'white',border:'none'}}>👁️ Vista Previa</button>
+        <button onClick={handleDownloadEmpty} className="btn-secondary" style={{background:'#16a34a',color:'white',border:'none'}}>📄 Descargar Vacía</button>
         <button onClick={handleCancel} className="btn-secondary">← Cancelar</button>
         <button onClick={handleUpdateTemplate} className="btn-primary btn-large">💾 Actualizar Plantilla</button>
       </div>
+
+      {/* ===== MODAL VISTA PREVIA ===== */}
+      {showPreview && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={()=>setShowPreview(false)}>
+          <div style={{background:'white',borderRadius:'12px',padding:'30px',maxWidth:'800px',width:'100%',maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}}>
+              <div>
+                <h2 style={{margin:0,color:'#1e40af'}}>👁️ Vista Previa: {template.nombre}</h2>
+                <p style={{margin:'4px 0 0',color:'#666',fontSize:'13px'}}>{template.codigo} — v{template.version}</p>
+              </div>
+              <button onClick={()=>setShowPreview(false)} style={{background:'#ef4444',color:'white',border:'none',borderRadius:'8px',padding:'8px 16px',cursor:'pointer',fontWeight:'bold'}}>✕ Cerrar</button>
+            </div>
+            {(Array.isArray(template.headerFields)?template.headerFields:[]).length>0&&(
+              <div style={{marginBottom:'20px'}}>
+                <h3 style={{color:'#374151',fontSize:'14px',marginBottom:'8px'}}>📋 Encabezado</h3>
+                <table style={{width:'100%',borderCollapse:'collapse'}}>
+                  {(Array.isArray(template.headerFields)?template.headerFields:[]).map((f,i)=>(<tr key={i}><td style={{fontWeight:'600',background:'#f0f4ff',padding:'8px',border:'1px solid #ccc',width:'200px'}}>{f.label}</td><td style={{padding:'8px',border:'1px solid #ccc',color:'#9ca3af',fontStyle:'italic'}}>( vacío )</td></tr>))}
+                </table>
+              </div>
+            )}
+            {(Array.isArray(template.bodyElements)?template.bodyElements:[]).map((el,i)=>(
+              <div key={i} style={{marginBottom:'16px'}}>
+                <h3 style={{color:'#374151',fontSize:'14px',marginBottom:'8px'}}>{el.title||el.type}</h3>
+                {el.type==='table'&&(<table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}><thead><tr>{(el.columns||[]).map((c,j)=><th key={j} style={{padding:'6px',border:'1px solid #ccc',background:'#e8eef6'}}>{c.label}</th>)}</tr></thead><tbody>{Array.from({length:3},(_,r)=><tr key={r}>{(el.columns||[]).map((_,j)=><td key={j} style={{padding:'6px',border:'1px solid #ccc',color:'#d1d5db'}}>—</td>)}</tr>)}</tbody></table>)}
+                {el.type==='section'&&(<table style={{width:'100%',borderCollapse:'collapse'}}>{(el.fields||[]).map((f,j)=><tr key={j}><td style={{fontWeight:'600',background:'#f9fafb',padding:'6px',border:'1px solid #ccc',width:'180px',fontSize:'12px'}}>{f.label}</td><td style={{padding:'6px',border:'1px solid #ccc',color:'#9ca3af',fontStyle:'italic',fontSize:'12px'}}>( vacío )</td></tr>)}</table>)}
+              </div>
+            ))}
+            {(Array.isArray(template.firmas)?template.firmas:[]).length>0&&(
+              <div style={{marginTop:'20px',display:'flex',flexWrap:'wrap',gap:'20px',justifyContent:'space-around'}}>
+                {(Array.isArray(template.firmas)?template.firmas:[]).map((f,i)=>(<div key={i} style={{textAlign:'center',minWidth:'140px'}}><div style={{borderBottom:'1px solid #333',height:'50px',marginBottom:'6px'}}></div><div style={{fontWeight:'600',fontSize:'12px'}}>{f.puesto}</div></div>))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

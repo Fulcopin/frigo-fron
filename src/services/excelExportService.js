@@ -100,10 +100,10 @@ const applyCellStyle = (cell, isAlternate = false) => {
 };
 
 /**
- * 📋 Crea el encabezado de Frigolab en la hoja
+ * 📋 Crea el encabezado de Frigolab en la hoja (solo logo + metadatos con borde)
  */
 const createFrigolabHeader = async (worksheet, templateData, logoBase64) => {
-  // Logo (A1:B6)
+  // Logo (A1:B5)
   if (logoBase64) {
     const logoId = worksheet.workbook.addImage({
       base64: logoBase64,
@@ -112,104 +112,74 @@ const createFrigolabHeader = async (worksheet, templateData, logoBase64) => {
     
     worksheet.addImage(logoId, {
       tl: { col: 0, row: 0 },
-      ext: { width: 120, height: 120 }
+      ext: { width: 100, height: 100 }
     });
   }
   
-  // Título de la empresa (C1:F1)
-  worksheet.mergeCells('C1:F1');
-  const titleCell = worksheet.getCell('C1');
-  titleCell.value = 'Frigolab "San Mateo"';
-  titleCell.font = { bold: true, size: 16, color: { argb: EXCEL_COLORS.primary } };
-  titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
-  
-  // Subtítulo (C2:F2)
-  worksheet.mergeCells('C2:F2');
-  const subtitleCell = worksheet.getCell('C2');
-  subtitleCell.value = 'Exportadores de mariscos frescos y congelados';
-  subtitleCell.font = { italic: true, size: 10, color: { argb: 'FF666666' } };
-  subtitleCell.alignment = { vertical: 'middle', horizontal: 'left' };
-  
-  // Dirección (C3:F3)
-  worksheet.mergeCells('C3:F3');
-  const addressCell = worksheet.getCell('C3');
-  addressCell.value = '📍 Avenida San Vía a Rocafuerte - Parque del Atún';
-  addressCell.font = { size: 9 };
-  addressCell.alignment = { vertical: 'middle', horizontal: 'left' };
-  
-  // Contacto (C4:F4)
-  worksheet.mergeCells('C4:F4');
-  const contactCell = worksheet.getCell('C4');
-  contactCell.value = '📞 593-5-3701161 ✉️ frigolab@frigolab.com.ec';
-  contactCell.font = { size: 9 };
-  contactCell.alignment = { vertical: 'middle', horizontal: 'left' };
-  
-  // Título del formulario (A7:F7)
-  worksheet.mergeCells('A7:F7');
-  const formTitleCell = worksheet.getCell('A7');
+  // Título del formulario (C1:F4) centrado
+  worksheet.mergeCells('C1:F4');
+  const formTitleCell = worksheet.getCell('C1');
   formTitleCell.value = templateData.nombre || 'FORMULARIO';
-  formTitleCell.font = { bold: true, size: 14, color: { argb: EXCEL_COLORS.white } };
-  formTitleCell.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: EXCEL_COLORS.headerBg }
-  };
-  formTitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-  worksheet.getRow(7).height = 25;
+  formTitleCell.font = { bold: true, size: 14, color: { argb: EXCEL_COLORS.black } };
+  formTitleCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   
-  // Metadatos (G1:H6) - PRIORIZAR VALORES DE HEADERDATA (EDITABLES)
-  const metadataLabels = ['CÓDIGO:', 'VERSIÓN:', 'FECHA:'];
-  
-  // ✅ CÓDIGO: Usar headerData.codigo (editable) o código del template
+  // Metadatos (G1:H3) - CÓDIGO, VERSIÓN, FECHA
   const codigoFinal = templateData.headerData?.codigo || templateData.headerData?.Código || templateData.codigo || 'N/A';
-  
-  // ✅ VERSIÓN: Usar headerData.version (editable) o versión del template
   const versionFinal = templateData.headerData?.version || templateData.headerData?.Versión || String(templateData.version || '1.0');
   
-  // ✅ FECHA: Usar headerData.fecha (editable) o fecha de creación del formulario
   let fechaFinal = templateData.headerData?.fecha || templateData.headerData?.Fecha;
-  
-  // Si no hay fecha editada, usar la fecha de creación del formulario
   if (!fechaFinal && templateData.createdAt) {
     const createdDate = new Date(templateData.createdAt);
-    fechaFinal = createdDate.toLocaleDateString('es-EC', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    fechaFinal = createdDate.toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
   }
-  
-  // Si aún no hay fecha, usar la fecha actual
   if (!fechaFinal) {
     fechaFinal = new Date().toLocaleDateString('es-EC');
   }
-  
-  // Si la fecha viene en formato ISO (YYYY-MM-DD), convertir a DD/MM/YYYY
   if (fechaFinal && fechaFinal.includes('-') && fechaFinal.length === 10) {
     const [year, month, day] = fechaFinal.split('-');
     fechaFinal = `${day}/${month}/${year}`;
   }
   
-  const metadataValues = [codigoFinal, versionFinal, fechaFinal];
+  const metaLabels = ['CÓDIGO:', 'VERSIÓN:', 'FECHA:'];
+  const metaValues = [codigoFinal, versionFinal, fechaFinal];
   
-  for (let i = 0; i < metadataLabels.length; i++) {
-    const labelCell = worksheet.getCell(i + 1, 7); // Columna G
-    labelCell.value = metadataLabels[i];
+  const borderStyle = { style: 'thin', color: { argb: 'FF006699' } };
+  
+  for (let i = 0; i < metaLabels.length; i++) {
+    const labelCell = worksheet.getCell(i + 1, 7);
+    labelCell.value = metaLabels[i];
     labelCell.font = { bold: true, size: 10 };
     labelCell.alignment = { vertical: 'middle', horizontal: 'right' };
+    labelCell.border = { top: borderStyle, left: borderStyle, bottom: borderStyle, right: borderStyle };
     
-    const valueCell = worksheet.getCell(i + 1, 8); // Columna H
-    valueCell.value = metadataValues[i];
+    const valueCell = worksheet.getCell(i + 1, 8);
+    valueCell.value = metaValues[i];
     valueCell.font = { size: 10 };
     valueCell.alignment = { vertical: 'middle', horizontal: 'left' };
+    valueCell.border = { top: borderStyle, left: borderStyle, bottom: borderStyle, right: borderStyle };
   }
   
-  return 9; // Siguiente fila disponible
+  // Aplicar bordes alrededor de todo el encabezado (filas 1-4, columnas 1-8)
+  for (let r = 1; r <= 4; r++) {
+    for (let c = 1; c <= 8; c++) {
+      const cell = worksheet.getCell(r, c);
+      if (!cell.border) {
+        cell.border = {
+          top: r === 1 ? borderStyle : undefined,
+          bottom: r === 4 ? borderStyle : undefined,
+          left: c === 1 ? borderStyle : undefined,
+          right: c === 8 ? borderStyle : undefined
+        };
+      }
+    }
+  }
+  
+  // Fila vacía como separador
+  worksheet.getRow(5).height = 8;
+  
+  return 6; // Siguiente fila disponible
 };
 
-/**
- * 📝 Crea la sección de encabezado del formulario
- */
 /**
  * 📝 Crea la sección de información general (header) - DINÁMICA
  */
@@ -333,10 +303,17 @@ const createBodyTable = (worksheet, bodyData, bodyElements, startRow) => {
     });
     currentRow++;
     
-    // Filas de datos
-    // Dentro de createBodyTable, busca el bucle de filas:
-// Dentro de createBodyTable:
-  tableData.forEach((row, rowIndex) => {
+    // Filas de datos — FILTRAR filas completamente vacías
+  const isRowEmpty = (row) => {
+    return columns.every(col => {
+      const v = row[col.label] ?? row[col.name] ?? row[col.header] ?? '';
+      return String(v).trim() === '';
+    });
+  };
+  const filteredTableData = tableData.filter(row => !isRowEmpty(row));
+  const dataToRender = filteredTableData.length > 0 ? filteredTableData : tableData;
+  
+  dataToRender.forEach((row, rowIndex) => {
     columns.forEach((col, colIndex) => {
       const dataCell = worksheet.getCell(currentRow, colIndex + 1);
       const rowKeys = Object.keys(row);
@@ -358,8 +335,20 @@ const createBodyTable = (worksheet, bodyData, bodyElements, startRow) => {
         }
       }
 
-      dataCell.value = value ?? "";
+      const cellValue = value ?? "";
+      const isEmpty = String(cellValue).trim() === '';
+      dataCell.value = isEmpty ? '' : cellValue;
       applyCellStyle(dataCell, rowIndex % 2 === 1);
+      
+      // 🔧 Diagonal en celdas vacías
+      if (isEmpty) {
+        dataCell.fill = {
+          type: 'pattern',
+          pattern: 'darkUp',
+          fgColor: { argb: 'FFD0D0D0' },
+          bgColor: { argb: rowIndex % 2 === 1 ? 'FFF5F5F5' : EXCEL_COLORS.white }
+        };
+      }
     });
     worksheet.getRow(currentRow).height = 18;
     currentRow++;

@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import "./ManageTemplates.css";
 import { API_BASE_URL } from "../apiConfig";
-import TemplateVersionHistory from "../components/TemplateVersionHistory";
 import authService from "../services/authService";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 
@@ -12,8 +11,6 @@ function ManageTemplates() {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   // 📝 Historial manual
@@ -89,16 +86,6 @@ function ManageTemplates() {
       setError(err.message);
       alert(`Error: ${err.message}`);
     }
-  };
-
-  const handleViewVersionHistory = (template) => {
-    setSelectedTemplate(template);
-    setShowVersionHistory(true);
-  };
-
-  const handleCloseVersionHistory = () => {
-    setShowVersionHistory(false);
-    setSelectedTemplate(null);
   };
 
   // ========== 📝 HISTORIAL MANUAL ==========
@@ -209,7 +196,7 @@ function ManageTemplates() {
           const cols = el.columns || [];
           const headerRow = cols.map(c => `<th style="padding:6px 8px;border:1px solid #ccc;background:#e8eef6;font-size:11px;">${c.label || ''}</th>`).join('');
           const emptyRows = Array.from({ length: 10 }, () => 
-            cols.map(() => `<td style="padding:6px 8px;border:1px solid #ccc;min-height:24px;">&nbsp;</td>`).join('')
+            cols.map(() => `<td style="padding:6px 8px;border:1px solid #ccc;min-height:24px;position:relative;" class="empty-cell"></td>`).join('')
           ).map(r => `<tr>${r}</tr>`).join('');
           return `<div style="margin-top:16px;"><h3 style="font-size:13px;margin-bottom:6px;">${el.title || 'Tabla'}</h3><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>${headerRow}</tr></thead><tbody>${emptyRows}</tbody></table></div>`;
         }
@@ -243,18 +230,43 @@ function ManageTemplates() {
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
             @media print { body { padding: 10px; } }
+            .header-table { width: 100%; border-collapse: collapse; border: 2px solid #006699; margin-bottom: 16px; }
+            .header-table td { border: 1px solid #006699; padding: 6px 10px; vertical-align: middle; }
+            .logo-cell { width: 80px; text-align: center; }
+            .logo-cell img { max-width: 70px; max-height: 70px; }
+            .title-cell { text-align: center; font-size: 14px; font-weight: bold; }
+            .meta-label { font-weight: bold; font-size: 10px; text-align: right; width: 70px; background: #f9fafb; }
+            .meta-value { font-size: 10px; width: 80px; }
+            .empty-cell { position: relative; min-height: 24px; }
+            .empty-cell::after {
+              content: '';
+              position: absolute;
+              top: 0; left: 0; right: 0; bottom: 0;
+              background: linear-gradient(to bottom right, transparent calc(50% - 0.5px), #ccc calc(50% - 0.5px), #ccc calc(50% + 0.5px), transparent calc(50% + 0.5px));
+            }
           </style>
         </head>
         <body>
-          <div style="text-align:center;margin-bottom:20px;">
-            <h1 style="font-size:16px;margin:0;">${parsed.nombre}</h1>
-            <p style="font-size:12px;color:#666;margin:4px 0;">Código: ${parsed.codigo} | Versión: ${parsed.version || 'N/A'}</p>
-            ${parsed.objetivo ? `<p style="font-size:11px;color:#555;">${parsed.objetivo}</p>` : ''}
-          </div>
+          <table class="header-table">
+            <tr>
+              <td class="logo-cell" rowspan="3"><img src="" alt="Logo" /></td>
+              <td class="title-cell" rowspan="3">${parsed.nombre}</td>
+              <td class="meta-label">CÓDIGO:</td>
+              <td class="meta-value">${parsed.codigo}</td>
+            </tr>
+            <tr>
+              <td class="meta-label">VERSIÓN:</td>
+              <td class="meta-value">${parsed.version || '1'}</td>
+            </tr>
+            <tr>
+              <td class="meta-label">FECHA:</td>
+              <td class="meta-value">${parsed.fechaVersion ? new Date(parsed.fechaVersion).toLocaleDateString('es-EC') : '__/__/____'}</td>
+            </tr>
+          </table>
           ${headerFieldsHtml ? `<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${headerFieldsHtml}</table>` : ''}
           ${bodyHtml}
           ${firmasHtml}
-          <script>window.onload = function() { window.print(); }</script>
+          <script>window.onload = function() { window.print(); }<\/script>
         </body>
         </html>
       `);
@@ -308,40 +320,13 @@ function ManageTemplates() {
                 {template.proceso && <span className="template-proceso">📁 {template.proceso}</span>}
               </div>
               <div className="template-card-actions">
-                {/* 👁️ Vista previa */}
-                <button 
-                  onClick={() => handlePreview(template)} 
-                  className="btn-preview"
-                  title="Vista previa del formulario"
-                >
-                  👁️ Vista Previa
-                </button>
-
-                {/* 📄 Descargar vacía */}
-                <button 
-                  onClick={() => handleDownloadEmpty(template)} 
-                  className="btn-download-empty"
-                  title="Descargar plantilla vacía como PDF"
-                >
-                  📄 Descargar Vacía
-                </button>
-
-                {/* 📝 Historial manual */}
+                {/*  Historial manual */}
                 <button 
                   onClick={() => handleOpenManualHistory(template)} 
                   className="btn-manual-history"
                   title="Registro manual de cambios"
                 >
                   📝 Registro Cambios
-                </button>
-
-                {/* 📚 Historial automático (comparativo) */}
-                <button 
-                  onClick={() => handleViewVersionHistory(template)} 
-                  className="btn-info"
-                  title="Ver historial de versiones"
-                >
-                  📚 Historial
                 </button>
 
                 <Link 
@@ -366,16 +351,7 @@ function ManageTemplates() {
         </div>
       )}
 
-      {/* Modal de Historial de Versiones (comparativo automático) */}
-      {showVersionHistory && selectedTemplate && (
-        <TemplateVersionHistory
-          templateId={selectedTemplate.templateID}
-          templateName={selectedTemplate.nombre}
-          onClose={handleCloseVersionHistory}
-        />
-      )}
-
-      {/* ========== MODAL: HISTORIAL MANUAL ========== */}
+      {/* ========== MODAL: REGISTRO DE CAMBIOS ========== */}
       {showManualHistory && manualHistoryTemplate && (
         <div className="modal-overlay" onClick={() => setShowManualHistory(false)}>
           <div className="modal-manual-history" onClick={(e) => e.stopPropagation()}>
@@ -424,44 +400,51 @@ function ManageTemplates() {
               </button>
             </div>
 
-            {/* Lista de registros */}
+            {/* Tabla de registros */}
             <div className="mh-entries">
-              <h3>📋 Historial ({manualHistoryEntries.length})</h3>
+              <h3>📋 HISTORIAL DE CAMBIOS Y/O MODIFICACIONES</h3>
               {manualHistoryEntries.length === 0 ? (
                 <p className="mh-empty">No hay registros aún. Agrega el primero arriba.</p>
               ) : (
-                <div className="mh-entries-list">
-                  {manualHistoryEntries.map((entry) => (
-                    <div key={entry.id} className="mh-entry-card">
-                      <div className="mh-entry-header">
-                        <span className="mh-entry-date">
-                          📅 {new Date(entry.fecha).toLocaleDateString('es-EC', {
-                            day: '2-digit', month: 'short', year: 'numeric',
-                            hour: '2-digit', minute: '2-digit'
-                          })}
-                        </span>
-                        <span className="mh-entry-version">v{entry.version}</span>
-                        <button 
-                          className="mh-entry-delete" 
-                          onClick={() => handleDeleteManualEntry(entry.id)}
-                          title="Eliminar registro"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                      <div className="mh-entry-body">
-                        <div className="mh-entry-field">
-                          <strong>Motivo:</strong> {entry.motivo}
-                        </div>
-                        <div className="mh-entry-field">
-                          <strong>Cambio:</strong> {entry.cambioRealizado}
-                        </div>
-                        <div className="mh-entry-field mh-entry-responsable">
-                          👤 {entry.responsable}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="mh-table-wrapper">
+                  <table className="mh-table">
+                    <thead>
+                      <tr>
+                        <th>FECHA</th>
+                        <th>VERSIÓN</th>
+                        <th>MODIFICACIÓN</th>
+                        <th style={{ width: '42px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {manualHistoryEntries.map((entry) => (
+                        <tr key={entry.id}>
+                          <td className="mh-td-fecha">
+                            {new Date(entry.fecha).toLocaleDateString('es-EC', {
+                              day: '2-digit', month: '2-digit', year: 'numeric'
+                            })}
+                          </td>
+                          <td className="mh-td-version">{entry.version}</td>
+                          <td className="mh-td-modificacion">
+                            <strong>{entry.motivo}</strong>
+                            {entry.cambioRealizado && <><br />{entry.cambioRealizado}</>}
+                            {entry.responsable && entry.responsable !== 'N/A' && (
+                              <span className="mh-responsable-tag">👤 {entry.responsable}</span>
+                            )}
+                          </td>
+                          <td>
+                            <button 
+                              className="mh-entry-delete" 
+                              onClick={() => handleDeleteManualEntry(entry.id)}
+                              title="Eliminar registro"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

@@ -9,7 +9,7 @@ import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import { fetchUsers, filterUsersByPuesto } from "../services/userService"
 import "./FillForm.css" // Reutilizamos los estilos de FillForm
 import { loadFormForEdit, updateFilledForm, autosaveForm } from "../utils/filledFormsUtils"
-import { API_EXTERNAL_BASE_URL } from "../apiConfig"
+import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 
 // Configuración para autoguardado
 const AUTOSAVE_INTERVAL = 30000; // 30 segundos
@@ -38,6 +38,7 @@ function EditFilledForm() {
 
   // Estados para usuarios y firmas
   const [allUsers, setAllUsers] = useState([]);
+  const [catalogoFirmas, setCatalogoFirmas] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState(null);
   const [apiToken, setApiToken] = useState(null);
@@ -106,6 +107,24 @@ function EditFilledForm() {
       }
     };
     loadUsers();
+  }, []);
+
+  // 📋 Cargar catálogo de firmas
+  useEffect(() => {
+    const loadCatalogo = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/CatalogoFirmas?soloActivos=true`);
+        if (response.ok) {
+          const data = await response.json();
+          const firmasArray = Array.isArray(data) ? data : data.$values || [];
+          setCatalogoFirmas(firmasArray);
+          console.log(`📋 ${firmasArray.length} firmas del catálogo cargadas en EditFilledForm`);
+        }
+      } catch (err) {
+        console.warn('⚠️ No se pudo cargar catálogo de firmas:', err);
+      }
+    };
+    loadCatalogo();
   }, []);
 
   // Cargar el formulario llenado existente
@@ -753,7 +772,26 @@ Template: ${template?.nombre}
                   const firmaObj = typeof formData.firmasData[firma.puesto] === 'object' 
                     ? formData.firmasData[firma.puesto] 
                     : { nombre: '', fecha: '' };
+                  
+                  // 📋 Combinar usuarios API + Catálogo de firmas
                   const filteredUsers = filterUsersByPuesto(allUsers, firma.puesto);
+                  const firmasCatalogo = catalogoFirmas
+                    .filter(f => f.puesto.toLowerCase().includes(firma.puesto.toLowerCase()) || 
+                                 firma.puesto.toLowerCase().includes(f.puesto.toLowerCase()))
+                    .map(f => ({
+                      id: `catalogo-${f.catalogoFirmaID}`,
+                      nombreCompleto: f.nombreCompleto || f.puesto,
+                      email: f.correo || '',
+                      rol: f.puesto,
+                      nombreEmpresa: f.area || 'Catálogo de Firmas',
+                      puesto: f.puesto,
+                      area: f.area || '',
+                      source: 'catalogo'
+                    }));
+                  const combinedUsers = [...filteredUsers, ...firmasCatalogo];
+                  const uniqueUsers = Array.from(
+                    new Map(combinedUsers.map(u => [u.nombreCompleto?.toLowerCase() || u.id, u])).values()
+                  );
                   
                   return (
                     <div key={index} className="signature-box">
@@ -767,7 +805,7 @@ Template: ${template?.nombre}
                             {loadingUsers && <span style={{fontSize:'11px',color:'#999'}}> (Cargando...)</span>}
                           </label>
                           <UserSelector
-                            users={filteredUsers}
+                            users={uniqueUsers}
                             value={firmaObj?.nombre || ""}
                             onChange={(nombreCompleto, email) => {
                               setFormData(prev => ({

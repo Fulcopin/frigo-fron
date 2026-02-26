@@ -23,6 +23,7 @@ import AlertManagement from "./pages/AlertManagement";
 import ConsumptionDashboard from "./pages/ConsumptionDashboard";
 import CatalogoFirmas from "./pages/CatalogoFirmas";
 import SessionHistory from "./pages/SessionHistory";
+import MyDrafts from "./pages/MyDrafts";
 import "./App.css"
 
 function Navigation() {
@@ -88,6 +89,11 @@ function Navigation() {
           {/* Llenar Formulario - visible para todos */}
           <Link to="/fill-form" className={isActive("/fill-form") ? "active" : ""}>
             📝 Llenar Formulario
+          </Link>
+          
+          {/* Mis Borradores - visible para todos */}
+          <Link to="/my-drafts" className={isActive("/my-drafts") ? "active" : ""}>
+            📋 Mis Borradores
           </Link>
           
           {/* Administrar Plantillas - solo Admin y Supervisor */}
@@ -189,7 +195,8 @@ function getPageName(pathname) {
     '/alerts': 'Gestión de Alertas',
     '/dashboard-erp': 'Dashboard ERP',
     '/consumption-dashboard': 'Dashboard de Consumos',
-    '/session-history': 'Registro de Tiempos'
+    '/session-history': 'Registro de Tiempos',
+    '/my-drafts': 'Mis Borradores'
   }
   
   // Para rutas dinámicas como /edit-template/:id
@@ -238,6 +245,13 @@ function App() {
                   <ErrorBoundary>
                     <FillForm />
                   </ErrorBoundary>
+                </ProtectedRoute>
+              } />
+              
+              {/* Mis Borradores - Acceso para todos los roles */}
+              <Route path="/my-drafts" element={
+                <ProtectedRoute>
+                  <MyDrafts />
                 </ProtectedRoute>
               } />
               

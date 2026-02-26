@@ -1,5 +1,6 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
+import { API_BASE_URL } from '../apiConfig';
 import './SignatureUploader.css';
 
 /**
@@ -52,30 +53,66 @@ const SignatureUploader = ({
   // Auto-carga de firma guardada cuando el nombre seleccionado coincide con el usuario actual
   useEffect(() => {
     if (hasFirma || autoLoadedSignature) return;
-    if (!selectedName) return; // No hay nombre seleccionado aún
-    if (!isCurrentUserSelected) return; // El nombre seleccionado NO es el usuario actual
+    if (!selectedName) return;
+    if (!isCurrentUserSelected) return;
+    
+    const userId = currentUser?.username || currentUser?.email || currentUser?.nombre || '';
+    if (!userId) return;
 
-    // Usar el prop currentUser directamente (viene de authService.getCurrentUser())
-    if (!currentUser?.username && !currentUser?.email) return;
+    const loadSavedSignature = async () => {
+      // 1. Primero intentar localStorage (caché rápida)
+      const signatureKey = `signature_${userId.toLowerCase()}`;
+      const savedSignature = localStorage.getItem(signatureKey);
 
-    const signatureKey = `signature_${(currentUser.username || currentUser.email || '').toLowerCase()}`;
-    const savedSignature = localStorage.getItem(signatureKey);
+      if (savedSignature) {
+        console.log(`✅ Auto-cargando firma desde caché local para: ${currentUser.nombre || currentUser.username} en puesto: ${puesto}`);
+        
+        onFirmaChange({
+          ...firmaData,
+          firma: {
+            base64: savedSignature.startsWith('data:') ? savedSignature : undefined,
+            url: savedSignature,
+            provider: 'mysignature-auto',
+            uploaded_at: new Date().toISOString()
+          }
+        });
+        setAutoLoadedSignature(true);
+        return;
+      }
 
-    if (savedSignature) {
-      console.log(`✅ Auto-cargando firma guardada para: ${currentUser.nombre || currentUser.username} en puesto: ${puesto}`);
-      
-      onFirmaChange({
-        ...firmaData,
-        firma: {
-          base64: savedSignature,
-          url: savedSignature,
-          provider: 'mysignature-auto',
-          uploaded_at: new Date().toISOString()
+      // 2. Si no hay en localStorage, buscar en backend (CatalogoFirmas)
+      try {
+        const nombre = currentUser.nombre || currentUser.username || '';
+        if (nombre) {
+          const response = await fetch(`${API_BASE_URL}/CatalogoFirmas/by-nombre/${encodeURIComponent(nombre)}`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.firmaImageUrl) {
+              console.log(`✅ Auto-cargando firma desde servidor para: ${nombre} en puesto: ${puesto}`);
+              
+              // Guardar en localStorage como caché
+              localStorage.setItem(signatureKey, data.firmaImageUrl);
+              localStorage.setItem(`${signatureKey}_date`, data.fechaCreacion || new Date().toISOString());
+
+              onFirmaChange({
+                ...firmaData,
+                firma: {
+                  url: data.firmaImageUrl,
+                  provider: 'mysignature-auto',
+                  uploaded_at: data.fechaCreacion || new Date().toISOString()
+                }
+              });
+              setAutoLoadedSignature(true);
+              return;
+            }
+          }
         }
-      });
+      } catch (err) {
+        console.warn('⚠️ No se pudo cargar firma desde backend en auto-carga:', err);
+      }
+    };
 
-      setAutoLoadedSignature(true);
-    }
+    loadSavedSignature();
   }, [selectedName, isCurrentUserSelected, hasFirma, autoLoadedSignature]);
 
   const uploadToCloudinary = async (file) => {
@@ -150,16 +187,46 @@ const SignatureUploader = ({
       setUploading(true);
       setError(null);
 
-      // Usar el prop currentUser directamente (viene de authService.getCurrentUser())
-      if (!currentUser?.username && !currentUser?.email) {
+      // Obtener identificador del usuario
+      const userId = currentUser?.username || currentUser?.email || currentUser?.nombre || '';
+      
+      if (!userId) {
         setError('⚠️ No hay usuario logueado');
         setUploading(false);
         return;
       }
 
-      const signatureKey = `signature_${(currentUser.username || currentUser.email || '').toLowerCase()}`;
-      const savedSignature = localStorage.getItem(signatureKey);
-      const savedDate = localStorage.getItem(`${signatureKey}_date`);
+      console.log('🔍 Buscando firma guardada para:', userId);
+
+      const signatureKey = `signature_${userId.toLowerCase()}`;
+      let savedSignature = localStorage.getItem(signatureKey);
+      let savedDate = localStorage.getItem(`${signatureKey}_date`);
+
+      // Si no hay en localStorage, buscar en el backend
+      if (!savedSignature) {
+        console.log('🔍 No hay firma en localStorage, buscando en servidor...');
+        try {
+          const nombre = currentUser?.nombre || currentUser?.username || '';
+          if (nombre) {
+            const response = await fetch(`${API_BASE_URL}/CatalogoFirmas/by-nombre/${encodeURIComponent(nombre)}`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data.firmaImageUrl) {
+                savedSignature = data.firmaImageUrl;
+                savedDate = data.fechaCreacion;
+                // Guardar en localStorage como caché
+                localStorage.setItem(signatureKey, savedSignature);
+                localStorage.setItem(`${signatureKey}_date`, savedDate || new Date().toISOString());
+                console.log('✅ Firma cargada desde servidor');
+              }
+            } else {
+              console.warn('⚠️ Servidor respondió:', response.status);
+            }
+          }
+        } catch (err) {
+          console.warn('⚠️ No se pudo buscar firma en servidor:', err.message);
+        }
+      }
 
       if (!savedSignature) {
         setError('⚠️ No tienes una firma guardada. Ve a "Mi Firma" para guardar una.');
@@ -167,41 +234,35 @@ const SignatureUploader = ({
         return;
       }
 
-      console.log(`✅ Cargando firma guardada de: ${currentUser.nombre || currentUser.username}`);
-
-      const response = await fetch(savedSignature);
-      const blob = await response.blob();
-      const file = new File(
-        [blob], 
-        `firma_${currentUser.username}_${Date.now()}.png`, 
-        { type: 'image/png' }
-      );
-
-      console.log('📤 Subiendo firma guardada a Cloudinary...');
+      console.log(`✅ Cargando firma guardada para: ${userId} (tipo: ${savedSignature.startsWith('http') ? 'URL' : 'base64'})`);
 
       let firmaInfo;
 
-      if (useCloudinary) {
-        try {
-          firmaInfo = await uploadToCloudinary(file);
-          console.log('✅ Firma guardada subida a Cloudinary:', firmaInfo.url);
-        } catch (cloudinaryError) {
-          console.warn('⚠️ Cloudinary falló, usando Base64:', cloudinaryError.message);
-          firmaInfo = {
-            base64: savedSignature,
-            url: savedSignature,
-            provider: 'base64',
-            uploaded_at: savedDate || new Date().toISOString()
-          };
-        }
-      } else {
+      // Si es una URL (Cloudinary u otra), usarla directamente
+      if (savedSignature.startsWith('http')) {
+        firmaInfo = {
+          url: savedSignature,
+          provider: 'cloudinary',
+          uploaded_at: savedDate || new Date().toISOString()
+        };
+        console.log('✅ Usando URL directamente:', savedSignature);
+      } else if (savedSignature.startsWith('data:')) {
+        // Es base64 válido, usarlo directamente sin re-upload
         firmaInfo = {
           base64: savedSignature,
           url: savedSignature,
           provider: 'base64',
           uploaded_at: savedDate || new Date().toISOString()
         };
-        console.log('💾 Usando firma en Base64 (Cloudinary no configurado)');
+        console.log('✅ Usando base64 directamente');
+      } else {
+        // Dato corrupto o formato desconocido
+        console.warn('⚠️ Formato de firma no reconocido, eliminando caché corrupta');
+        localStorage.removeItem(signatureKey);
+        localStorage.removeItem(`${signatureKey}_date`);
+        setError('⚠️ La firma guardada estaba corrupta. Ve a "Mi Firma" para guardar una nueva.');
+        setUploading(false);
+        return;
       }
 
       onFirmaChange({
@@ -215,7 +276,7 @@ const SignatureUploader = ({
 
     } catch (err) {
       console.error('❌ Error al cargar firma guardada:', err);
-      setError('❌ Error al cargar tu firma guardada');
+      setError(`❌ Error al cargar firma: ${err.message || 'Error desconocido'}`);
       setUploading(false);
     }
   };
@@ -579,18 +640,7 @@ const SignatureUploader = ({
             >
               📤 Subir Imagen
             </button>
-            <button
-              className={`signature-tab ${activeTab === 'draw' ? 'active' : ''}`}
-              onClick={() => canUploadSignature && setActiveTab('draw')}
-              disabled={!canUploadSignature}
-              title={!canUploadSignature ? `Solo ${selectedName} puede dibujar su firma` : ''}
-              style={{
-                opacity: canUploadSignature ? 1 : 0.5,
-                cursor: canUploadSignature ? 'pointer' : 'not-allowed'
-              }}
-            >
-              ✍️ Dibujar Firma
-            </button>
+           
           </div>
 
           {activeTab === 'upload' ? (

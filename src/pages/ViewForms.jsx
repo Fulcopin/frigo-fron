@@ -5,9 +5,11 @@ import { useNavigate, useLocation } from "react-router-dom"
 import FormHeader from "../components/FormHeader"
 import VersionIndicator from "../components/VersionIndicator"
 import ScrollButton from "../components/ScrollButton"
-import { loadFormWithVersionInfo } from "../utils/filledFormsUtils"
+import SignatureUploader from "../components/SignatureUploader"
+import { loadFormWithVersionInfo, updateFilledForm } from "../utils/filledFormsUtils"
 import { exportFormToPDF } from "../services/pdfExportService"
 import { exportFormToExcel } from "../services/excelExportService"
+import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import "./ViewForms.css"
 import { API_BASE_URL } from "../apiConfig"; 
 import authService from "../services/authService";
@@ -15,6 +17,13 @@ import authService from "../services/authService";
 //const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
+
+// Parser seguro: si ya es objeto lo devuelve tal cual, si es string lo parsea, si falla devuelve fallback
+const safeParse = (val, fallback) => {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val !== 'string') return val;
+  try { return JSON.parse(val); } catch { return fallback; }
+};
 
 function ViewForms() {
   const navigate = useNavigate();
@@ -47,6 +56,10 @@ function ViewForms() {
   const [sendingEmail, setSendingEmail] = useState(false)
   const [emailFormTarget, setEmailFormTarget] = useState(null)
 
+  // 🔐 Estado para firmas interactivas en vista
+  const [viewFirmasData, setViewFirmasData] = useState({})
+  const [savingSignature, setSavingSignature] = useState(false)
+
   useEffect(() => {
     const loadInitialData = async () => {
       try {
@@ -65,7 +78,7 @@ function ViewForms() {
         // CORREGIDO: Parsear bodyElements en las plantillas
         const parsedTemplates = templatesArray.map(t => ({
           ...t,
-          bodyElements: JSON.parse(t.bodyElements || '[]')
+          bodyElements: safeParse(t.bodyElements, [])
         }));
         
         // CORREGIDO: Parsear bodyData en los formularios llenados
@@ -73,9 +86,9 @@ function ViewForms() {
           ...form,
           templateNombre: parsedTemplates.find(t => t.templateID === form.templateID)?.nombre || 'Plantilla Desconocida',
           templateCodigo: parsedTemplates.find(t => t.templateID === form.templateID)?.codigo || 'N/A',
-          headerData: JSON.parse(form.headerData || '{}'),
-          bodyData: JSON.parse(form.bodyData || '[]'), // ¡CAMBIO CLAVE!
-          firmasData: JSON.parse(form.firmasData || '{}'),
+          headerData: safeParse(form.headerData, {}),
+          bodyData: safeParse(form.bodyData, []),
+          firmasData: safeParse(form.firmasData, {}),
         }));
 
         setForms(parsedForms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
@@ -185,6 +198,66 @@ function ViewForms() {
       // Si falla, mostrar el formulario sin información de versión
       setSelectedForm(form);
       setSelectedFormVersionInfo(null);
+    }
+  };
+
+  // 🔐 Sincronizar viewFirmasData cuando se selecciona un formulario
+  useEffect(() => {
+    if (selectedForm?.firmasData) {
+      setViewFirmasData({ ...selectedForm.firmasData });
+    }
+  }, [selectedForm]);
+
+  // ✍️ Handler para actualizar firma desde la vista
+  const handleViewFirmaUpdate = async (puesto, firmaData) => {
+    console.log('✍️ Actualizando firma en vista para:', puesto);
+    
+    // Auto-captura de fecha y hora
+    let updatedFirmaData = { ...firmaData };
+    if (firmaData.firma) {
+      const now = new Date();
+      const fechaActual = now.toISOString().split('T')[0];
+      const horaActual = now.toTimeString().split(' ')[0].substring(0, 5);
+      updatedFirmaData = {
+        ...firmaData,
+        fecha: firmaData.fecha || fechaActual,
+        hora: firmaData.hora || horaActual
+      };
+    }
+    
+    const newFirmasData = { ...viewFirmasData, [puesto]: updatedFirmaData };
+    setViewFirmasData(newFirmasData);
+
+    // Guardar automáticamente en el backend
+    try {
+      setSavingSignature(true);
+      await updateFilledForm(selectedForm.formID, {
+        templateID: selectedForm.templateID,
+        headerData: selectedForm.headerData,
+        bodyData: selectedForm.bodyData,
+        firmasData: newFirmasData,
+        observaciones: selectedForm.observaciones
+      });
+      
+      // Actualizar el formulario en el estado local
+      setSelectedForm(prev => ({
+        ...prev,
+        firmasData: newFirmasData
+      }));
+      
+      // Actualizar en la lista de formularios
+      setForms(prev => prev.map(f => 
+        f.formID === selectedForm.formID 
+          ? { ...f, firmasData: newFirmasData }
+          : f
+      ));
+      
+      console.log('✅ Firma guardada exitosamente');
+    } catch (error) {
+      console.error('❌ Error al guardar firma:', error);
+      alert('❌ Error al guardar la firma: ' + error.message);
+    } finally {
+      setSavingSignature(false);
     }
   };
 
@@ -749,76 +822,125 @@ function ViewForms() {
             <div className="data-section"><h3>Observaciones</h3><div className="observations-box">{selectedForm.observaciones}</div></div>
           )}
 
-         {Object.keys(selectedForm.firmasData).length > 0 && (
+         {Object.keys(viewFirmasData).length > 0 && (
             <div className="data-section">
-              <h3>Firmas y Aprobaciones</h3>
+              <h3>Firmas y Aprobaciones {savingSignature && <span style={{ fontSize: '12px', color: '#1976d2' }}>💾 Guardando...</span>}</h3>
               <div className="signatures-grid">
                 {(() => {
                   // 🔧 FILTRAR: Solo mostrar firmas que existen en la plantilla actual
                   const templateFirmas = correspondingTemplate?.firmas || [];
                   const puestosValidos = templateFirmas.map(f => f.puesto);
                   
-                  console.log('🔍 Firmas en template:', puestosValidos);
-                  console.log('🔍 Firmas en formulario guardado:', Object.keys(selectedForm.firmasData));
-                  
                   // Filtrar firmasData para solo incluir puestos que están en la plantilla
-                  const firmasFiltradas = Object.entries(selectedForm.firmasData)
+                  const firmasFiltradas = Object.entries(viewFirmasData)
                     .filter(([puesto]) => puestosValidos.includes(puesto));
                   
                   if (firmasFiltradas.length === 0) {
                     return <p style={{ color: '#666', fontStyle: 'italic' }}>No hay firmas registradas</p>;
                   }
                   
-                  return firmasFiltradas.map(([puesto, data]) => (
-                  <div key={puesto} className="signature-box-view">
-                    <h4>{puesto}</h4>
-                    <div className="signature-data">
-                      {/* Mostrar imagen si existe */}
-                      {data.firma && (data.firma.url || data.firma.base64) ? (
-                        <div className="signature-image-container" style={{ textAlign: 'center', marginBottom: '10px' }}>
-                          <img 
-                            src={data.firma.url || data.firma.base64} 
-                            alt={`Firma ${puesto}`} 
-                            style={{ 
-                              maxHeight: '100px', 
-                              maxWidth: '100%', 
-                              border: '1px solid #eee',
-                              padding: '5px',
-                              backgroundColor: 'white',
-                              borderRadius: '4px'
-                            }} 
-                          />
-                          {/* Indicador del método de firma */}
-                          <div style={{ 
-                            fontSize: '10px', 
-                            color: '#666', 
-                            marginTop: '4px',
-                            fontStyle: 'italic'
+                  return firmasFiltradas.map(([puesto, data]) => {
+                    // 🔐 Verificar si el usuario logueado es el asignado a este puesto
+                    const nombreAsignado = (data.nombre || '').toLowerCase().trim();
+                    const currentUserName = (currentUser?.nombre || currentUser?.username || '').toLowerCase().trim();
+                    const isCurrentUserSlot = nombreAsignado && currentUserName && nombreAsignado === currentUserName;
+                    const yaFirmado = !!(data.firma && (data.firma.url || data.firma.base64));
+                    // El usuario puede firmar si: es su slot Y aún no ha firmado
+                    const canSignHere = isCurrentUserSlot && !yaFirmado;
+                    
+                    console.log(`🔐 [${puesto}] Validación de firma:`, {
+                      nombreAsignado,
+                      currentUserName,
+                      isCurrentUserSlot,
+                      yaFirmado,
+                      canSignHere
+                    });
+                    
+                    return (
+                      <div key={puesto} className="signature-box-view" style={{
+                        border: isCurrentUserSlot ? '2px solid #1976d2' : undefined,
+                        borderRadius: '8px',
+                        position: 'relative'
+                      }}>
+                        {isCurrentUserSlot && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '-10px',
+                            right: '10px',
+                            backgroundColor: '#1976d2',
+                            color: 'white',
+                            padding: '2px 10px',
+                            borderRadius: '10px',
+                            fontSize: '11px',
+                            fontWeight: 'bold'
                           }}>
-                            {data.firma.provider === 'cloudinary' && '☁️ Firma subida'}
-                            {data.firma.provider === 'base64' && '💾 Firma subida (local)'}
-                            {data.firma.provider === 'base64-drawn' && '✍️ Firma dibujada'}
+                            👤 Tu firma
                           </div>
+                        )}
+                        <h4>{puesto}</h4>
+                        <div className="signature-data">
+                          {/* Mostrar imagen si ya firmó */}
+                          {yaFirmado ? (
+                            <div className="signature-image-container" style={{ textAlign: 'center', marginBottom: '10px' }}>
+                              <img 
+                                src={data.firma.url || data.firma.base64} 
+                                alt={`Firma ${puesto}`} 
+                                style={{ 
+                                  maxHeight: '100px', 
+                                  maxWidth: '100%', 
+                                  border: '1px solid #eee',
+                                  padding: '5px',
+                                  backgroundColor: 'white',
+                                  borderRadius: '4px'
+                                }} 
+                              />
+                              <div style={{ 
+                                fontSize: '10px', 
+                                color: '#666', 
+                                marginTop: '4px',
+                                fontStyle: 'italic'
+                              }}>
+                                {data.firma.provider === 'cloudinary' && '☁️ Firma subida'}
+                                {data.firma.provider === 'base64' && '💾 Firma subida (local)'}
+                                {data.firma.provider === 'base64-drawn' && '✍️ Firma dibujada'}
+                                {data.firma.provider === 'mysignature-auto' && '🔄 Firma automática'}
+                              </div>
+                            </div>
+                          ) : canSignHere ? (
+                            /* 🔓 Si es el slot del usuario actual y no ha firmado → mostrar SignatureUploader */
+                            <SignatureUploader
+                              puesto={puesto}
+                              firmaData={data}
+                              onFirmaChange={(updatedData) => handleViewFirmaUpdate(puesto, updatedData)}
+                              cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
+                              cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
+                              currentUser={currentUser}
+                              canSign={true}
+                            />
+                          ) : (
+                            <p style={{ fontStyle: 'italic', color: '#999' }}>(Sin firma digital)</p>
+                          )}
+                          
+                          {/* Nombre bloqueado (readonly) */}
+                          <p><strong>Nombre:</strong> {data.nombre || "-"}</p>
+                          {data.email && (
+                            <p><strong>📧 Email:</strong> <a href={`mailto:${data.email}`} style={{ color: '#1976d2' }}>{data.email}</a></p>
+                          )}
+                          <p><strong>Fecha:</strong> {data.fecha || "-"}</p>
+                          {data.hora && (
+                            <p><strong>Hora:</strong> {data.hora}</p>
+                          )}
+                          <p style={{ marginTop: '4px' }}>
+                            {yaFirmado
+                              ? <span style={{ color: '#2e7d32', fontWeight: 'bold' }}>✅ Firmado</span>
+                              : <span style={{ color: '#e65100' }}>⏳ Pendiente de firma</span>
+                            }
+                          </p>
                         </div>
-                      ) : (
-                        <p style={{ fontStyle: 'italic', color: '#999' }}>(Sin firma digital)</p>
-                      )}
-                      
-                      <p><strong>Nombre:</strong> {data.nombre || "-"}</p>
-                      {data.email && (
-                        <p><strong>📧 Email:</strong> <a href={`mailto:${data.email}`} style={{ color: '#1976d2' }}>{data.email}</a></p>
-                      )}
-                      <p><strong>Fecha:</strong> {data.fecha || "-"}</p>
-                      <p style={{ marginTop: '4px' }}>
-                        {data.firma && (data.firma.url || data.firma.base64) 
-                          ? <span style={{ color: '#2e7d32', fontWeight: 'bold' }}>✅ Firmado</span>
-                          : <span style={{ color: '#e65100' }}>⏳ Pendiente de firma</span>
-                        }
-                      </p>
-                    </div>
-                    <div className="signature-line">Firma: _______________________</div>
-                  </div>
-                  ));
+                        <div className="signature-line">Firma: _______________________</div>
+                      </div>
+                    );
+                  });
                 })()}
               </div>
             </div>

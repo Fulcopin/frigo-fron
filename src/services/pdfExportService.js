@@ -61,63 +61,77 @@ const PAGE_CONFIG = {
 };
 
 /**
- * 🖼️ Dibuja el encabezado de Frigolab (igual que en el formulario web)
+ * 🖼️ Dibuja el encabezado de Frigolab (solo logo + metadatos con borde)
  */
 const drawFrigolabHeader = async (doc, templateData) => {
   const { codigo, nombre, version, fechaVersion, headerData, createdAt } = templateData;
   
-  // Fondo azul para el header
-  doc.setFillColor(...COLORS.headerBg);
-  doc.rect(0, 0, 220, 45, 'F');
+  const headerH = 40;
+  const pageW = doc.internal.pageSize.getWidth();
+  const marginL = 15;
+  const marginR = 15;
+  const contentW = pageW - marginL - marginR;
   
-  // Logo (izquierda) - MÁS PEQUEÑO Y PROFESIONAL
+  // Borde exterior del encabezado
+  doc.setDrawColor(0, 102, 153);
+  doc.setLineWidth(0.6);
+  doc.rect(marginL, 5, contentW, headerH);
+  
+  // Línea vertical: separa logo de título
+  const logoAreaW = 35;
+  doc.line(marginL + logoAreaW, 5, marginL + logoAreaW, 5 + headerH);
+  
+  // Línea vertical: separa título de metadatos
+  const metaAreaW = 50;
+  const metaX = pageW - marginR - metaAreaW;
+  doc.line(metaX, 5, metaX, 5 + headerH);
+  
+  // Logo (izquierda)
   try {
     const logoBase64 = await getBase64Image(logoUrl);
-    doc.addImage(logoBase64, 'PNG', 15, 8, 22, 22);
+    doc.addImage(logoBase64, 'PNG', marginL + 4, 9, 26, 26);
   } catch (error) {
-    console.warn('⚠️ No se pudo cargar el logo, continuando sin él:', error);
-    // Dibujar un rectángulo como placeholder
-    doc.setDrawColor(255, 255, 255);
-    doc.setLineWidth(1);
-    doc.rect(15, 8, 22, 22);
+    console.warn('⚠️ No se pudo cargar el logo:', error);
+    doc.setDrawColor(180, 180, 180);
+    doc.setLineWidth(0.3);
+    doc.rect(marginL + 4, 9, 26, 26);
   }
   
-  // Información de la empresa (izquierda)
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(13);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Frigolab "San Mateo"', 42, 13);
-  
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Exportadores de mariscos frescos y congelados', 42, 19);
-  
-  doc.setFontSize(7);
-  doc.text('Avenida San Via a Rocafuerte - Parque del Atun', 42, 24);
-  doc.text('593-5-3701161 - frigolab@frigolab.com.ec', 42, 28);
-  
   // Título del formulario (centro)
-  doc.setFontSize(14);
+  const titleAreaX = marginL + logoAreaW + 4;
+  const titleAreaW = metaX - titleAreaX - 4;
+  doc.setTextColor(...COLORS.text);
+  doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  const titleWidth = doc.getTextWidth(nombre);
-  doc.text(nombre, (220 - titleWidth) / 2, 38);
+  const titleLines = doc.splitTextToSize(nombre, titleAreaW);
+  const titleY = 5 + (headerH / 2) - ((titleLines.length * 6) / 2) + 4;
+  doc.text(titleLines, titleAreaX + titleAreaW / 2, titleY, { align: 'center' });
   
-  // Metadatos (derecha) - PRIORIZAR VALORES DE HEADERDATA (EDITABLES)
+  // Metadatos (derecha) con líneas horizontales internas
+  const metaContentX = metaX + 3;
+  const metaRowH = headerH / 3;
+  
+  // Líneas horizontales dentro del bloque de metadatos
+  doc.line(metaX, 5 + metaRowH, pageW - marginR, 5 + metaRowH);
+  doc.line(metaX, 5 + metaRowH * 2, pageW - marginR, 5 + metaRowH * 2);
+  
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
-  doc.text('CODIGO:', 155, 13);
-  doc.text('VERSION:', 155, 19);
-  doc.text('FECHA:', 155, 25);
+  doc.setTextColor(...COLORS.text);
+  doc.text('CÓDIGO:', metaContentX, 5 + metaRowH * 0.55 + 1);
+  doc.text('VERSIÓN:', metaContentX, 5 + metaRowH * 1.55 + 1);
+  doc.text('FECHA:', metaContentX, 5 + metaRowH * 2.55 + 1);
   
   doc.setFont('helvetica', 'normal');
   
   // ✅ CÓDIGO: Usar headerData.codigo (editable) o código del template
   const codigoFinal = headerData?.codigo || headerData?.Código || codigo || 'N/A';
-  doc.text(codigoFinal, 175, 13);
+  const metaValueX = metaContentX + 22;
+  doc.text(codigoFinal, metaValueX, 5 + metaRowH * 0.55 + 1);
   
   // ✅ VERSIÓN: Usar headerData.version (editable) o versión del template
   const versionFinal = headerData?.version || headerData?.Versión || String(version || '1.0');
-  doc.text(versionFinal, 175, 19);
+  doc.text(versionFinal, metaValueX, 5 + metaRowH * 1.55 + 1);
   
   // ✅ FECHA: Usar fechaVersion de la plantilla (NO la fecha de llenado)
   console.log('🔍 DEBUG FECHA PDF:', {
@@ -166,7 +180,7 @@ const drawFrigolabHeader = async (doc, templateData) => {
   
   console.log('✅ FECHA FINAL EN PDF:', fechaFinal);
   
-  doc.text(fechaFinal, 175, 25);
+  doc.text(fechaFinal, metaValueX, 5 + metaRowH * 2.55 + 1);
   
   // Resetear color de texto
   doc.setTextColor(...COLORS.text);
@@ -657,7 +671,7 @@ export const exportFormToPDF = async (form, template) => {
     
     // 2. Dibujar sección de header (Información General)
     console.log('📝 Dibujando información del encabezado...');
-    let currentY = drawHeaderSection(doc, templateData.headerData, 54);
+    let currentY = drawHeaderSection(doc, templateData.headerData, 48);
     
     // 3. Dibujar TODAS las secciones dinámicas del bodyElements
     console.log('📊 Dibujando secciones dinámicas del cuerpo...');
@@ -755,10 +769,13 @@ const rows = tableData.map((row, rowIndex) => {
           
           console.log(`📊 Filas procesadas para "${sectionTitle}":`, rows);
           
+          // 🔧 Filtrar filas completamente vacías
+          const filteredRows = rows.filter(row => row.some(cell => cell && cell.trim() !== ''));
+          
           autoTable(doc, {
             startY: currentY,
             head: [columns.map(col => col.header)],
-            body: rows,
+            body: filteredRows.length > 0 ? filteredRows : rows,
             theme: 'grid',
             headStyles: {
               fillColor: COLORS.headerBg,
@@ -774,7 +791,19 @@ const rows = tableData.map((row, rowIndex) => {
             alternateRowStyles: {
               fillColor: [245, 245, 245]
             },
-            margin: { left: 15, right: 15 }
+            margin: { left: 15, right: 15 },
+            // 🔧 Diagonal en celdas vacías
+            didDrawCell: (data) => {
+              if (data.section === 'body') {
+                const cellText = String(data.cell.raw || '').trim();
+                if (!cellText) {
+                  const { x, y, width, height } = data.cell;
+                  doc.setDrawColor(180, 180, 180);
+                  doc.setLineWidth(0.2);
+                  doc.line(x, y, x + width, y + height);
+                }
+              }
+            }
           });
           
           currentY = doc.lastAutoTable.finalY + 10;

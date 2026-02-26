@@ -67,6 +67,9 @@ function FillForm() {
   
   // 🎯 NUEVO: Obtener templateId pre-seleccionado desde el state de navegación
   const preSelectedTemplateId = location.state?.selectedTemplateId;
+  
+  // 📋 NUEVO: Obtener datos de borrador si viene desde MyDrafts
+  const resumeDraft = location.state?.resumeDraft;
 
   // 🆕 ESTADOS PARA MÚLTIPLES FORMULARIOS EN PESTAÑAS
   const [openTabs, setOpenTabs] = useState([]); // Array de formularios abiertos
@@ -95,6 +98,8 @@ function FillForm() {
   const [showSuccess, setShowSuccess] = useState(false)
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [draftSaving, setDraftSaving] = useState(false) // 📝 Estado de guardado de borrador
+  const [currentDraftId, setCurrentDraftId] = useState(null) // ID del borrador actual
 
   // Estados para Acordeón (NUEVO)
   const [expandedSections, setExpandedSections] = useState({
@@ -460,6 +465,114 @@ useEffect(() => {
     }
   }, [preSelectedTemplateId, templates, selectedTemplate, id]);
 
+  // 📋 NUEVO: Cargar borrador si viene desde MyDrafts
+  useEffect(() => {
+    if (!resumeDraft || !templates.length || selectedTemplate || id) return;
+    
+    console.log('📋 Cargando borrador guardado:', resumeDraft.draftId);
+    
+    try {
+      // Usar templateSnapshot si existe, o buscar la plantilla por ID
+      let templateToUse = resumeDraft.templateSnapshot;
+      
+      if (!templateToUse) {
+        templateToUse = templates.find(t => t.templateID === resumeDraft.templateId);
+      }
+      
+      if (!templateToUse) {
+        console.error('❌ No se encontró la plantilla del borrador');
+        alert('La plantilla de este borrador ya no existe. El borrador no puede ser restaurado.');
+        return;
+      }
+      
+      // Asegurar que los campos parseados sean del tipo correcto
+      if (typeof templateToUse.headerFields === 'string') {
+        templateToUse.headerFields = JSON.parse(templateToUse.headerFields || '[]');
+      }
+      if (typeof templateToUse.bodyElements === 'string') {
+        templateToUse.bodyElements = JSON.parse(templateToUse.bodyElements || '[]');
+      }
+      if (typeof templateToUse.firmas === 'string') {
+        templateToUse.firmas = JSON.parse(templateToUse.firmas || '[]');
+      }
+      
+      // Establecer la plantilla
+      setSelectedTemplate(templateToUse);
+      
+      // Cargar datos guardados del borrador
+      if (resumeDraft.headerData && Object.keys(resumeDraft.headerData).length > 0) {
+        setHeaderData(resumeDraft.headerData);
+      } else {
+        const initialHeader = {};
+        (templateToUse.headerFields || []).forEach(f => { initialHeader[f.label] = ""; });
+        setHeaderData(initialHeader);
+      }
+      
+      if (resumeDraft.bodyData && resumeDraft.bodyData.length > 0) {
+        setBodyData(resumeDraft.bodyData);
+      } else {
+        const initialBody = (templateToUse.bodyElements || []).map(element => {
+          if (element.type === 'section') {
+            const sectionData = {};
+            (element.fields || []).forEach(field => { sectionData[field.label] = ""; });
+            return { id: element.id, type: 'section', data: sectionData };
+          }
+          if (element.type === 'table') {
+            const numRows = element.defaultRows || 3;
+            const rows = Array.from({ length: numRows }, () => {
+              const row = {};
+              (element.columns || []).forEach(col => { row[col.label || col.header || col.name || col.id] = ""; });
+              return row;
+            });
+            return { id: element.id, type: 'table', data: rows };
+          }
+          return null;
+        }).filter(Boolean);
+        setBodyData(initialBody);
+      }
+      
+      if (resumeDraft.firmasData && Object.keys(resumeDraft.firmasData).length > 0) {
+        setFirmasData(resumeDraft.firmasData);
+      } else {
+        const initialFirmas = {};
+        (templateToUse.firmas || []).forEach(firma => {
+          initialFirmas[firma.puesto] = { nombre: firma.nombreCompleto || "", fecha: "" };
+        });
+        setFirmasData(initialFirmas);
+      }
+      
+      // Guardar el ID del borrador para poder actualizarlo
+      setCurrentDraftId(resumeDraft.draftId);
+      setHasUnsavedChanges(true);
+      
+      // Crear pestaña con los datos del borrador
+      const newTab = {
+        id: nextTabId,
+        templateId: templateToUse.templateID,
+        templateName: templateToUse.nombre || 'Borrador',
+        template: templateToUse,
+        headerData: resumeDraft.headerData || {},
+        bodyData: resumeDraft.bodyData || [],
+        firmasData: resumeDraft.firmasData || {},
+        hasUnsavedChanges: true
+      };
+      setOpenTabs([newTab]);
+      setActiveTabIndex(0);
+      setNextTabId(prev => prev + 1);
+      
+      // Cargar catálogos
+      loadAllApiCatalogs().catch(err => console.error('Error cargando catálogos:', err));
+      
+      // Limpiar el state para que no se cargue de nuevo
+      window.history.replaceState({}, document.title);
+      
+      console.log('✅ Borrador cargado exitosamente, DraftID:', resumeDraft.draftId);
+    } catch (err) {
+      console.error('❌ Error cargando borrador:', err);
+      alert('Error al cargar el borrador: ' + err.message);
+    }
+  }, [resumeDraft, templates, selectedTemplate, id]);
+
   // 2. CARGAR FORMULARIO EXISTENTE (MODO EDICIÓN)
   useEffect(() => {
     if (!id) return; 
@@ -536,8 +649,8 @@ useEffect(() => {
       bodyData: [],
       firmasData: {},
       hasUnsavedChanges: false,
-      lotesConfirmados: false, // <--- Agregamos esto para que sea individual
-      selectedLotes: [],       // <--- Agregamos esto
+      lotesConfirmados: !template.usaApi ? true : false, // Si no usa API, confirmar automáticamente
+      selectedLotes: !template.usaApi ? ['MANUAL'] : [],  // Si no usa API, modo manual
       createdAt: new Date().toISOString()
     };
     
@@ -557,7 +670,7 @@ useEffect(() => {
         return { id: element.id, type: 'observaciones', data: { texto: "" } };
       }
       if (element.type === 'table') {
-        const numRows = element.defaultRows || 10;
+        const numRows = element.defaultRows || 3;
         const initialRows = Array.from({ length: numRows }, () => {
           const newRow = {};
           (element.columns || []).forEach((col) => { 
@@ -571,9 +684,13 @@ useEffect(() => {
     }).filter(Boolean);
     newTab.bodyData = initialBodyData;
     
-    // Inicializar firmas vacías
+    // 🔒 AUTO-CARGAR NOMBRES DESDE LA PLANTILLA
     (template.firmas || []).forEach((firma) => {
-      newTab.firmasData[firma.puesto] = { nombre: "", fecha: "" };
+      newTab.firmasData[firma.puesto] = { 
+        nombre: firma.nombreCompleto || "", // ✅ Cargar nombre definido en plantilla
+        fecha: "", 
+        email: ""
+      };
     });
     
     setOpenTabs(prev => [...prev, newTab]);
@@ -586,8 +703,8 @@ useEffect(() => {
     setBodyData(newTab.bodyData);
     setFirmasData(newTab.firmasData);
     setHasUnsavedChanges(false);
-    setLotesConfirmados(false); // Confirmar lotes automáticamente para nueva pestaña
-    setSelectedLotes([]);
+    setLotesConfirmados(!template.usaApi); // Si no usa API, confirmar automáticamente
+    setSelectedLotes(!template.usaApi ? ['MANUAL'] : []);
     console.log(`✅ Pestaña #${nextTabId} creada y activada: "${template.nombre}"`);
   };
 
@@ -807,7 +924,7 @@ useEffect(() => {
               return { id: element.id, type: 'section', data: sectionData };
             }
             if (element.type === 'table') {
-              const numRows = element.defaultRows || 10;
+              const numRows = element.defaultRows || 3;
               const initialRows = Array.from({ length: numRows }, () => {
                 const newRow = {};
                 (element.columns || []).forEach((col) => { 
@@ -822,7 +939,7 @@ useEffect(() => {
           
           const initialFirmas = {};
           (template.firmas || []).forEach((firma) => {
-            initialFirmas[firma.puesto] = { nombre: "", fecha: "" };
+            initialFirmas[firma.puesto] = { nombre: firma.nombreCompleto || "", fecha: "" };
           });
           
           // Actualizar pestaña en el array
@@ -968,7 +1085,7 @@ useEffect(() => {
     setBodyData(initialBodyData);
     
     const initialFirmas = {};
-    (template.firmas || []).forEach((firma) => { initialFirmas[firma.puesto] = { nombre: "", fecha: "" }});
+    (template.firmas || []).forEach((firma) => { initialFirmas[firma.puesto] = { nombre: firma.nombreCompleto || "", fecha: "" }});
     setFirmasData(initialFirmas);
     setHasUnsavedChanges(false);
 
@@ -2348,6 +2465,61 @@ useEffect(() => {
     setHasUnsavedChanges(true);
   };
 
+  // ➕ Agregar múltiples filas de una vez
+  const addMultipleRows = (elementIndex) => {
+    const count = parseInt(prompt('¿Cuántas filas deseas agregar?', '5'));
+    if (!count || count < 1 || count > 100) return;
+    for (let i = 0; i < count; i++) {
+      addTableRow(elementIndex);
+    }
+  };
+
+  // 🗑️ Eliminar filas vacías de una tabla
+  const removeEmptyRows = (elementIndex) => {
+    const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
+    if (!tableElement) return;
+    
+    setBodyData(prev => prev.map((element, index) => {
+      if (index !== elementIndex) return element;
+      const nonEmptyRows = element.data.filter(row => {
+        return Object.values(row).some(val => val && String(val).trim() !== '');
+      });
+      // Mantener al menos 1 fila
+      return { ...element, data: nonEmptyRows.length > 0 ? nonEmptyRows : [element.data[0]] };
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  // 📏 Definir cantidad exacta de filas
+  const setTableRowCount = (elementIndex, targetCount) => {
+    if (!targetCount || targetCount < 1) return;
+    const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
+    if (!tableElement) return;
+    
+    setBodyData(prev => prev.map((element, index) => {
+      if (index !== elementIndex || element.type !== 'table') return element;
+      const currentRows = element.data || [];
+      if (targetCount === currentRows.length) return element;
+      
+      if (targetCount < currentRows.length) {
+        // Reducir: mantener las primeras N filas
+        return { ...element, data: currentRows.slice(0, targetCount) };
+      } else {
+        // Aumentar: agregar filas vacías
+        const emptyRow = {};
+        (tableElement.columns || []).forEach(col => {
+          emptyRow[col.label || col.header || col.name || col.id] = '';
+        });
+        const newRows = [...currentRows];
+        for (let i = currentRows.length; i < targetCount; i++) {
+          newRows.push({ ...emptyRow });
+        }
+        return { ...element, data: newRows };
+      }
+    }));
+    setHasUnsavedChanges(true);
+  };
+
   // 🆕 Función para agregar columna dinámicamente
   const addTableColumn = (elementIndex) => {
     const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
@@ -2664,7 +2836,7 @@ useEffect(() => {
       const horaActual = ahora.toTimeString().slice(0, 5); // HH:MM
       
       // Buscar la config de esta firma en el template
-      const firmaConfig = (template?.firmas || []).find(f => f.puesto === puesto);
+      const firmaConfig = (selectedTemplate?.firmas || []).find(f => f.puesto === puesto);
       const capFecha = firmaConfig?.capturaFecha !== false; // default true
       const capHora = firmaConfig?.capturaHora !== false;   // default true
       
@@ -3475,6 +3647,97 @@ useEffect(() => {
     }
   }, [apiMovimientoData, apiDetailsData, apiCatalogData, forceRenderKey, selectedLotes, lotesConfirmados]);
 
+  // --- GUARDADO DE BORRADOR (Base de datos - persiste hasta 7 días) ---
+  const handleSaveDraft = async () => {
+    if (!selectedTemplate) {
+      alert('⚠️ Selecciona una plantilla primero');
+      return;
+    }
+    
+    setDraftSaving(true);
+    
+    try {
+      const currentUser = authService.getCurrentUser();
+      
+      // Calcular progreso estimado
+      const totalFields = Object.keys(headerData).length + bodyData.length;
+      const filledFields = Object.values(headerData).filter(v => v && v !== '').length + 
+                          bodyData.filter(b => {
+                            if (b.type === 'section') return Object.values(b.data || {}).some(v => v && v !== '');
+                            if (b.type === 'table') return (b.data || []).some(row => Object.values(row).some(v => v && v !== ''));
+                            return false;
+                          }).length;
+      const progress = totalFields > 0 ? Math.round((filledFields / totalFields) * 100) : 0;
+      
+      // Preparar firmas sin imágenes pesadas
+      const firmasSinImagenes = Object.keys(firmasData).reduce((acc, puesto) => {
+        const firma = firmasData[puesto];
+        acc[puesto] = {
+          nombre: firma?.nombre || '',
+          fecha: firma?.fecha || '',
+          hora: firma?.hora || '',
+          email: firma?.email || '',
+          hasFirma: !!firma?.firma
+        };
+        return acc;
+      }, {});
+      
+      const draftPayload = {
+        templateID: selectedTemplate.templateID,
+        templateName: selectedTemplate.nombre || selectedTemplate.templateName || '',
+        templateCodigo: selectedTemplate.codigo || '',
+        userName: currentUser?.username || currentUser?.nombre || 'Anónimo',
+        userEmail: currentUser?.email || '',
+        userRole: currentUser?.rol || '',
+        headerData: JSON.stringify(headerData),
+        bodyData: JSON.stringify(bodyData),
+        firmasData: JSON.stringify(firmasSinImagenes),
+        templateSnapshot: JSON.stringify(selectedTemplate),
+        progress: Math.min(progress, 100),
+        nota: ''
+      };
+      
+      let response;
+      
+      if (currentDraftId) {
+        // Actualizar borrador existente
+        response = await fetch(`${API_BASE_URL}/FormDrafts/${currentDraftId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(draftPayload)
+        });
+      } else {
+        // Crear nuevo borrador
+        response = await fetch(`${API_BASE_URL}/FormDrafts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(draftPayload)
+        });
+      }
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText);
+      }
+      
+      const savedDraft = await response.json();
+      setCurrentDraftId(savedDraft.draftID || savedDraft.DraftID);
+      setHasUnsavedChanges(false);
+      
+      // Mostrar confirmación
+      setAutoSaveStatus('draft-saved');
+      setTimeout(() => setAutoSaveStatus(''), 4000);
+      
+      console.log(`✅ Borrador guardado (ID: ${savedDraft.draftID || savedDraft.DraftID}) - expira en 7 días`);
+      
+    } catch (err) {
+      console.error('❌ Error al guardar borrador:', err);
+      alert(`❌ Error al guardar borrador: ${err.message}`);
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
   // --- GUARDADO FINAL (POST / PUT) ---
  const handleSaveForm = async () => {
     setError(null);
@@ -3497,10 +3760,21 @@ useEffect(() => {
     // 🆕 Obtener datos del usuario logueado para guardar quién creó el formulario
     const currentUser = authService.getCurrentUser();
     
+    // 🧹 Limpiar filas vacías de las tablas antes de guardar
+    const cleanedBodyData = bodyData.map(element => {
+      if (element.type === 'table' && Array.isArray(element.data)) {
+        const nonEmptyRows = element.data.filter(row => 
+          Object.values(row).some(val => val !== null && val !== undefined && String(val).trim() !== '')
+        );
+        return { ...element, data: nonEmptyRows.length > 0 ? nonEmptyRows : [] };
+      }
+      return element;
+    });
+    
     const payload = {
       templateID: selectedTemplate.templateID,
       headerData: JSON.stringify(finalHeaderData),
-      bodyData: JSON.stringify(bodyData),
+      bodyData: JSON.stringify(cleanedBodyData),
       firmasData: JSON.stringify(firmasData),
       // 🆕 NUEVOS CAMPOS: Guardar quién creó, el proceso y el área
       filledBy: currentUser?.nombre || currentUser?.username || 'Usuario desconocido',
@@ -3528,6 +3802,17 @@ useEffect(() => {
       // ✅ EL GUARDADO FUE EXITOSO
       setShowSuccess(true);
       setHasUnsavedChanges(false);
+      
+      // 🗑️ Eliminar borrador de BD si existía
+      if (currentDraftId) {
+        try {
+          await fetch(`${API_BASE_URL}/FormDrafts/${currentDraftId}`, { method: 'DELETE' });
+          console.log('🗑️ Borrador eliminado tras guardar formulario completo');
+          setCurrentDraftId(null);
+        } catch (draftErr) {
+          console.warn('⚠️ No se pudo eliminar borrador:', draftErr);
+        }
+      }
       
       // Guardamos el índice de la pestaña que vamos a eliminar
       const indexToRemove = activeTabIndex;
@@ -3700,7 +3985,8 @@ useEffect(() => {
   }
 
   // VISTA 2: SELECCIÓN DE LOTES CON COMPONENTE API
-  if (!lotesConfirmados && !id) {
+  // Solo mostrar si la plantilla tiene usaApi activado
+  if (!lotesConfirmados && !id && selectedTemplate?.usaApi) {
     return (
       <div className="fill-form">
         <div className="form-header-bar">
@@ -3711,7 +3997,7 @@ useEffect(() => {
         <div className="api-selector-container form-section">
           <h2>Paso 2: Seleccionar Lotes desde API</h2>
           <p className="info-message">
-            💡 Usa el selector para buscar y elegir <strong>múltiples lotes</strong> del sistema.
+            💡 Selecciona los lotes que necesites. Los datos aparecerán como <strong>opciones en selectores</strong> dentro del formulario (no se llenarán automáticamente).
           </p>
           
           <LoteSelectorAPI
@@ -3800,53 +4086,17 @@ useEffect(() => {
                   // 🆕 Guardar CABECERAS para los selectores
                   setApiMovimientoData(cabecerasArray);
                   
-                  // Guardar DETALLES para las tablas
+                  // Guardar DETALLES para las tablas (como opciones de SELECT, NO auto-llenar filas)
                   setApiDetailsData(combinedDetails);
-                  console.log('✅ Datos actualizados:', {
+                  console.log('✅ Datos actualizados (disponibles en selects):', {
                     apiMovimientoData: cabecerasArray.length,
                     apiDetailsData: combinedDetails.length
                   });
                   
-                  // 🎯 AUTO-LLENAR TABLAS con datos de la API
-                  if (combinedDetails.length > 0) {
-                    const newBodyData = bodyData.map((element, elementIndex) => {
-                      if (element.type === 'table') {
-                        const tableTemplate = selectedTemplate.bodyElements[elementIndex];
-                        
-                        // Crear filas desde los datos de la API
-                       const filledRows = combinedDetails.map((detailItem) => {
-  const newRow = {};
-  
-  (tableTemplate.columns || []).forEach(col => {
-    const colName = col.label || col.header || col.name || col.id;
-    
-    if (col.apiMap && detailItem.hasOwnProperty(col.apiMap)) {
-      // 🛡️ Si el valor de la API es nulo o queremos que el usuario elija manualmente,
-      // nos aseguramos de que sea un string vacío.
-      const apiValue = detailItem[col.apiMap];
-      newRow[colName] = (apiValue !== null && apiValue !== undefined) ? apiValue : "";
-    } else if (col.label.toLowerCase().includes('lote') || col.label.toLowerCase().includes('n°')) {
-      newRow[colName] = detailItem._loteNumero || "";
-    } else {
-      // 🎯 Por defecto, todo lo que no esté mapeado explícitamente nace vacío
-      newRow[colName] = ""; 
-    }
-  });
-  
-  return newRow;
-});
-                        
-                        console.log(`✅ Tabla ${elementIndex}: ${filledRows.length} filas de ${lotes.length} lote(s)`);
-                        console.log(`   Columnas mapeadas:`, tableTemplate.columns?.filter(c => c.apiMap).map(c => c.label));
-                        
-                        return { ...element, data: filledRows };
-                      }
-                      return element;
-                    });
-                    
-                    setBodyData(newBodyData);
-                    setHasUnsavedChanges(true);
-                  }
+                  // 🎯 NO auto-llenar tablas: las filas se mantienen vacías
+                  // Los datos de la API estarán disponibles como opciones en los SELECT dropdowns
+                  // de cada celda que tenga apiMap configurado (renderField se encarga)
+                  console.log('ℹ️ Las tablas mantienen sus filas vacías. Los datos de la API aparecerán como opciones en los selectores de cada celda.');
                   
                 } catch (err) {
                   console.error('❌ Error cargando detalles:', err);
@@ -4089,9 +4339,36 @@ useEffect(() => {
           )}
         </h1>
         
-        <button onClick={handleSaveForm} className="btn-primary">
-            {id ? 'Actualizar' : 'Guardar Formulario'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {!id && (
+            <button 
+              onClick={handleSaveDraft} 
+              disabled={draftSaving}
+              style={{
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#ffffff', border: '2px solid #b45309',
+                padding: '8px 16px', borderRadius: '6px', cursor: draftSaving ? 'wait' : 'pointer',
+                fontSize: '14px', fontWeight: 'bold', opacity: draftSaving ? 0.7 : 1,
+                boxShadow: '0 2px 8px rgba(245, 158, 11, 0.4)', minHeight: '44px',
+                display: 'inline-flex', alignItems: 'center', gap: '4px'
+              }}
+              title="Guardar como borrador para continuar después (dura 7 días)"
+            >
+              {draftSaving ? '⏳ Guardando...' : '📋 Guardar Borrador'}
+            </button>
+          )}
+          <button onClick={handleSaveForm} className="btn-primary">
+              {id ? 'Actualizar' : 'Guardar Formulario'}
+          </button>
+        </div>
+        {autoSaveStatus === 'draft-saved' && (
+          <div style={{ 
+            background: '#fef3c7', color: '#92400e', padding: '4px 12px', 
+            borderRadius: '6px', fontSize: '12px', fontWeight: 'bold',
+            marginTop: '4px', textAlign: 'center'
+          }}>
+            ✅ Borrador guardado — disponible por 7 días en "Mis Borradores"
+          </div>
+        )}
       </div>
 
       {/* 🆕 BOTÓN FLOTANTE PARA AGREGAR NUEVA PESTAÑA (SIEMPRE VISIBLE) */}
@@ -5649,6 +5926,27 @@ useEffect(() => {
                     <button onClick={() => addTableRow(elementIndex)} className="btn-add-row">
                       + Agregar Fila
                     </button>
+                    <button onClick={() => addMultipleRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }} title="Agregar varias filas a la vez">
+                      ++ Agregar Varias
+                    </button>
+                    <button onClick={() => removeEmptyRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }} title="Eliminar filas que están completamente vacías">
+                      🧹 Limpiar Vacías
+                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', background: '#f1f5f9', borderRadius: '8px', padding: '2px 8px' }}>
+                      <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', whiteSpace: 'nowrap' }}>Filas:</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={rowCount}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          if (val && val >= 1 && val <= 100) setTableRowCount(elementIndex, val);
+                        }}
+                        style={{ width: '55px', padding: '3px 6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', textAlign: 'center' }}
+                        title="Escribe el número de filas que necesitas"
+                      />
+                    </div>
                     {/* 🎯 Mostrar botón "Recalcular Totales" SOLO si:
                         1. El formulario tiene auto-suma activado (15 TINAS o maestro)
                         2. La tabla tiene columnas PESO */}
@@ -5924,71 +6222,37 @@ useEffect(() => {
                 // 🔐 OBTENER USUARIO ACTUAL DE LA SESIÓN
                 const currentUser = authService.getCurrentUser();
                 
-                // 📋 TODOS los usuarios de la API (para mostrar en el dropdown)
-                const filteredUsers = filterUsersByPuesto(allUsers, firma.puesto);
+                const nombreAsignado = firma.nombreCompleto || '';
+                // 🔐 VALIDACIÓN QUIRÚRGICA: ¿Este slot le corresponde al usuario logueado?
+                const isCurrentUserSlot = nombreAsignado && currentUser?.nombre && 
+                  nombreAsignado.toLowerCase().trim() === currentUser.nombre.toLowerCase().trim();
                 
-                // � DEBUG: Ver qué hay en el catálogo
-                console.log(`🔍 Buscando en catálogo para "${firma.puesto}":`, {
-                  totalEnCatalogo: catalogoFirmas.length,
-                  puestosEnCatalogo: catalogoFirmas.map(f => f.puesto),
-                  buscando: firma.puesto
-                });
-                
-                // �📋 Firmas del catálogo que coincidan con este puesto
-                const firmasCatalogo = catalogoFirmas
-                  .filter(f => f.puesto.toLowerCase().includes(firma.puesto.toLowerCase()) || 
-                               firma.puesto.toLowerCase().includes(f.puesto.toLowerCase()))
-                  .map(f => ({
-                    id: `catalogo-${f.catalogoFirmaID}`,
-                    nombreCompleto: f.nombreCompleto || f.puesto,
-                    email: f.correo || '',
-                    rol: f.puesto,
-                    nombreEmpresa: f.area || 'Catálogo de Firmas',
-                    puesto: f.puesto,
-                    area: f.area || '',
-                    source: 'catalogo'
-                  }));
-                
-                // ✅ MOSTRAR TODOS: Combinar API + Catálogo (sin duplicados)
-                const combinedUsers = [...filteredUsers, ...firmasCatalogo];
-                const uniqueUsers = Array.from(
-                  new Map(combinedUsers.map(u => [u.nombreCompleto?.toLowerCase() || u.id, u])).values()
-                );
-                
-                // 🔐 VERIFICAR SI USUARIO PUEDE FIRMAR
-                // Primero verificar si el nombre seleccionado es del catálogo
-                const nombreSeleccionado = firmasData[firma.puesto]?.nombre || '';
-                const esUsuarioDeCatalogo = firmasCatalogo.some(
-                  f => f.nombreCompleto?.toLowerCase() === nombreSeleccionado.toLowerCase()
-                );
-                
-                // Si es del catálogo → siempre puede firmar
-                // Si es de la API → validar por rol
-                const userCanSign = esUsuarioDeCatalogo || canUserSignForPuesto(
-                  allUsers, 
-                  firma.puesto, 
-                  currentUser?.nombre || currentUser?.username
-                );
-                
-                console.log(`👥 Usuarios disponibles para "${firma.puesto}":`, {
-                  apiTotal: filteredUsers.length,
-                  catalogoTotal: firmasCatalogo.length,
-                  combinadosAntesDedup: combinedUsers.length,
-                  uniqueUsersTotal: uniqueUsers.length,
-                  usuarioActual: currentUser?.nombre,
-                  nombreSeleccionado: nombreSeleccionado,
-                  esDelCatalogo: esUsuarioDeCatalogo,
-                  puedeFiremar: userCanSign,
-                  razon: esUsuarioDeCatalogo ? '✅ Usuario del catálogo (sin restricción)' : (userCanSign ? '✅ Usuario con rol correcto' : '❌ Usuario sin rol para este puesto'),
-                  usuariosAPI: filteredUsers.map(u => `${u.nombreCompleto} (${u.source || 'api'})`),
-                  usuariosCatalogo: firmasCatalogo.map(u => `${u.nombreCompleto} (${u.source})`)
-                });
-                
-                if (uniqueUsers.length === 0) {
-                  console.warn(`⚠️ No hay usuarios disponibles para "${firma.puesto}". Agregar en /catalogo-firmas`);
-                }
                 return (
-                  <div key={index} className="signature-box">
+                  <div key={index} className="signature-box" style={{
+                    border: isCurrentUserSlot ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                    background: isCurrentUserSlot ? '#eff6ff' : (!nombreAsignado ? '#fff' : '#f9fafb'),
+                    position: 'relative'
+                  }}>
+                    {/* Badge indicador */}
+                    {isCurrentUserSlot && (
+                      <div style={{ 
+                        position: 'absolute', top: '-10px', right: '10px', 
+                        background: '#3b82f6', color: '#fff', padding: '2px 10px', 
+                        borderRadius: '10px', fontSize: '11px', fontWeight: 'bold' 
+                      }}>
+                        👤 Tu firma
+                      </div>
+                    )}
+                    {nombreAsignado && !isCurrentUserSlot && (
+                      <div style={{ 
+                        position: 'absolute', top: '-10px', right: '10px', 
+                        background: '#ef4444', color: '#fff', padding: '2px 10px', 
+                        borderRadius: '10px', fontSize: '11px', fontWeight: 'bold' 
+                      }}>
+                        🔒 Asignado a otro usuario
+                      </div>
+                    )}
+                    
                     <h4>{firma.puesto}</h4>
                     
                     {/* Campos de texto: Nombre y Fecha */}
@@ -5996,28 +6260,22 @@ useEffect(() => {
                       <div className="form-field">
                         <label>
                           Nombre:
-                          {loadingUsers && <span className="loading-hint"> (Cargando usuarios...)</span>}
-                          {usersError && <span className="error-hint"> (Error: {usersError})</span>}
+                          <span className="lock-hint" style={{fontSize: '11px', color: '#666', marginLeft: '5px'}}>🔒 Definido en plantilla</span>
                         </label>
                         
-                        {/* 👥 Selector de usuarios con filtro por rol + catálogo */}
-                        <UserSelector
-                          users={uniqueUsers}
+                        {/* 🔒 Nombre bloqueado - cargado automáticamente desde la plantilla */}
+                        <input
+                          type="text"
                           value={firmasData[firma.puesto]?.nombre || ""}
-                          onChange={(nombreCompleto, email) => {
-                            setFirmasData(prev => ({
-                              ...prev,
-                              [firma.puesto]: {
-                                ...prev[firma.puesto],
-                                nombre: nombreCompleto,
-                                ...(email ? { email } : {})
-                              }
-                            }));
-                            setHasUnsavedChanges(true);
+                          readOnly
+                          disabled
+                          style={{
+                            backgroundColor: '#f5f5f5',
+                            color: '#666',
+                            borderColor: '#ccc',
+                            cursor: 'not-allowed'
                           }}
-                          placeholder={loadingUsers ? "Cargando..." : "Buscar o escribir nombre..."}
-                          disabled={loadingUsers}
-                          puesto={firma.puesto}
+                          title="El nombre del firmante está definido en la plantilla y no puede ser modificado aquí"
                         />
                       </div>
                       {firma.capturaFecha !== false && (
@@ -6029,7 +6287,9 @@ useEffect(() => {
                           type="date" 
                           value={firmasData[firma.puesto]?.fecha || ""} 
                           onChange={(e) => handleFirmaChange(firma.puesto, "fecha", e.target.value)}
-                          title="Fecha capturada automáticamente al firmar (editable)"
+                          disabled={!isCurrentUserSlot && !!nombreAsignado}
+                          style={!isCurrentUserSlot && nombreAsignado ? { backgroundColor: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {}}
+                          title={!isCurrentUserSlot && nombreAsignado ? "Solo el firmante asignado puede editar la fecha" : "Fecha capturada automáticamente al firmar (editable)"}
                         />
                       </div>
                       )}
@@ -6042,23 +6302,45 @@ useEffect(() => {
                           type="time" 
                           value={firmasData[firma.puesto]?.hora || ""} 
                           onChange={(e) => handleFirmaChange(firma.puesto, "hora", e.target.value)}
-                          title="Hora capturada automáticamente al firmar (editable)"
+                          disabled={!isCurrentUserSlot && !!nombreAsignado}
+                          style={!isCurrentUserSlot && nombreAsignado ? { backgroundColor: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {}}
+                          title={!isCurrentUserSlot && nombreAsignado ? "Solo el firmante asignado puede editar la hora" : "Hora capturada automáticamente al firmar (editable)"}
                         />
                       </div>
                       )}
                     </div>
 
-                    {/* 🆕 Componente de carga de firma PNG */}
-                    <SignatureUploader
-                      key={`${firma.puesto}-${firmasData[firma.puesto]?.nombre || 'sin-nombre'}`}
-                      puesto={firma.puesto}
-                      firmaData={firmasData[firma.puesto]}
-                      onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
-                      cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
-                      cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
-                      currentUser={currentUser}
-                      canSign={userCanSign}
-                    />
+                    {/* 🔐 Firma Digital - SOLO si es el usuario correcto o no hay nombre asignado */}
+                    {isCurrentUserSlot || !nombreAsignado ? (
+                      <SignatureUploader
+                        key={`${firma.puesto}-${nombreAsignado}`}
+                        puesto={firma.puesto}
+                        firmaData={firmasData[firma.puesto]}
+                        onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
+                        cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
+                        cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
+                        currentUser={currentUser}
+                        canSign={true}
+                      />
+                    ) : (
+                      <div style={{
+                        padding: '20px',
+                        textAlign: 'center',
+                        background: '#fef2f2',
+                        border: '2px dashed #fca5a5',
+                        borderRadius: '8px',
+                        marginTop: '10px'
+                      }}>
+                        <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔒</div>
+                        <p style={{ color: '#dc2626', fontWeight: 'bold', margin: '0 0 4px 0' }}>
+                          Firma bloqueada
+                        </p>
+                        <p style={{ color: '#666', fontSize: '12px', margin: 0 }}>
+                          Solo <strong>{nombreAsignado}</strong> puede firmar este espacio.
+                          <br/>Inicia sesión con esa cuenta para firmar.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -6066,11 +6348,37 @@ useEffect(() => {
           </AccordionSection>
         )}
 
-        <div className="form-actions-bottom">
+        <div className="form-actions-bottom" style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          {!id && (
+            <button 
+              onClick={handleSaveDraft} 
+              disabled={draftSaving}
+              style={{
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#ffffff', 
+                border: '2px solid #b45309', padding: '12px 24px', borderRadius: '8px', 
+                cursor: draftSaving ? 'wait' : 'pointer', fontSize: '16px', 
+                fontWeight: 'bold', opacity: draftSaving ? 0.7 : 1,
+                boxShadow: '0 2px 8px rgba(245, 158, 11, 0.4)', minHeight: '44px',
+                display: 'inline-flex', alignItems: 'center', gap: '6px'
+              }}
+              title="Guardar como borrador para continuar después (dura 7 días)"
+            >
+              {draftSaving ? '⏳ Guardando borrador...' : '📋 Guardar Borrador'}
+            </button>
+          )}
           <button onClick={handleSaveForm} className="btn-primary btn-large">
             {id ? '💾 Guardar Cambios' : '💾 Guardar Formulario Completo'}
           </button>
         </div>
+        {autoSaveStatus === 'draft-saved' && (
+          <div style={{ 
+            background: '#fef3c7', color: '#92400e', padding: '8px 16px', 
+            borderRadius: '8px', fontSize: '14px', fontWeight: 'bold',
+            textAlign: 'center', marginTop: '8px'
+          }}>
+            ✅ Borrador guardado en el servidor — disponible por 7 días en la sección "Mis Borradores"
+          </div>
+        )}
       </div>
 
       {/* 🔼🔽 Botones de scroll */}

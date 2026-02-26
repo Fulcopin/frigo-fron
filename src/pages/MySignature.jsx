@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import authService from '../services/authService';
+import { CLOUDINARY_CONFIG } from '../config/cloudinary.config';
+import { API_BASE_URL } from '../apiConfig';
 import './MySignature.css';
 
 const MySignature = () => {
@@ -9,6 +11,7 @@ const MySignature = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [selectedFile, setSelectedFile] = useState(null);
+  const [persistenceInfo, setPersistenceInfo] = useState(null); // 'cloudinary' | 'local'
   const fileInputRef = useRef();
 
   useEffect(() => {
@@ -17,10 +20,36 @@ const MySignature = () => {
     loadSignature(user);
   }, []);
 
-  // Cargar firma guardada del usuario desde localStorage
-  const loadSignature = (user) => {
+  // Cargar firma: primero intenta desde el backend (persistente), luego localStorage (caché)
+  const loadSignature = async (user) => {
     if (!user) return;
     
+    // 1. Intentar cargar desde backend (CatalogoFirmas) — firma persistente
+    try {
+      const nombre = user.nombre || user.username || '';
+      if (nombre) {
+        const response = await fetch(`${API_BASE_URL}/CatalogoFirmas/by-nombre/${encodeURIComponent(nombre)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.firmaImageUrl) {
+            console.log('✅ Firma cargada desde base de datos (persistente)');
+            setSignatureUrl(data.firmaImageUrl);
+            setSignatureDate(data.fechaCreacion);
+            setPersistenceInfo('cloudinary');
+            // Actualizar caché local
+            const keyId = (user.username || user.email || '').toLowerCase();
+            const signatureKey = `signature_${keyId}`;
+            localStorage.setItem(signatureKey, data.firmaImageUrl);
+            localStorage.setItem(`${signatureKey}_date`, data.fechaCreacion);
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ No se pudo cargar firma desde backend:', err);
+    }
+
+    // 2. Fallback: localStorage
     const keyId = (user.username || user.email || '').toLowerCase();
     const signatureKey = `signature_${keyId}`;
     const savedSignature = localStorage.getItem(signatureKey);
@@ -29,11 +58,69 @@ const MySignature = () => {
     if (savedSignature) {
       setSignatureUrl(savedSignature);
       setSignatureDate(savedDate);
+      setPersistenceInfo('local');
+    }
+  };
+
+  // Subir imagen a Cloudinary y obtener URL permanente
+  const uploadToCloudinary = async (base64OrFile) => {
+    const formData = new FormData();
+    
+    if (typeof base64OrFile === 'string') {
+      // Es base64, convertir a blob
+      const response = await fetch(base64OrFile);
+      const blob = await response.blob();
+      const file = new File([blob], `firma_${currentUser?.username || 'user'}_${Date.now()}.png`, { type: 'image/png' });
+      formData.append('file', file);
+    } else {
+      formData.append('file', base64OrFile);
+    }
+    
+    formData.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);
+    formData.append('folder', 'frigo-firmas-personales');
+    formData.append('public_id', `firma_personal_${(currentUser?.username || 'user').toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`);
+
+    const res = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`,
+      { method: 'POST', body: formData }
+    );
+
+    if (!res.ok) {
+      const errData = await res.json();
+      throw new Error(errData.error?.message || 'Error al subir a Cloudinary');
+    }
+
+    const data = await res.json();
+    return data.secure_url;
+  };
+
+  // Guardar URL de firma en el backend (CatalogoFirmas)
+  const saveToBackend = async (firmaImageUrl) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/CatalogoFirmas/guardar-firma`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombreCompleto: currentUser?.nombre || currentUser?.username || '',
+          correo: currentUser?.email || '',
+          puesto: currentUser?.rol || 'Sin asignar',
+          firmaImageUrl: firmaImageUrl
+        })
+      });
+      if (res.ok) {
+        console.log('✅ Firma guardada en base de datos (persistente)');
+        return true;
+      }
+      console.warn('⚠️ No se pudo guardar en backend:', await res.text());
+      return false;
+    } catch (err) {
+      console.warn('⚠️ Error al guardar en backend:', err);
+      return false;
     }
   };
 
   // Manejar selección de archivo
-  const handleFileSelect = (e) => {
+  const handleFileSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -51,38 +138,62 @@ const MySignature = () => {
 
     setSelectedFile(file);
     setMessage({ type: '', text: '' });
+    setLoading(true);
+    setMessage({ type: 'info', text: '⏳ Subiendo firma al servidor... Un momento.' });
 
-    // Mostrar preview Y guardar automáticamente en localStorage
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64 = e.target.result;
+    try {
+      // Mostrar preview inmediato con base64
+      const base64 = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target.result);
+        reader.readAsDataURL(file);
+      });
       setSignatureUrl(base64);
 
-      // ✅ AUTOGUARDADO: guardar inmediatamente en localStorage al seleccionar
-      if (currentUser) {
-        try {
-          const keyId = (currentUser.username || currentUser.email || '').toLowerCase();
-          const signatureKey = `signature_${keyId}`;
-          const currentDate = new Date().toISOString();
-          localStorage.setItem(signatureKey, base64);
-          localStorage.setItem(`${signatureKey}_date`, currentDate);
-          setSignatureDate(currentDate);
-          setSelectedFile(null); // limpiar selectedFile → muestra vista "Firma Guardada"
-          setMessage({
-            type: 'success',
-            text: '✅ Firma guardada automáticamente. Ya puedes usarla en todos tus formularios.'
-          });
-          setTimeout(() => setMessage({ type: '', text: '' }), 5000);
-        } catch (storageError) {
-          console.error('Error en autoguardado:', storageError);
-          // Si falla el autoguardado, dejar selectedFile para que el usuario pueda guardar manualmente
-        }
+      // 1. Subir a Cloudinary (URL permanente)
+      let permanentUrl;
+      try {
+        permanentUrl = await uploadToCloudinary(file);
+        console.log('✅ Firma subida a Cloudinary:', permanentUrl);
+      } catch (cloudErr) {
+        console.warn('⚠️ Cloudinary falló, usando base64:', cloudErr);
+        permanentUrl = base64; // Fallback a base64
       }
-    };
-    reader.readAsDataURL(file);
+
+      // 2. Guardar URL en backend (base de datos)
+      const savedToDB = await saveToBackend(permanentUrl);
+
+      // 3. Guardar en localStorage como caché rápida
+      if (currentUser) {
+        const keyId = (currentUser.username || currentUser.email || '').toLowerCase();
+        const signatureKey = `signature_${keyId}`;
+        const currentDate = new Date().toISOString();
+        localStorage.setItem(signatureKey, permanentUrl);
+        localStorage.setItem(`${signatureKey}_date`, currentDate);
+        setSignatureDate(currentDate);
+      }
+
+      setSignatureUrl(permanentUrl);
+      setSelectedFile(null);
+      setPersistenceInfo(savedToDB ? 'cloudinary' : 'local');
+      
+      setMessage({
+        type: 'success',
+        text: savedToDB 
+          ? '✅ Firma guardada en el servidor. Disponible desde cualquier navegador y dispositivo.'
+          : '✅ Firma guardada localmente. Para acceso desde otros dispositivos, verifica la conexión al servidor.'
+      });
+      setTimeout(() => setMessage({ type: '', text: '' }), 6000);
+
+    } catch (err) {
+      console.error('Error al guardar firma:', err);
+      setMessage({ type: 'error', text: '❌ Error al guardar la firma: ' + err.message });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Guardar firma en localStorage
+  // Guardar firma (si no se guardó automáticamente)
   const handleSave = async () => {
     if (!signatureUrl) {
       setMessage({ type: 'error', text: '⚠️ Por favor selecciona una imagen de tu firma primero' });
@@ -91,23 +202,39 @@ const MySignature = () => {
 
     setLoading(true);
     try {
-      // Guardar imagen base64 en localStorage
+      let permanentUrl = signatureUrl;
+
+      // Si es base64, subirla a Cloudinary primero
+      if (signatureUrl.startsWith('data:')) {
+        try {
+          permanentUrl = await uploadToCloudinary(signatureUrl);
+        } catch (err) {
+          console.warn('Cloudinary falló, guardando base64:', err);
+        }
+      }
+
+      // Guardar en backend
+      const savedToDB = await saveToBackend(permanentUrl);
+
+      // Guardar en localStorage como caché
       const keyId = (currentUser.username || currentUser.email || '').toLowerCase();
       const signatureKey = `signature_${keyId}`;
       const currentDate = new Date().toISOString();
-      
-      localStorage.setItem(signatureKey, signatureUrl);
+      localStorage.setItem(signatureKey, permanentUrl);
       localStorage.setItem(`${signatureKey}_date`, currentDate);
       
+      setSignatureUrl(permanentUrl);
       setSignatureDate(currentDate);
       setSelectedFile(null);
+      setPersistenceInfo(savedToDB ? 'cloudinary' : 'local');
       
       setMessage({ 
         type: 'success', 
-        text: '✅ Firma guardada correctamente. Ahora puedes usarla en todos tus formularios.' 
+        text: savedToDB
+          ? '✅ Firma guardada en el servidor. Permanente y disponible desde cualquier dispositivo.'
+          : '✅ Firma guardada localmente.'
       });
       
-      // Limpiar mensaje después de 5 segundos
       setTimeout(() => setMessage({ type: '', text: '' }), 5000);
     } catch (error) {
       console.error('Error al guardar firma:', error);
@@ -210,10 +337,13 @@ const MySignature = () => {
                 </div>
               </div>
               <div className="info-item">
-                <span className="icon">🔒</span>
+                <span className="icon">{persistenceInfo === 'cloudinary' ? '☁️' : '💾'}</span>
                 <div>
-                  <strong>Almacenamiento seguro</strong>
-                  <p>Tu firma está guardada localmente en tu navegador</p>
+                  <strong>{persistenceInfo === 'cloudinary' ? 'Guardada en servidor (permanente)' : 'Guardada localmente'}</strong>
+                  <p>{persistenceInfo === 'cloudinary' 
+                    ? 'Tu firma está en el servidor. Disponible desde cualquier navegador y dispositivo.' 
+                    : 'Tu firma está en este navegador. Para acceso permanente, verifica la conexión al servidor.'
+                  }</p>
                 </div>
               </div>
               <div className="info-item">

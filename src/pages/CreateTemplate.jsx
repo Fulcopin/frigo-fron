@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react"
 import "./CreateTemplate.css"
-import { API_BASE_URL } from "../apiConfig"; 
+import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"; 
 // --- NUEVO: Importar los campos de la API ---
 import { MAPPABLE_API_FIELDS } from "../api/apiMappings";
+import UserSelector from "../components/UserSelector";
+import { fetchUsers } from "../services/userService";
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
@@ -14,7 +16,7 @@ function CreateTemplate() {
     nombre: "",
     version: "1",
     fechaVersion: null, // ✅ NUEVO: Fecha efectiva de la versión
-    objetivo: "",
+    supervisa: "",
     proceso: "",
     cuandoSeUsa: "",
     quienLoLlena: "",
@@ -30,6 +32,9 @@ function CreateTemplate() {
   const [isDraft, setIsDraft] = useState(false); // ✅ NUEVO: Estado de borrador
   const [puestosDisponibles, setPuestosDisponibles] = useState([]); // ✅ NUEVO: Puestos desde API de firmas
   const [loadingPuestos, setLoadingPuestos] = useState(false); // ✅ Loading state
+  const [allUsers, setAllUsers] = useState([]);
+  const [catalogoFirmas, setCatalogoFirmas] = useState([]);
+  const [apiToken, setApiToken] = useState(null);
 
   const fieldTypes = [
     { value: "text", label: "Texto" },
@@ -70,6 +75,49 @@ function CreateTemplate() {
       }
     };
     fetchPuestos();
+  }, []);
+
+  // 🔐 Cargar usuarios desde API externa (para selector de firmantes)
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const authRes = await fetch(`${API_EXTERNAL_BASE_URL}/Auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: "l-admin", password: "Infor-Web001" }),
+        });
+        if (authRes.ok) {
+          const authData = await authRes.json();
+          if (authData.token) {
+            setApiToken(authData.token);
+            const users = await fetchUsers(authData.token);
+            setAllUsers(users);
+            console.log(`✅ ${users.length} usuarios cargados en CreateTemplate`);
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ No se pudieron cargar usuarios:', err);
+      }
+    };
+    loadUsers();
+  }, []);
+
+  // 📋 Cargar catálogo de firmas
+  useEffect(() => {
+    const loadCatalogo = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/CatalogoFirmas?soloActivos=true`);
+        if (response.ok) {
+          const data = await response.json();
+          const firmasArray = Array.isArray(data) ? data : data.$values || [];
+          setCatalogoFirmas(firmasArray);
+          console.log(`📋 ${firmasArray.length} firmas del catálogo cargadas en CreateTemplate`);
+        }
+      } catch (err) {
+        console.warn('⚠️ No se pudo cargar catálogo de firmas:', err);
+      }
+    };
+    loadCatalogo();
   }, []);
 
   const handleInputChange = (field, value) => {
@@ -271,7 +319,7 @@ function CreateTemplate() {
             </small>
           </div>
           <div className="form-group full-width"><label>Nombre del Registro *</label><input type="text" value={template.nombre} onChange={(e) => handleInputChange("nombre", e.target.value)} placeholder="Ej: CONTROL DE TEMPERATURA DE TÚNELES"/></div>
-          <div className="form-group full-width"><label>Objetivo</label><textarea value={template.objetivo} onChange={(e) => handleInputChange("objetivo", e.target.value)} placeholder="Describe el objetivo del formulario" rows="3"/></div>
+          <div className="form-group full-width"><label>Quién Supervisa</label><input type="text" value={template.supervisa} onChange={(e) => handleInputChange("supervisa", e.target.value)} placeholder="Ej: Jefe de Producción, Supervisor de Calidad"/></div>
           <div className="form-group"><label>Proceso</label><input type="text" value={template.proceso} onChange={(e) => handleInputChange("proceso", e.target.value)} placeholder="Ej: Producción, Calidad, Recepción"/></div>
           <div className="form-group"><label>Cuándo se usa</label><input type="text" value={template.cuandoSeUsa} onChange={(e) => handleInputChange("cuandoSeUsa", e.target.value)} placeholder="Ej: Posterior a congelación"/></div>
           <div className="form-group"><label>Quién lo llena</label><input type="text" value={template.quienLoLlena} onChange={(e) => handleInputChange("quienLoLlena", e.target.value)} placeholder="Ej: Asistente de Cámara"/></div>
@@ -301,6 +349,21 @@ function CreateTemplate() {
               <option value="Anual">📕 Anual</option>
               <option value="Ocasional">🔀 Ocasional</option>
             </select>
+          </div>
+
+          {/* ✅ NUEVO: Usa API Externa */}
+          <div className="form-group full-width" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', backgroundColor: template.usaApi ? '#eff6ff' : '#f8f9fa', borderRadius: '8px', border: template.usaApi ? '2px solid #3b82f6' : '1px solid #e2e8f0' }}>
+            <input 
+              type="checkbox" 
+              id="usaApi" 
+              checked={template.usaApi || false} 
+              onChange={(e) => handleInputChange("usaApi", e.target.checked)} 
+              style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+            />
+            <label htmlFor="usaApi" style={{ cursor: 'pointer', margin: 0, fontWeight: '600', color: template.usaApi ? '#1e40af' : '#4a5568' }}>
+              📡 Usa API Externa (Cargar datos del ERP)
+            </label>
+            {template.usaApi && <span style={{ fontSize: '0.85em', color: '#2563eb', fontWeight: '500' }}>✅ Al llenar este formulario se mostrará la pantalla de selección de lotes</span>}
           </div>
         </div>
       </div>
@@ -763,7 +826,7 @@ function CreateTemplate() {
                   <div className="table-config">
                     <div className="form-group">
                       <label>Filas por defecto</label>
-                      <input type="number" value={element.defaultRows || 5} onChange={(e) => updateBodyElement(elementIndex, 'defaultRows', parseInt(e.target.value) || 5)} min="1" max="20"/>
+                      <input type="number" value={element.defaultRows || 5} onChange={(e) => updateBodyElement(elementIndex, 'defaultRows', parseInt(e.target.value) || 5)} min="1" max="50"/>
                     </div>
                   </div>
                 </div>
@@ -1013,6 +1076,40 @@ function CreateTemplate() {
                       ))}
                     </select>
                   </div>
+                )}
+              </div>
+
+              {/* --- NOMBRE DEL FIRMANTE - Selector con autocompletado --- */}
+              <div className="form-group">
+                <label>👤 Nombre del Firmante</label>
+                {(() => {
+                  const firmasCatalogo = catalogoFirmas.map(f => ({
+                    id: `cat-${f.id || f.catalogoFirmaId}`,
+                    nombreCompleto: f.nombreCompleto || f.nombre,
+                    email: f.email || '',
+                    rol: 'Catálogo de Firmas',
+                    nombreEmpresa: f.empresa || '',
+                    userName: f.nombreCompleto || f.nombre
+                  }));
+                  const seen = new Set();
+                  const uniqueUsers = [...allUsers, ...firmasCatalogo].filter(u => {
+                    const key = u.nombreCompleto?.toLowerCase();
+                    if (!key || seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                  });
+                  return (
+                    <UserSelector
+                      users={uniqueUsers}
+                      value={firma.nombreCompleto || ''}
+                      onChange={(nombre) => updateFirma(index, "nombreCompleto", nombre)}
+                      placeholder="Buscar o escribir nombre del firmante..."
+                      puesto={firma.puesto}
+                    />
+                  );
+                })()}
+                {firma.nombreCompleto && (
+                  <small style={{ color: '#16a34a', marginTop: '4px', display: 'block' }}>✅ Firmante asignado: {firma.nombreCompleto}</small>
                 )}
               </div>
 
