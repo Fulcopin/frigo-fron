@@ -5,7 +5,7 @@ import ScrollButton from "../components/ScrollButton";
 import "../styles/DailyForms.css";
 
 // Configuración API
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5074/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://backend-frigo.onrender.com/api";
 const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
 
 function DailyForms() {

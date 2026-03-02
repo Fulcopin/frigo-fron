@@ -1,5 +1,5 @@
 // Servicio de autenticación para FishCort
-const API_BASE_URL = 'http://188.40.197.172:8094/api'; // API Externa
+const API_BASE_URL = import.meta.env.VITE_API_EXTERNAL_URL || 'http://188.40.197.172:8094/api'; // API Externa
 
 class AuthService {
   constructor() {

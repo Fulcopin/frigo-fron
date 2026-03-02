@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import authService from "../services/authService"
 
-const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5074/api"
+const API_URL = import.meta.env.VITE_API_BASE_URL || "https://backend-frigo.onrender.com/api"
 
 function MyDrafts() {
   const navigate = useNavigate()
