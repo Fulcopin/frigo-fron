@@ -91,9 +91,7 @@ function Home() {
           </div>
         </div>
         <div 
-          className="stat-card stat-card-highlight stat-card-clickable" 
-          onClick={() => navigate('/daily-forms')}
-          style={{ cursor: 'pointer' }}
+          className="stat-card stat-card-highlight"
         >
           <div className="stat-icon">📅</div>
           <div className="stat-content">
@@ -150,7 +148,7 @@ function Home() {
       <div className="main-actions">
         <h2>🎯 Acciones Principales</h2>
         <div className="actions-grid">
-          <div className="action-card" onClick={() => navigate('/plantillas')}>
+          <div className="action-card" onClick={() => navigate('/manage-templates')}>
             <div className="action-icon">📋</div>
             <h3>Gestionar Plantillas</h3>
             <p>Crear, editar o eliminar plantillas de formularios</p>
@@ -160,7 +158,7 @@ function Home() {
             <h3>Llenar Formulario</h3>
             <p>Completar un nuevo formulario desde cualquier plantilla</p>
           </div>
-          <div className="action-card" onClick={() => navigate('/historial')}>
+          <div className="action-card" onClick={() => navigate('/view-forms')}>
             <div className="action-icon">📚</div>
             <h3>Ver Historial</h3>
             <p>Consultar, exportar y analizar formularios guardados</p>

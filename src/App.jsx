@@ -28,10 +28,9 @@ import "./App.css"
 
 function Navigation() {
   const location = useLocation()
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const { logout, isAuthenticated } = useAuth()
   
-  // Obtener usuario actual y su rol
   const currentUser = authService.getCurrentUser()
   const userRole = currentUser?.rol || ''
 
@@ -43,140 +42,117 @@ function Navigation() {
     }
   }
 
-  // Si no está autenticado, no mostrar el menú
+  const handleNavClick = () => {
+    setSidebarOpen(false)
+  }
+
   if (!isAuthenticated()) {
     return null
   }
 
-  // Determinar qué links mostrar según el rol
   const isAdminOrSupervisor = userRole === 'admin' || userRole === 'supervisor'
 
-  return (
-    <nav className={`navbar ${isCollapsed ? 'collapsed' : 'expanded'}`}>
-      {/* Botón para colapsar/expandir el menú */}
-      <button 
-        className="navbar-toggle-btn"
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        title={isCollapsed ? 'Mostrar menú' : 'Ocultar menú'}
-      >
-        <span className="toggle-icon">{isCollapsed ? '▼' : '▲'}</span>
-        <span className="toggle-text">{isCollapsed ? 'Mostrar Menú' : 'Ocultar Menú'}</span>
-      </button>
+  const navLinks = [
+    { to: "/", icon: "🏠", label: "Inicio", show: true },
+    { to: "/fill-form", icon: "📝", label: "Llenar Formulario", show: true },
+    { to: "/my-drafts", icon: "📋", label: "Mis Borradores", show: true },
+    { to: "/view-forms", icon: "👁️", label: "Ver Formularios", show: true },
+    { divider: true, label: "Plantillas", show: isAdminOrSupervisor },
+    { to: "/create-template", icon: "➕", label: "Crear Plantilla", show: isAdminOrSupervisor },
+    { to: "/manage-templates", icon: "⚙️", label: "Administrar Plantillas", show: isAdminOrSupervisor },
+    { divider: true, label: "Firmas", show: true },
+    { to: "/signatures", icon: "✍️", label: "Firmas Pendientes", show: true },
+    { to: "/signatures?tab=timing", icon: "⏱️", label: "Tiempos y Rechazos", show: true },
+    { to: "/my-signature", icon: "🖊️", label: "Mi Firma", show: true },
+    { to: "/catalogo-firmas", icon: "📋", label: "Catálogo Firmas", show: isAdminOrSupervisor },
+    { divider: true, label: "Administración", show: isAdminOrSupervisor },
+    { to: "/dashboard-erp", icon: "📊", label: "Descargar Datos", show: isAdminOrSupervisor },
+    { to: "/alerts", icon: "🔔", label: "Alertas", show: isAdminOrSupervisor },
+    { to: "/consumptions", icon: "📊", label: "Consumos", show: isAdminOrSupervisor },
+    { to: "/session-history", icon: "⏱️", label: "Tiempos", show: isAdminOrSupervisor },
+  ]
 
-      <div className="nav-container">
-        <div className="nav-brand">
-          <div className="brand-title">
-            <span className="brand-logo">🐟</span>
-            <div className="brand-text">
-              <h1 className="brand-main">Frigolab Docs</h1>
-              <p className="brand-sub">Frigolab "San Mateo"</p>
-            </div>
+  return (
+    <>
+      {/* ===== OVERLAY ===== */}
+      {sidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* ===== BARRA SUPERIOR FIJA ===== */}
+      <header className="topbar">
+        <div className="topbar-left">
+          <button 
+            className="topbar-menu-btn"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            title="Abrir menú"
+          >
+            <span className="menu-icon">
+              <span /><span /><span />
+            </span>
+          </button>
+          <div className="topbar-brand">
+            <span className="topbar-logo">🐟</span>
+            <span className="topbar-title">Frigolab Docs</span>
           </div>
         </div>
-        <div className="nav-links">
-          {/* Inicio - visible para todos */}
-          <Link to="/" className={isActive("/") ? "active" : ""}>
-            🏠 Inicio
-          </Link>
-          
-          {/* Crear Plantilla - solo Admin y Supervisor */}
-          {isAdminOrSupervisor && (
-            <Link to="/create-template" className={isActive("/create-template") ? "active" : ""}>
-              ➕ Crear Plantilla
-            </Link>
-          )}
-          
-          {/* Llenar Formulario - visible para todos */}
-          <Link to="/fill-form" className={isActive("/fill-form") ? "active" : ""}>
-            📝 Llenar Formulario
-          </Link>
-          
-          {/* Mis Borradores - visible para todos */}
-          <Link to="/my-drafts" className={isActive("/my-drafts") ? "active" : ""}>
-            📋 Mis Borradores
-          </Link>
-          
-          {/* Administrar Plantillas - solo Admin y Supervisor */}
-          {isAdminOrSupervisor && (
-            <Link to="/manage-templates" className={isActive("/manage-templates") ? "active" : ""}>
-              ⚙️ Administrar Plantillas
-            </Link>
-          )}
-          
-          {/* Ver Formularios - visible para todos */}
-          <Link to="/view-forms" className={isActive("/view-forms") ? "active" : ""}>
-            👁️ Ver Formularios
-          </Link>
-          
-         
-          
-          {/* Dashboard ERP - solo Admin y Supervisor */}
-          {isAdminOrSupervisor && (
-            <Link to="/dashboard-erp" className={isActive("/dashboard-erp") ? "active" : ""}>
-              📊 Descargar Datos
-            </Link>
-          )}
-          
-          {/* NUEVOS MÓDULOS */}
-          {/* Gestión de Firmas - visible para todos */}
-          <Link to="/signatures" className={isActive("/signatures") ? "active" : ""}>
-            ✍️ Firmas
-          </Link>
-          
-          {/* Catálogo de Firmas - solo Admin y Supervisor */}
-          {isAdminOrSupervisor && (
-            <Link to="/catalogo-firmas" className={isActive("/catalogo-firmas") ? "active" : ""}>
-              📋 Catálogo Firmas
-            </Link>
-          )}
-          
-          {/* Mi Firma Personal - visible para todos */}
-          <Link to="/my-signature" className={isActive("/my-signature") ? "active" : ""}>
-            🖊️ Mi Firma
-          </Link>
-          
-          {/* Gestión de Alertas - solo Admin y Supervisor */}
-          {isAdminOrSupervisor && (
-            <Link to="/alerts" className={isActive("/alerts") ? "active" : ""}>
-              🔔 Alertas
-            </Link>
-          )}
-          
-          {/* Dashboard de Consumos - solo Admin y Supervisor */}
-          {isAdminOrSupervisor && (
-            <Link to="/consumptions" className={isActive("/consumptions") ? "active" : ""}>
-              📊 Consumos
-            </Link>
-          )}
-          
-          {/* Registro de Tiempos - solo Admin y Supervisor */}
-          {isAdminOrSupervisor && (
-            <Link to="/session-history" className={isActive("/session-history") ? "active" : ""}>
-              ⏱️ Tiempos
-            </Link>
-          )}
-          
+        <div className="topbar-center">
+          <span className="topbar-page">{getPageName(location.pathname)}</span>
+        </div>
+        <div className="topbar-right">
           <SessionTimer />
           <UserInfo />
-          
-          <button 
-            onClick={handleLogout} 
-            className="logout-button"
-            title="Cerrar sesión"
-          >
-            🚪 Salir
+          <button onClick={handleLogout} className="topbar-logout" title="Cerrar sesión">
+            🚪
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Barra compacta cuando está colapsado */}
-      {isCollapsed && (
-        <div className="navbar-collapsed-info">
-          <span className="collapsed-brand">🐟 FishCort - Frigolab "San Mateo"</span>
-          <span className="collapsed-page">{getPageName(location.pathname)}</span>
+      {/* ===== SIDEBAR LATERAL ===== */}
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
+        <div className="sidebar-header">
+          <div className="sidebar-brand">
+            <span className="sidebar-logo">🐟</span>
+            <div>
+              <h2 className="sidebar-title">Frigolab Docs</h2>
+              <p className="sidebar-subtitle">Frigolab "San Mateo"</p>
+            </div>
+          </div>
+          <button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)} title="Cerrar menú">
+            ✕
+          </button>
         </div>
-      )}
-    </nav>
+
+        <nav className="sidebar-nav">
+          {navLinks.filter(l => l.show).map((link, i) => {
+            if (link.divider) {
+              return <div key={`div-${i}`} className="sidebar-divider">{link.label}</div>
+            }
+            return (
+              <Link
+                key={link.to}
+                to={link.to}
+                className={`sidebar-link ${isActive(link.to) ? 'sidebar-link-active' : ''}`}
+                onClick={handleNavClick}
+              >
+                <span className="sidebar-link-icon">{link.icon}</span>
+                <span className="sidebar-link-text">{link.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="sidebar-user-info">
+            <span className="sidebar-user-name">{currentUser?.nombre || 'Usuario'}</span>
+            <span className="sidebar-user-role">{userRole?.toUpperCase()}</span>
+          </div>
+          <button onClick={handleLogout} className="sidebar-logout" title="Cerrar sesión">
+            🚪 Cerrar sesión
+          </button>
+        </div>
+      </aside>
+    </>
   )
 }
 

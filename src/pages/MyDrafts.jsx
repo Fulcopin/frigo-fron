@@ -60,8 +60,48 @@ function MyDrafts() {
     try {
       // Fetch full draft data (the list endpoint might not include all JSON fields)
       const res = await fetch(`${API_URL}/FormDrafts/${draft.draftID}`)
-      if (!res.ok) throw new Error(`Error ${res.status}`)
+      if (!res.ok) {
+        const errText = await res.text()
+        console.error("Error respuesta del servidor:", res.status, errText)
+        throw new Error(`Error del servidor: ${res.status} - ${errText}`)
+      }
       const fullDraft = await res.json()
+      
+      console.log("📋 Borrador completo recibido:", {
+        draftID: fullDraft.draftID,
+        templateID: fullDraft.templateID,
+        hasHeader: !!fullDraft.headerData,
+        hasBody: !!fullDraft.bodyData,
+        hasFirmas: !!fullDraft.firmasData,
+        hasSnapshot: !!fullDraft.templateSnapshot,
+        headerType: typeof fullDraft.headerData,
+        bodyType: typeof fullDraft.bodyData,
+      })
+
+      // Función auxiliar para parsear JSON de forma segura
+      const safeParse = (data, fieldName, fallback) => {
+        if (!data) return fallback
+        if (typeof data === 'object') return data // ya es objeto
+        try {
+          return JSON.parse(data)
+        } catch (e) {
+          console.error(`⚠️ Error parseando ${fieldName}:`, e.message)
+          console.error(`   Valor (primeros 200 chars): ${String(data).substring(0, 200)}`)
+          return fallback
+        }
+      }
+
+      const parsedHeader = safeParse(fullDraft.headerData, "headerData", {})
+      const parsedBody = safeParse(fullDraft.bodyData, "bodyData", [])
+      const parsedFirmas = safeParse(fullDraft.firmasData, "firmasData", {})
+      const parsedSnapshot = safeParse(fullDraft.templateSnapshot, "templateSnapshot", null)
+
+      console.log("✅ Datos parseados:", {
+        headerKeys: Object.keys(parsedHeader).length,
+        bodyLength: Array.isArray(parsedBody) ? parsedBody.length : 'not-array',
+        firmasKeys: Object.keys(parsedFirmas).length,
+        hasSnapshot: !!parsedSnapshot
+      })
       
       // Navigate to FillForm with draft data in location state
       navigate("/fill-form", {
@@ -69,17 +109,17 @@ function MyDrafts() {
           resumeDraft: {
             draftId: fullDraft.draftID,
             templateId: fullDraft.templateID,
-            headerData: fullDraft.headerData ? JSON.parse(fullDraft.headerData) : {},
-            bodyData: fullDraft.bodyData ? JSON.parse(fullDraft.bodyData) : [],
-            firmasData: fullDraft.firmasData ? JSON.parse(fullDraft.firmasData) : {},
-            templateSnapshot: fullDraft.templateSnapshot ? JSON.parse(fullDraft.templateSnapshot) : null,
+            headerData: parsedHeader,
+            bodyData: Array.isArray(parsedBody) ? parsedBody : [],
+            firmasData: parsedFirmas,
+            templateSnapshot: parsedSnapshot,
             nota: fullDraft.nota || ""
           }
         }
       })
     } catch (err) {
       console.error("Error cargando borrador completo:", err)
-      alert("Error al cargar el borrador. Intenta de nuevo.")
+      alert("Error al cargar el borrador: " + err.message + "\n\nRevisa la consola del navegador (F12) para más detalles.")
     }
   }
 

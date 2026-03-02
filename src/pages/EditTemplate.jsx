@@ -26,6 +26,7 @@ function EditTemplate() {
     quienLoLlena: "",
     frecuencia: "",
     isMasterForm: false,
+    autoSumColumns: false,
     headerFields: [],
     bodyElements: [],
     firmas: [],
@@ -36,6 +37,7 @@ function EditTemplate() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState(null);
   const [isDraft, setIsDraft] = useState(false);
+  const [isObsolete, setIsObsolete] = useState(false);
   const [puestosDisponibles, setPuestosDisponibles] = useState([]);
   const [loadingPuestos, setLoadingPuestos] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
@@ -54,7 +56,6 @@ function EditTemplate() {
     { value: "select", label: "📋 Selección (Menú Desplegable)" },
     { value: "radio", label: "🔘 Casillas (Radio - Máx 3 opciones)" },
     { value: "checkbox", label: "☑️ Casillas Múltiples (Checkbox)" },
-    { value: "product", label: "🦐🐟 Tipo de Producto (Camarón/Pescado)" },
     { value: "textarea", label: "Área de texto" },
     { value: "image", label: "📷 Imagen (Foto/Captura)" },
   ];
@@ -144,6 +145,7 @@ function EditTemplate() {
         
         setTemplate(parsedTemplate);
         setIsDraft(data.isDraft || false);
+        setIsObsolete(data.isObsolete || false);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -196,7 +198,7 @@ function EditTemplate() {
   
   const removeColumnFromTable = (elementIndex, colIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.filter((_, j) => j !== colIndex) } : el)) }));
 
-  const addFirma = () => setTemplate((prev) => ({ ...prev, firmas: [...prev.firmas, { puesto: "", nombreCompleto: "", apiMap: "", apiEndpoint: "", capturaFecha: true, capturaHora: true }] }));
+  const addFirma = () => setTemplate((prev) => ({ ...prev, firmas: [...prev.firmas, { puesto: "", nombreCompleto: "", capturaFecha: true, capturaHora: true, reemplazos: [], jefeAlerta: [] }] }));
   const updateFirma = (index, field, value) => setTemplate((prev) => ({ ...prev, firmas: prev.firmas.map((item, i) => (i === index ? { ...item, [field]: value } : item)) }));
   const removeFirma = (index) => setTemplate((prev) => ({ ...prev, firmas: prev.firmas.filter((_, i) => i !== index) }));
 
@@ -272,6 +274,7 @@ function EditTemplate() {
     const payload = { 
       ...template, 
       isDraft: isDraft,
+      isObsolete: isObsolete,
       headerFields: JSON.stringify(template.headerFields), 
       bodyElements: JSON.stringify(template.bodyElements), 
       firmas: JSON.stringify(template.firmas) 
@@ -421,9 +424,37 @@ function EditTemplate() {
           >
             📝 {isDraft ? 'Quitar Borrador' : 'Marcar Borrador'}
           </button>
+          <button 
+            onClick={() => setIsObsolete(!isObsolete)} 
+            className="btn-secondary"
+            style={{ background: isObsolete ? '#ef4444' : '#6b7280', color: 'white', border: 'none' }}
+            title={isObsolete ? 'La plantilla está OBSOLETA - no aparece para llenar formularios' : 'Marcar como obsoleta para que no aparezca en el listado'}
+          >
+            🚫 {isObsolete ? 'Quitar Obsoleto' : 'Marcar Obsoleto'}
+          </button>
           <button onClick={handleUpdateTemplate} className="btn-primary">💾 Actualizar Plantilla</button>
         </div>
       </div>
+
+      {/* Banner de obsoleto */}
+      {isObsolete && (
+        <div style={{
+          background: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)',
+          border: '2px solid #ef4444', borderRadius: '8px', padding: '15px 20px',
+          marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px',
+          boxShadow: '0 2px 8px rgba(239, 68, 68, 0.2)'
+        }}>
+          <span style={{ fontSize: '24px' }}>🚫</span>
+          <div style={{ flex: 1 }}>
+            <strong style={{ color: '#991b1b', fontSize: '16px', display: 'block', marginBottom: '4px' }}>
+              Plantilla Obsoleta
+            </strong>
+            <span style={{ color: '#b91c1c', fontSize: '14px' }}>
+              Esta plantilla NO aparece en el listado para llenar formularios. Los registros pasados se mantienen.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Banner de borrador */}
       {isDraft && (
@@ -491,7 +522,7 @@ function EditTemplate() {
             </select>
           </div>
 
-          {/* ✅ Formulario Maestro */}
+          {/* ✅ Auto-suma de FILAS (PESO → TOTAL por fila) */}
           <div className="form-group full-width" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', backgroundColor: template.isMasterForm ? '#e6fffa' : '#f8f9fa', borderRadius: '8px', border: template.isMasterForm ? '2px solid #38a169' : '1px solid #e2e8f0' }}>
             <input 
               type="checkbox" 
@@ -501,9 +532,24 @@ function EditTemplate() {
               style={{ width: '20px', height: '20px', cursor: 'pointer' }}
             />
             <label htmlFor="isMasterForm" style={{ cursor: 'pointer', margin: 0, fontWeight: '600', color: template.isMasterForm ? '#276749' : '#4a5568' }}>
-              🧮 Formulario Maestro (Auto-suma de totales)
+              🧮 Auto-suma de Filas (PESO → TOTAL por fila)
             </label>
-            {template.isMasterForm && <span style={{ fontSize: '0.85em', color: '#38a169', fontWeight: '500' }}>✅ Activado — Las columnas TOTAL se calcularán automáticamente</span>}
+            {template.isMasterForm && <span style={{ fontSize: '0.85em', color: '#38a169', fontWeight: '500' }}>✅ Las columnas TOTAL se calcularán sumando los PESO de cada fila</span>}
+          </div>
+
+          {/* ✅ Auto-suma de COLUMNAS (totales al pie de tabla) */}
+          <div className="form-group full-width" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', backgroundColor: template.autoSumColumns ? '#eef2ff' : '#f8f9fa', borderRadius: '8px', border: template.autoSumColumns ? '2px solid #6366f1' : '1px solid #e2e8f0' }}>
+            <input 
+              type="checkbox" 
+              id="autoSumColumns" 
+              checked={template.autoSumColumns || false} 
+              onChange={(e) => handleInputChange("autoSumColumns", e.target.checked)} 
+              style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+            />
+            <label htmlFor="autoSumColumns" style={{ cursor: 'pointer', margin: 0, fontWeight: '600', color: template.autoSumColumns ? '#4338ca' : '#4a5568' }}>
+              📊 Auto-suma de Columnas (totales al pie de tabla)
+            </label>
+            {template.autoSumColumns && <span style={{ fontSize: '0.85em', color: '#4f46e5', fontWeight: '500' }}>✅ Se mostrará una fila de totales al final de cada tabla</span>}
           </div>
 
           {/* ✅ NUEVO: Usa API Externa */}
@@ -716,6 +762,47 @@ function EditTemplate() {
                   <h4>Columnas de la Tabla</h4>
                   <button onClick={() => addColumnToTable(elementIndex)} className="btn-add-small">+ Agregar Columna</button>
                 </div>
+                {/* 📦 VISTA PREVIA DE GRUPOS DE COLUMNAS */}
+                {(element.columns || []).some(col => col.group) && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)',
+                    border: '2px solid #86efac',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    marginBottom: '16px'
+                  }}>
+                    <strong style={{ color: '#166534', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                      📦 Grupos de Columnas Configurados:
+                    </strong>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {(() => {
+                        const groups = {};
+                        (element.columns || []).forEach(col => {
+                          const g = col.group || 'Sin grupo';
+                          if (!groups[g]) groups[g] = [];
+                          groups[g].push(col.label || 'Sin nombre');
+                        });
+                        return Object.entries(groups).map(([groupName, cols]) => (
+                          <div key={groupName} style={{
+                            background: 'white',
+                            border: '1px solid #bbf7d0',
+                            borderRadius: '8px',
+                            padding: '10px 14px',
+                            minWidth: '140px'
+                          }}>
+                            <div style={{ fontWeight: '600', color: '#15803d', fontSize: '13px', marginBottom: '4px' }}>
+                              📊 {groupName}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#4b5563' }}>
+                              {cols.join(', ')} ({cols.length} col{cols.length > 1 ? 's' : ''})
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
+
                 {(element.columns || []).map((column, colIndex) => (
                   <div key={colIndex} className="field-item">
                     <div className="field-grid">
@@ -725,6 +812,27 @@ function EditTemplate() {
                         <select value={column.type} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "type", e.target.value)}>
                           {tableFieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                         </select>
+                      </div>
+
+                      {/* 📦 GRUPO DE COLUMNA */}
+                      <div className="form-group">
+                        <label>📦 Grupo de Columna</label>
+                        <input 
+                          type="text" 
+                          value={column.group || ""} 
+                          onChange={(e) => updateColumnInTable(elementIndex, colIndex, "group", e.target.value)} 
+                          placeholder="Ej: Temperatura, Presión"
+                          list={`group-suggestions-${elementIndex}`}
+                          style={{
+                            borderColor: column.group ? '#22c55e' : undefined,
+                            background: column.group ? '#f0fdf4' : undefined
+                          }}
+                        />
+                        <datalist id={`group-suggestions-${elementIndex}`}>
+                          {[...new Set((element.columns || []).map(c => c.group).filter(Boolean))].map(g => (
+                            <option key={g} value={g} />
+                          ))}
+                        </datalist>
                       </div>
                       
                       {/* API Lotes */}
@@ -854,38 +962,143 @@ function EditTemplate() {
                 )}
               </div>
 
-              {/* API Lotes */}
-              <div className="form-group">
-                <label>🔄 API Lotes (Autocompletar desde Movimientos)</label>
-                <select value={firma.apiMap || ""} onChange={(e) => {
-                  updateFirma(index, "apiMap", e.target.value);
-                  if (e.target.value) updateFirma(index, "apiEndpoint", "");
-                }}>
-                  <option value="">-- Ninguno --</option>
-                  <optgroup label="📋 Datos de Cabecera (Info General del Lote)">
-                    {MAPPABLE_API_FIELDS.header.map(apiField => (
-                      <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="📦 Datos de Detalles (Items del Lote)">
-                    {MAPPABLE_API_FIELDS.details.map(apiField => (
-                      <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
-                    ))}
-                  </optgroup>
-                </select>
-              </div>
+              {/* 👥 REEMPLAZOS - Solo para la primera firma (index 0) */}
+              {index === 0 && (
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ fontWeight: '600', color: '#7c3aed', marginBottom: '8px', display: 'block' }}>
+                    👥 Reemplazos (personas que pueden firmar en su ausencia)
+                  </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {[0, 1, 2].map((rIdx) => {
+                      const reemplazos = firma.reemplazos || [];
+                      return (
+                        <div key={`reemplazo-${index}-${rIdx}`} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '90px' }}>Reemplazo {rIdx + 1}:</span>
+                          {(() => {
+                            const firmasCat = catalogoFirmas.map(f => ({
+                              id: `cat-${f.id || f.catalogoFirmaId}`,
+                              nombreCompleto: f.nombreCompleto || f.nombre,
+                              email: f.email || '',
+                              rol: 'Catálogo de Firmas',
+                              nombreEmpresa: f.empresa || '',
+                              userName: f.nombreCompleto || f.nombre
+                            }));
+                            const seen2 = new Set();
+                            const uniqueUsers2 = [...allUsers, ...firmasCat].filter(u => {
+                              const key2 = u.nombreCompleto?.toLowerCase();
+                              if (!key2 || seen2.has(key2)) return false;
+                              seen2.add(key2);
+                              return true;
+                            });
+                            return (
+                              <div style={{ flex: 1 }}>
+                                <UserSelector
+                                  users={uniqueUsers2}
+                                  value={reemplazos[rIdx] || ''}
+                                  onChange={(nombre) => {
+                                    const newReemplazos = [...reemplazos];
+                                    while (newReemplazos.length <= rIdx) newReemplazos.push('');
+                                    newReemplazos[rIdx] = nombre;
+                                    updateFirma(index, 'reemplazos', newReemplazos);
+                                  }}
+                                  placeholder={`Nombre del reemplazo ${rIdx + 1}...`}
+                                  puesto={firma.puesto}
+                                />
+                              </div>
+                            );
+                          })()}
+                          {reemplazos[rIdx] && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newReemplazos = [...reemplazos];
+                                newReemplazos[rIdx] = '';
+                                updateFirma(index, 'reemplazos', newReemplazos);
+                              }}
+                              style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '12px', color: '#dc2626' }}
+                              title="Quitar reemplazo"
+                            >✕</button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <small style={{ color: '#6b7280', marginTop: '6px', display: 'block', fontSize: '0.75rem' }}>
+                    Estas personas podrán firmar cuando el titular no esté disponible.
+                  </small>
+                </div>
+              )}
 
-              {/* API Catálogos */}
-              <div className="form-group">
-                <label>📚 API Catálogos (Opciones desde API Externa)</label>
-                <select value={firma.apiEndpoint || ""} onChange={(e) => {
-                  updateFirma(index, "apiEndpoint", e.target.value);
-                  if (e.target.value) updateFirma(index, "apiMap", "");
-                }}>
-                  {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
-                    <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
-                  ))}
-                </select>
+              {/* 🔔 JEFES / SUPERIORES para alertas */}
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontWeight: '600', color: '#dc2626', marginBottom: '8px', display: 'block' }}>
+                  🔔 Jefes/Superiores (Alertas de escalamiento)
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {[0, 1, 2].map((jIdx) => {
+                    const jefes = Array.isArray(firma.jefeAlerta) ? firma.jefeAlerta : (firma.jefeAlerta ? [firma.jefeAlerta] : []);
+                    return (
+                      <div key={`jefe-${index}-${jIdx}`} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '90px' }}>Jefe {jIdx + 1}:</span>
+                        {(() => {
+                          const firmasCat3 = catalogoFirmas.map(f => ({
+                            id: `cat-${f.id || f.catalogoFirmaId}`,
+                            nombreCompleto: f.nombreCompleto || f.nombre,
+                            email: f.email || '',
+                            rol: 'Catálogo de Firmas',
+                            nombreEmpresa: f.empresa || '',
+                            userName: f.nombreCompleto || f.nombre
+                          }));
+                          const seen3 = new Set();
+                          const uniqueUsers3 = [...allUsers, ...firmasCat3].filter(u => {
+                            const key3 = u.nombreCompleto?.toLowerCase();
+                            if (!key3 || seen3.has(key3)) return false;
+                            seen3.add(key3);
+                            return true;
+                          });
+                          return (
+                            <div style={{ flex: 1 }}>
+                              <UserSelector
+                                users={uniqueUsers3}
+                                value={jefes[jIdx] || ''}
+                                onChange={(nombre) => {
+                                  const newJefes = [...jefes];
+                                  while (newJefes.length <= jIdx) newJefes.push('');
+                                  newJefes[jIdx] = nombre;
+                                  updateFirma(index, 'jefeAlerta', newJefes);
+                                }}
+                                placeholder={`Jefe/superior ${jIdx + 1} para alertas...`}
+                                puesto={firma.puesto}
+                              />
+                            </div>
+                          );
+                        })()}
+                        {jefes[jIdx] && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newJefes = [...jefes];
+                              newJefes[jIdx] = '';
+                              updateFirma(index, 'jefeAlerta', newJefes);
+                            }}
+                            style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '12px', color: '#dc2626' }}
+                            title="Quitar jefe"
+                          >✕</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {(() => {
+                  const jefes = Array.isArray(firma.jefeAlerta) ? firma.jefeAlerta : (firma.jefeAlerta ? [firma.jefeAlerta] : []);
+                  const jefesActivos = jefes.filter(j => j && j.trim());
+                  return jefesActivos.length > 0 ? (
+                    <small style={{ color: '#dc2626', marginTop: '4px', display: 'block' }}>🔔 Alertas irán a: {jefesActivos.join(', ')}</small>
+                  ) : null;
+                })()}
+                <small style={{ color: '#6b7280', marginTop: '2px', display: 'block', fontSize: '0.72rem' }}>
+                  Si esta persona no firma en 24h, se enviará alerta a estos jefes + SGI.
+                </small>
               </div>
 
               {/* ✅ Opciones de Captura Fecha y Hora */}

@@ -7,6 +7,7 @@ import SignatureUploader from "../components/SignatureUploader"
 import UserSelector from "../components/UserSelector"
 import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import { fetchUsers, filterUsersByPuesto } from "../services/userService"
+import authService from "../services/authService"
 import "./FillForm.css" // Reutilizamos los estilos de FillForm
 import { loadFormForEdit, updateFilledForm, autosaveForm } from "../utils/filledFormsUtils"
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
@@ -18,6 +19,8 @@ const AUTOSAVE_KEY_PREFIX = 'autosave_edit_form_';
 function EditFilledForm() {
   const { id } = useParams(); // ID del formulario llenado
   const navigate = useNavigate();
+  const currentUser = authService.getCurrentUser();
+  const isAdmin = currentUser?.rol === 'admin';
   
   const [template, setTemplate] = useState(null);
   const [filledForm, setFilledForm] = useState(null);
@@ -826,14 +829,33 @@ Template: ${template?.nombre}
                             puesto={firma.puesto}
                           />
                         </div>
-                        <div className="form-field">
-                          <label>Fecha:</label>
-                          <input 
-                            type="date" 
-                            value={firmaObj?.fecha || ""} 
-                            onChange={(e) => updateFirma(firma.puesto, "fecha", e.target.value)} 
-                          />
-                        </div>
+                        {/* 📅 Fecha y Hora: solo visibles/editables para admin */}
+                        {isAdmin && (
+                          <>
+                            <div className="form-field">
+                              <label>Fecha: <span style={{fontSize:'11px',color:'#e67e22'}}>🔧 Solo admin</span></label>
+                              <input 
+                                type="date" 
+                                value={firmaObj?.fecha || ""} 
+                                onChange={(e) => updateFirma(firma.puesto, "fecha", e.target.value)} 
+                              />
+                            </div>
+                            <div className="form-field">
+                              <label>Hora: <span style={{fontSize:'11px',color:'#e67e22'}}>🔧 Solo admin</span></label>
+                              <input 
+                                type="time" 
+                                value={firmaObj?.hora || ""} 
+                                onChange={(e) => updateFirma(firma.puesto, "hora", e.target.value)} 
+                              />
+                            </div>
+                          </>
+                        )}
+                        {!isAdmin && (firmaObj?.fecha || firmaObj?.hora) && (
+                          <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#666' }}>
+                            {firmaObj?.fecha && <span>📅 {new Date(firmaObj.fecha + 'T00:00:00').toLocaleDateString('es-EC')}</span>}
+                            {firmaObj?.hora && <span>🕐 {firmaObj.hora}</span>}
+                          </div>
+                        )}
                       </div>
 
                       {/* Componente de carga de firma PNG */}

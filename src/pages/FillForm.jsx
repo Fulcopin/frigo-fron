@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useParams, useNavigate, useLocation } from "react-router-dom" 
 import FormHeader from "../components/FormHeader"
 import AccordionSection from "../components/AccordionSection"
@@ -67,9 +67,11 @@ function FillForm() {
   
   // 🎯 NUEVO: Obtener templateId pre-seleccionado desde el state de navegación
   const preSelectedTemplateId = location.state?.selectedTemplateId;
+  const preSelectLoadedRef = useRef(false); // 🔧 FIX: Evitar re-selección al cambiar pestaña
   
   // 📋 NUEVO: Obtener datos de borrador si viene desde MyDrafts
   const resumeDraft = location.state?.resumeDraft;
+  const draftAlreadyLoadedRef = useRef(false); // 🔧 FIX: Evitar re-carga del borrador al cambiar pestaña
 
   // 🆕 ESTADOS PARA MÚLTIPLES FORMULARIOS EN PESTAÑAS
   const [openTabs, setOpenTabs] = useState([]); // Array de formularios abiertos
@@ -186,6 +188,11 @@ function FillForm() {
   // 🆕 Estado para panel de vista de pestañas abiertas
   const [showTabsPanel, setShowTabsPanel] = useState(false); // Panel desplegable de pestañas
 
+  // 📦 NUEVO: Estados para agrupación de filas en tablas
+  const [rowGroups, setRowGroups] = useState({}); // { elementIndex: [{ id, name, rows: [rowIndex,...], collapsed: false }] }
+  const [selectedRowsForGroup, setSelectedRowsForGroup] = useState({}); // { elementIndex: Set([rowIndex,...]) }
+  const [groupingMode, setGroupingMode] = useState({}); // { elementIndex: true/false } — modo de selección activo
+
   // 🆕 NUEVO: Estados para selector interactivo de datos
   const [showDataPicker, setShowDataPicker] = useState(false); // Modal de selector de datos
   const [dataPickerForm, setDataPickerForm] = useState(null); // Formulario cargado en el selector
@@ -240,6 +247,14 @@ function FillForm() {
   }, [apiCatalogData]);
   // 🆕 1. EFECTO DE CARGA: Recupera las pestañas del "disco duro" al entrar
   useEffect(() => {
+    // 🔧 FIX: NO restaurar pestañas de localStorage si venimos con un borrador
+    // para que el efecto de carga de borrador tenga prioridad
+    if (resumeDraft) {
+      console.log('📋 Viene borrador → limpiando pestañas anteriores de localStorage');
+      localStorage.removeItem(TABS_PERSISTENCE_KEY);
+      return;
+    }
+    
     const savedData = localStorage.getItem(TABS_PERSISTENCE_KEY);
     if (savedData && !id) { // No recuperamos si estamos editando un formulario específico por URL
       try {
@@ -251,58 +266,67 @@ function FillForm() {
           setNextTabId(parsed.nextId || 1);
           
           // Cargamos visualmente la pestaña que quedó activa
-          // ... dentro del if (parsed.tabs && ...)
-const tab = parsed.tabs[parsed.activeIdx || 0];
-if (tab) {
-  setSelectedTemplate(tab.template);
-  setHeaderData(tab.headerData || {});
-  setBodyData(tab.bodyData || []);
-  setFirmasData(tab.firmasData || {});
-  setLotesConfirmados(tab.lotesConfirmados || false); // ⬅️ IMPORTANTE
-  setSelectedLotes(tab.selectedLotes || []);          // ⬅️ IMPORTANTE
-  setApiDetailsData(tab.apiDetailsData || []);       // ⬅️ IMPORTANTE
-  setApiMovimientoData(tab.apiMovimientoData || []); // ⬅️ IMPORTANTE
-}
+          const tab = parsed.tabs[parsed.activeIdx || 0];
+          if (tab) {
+            setSelectedTemplate(tab.template);
+            setHeaderData(tab.headerData || {});
+            setBodyData(tab.bodyData || []);
+            setFirmasData(tab.firmasData || {});
+            setLotesConfirmados(tab.lotesConfirmados || false);
+            setSelectedLotes(tab.selectedLotes || []);
+            setApiDetailsData(tab.apiDetailsData || []);
+            setApiMovimientoData(tab.apiMovimientoData || []);
+            // 🔧 FIX: Restaurar draftId si la pestaña era un borrador
+            setCurrentDraftId(tab.draftId || null);
+          }
         }
       } catch (e) {
         console.error("Error al cargar persistencia:", e);
       }
     }
-  }, [id]);
+  }, [id, resumeDraft]);
 
   // 🆕 2. EFECTO DE GUARDADO: Sincroniza los cambios con el "disco duro"
   // 🛑 Usamos un Timer para evitar el bucle infinito
  // 🆕 2. EFECTO DE GUARDADO: Sincroniza los cambios con el "disco duro"
 useEffect(() => {
-  if (openTabs.length > 0 && !id) {
+  // 🔧 FIX: NO guardar si selectedTemplate es null (estamos en selector de plantilla)
+  // Esto evita corromper la pestaña actual cuando el usuario va a agregar nueva pestaña
+  if (openTabs.length > 0 && !id && selectedTemplate) {
     const timeoutId = setTimeout(() => {
-      const updatedTabs = [...openTabs];
-      if (updatedTabs[activeTabIndex]) {
-        updatedTabs[activeTabIndex] = {
-          ...updatedTabs[activeTabIndex],
-          headerData,
-          bodyData,
-          firmasData,
-          lotesConfirmados, // Persistir confirmación
-          selectedLotes,    // Persistir selección
-          apiDetailsData,   // ⬅️ AGREGAR ESTO: Persistir datos de la tabla API
-          apiMovimientoData,// ⬅️ AGREGAR ESTO: Persistir cabeceras API
-          hasUnsavedChanges
-        };
-      }
+      // 🔧 FIX: Usar función updater para evitar race conditions
+      setOpenTabs(prev => {
+        const updatedTabs = prev.map((tab, i) => {
+          if (i === activeTabIndex) {
+            return {
+              ...tab,
+              headerData,
+              bodyData,
+              firmasData,
+              lotesConfirmados,
+              selectedLotes,
+              apiDetailsData,
+              apiMovimientoData,
+              hasUnsavedChanges,
+              draftId: currentDraftId
+            };
+          }
+          return tab;
+        });
 
-      localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
-        tabs: updatedTabs,
-        activeIdx: activeTabIndex,
-        nextId: nextTabId
-      }));
-      
-      setOpenTabs(updatedTabs); 
+        localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
+          tabs: updatedTabs,
+          activeIdx: activeTabIndex,
+          nextId: nextTabId
+        }));
+
+        return updatedTabs;
+      });
     }, 1000);
 
     return () => clearTimeout(timeoutId);
   }
-}, [headerData, bodyData, firmasData, lotesConfirmados, selectedLotes, apiDetailsData, apiMovimientoData, activeTabIndex]);
+}, [headerData, bodyData, firmasData, lotesConfirmados, selectedLotes, apiDetailsData, apiMovimientoData, activeTabIndex, selectedTemplate]);
 
   // 👥 NUEVO: Cargar usuarios de la API + Catálogo de Firmas al montar el componente
   useEffect(() => {
@@ -458,6 +482,9 @@ useEffect(() => {
   // 🎯 NUEVO: Auto-seleccionar plantilla si viene desde Home
   useEffect(() => {
     if (preSelectedTemplateId && templates.length > 0 && !selectedTemplate && !id) {
+      // 🔧 FIX: Si ya se auto-seleccionó una vez, no volver a disparar
+      if (preSelectLoadedRef.current) return;
+      preSelectLoadedRef.current = true;
       console.log('🎯 Auto-seleccionando plantilla desde Home:', preSelectedTemplateId);
       handleTemplateSelect(preSelectedTemplateId);
       // Limpiar el state para que no se auto-seleccione de nuevo
@@ -468,48 +495,70 @@ useEffect(() => {
   // 📋 NUEVO: Cargar borrador si viene desde MyDrafts
   useEffect(() => {
     if (!resumeDraft || !templates.length || selectedTemplate || id) return;
+    // 🔧 FIX: Si ya se cargó una vez, no volver a cargar (evita re-trigger al hacer setSelectedTemplate(null))
+    if (draftAlreadyLoadedRef.current) return;
     
     console.log('📋 Cargando borrador guardado:', resumeDraft.draftId);
+    console.log('📋 Datos del borrador:', {
+      templateId: resumeDraft.templateId,
+      headerKeys: Object.keys(resumeDraft.headerData || {}).length,
+      bodyLength: (resumeDraft.bodyData || []).length,
+      firmasKeys: Object.keys(resumeDraft.firmasData || {}).length,
+      hasSnapshot: !!resumeDraft.templateSnapshot,
+    });
     
     try {
       // Usar templateSnapshot si existe, o buscar la plantilla por ID
       let templateToUse = resumeDraft.templateSnapshot;
       
       if (!templateToUse) {
+        console.log('📋 No hay snapshot, buscando plantilla por ID:', resumeDraft.templateId);
         templateToUse = templates.find(t => t.templateID === resumeDraft.templateId);
       }
       
       if (!templateToUse) {
-        console.error('❌ No se encontró la plantilla del borrador');
+        console.error('❌ No se encontró la plantilla del borrador. Templates disponibles:', templates.map(t => t.templateID));
         alert('La plantilla de este borrador ya no existe. El borrador no puede ser restaurado.');
         return;
       }
       
+      console.log('📋 Plantilla encontrada:', templateToUse.nombre || templateToUse.templateID);
+      
       // Asegurar que los campos parseados sean del tipo correcto
-      if (typeof templateToUse.headerFields === 'string') {
-        templateToUse.headerFields = JSON.parse(templateToUse.headerFields || '[]');
-      }
-      if (typeof templateToUse.bodyElements === 'string') {
-        templateToUse.bodyElements = JSON.parse(templateToUse.bodyElements || '[]');
-      }
-      if (typeof templateToUse.firmas === 'string') {
-        templateToUse.firmas = JSON.parse(templateToUse.firmas || '[]');
-      }
+      const safeParse = (val, fallback) => {
+        if (!val) return fallback;
+        if (typeof val !== 'string') return val;
+        try { return JSON.parse(val); } catch (e) {
+          console.warn('⚠️ Error parseando campo de template:', e.message);
+          return fallback;
+        }
+      };
+      
+      templateToUse = { ...templateToUse }; // clonar para no mutar original
+      templateToUse.headerFields = safeParse(templateToUse.headerFields, []);
+      templateToUse.bodyElements = safeParse(templateToUse.bodyElements, []);
+      templateToUse.firmas = safeParse(templateToUse.firmas, []);
       
       // Establecer la plantilla
       setSelectedTemplate(templateToUse);
       
       // Cargar datos guardados del borrador
-      if (resumeDraft.headerData && Object.keys(resumeDraft.headerData).length > 0) {
-        setHeaderData(resumeDraft.headerData);
+      const draftHeader = resumeDraft.headerData && typeof resumeDraft.headerData === 'object' && Object.keys(resumeDraft.headerData).length > 0
+        ? resumeDraft.headerData : null;
+      
+      if (draftHeader) {
+        setHeaderData(draftHeader);
       } else {
         const initialHeader = {};
         (templateToUse.headerFields || []).forEach(f => { initialHeader[f.label] = ""; });
         setHeaderData(initialHeader);
       }
       
-      if (resumeDraft.bodyData && resumeDraft.bodyData.length > 0) {
-        setBodyData(resumeDraft.bodyData);
+      const draftBody = Array.isArray(resumeDraft.bodyData) && resumeDraft.bodyData.length > 0
+        ? resumeDraft.bodyData : null;
+        
+      if (draftBody) {
+        setBodyData(draftBody);
       } else {
         const initialBody = (templateToUse.bodyElements || []).map(element => {
           if (element.type === 'section') {
@@ -531,8 +580,11 @@ useEffect(() => {
         setBodyData(initialBody);
       }
       
-      if (resumeDraft.firmasData && Object.keys(resumeDraft.firmasData).length > 0) {
-        setFirmasData(resumeDraft.firmasData);
+      const draftFirmas = resumeDraft.firmasData && typeof resumeDraft.firmasData === 'object' && Object.keys(resumeDraft.firmasData).length > 0
+        ? resumeDraft.firmasData : null;
+        
+      if (draftFirmas) {
+        setFirmasData(draftFirmas);
       } else {
         const initialFirmas = {};
         (templateToUse.firmas || []).forEach(firma => {
@@ -546,19 +598,27 @@ useEffect(() => {
       setHasUnsavedChanges(true);
       
       // Crear pestaña con los datos del borrador
+      const isManual = !templateToUse.usaApi;
       const newTab = {
         id: nextTabId,
         templateId: templateToUse.templateID,
         templateName: templateToUse.nombre || 'Borrador',
         template: templateToUse,
-        headerData: resumeDraft.headerData || {},
-        bodyData: resumeDraft.bodyData || [],
-        firmasData: resumeDraft.firmasData || {},
-        hasUnsavedChanges: true
+        headerData: draftHeader || {},
+        bodyData: draftBody || [],
+        firmasData: draftFirmas || {},
+        hasUnsavedChanges: true,
+        lotesConfirmados: isManual ? true : (resumeDraft.lotesConfirmados || false),
+        selectedLotes: isManual ? ['MANUAL'] : (resumeDraft.selectedLotes || []),
+        draftId: resumeDraft.draftId // 🔧 FIX: Guardar ID del borrador en la pestaña
       };
       setOpenTabs([newTab]);
       setActiveTabIndex(0);
       setNextTabId(prev => prev + 1);
+      
+      // Sincronizar estados con la pestaña del borrador
+      setLotesConfirmados(newTab.lotesConfirmados);
+      setSelectedLotes(newTab.selectedLotes);
       
       // Cargar catálogos
       loadAllApiCatalogs().catch(err => console.error('Error cargando catálogos:', err));
@@ -566,10 +626,12 @@ useEffect(() => {
       // Limpiar el state para que no se cargue de nuevo
       window.history.replaceState({}, document.title);
       
+      draftAlreadyLoadedRef.current = true; // 🔧 Marcar como ya cargado
       console.log('✅ Borrador cargado exitosamente, DraftID:', resumeDraft.draftId);
     } catch (err) {
       console.error('❌ Error cargando borrador:', err);
-      alert('Error al cargar el borrador: ' + err.message);
+      console.error('   Stack:', err.stack);
+      alert('Error al cargar el borrador: ' + err.message + '\n\nRevisa la consola (F12) para más detalles.');
     }
   }, [resumeDraft, templates, selectedTemplate, id]);
 
@@ -602,6 +664,10 @@ useEffect(() => {
         
         setBodyData(parsedBodyData);
         setFirmasData(typeof data.firmasData === 'string' ? JSON.parse(data.firmasData) : data.firmasData);
+        
+        // 🔧 FIX: En modo edición, siempre poner en modo manual para evitar que inputs se conviertan en selects
+        setSelectedLotes(['MANUAL']);
+        setLotesConfirmados(true);
         
         console.log('🔍 DEBUG COMPLETO:', {
           data: data,
@@ -705,6 +771,8 @@ useEffect(() => {
     setHasUnsavedChanges(false);
     setLotesConfirmados(!template.usaApi); // Si no usa API, confirmar automáticamente
     setSelectedLotes(!template.usaApi ? ['MANUAL'] : []);
+    // 🔧 FIX: Resetear draftId al crear pestaña nueva (no es un borrador)
+    setCurrentDraftId(null);
     console.log(`✅ Pestaña #${nextTabId} creada y activada: "${template.nombre}"`);
   };
 
@@ -727,7 +795,8 @@ useEffect(() => {
           lotesConfirmados, // Guardamos el estado actual
           selectedLotes,    // Guardamos los lotes actuales
           apiDetailsData,   
-          apiMovimientoData 
+          apiMovimientoData,
+          draftId: currentDraftId // 🔧 FIX: Guardar draftId de esta pestaña
         };
       }
       return tab;
@@ -752,6 +821,8 @@ useEffect(() => {
       setApiDetailsData(nextTab.apiDetailsData || []); 
       setApiMovimientoData(nextTab.apiMovimientoData || []); 
       setHasUnsavedChanges(nextTab.hasUnsavedChanges || false);
+      // 🔧 FIX: Restaurar draftId de la pestaña destino
+      setCurrentDraftId(nextTab.draftId || null);
 
       // --- CORRECCIÓN CRÍTICA AQUÍ ---
       const nextSelectedLotes = nextTab.selectedLotes || [];
@@ -814,16 +885,54 @@ useEffect(() => {
     
     console.log(`❌ Cerrando pestaña: "${tab.templateName}"`);
     
-    setOpenTabs(prev => prev.filter((_, i) => i !== index));
+    const newTabs = openTabs.filter((_, i) => i !== index);
     
-    // Ajustar índice activo
+    if (newTabs.length === 0) {
+      // 🔧 FIX: Si era la última pestaña, volver al selector de plantilla
+      setOpenTabs([]);
+      setActiveTabIndex(0);
+      setNextTabId(1);
+      setSelectedTemplate(null);
+      setSelectedLotes([]);
+      setLotesConfirmados(false);
+      setCurrentDraftId(null);
+      localStorage.removeItem(TABS_PERSISTENCE_KEY);
+      return;
+    }
+    
+    setOpenTabs(newTabs);
+    
+    // Ajustar índice activo y cargar datos de la pestaña destino
     if (index === activeTabIndex) {
-      // Si se cierra la pestaña activa, activar la anterior (o 0 si era la primera)
-      setActiveTabIndex(Math.max(0, index - 1));
+      // 🔧 FIX: Si se cierra la pestaña activa, cargar datos de la siguiente
+      const nextIndex = Math.max(0, index - 1);
+      setActiveTabIndex(nextIndex);
+      const nextTab = newTabs[nextIndex];
+      if (nextTab) {
+        setSelectedTemplate(nextTab.template);
+        setHeaderData(nextTab.headerData || {});
+        setBodyData(nextTab.bodyData || []);
+        setFirmasData(nextTab.firmasData || {});
+        setLotesConfirmados(nextTab.lotesConfirmados || false);
+        setSelectedLotes(nextTab.selectedLotes || []);
+        setApiDetailsData(nextTab.apiDetailsData || []);
+        setApiMovimientoData(nextTab.apiMovimientoData || []);
+        setCurrentDraftId(nextTab.draftId || null);
+      }
     } else if (index < activeTabIndex) {
       // Si se cierra una pestaña anterior, decrementar el índice activo
       setActiveTabIndex(prev => prev - 1);
     }
+    
+    // 🔧 FIX: Actualizar localStorage
+    const newActiveIdx = index === activeTabIndex 
+      ? Math.max(0, index - 1) 
+      : (index < activeTabIndex ? activeTabIndex - 1 : activeTabIndex);
+    localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
+      tabs: newTabs,
+      activeIdx: newActiveIdx,
+      nextId: nextTabId
+    }));
   };
 
   /**
@@ -881,229 +990,10 @@ useEffect(() => {
     });
     
     // 🆕 SIEMPRE crear pestañas (nuevo sistema)
-    if (openTabs.length > 0) {
-      // Ya hay pestañas: preguntar si crear nueva o reemplazar
-      const existingTabIndex = openTabs.findIndex(t => t.templateId === templateId && !t.hasUnsavedChanges);
-      if (existingTabIndex !== -1) {
-      switchToTab(existingTabIndex);
-      return;
-    }
-      const action = confirm(
-        `📋 Ya tienes ${openTabs.length} formulario(s) abierto(s).\n\n` +
-        `¿Quieres abrir "${template.nombre}" en una NUEVA PESTAÑA?\n\n` +
-        `✅ Aceptar = Nueva pestaña (trabajar en paralelo)\n` +
-        `❌ Cancelar = Reemplazar pestaña actual`
-      );
-      
-      if (action) {
-        // Crear nueva pestaña
-        console.log('📋 Creando nueva pestaña adicional...');
-        createNewTab(template);
-        return;
-      } else {
-        // Reemplazar pestaña actual
-        if (activeTabIndex >= 0 && openTabs[activeTabIndex]) {
-          const currentTab = openTabs[activeTabIndex];
-          if (currentTab.hasUnsavedChanges) {
-            if (!confirm(`⚠️ La pestaña "${currentTab.templateName}" tiene cambios sin guardar.\n\n¿Deseas continuar sin guardar?`)) {
-              return;
-            }
-          }
-          
-          // Actualizar pestaña con nueva plantilla
-          console.log('🔄 Reemplazando plantilla en pestaña actual...');
-          
-          // Inicializar datos vacíos para la nueva plantilla
-          const initialHeader = {};
-          (template.headerFields || []).forEach((field) => { initialHeader[field.label] = "" });
-          
-          const initialBodyData = (template.bodyElements || []).map(element => {
-            if (element.type === 'section') {
-              const sectionData = {};
-              (element.fields || []).forEach(field => { sectionData[field.label] = ""; });
-              return { id: element.id, type: 'section', data: sectionData };
-            }
-            if (element.type === 'table') {
-              const numRows = element.defaultRows || 3;
-              const initialRows = Array.from({ length: numRows }, () => {
-                const newRow = {};
-                (element.columns || []).forEach((col) => { 
-                  newRow[col.label || col.header || col.name || col.id] = ""; 
-                });
-                return newRow;
-              });
-              return { id: element.id, type: 'table', data: initialRows };
-            }
-            return null;
-          }).filter(Boolean);
-          
-          const initialFirmas = {};
-          (template.firmas || []).forEach((firma) => {
-            initialFirmas[firma.puesto] = { nombre: firma.nombreCompleto || "", fecha: "" };
-          });
-          
-          // Actualizar pestaña en el array
-          setOpenTabs(prev => prev.map((tab, idx) => {
-            if (idx === activeTabIndex) {
-              return {
-                ...tab,
-                templateId: template.templateID,
-                templateName: template.nombre,
-                template: template,
-                headerData: initialHeader,
-                bodyData: initialBodyData,
-                firmasData: initialFirmas,
-                hasUnsavedChanges: false
-              };
-            }
-            return tab;
-          }));
-          
-          // Cargar datos en el estado actual
-          setSelectedTemplate(template);
-          setHeaderData(initialHeader);
-          setBodyData(initialBodyData);
-          setFirmasData(initialFirmas);
-          setHasUnsavedChanges(false);
-        }
-        return;
-      }
-    } else {
-      // Primera vez: crear pestaña automáticamente
-      console.log('📋 Creando primera pestaña automáticamente...');
-      createNewTab(template);
-      return;
-    }
-    
-    setSelectedTemplate(template);
-    
-    // Autoguardado (Solo crear)
-    if (!id) {
-        const key = `${AUTOSAVE_KEY_PREFIX}${templateId}`;
-        const savedData = localStorage.getItem(key);
-        if (savedData && globalThis.confirm('Se encontraron datos autoguardados. ¿Deseas cargarlos?')) {
-            try {
-                const parsedData = JSON.parse(savedData);
-                setHeaderData(parsedData.headerData || {});
-                setBodyData(parsedData.bodyData || []);
-                setFirmasData(parsedData.firmasData || {});
-                setHasUnsavedChanges(true);
-                return;
-            } catch (error) {
-                localStorage.removeItem(key);
-            }
-        }
-    }
-
-    // Inicializar vacío
-    const initialHeader = {};
-    (template.headerFields || []).forEach((field) => { initialHeader[field.label] = "" });
-    setHeaderData(initialHeader);
-    
-    const initialBodyData = (template.bodyElements || []).map(element => {
-      if (element.type === 'section') {
-        const sectionData = {};
-        (element.fields || []).forEach(field => { sectionData[field.label] = ""; });
-        return { id: element.id, type: 'section', data: sectionData };
-      }
-      if (element.type === 'table') {
-          // Si el template tiene filas pre-definidas, usarlas
-          if (element.rows && element.rows.length > 0) {
-            console.log('📋 Inicializando tabla con filas pre-definidas:', {
-              rows: element.rows.length,
-              columns: element.columns?.length,
-              firstRowCells: element.rows[0]?.cells?.length
-            });
-            
-            // 🔧 PASO 1: Detectar columnas duplicadas en el template
-            const columnNames = (element.columns || []).map((col, colIdx) => {
-              const colName = col.label || col.header || col.name || col.id;
-              return { colIdx, originalName: colName };
-            });
-            
-            const nameCount = {};
-            const finalColumnNames = columnNames.map(({ colIdx, originalName }) => {
-              if (!nameCount[originalName]) {
-                nameCount[originalName] = 0;
-              }
-              nameCount[originalName]++;
-              
-              // Si es un duplicado (segunda vez que aparece este nombre)
-              if (nameCount[originalName] > 1) {
-                const uniqueName = `${originalName}_col${colIdx}`;
-                console.log(`🔧 Columna duplicada detectada en template: "${originalName}" → "${uniqueName}"`);
-                return { colIdx, originalName, uniqueName };
-              }
-              return { colIdx, originalName, uniqueName: originalName };
-            });
-            
-            // 🔧 PASO 2: Crear filas con nombres únicos
-            const initialRows = element.rows.map(row => {
-              const newRow = {};
-              
-              (row.cells || []).forEach((cell, cellIndex) => {
-                // Buscar el nombre único que corresponde a este índice
-                const columnInfo = finalColumnNames[cellIndex];
-                const cellName = columnInfo ? columnInfo.uniqueName : (cell.name || cell.columnId);
-                
-                // Preservar el valor 0 (no convertirlo a "")
-                newRow[cellName] = cell.value !== undefined && cell.value !== null ? cell.value : "";
-              });
-              return newRow;
-            });
-            
-            console.log('✅ Primera fila inicializada:', initialRows[0]);
-            
-            return { id: element.id, type: 'table', data: initialRows };
-          }
-          
-          // Si no hay filas pre-definidas, crear filas vacías
-          const numRows = element.defaultRows || 10;
-          const initialRows = Array.from({ length: numRows }, () => {
-            const newRow = {};
-            const usedColNames = new Set(); // Rastrear nombres usados
-            
-            (element.columns || []).forEach((col, colIndex) => { 
-              let colName = col.label || col.header || col.name || col.id;
-              
-              // 🔧 DETECTAR Y CORREGIR COLUMNAS DUPLICADAS
-              if (usedColNames.has(colName)) {
-                const originalName = colName;
-                colName = `${colName}_col${colIndex}`;
-                console.log(`🔧 Columna duplicada en inicialización: "${originalName}" → "${colName}"`);
-              }
-              
-              usedColNames.add(colName);
-              newRow[colName] = ""; 
-            });
-            return newRow;
-          });
-          return { id: element.id, type: 'table', data: initialRows };
-      }
-      return null;
-    }).filter(Boolean);
-    setBodyData(initialBodyData);
-    
-    const initialFirmas = {};
-    (template.firmas || []).forEach((firma) => { initialFirmas[firma.puesto] = { nombre: firma.nombreCompleto || "", fecha: "" }});
-    setFirmasData(initialFirmas);
-    setHasUnsavedChanges(false);
-
-    // Inicializar estados expandidos para elementos del body
-    const initialExpandedStates = {
-      header: true,
-      observations: true,
-      signatures: true
-    };
-    (template.bodyElements || []).forEach((element, index) => {
-      initialExpandedStates[`body_${index}`] = true; // Todas las secciones expandidas por defecto
-    });
-    setExpandedSections(initialExpandedStates);
-    
-    // 🔧 MIGRAR DATOS: Agregar claves para columnas duplicadas
-    setTimeout(() => {
-      migrateDuplicateColumns(template);
-    }, 100);
+    // 🔧 FIX: Siempre permitir abrir el mismo template en múltiples pestañas
+    // (necesario para máquinas que trabajan en paralelo)
+    console.log('📋 Creando nueva pestaña...');
+    createNewTab(template);
   };
   
   // 🔧 Función para migrar columnas duplicadas en datos existentes
@@ -2520,6 +2410,128 @@ useEffect(() => {
     setHasUnsavedChanges(true);
   };
 
+  // ═══════════════════════════════════════════════════════════════
+  // 📦 FUNCIONES DE AGRUPACIÓN DE FILAS
+  // ═══════════════════════════════════════════════════════════════
+
+  // Activar/desactivar modo de selección para agrupar
+  const toggleGroupingMode = (elementIndex) => {
+    setGroupingMode(prev => {
+      const newMode = { ...prev, [elementIndex]: !prev[elementIndex] };
+      if (!newMode[elementIndex]) {
+        // Al desactivar, limpiar selección
+        setSelectedRowsForGroup(p => ({ ...p, [elementIndex]: new Set() }));
+      }
+      return newMode;
+    });
+  };
+
+  // Seleccionar/deseleccionar fila para agrupar
+  const toggleRowSelection = (elementIndex, rowIndex) => {
+    setSelectedRowsForGroup(prev => {
+      const current = new Set(prev[elementIndex] || []);
+      if (current.has(rowIndex)) {
+        current.delete(rowIndex);
+      } else {
+        current.add(rowIndex);
+      }
+      return { ...prev, [elementIndex]: current };
+    });
+  };
+
+  // Crear grupo con las filas seleccionadas
+  const createRowGroup = (elementIndex) => {
+    const selected = selectedRowsForGroup[elementIndex];
+    if (!selected || selected.size < 2) {
+      alert('Selecciona al menos 2 filas para crear un grupo.');
+      return;
+    }
+
+    const groupName = prompt('Nombre del grupo:', `Grupo ${(rowGroups[elementIndex] || []).length + 1}`);
+    if (!groupName) return;
+
+    const selectedRows = Array.from(selected).sort((a, b) => a - b);
+
+    // Verificar que las filas no pertenezcan a otro grupo
+    const existingGroups = rowGroups[elementIndex] || [];
+    const alreadyGrouped = selectedRows.filter(r =>
+      existingGroups.some(g => g.rows.includes(r))
+    );
+    if (alreadyGrouped.length > 0) {
+      alert(`Las filas ${alreadyGrouped.map(r => r + 1).join(', ')} ya pertenecen a otro grupo. Desagrúpalas primero.`);
+      return;
+    }
+
+    const newGroup = {
+      id: Date.now(),
+      name: groupName,
+      rows: selectedRows,
+      collapsed: false
+    };
+
+    setRowGroups(prev => ({
+      ...prev,
+      [elementIndex]: [...(prev[elementIndex] || []), newGroup]
+    }));
+
+    // Limpiar selección y desactivar modo
+    setSelectedRowsForGroup(p => ({ ...p, [elementIndex]: new Set() }));
+    setGroupingMode(p => ({ ...p, [elementIndex]: false }));
+  };
+
+  // Colapsar/expandir grupo
+  const toggleGroupCollapse = (elementIndex, groupId) => {
+    setRowGroups(prev => ({
+      ...prev,
+      [elementIndex]: (prev[elementIndex] || []).map(g =>
+        g.id === groupId ? { ...g, collapsed: !g.collapsed } : g
+      )
+    }));
+  };
+
+  // Eliminar grupo (las filas vuelven a ser normales)
+  const removeRowGroup = (elementIndex, groupId) => {
+    setRowGroups(prev => ({
+      ...prev,
+      [elementIndex]: (prev[elementIndex] || []).filter(g => g.id !== groupId)
+    }));
+  };
+
+  // Renombrar grupo
+  const renameRowGroup = (elementIndex, groupId) => {
+    const group = (rowGroups[elementIndex] || []).find(g => g.id === groupId);
+    if (!group) return;
+    const newName = prompt('Nuevo nombre del grupo:', group.name);
+    if (!newName) return;
+    setRowGroups(prev => ({
+      ...prev,
+      [elementIndex]: (prev[elementIndex] || []).map(g =>
+        g.id === groupId ? { ...g, name: newName } : g
+      )
+    }));
+  };
+
+  // Obtener el grupo al que pertenece una fila
+  const getRowGroup = (elementIndex, rowIndex) => {
+    return (rowGroups[elementIndex] || []).find(g => g.rows.includes(rowIndex));
+  };
+
+  // Verificar si una fila está oculta (porque su grupo está colapsado)
+  const isRowHidden = (elementIndex, rowIndex) => {
+    const group = getRowGroup(elementIndex, rowIndex);
+    if (!group || !group.collapsed) return false;
+    // Solo ocultar filas que NO son la primera del grupo
+    return group.rows[0] !== rowIndex;
+  };
+
+  // Verificar si es la primera fila de un grupo (para mostrar encabezado)
+  const isFirstRowOfGroup = (elementIndex, rowIndex) => {
+    const group = getRowGroup(elementIndex, rowIndex);
+    return group && group.rows[0] === rowIndex;
+  };
+
+  // ═══════════════════════════════════════════════════════════════
+
   // 🆕 Función para agregar columna dinámicamente
   const addTableColumn = (elementIndex) => {
     const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
@@ -2991,9 +3003,45 @@ useEffect(() => {
 
   const handleChangeTemplate = () => {
     handleSafeExit(() => {
-      setSelectedTemplate(null);
-      setSelectedLotes([]);
-      setLotesConfirmados(false);
+      if (openTabs.length > 1) {
+        // Si hay más de una pestaña, solo cerrar la pestaña actual
+        // y navegar a la selección de plantilla para abrir una nueva
+        const indexToRemove = activeTabIndex;
+        setOpenTabs(prev => {
+          const newTabs = prev.filter((_, i) => i !== indexToRemove);
+          const nextIndex = Math.max(0, indexToRemove - 1);
+          const nextTab = newTabs[nextIndex];
+          
+          if (nextTab) {
+            setActiveTabIndex(nextIndex);
+            setSelectedTemplate(nextTab.template);
+            setHeaderData(nextTab.headerData || {});
+            setBodyData(nextTab.bodyData || []);
+            setFirmasData(nextTab.firmasData || {});
+            setLotesConfirmados(nextTab.lotesConfirmados || false);
+            setSelectedLotes(nextTab.selectedLotes || []);
+            setCurrentDraftId(nextTab.draftId || null);
+          }
+          
+          localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
+            tabs: newTabs,
+            activeIdx: nextIndex,
+            nextId: nextTabId
+          }));
+          
+          return newTabs;
+        });
+      } else {
+        // Si es la única pestaña, limpiar todo
+        setSelectedTemplate(null);
+        setSelectedLotes([]);
+        setLotesConfirmados(false);
+        setCurrentDraftId(null);
+        setOpenTabs([]);
+        setActiveTabIndex(0);
+        setNextTabId(1);
+        localStorage.removeItem(TABS_PERSISTENCE_KEY);
+      }
     });
   };
 
@@ -3282,7 +3330,7 @@ useEffect(() => {
   
   // --- RENDER FIELD CORREGIDO (COMBO BOX FIX) ---
  // --- RENDER FIELD CORREGIDO (COMPLETO Y DEFINITIVO) ---
-  const renderField = useCallback((field, value, onChange) => {
+  const renderField = useCallback((field, value, onChange, rowIndex = null) => {
     // 1. CONSTANTES BÁSICAS
     const isManualMode = selectedLotes.includes('MANUAL');
     const fieldType = field.type || 'text';
@@ -3364,20 +3412,27 @@ useEffect(() => {
         }
     }
 
-    // 5. MANTENER EL VALOR ACTUAL
+    // 5. CONTAR OPCIONES REALES (de API/catálogo, NO el valor escrito por el usuario)
+    // Esto evita que un valor escrito manualmente convierta el input en select
+    const realOptionsCount = options.length;
+    
+    // 5b. MANTENER EL VALOR ACTUAL
     // Si ya existe un valor guardado que no está en la lista, lo agregamos para que no se pierda
-    if (value && value !== "" && !options.includes(value)) {
+    // ⚠️ EXCLUIR checkbox y radio: su value es un string compuesto (ej: "A, B, C") que NO debe
+    // reinsertarse como opción — causaría que el string completo aparezca como casilla extra.
+    const isMultiOptionField = fieldType === 'checkbox' || fieldType === 'radio';
+    if (!isMultiOptionField && value && value !== "" && !options.includes(value)) {
         options = [value, ...options];
     }
     
     // 6. DECISIÓN DE RENDERIZADO
-    // Si tiene opciones, siempre mostramos Select (incluso en manual).
+    // Solo mostramos Select si hay opciones REALES (de API/catálogo), no solo el valor escrito
     const shouldRenderAsSelect = (
       // CASO A: Es un campo tipo 'select' nativo del template
       (isExplicitlySelect) || 
       
-      // CASO B: No es manual, tiene API configurada Y tiene opciones cargadas
-      (!isManualMode && (field.apiMap || field.apiEndpoint) && options.length > 0 && !isNumericField && !isDateField)
+      // CASO B: No es manual, tiene API configurada Y tiene opciones REALES cargadas
+      (!isManualMode && (field.apiMap || field.apiEndpoint) && realOptionsCount > 0 && !isNumericField && !isDateField)
     );
 
     // 7. KEY ÚNICO (Para forzar re-render si cambian las opciones)
@@ -3535,7 +3590,7 @@ useEffect(() => {
                 >
                   <input
                     type="radio"
-                    name={`radio-${field.label}`}
+                    name={`radio-${field.label}-${rowIndex !== null ? rowIndex : 'solo'}`}
                     value={option}
                     checked={value === option}
                     onChange={(e) => onChange(e.target.value)}
@@ -3844,6 +3899,7 @@ useEffect(() => {
               setLotesConfirmados(false);
               setSelectedLotes([]);
               setActiveTabIndex(0);
+              setCurrentDraftId(null); // 🔧 FIX: Reset draftId
             } else {
               // CASO B: Quedan otras pestañas trabajando.
               const nextIndex = Math.max(0, indexToRemove - 1);
@@ -3864,6 +3920,7 @@ useEffect(() => {
               setFirmasData(nextTab.firmasData || {});
               setLotesConfirmados(nextTab.lotesConfirmados || false);
               setSelectedLotes(nextTab.selectedLotes || []);
+              setCurrentDraftId(nextTab.draftId || null); // 🔧 FIX: Restaurar draftId de la pestaña siguiente
             }
             return newTabs;
           });
@@ -4164,12 +4221,27 @@ useEffect(() => {
           {/* Botón para agregar nueva pestaña */}
           <button
             onClick={() => {
-              // Mostrar selector de plantilla en modal
-              if (confirm('¿Deseas abrir una nueva pestaña?\n\nPodrás seleccionar otra plantilla.')) {
-                // Regresar a selección de plantilla pero mantener pestañas
-                setSelectedTemplate(null);
-                setLotesConfirmados(false);
-              }
+              // 🔧 FIX: Guardar datos de la pestaña actual ANTES de ir a selector
+              setOpenTabs(prev => prev.map((tab, i) => {
+                if (i === activeTabIndex) {
+                  return {
+                    ...tab,
+                    headerData,
+                    bodyData,
+                    firmasData,
+                    hasUnsavedChanges,
+                    lotesConfirmados,
+                    selectedLotes,
+                    apiDetailsData,
+                    apiMovimientoData,
+                    draftId: currentDraftId
+                  };
+                }
+                return tab;
+              }));
+              // Regresar a selección de plantilla pero mantener pestañas
+              setSelectedTemplate(null);
+              setLotesConfirmados(false);
             }}
             style={{
               background: 'white',
@@ -4320,14 +4392,21 @@ useEffect(() => {
         {id ? (
              <button onClick={handleCancelEdit} className="btn-back">← Cancelar Edición</button>
         ) : (
-             <button onClick={() => { 
-               setSelectedLotes([]); 
-               setLotesConfirmados(false); 
-               setMovements([]); 
-               setApiDetailsData([]); 
-             }} className="btn-back">
-               ← {selectedLotes.includes('MANUAL') ? 'Cambiar a Búsqueda de Lotes' : 'Cambiar Lotes Seleccionados'}
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+             <button onClick={handleChangeTemplate} className="btn-back">
+               ← Cambiar Plantilla
              </button>
+             {selectedTemplate?.usaApi && (
+               <button onClick={() => { 
+                 setSelectedLotes([]); 
+                 setLotesConfirmados(false); 
+                 setMovements([]); 
+                 setApiDetailsData([]); 
+               }} className="btn-back" style={{ fontSize: '0.85em' }}>
+                 🔄 {selectedLotes.includes('MANUAL') ? 'Buscar Lotes' : 'Cambiar Lotes'}
+               </button>
+             )}
+          </div>
         )}
        
         <h1>
@@ -5932,21 +6011,37 @@ useEffect(() => {
                     <button onClick={() => removeEmptyRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }} title="Eliminar filas que están completamente vacías">
                       🧹 Limpiar Vacías
                     </button>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px', background: '#f1f5f9', borderRadius: '8px', padding: '2px 8px' }}>
-                      <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', whiteSpace: 'nowrap' }}>Filas:</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={rowCount}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value);
-                          if (val && val >= 1 && val <= 100) setTableRowCount(elementIndex, val);
-                        }}
-                        style={{ width: '55px', padding: '3px 6px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.85rem', textAlign: 'center' }}
-                        title="Escribe el número de filas que necesitas"
-                      />
-                    </div>
+                    {/* 📦 Botón de Agrupar / Crear Grupo */}
+                    {!groupingMode[elementIndex] ? (
+                      <button
+                        onClick={() => toggleGroupingMode(elementIndex)}
+                        className="btn-add-row"
+                        style={{ background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)' }}
+                        title="Seleccionar filas para agrupar visualmente"
+                      >
+                        📦 Agrupar Filas
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => createRowGroup(elementIndex)}
+                          className="btn-add-row"
+                          style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
+                          title="Crear grupo con las filas seleccionadas"
+                          disabled={!(selectedRowsForGroup[elementIndex]?.size >= 2)}
+                        >
+                          ✅ Crear Grupo ({selectedRowsForGroup[elementIndex]?.size || 0})
+                        </button>
+                        <button
+                          onClick={() => toggleGroupingMode(elementIndex)}
+                          className="btn-add-row"
+                          style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}
+                          title="Cancelar selección"
+                        >
+                          ✕ Cancelar
+                        </button>
+                      </>
+                    )}
                     {/* 🎯 Mostrar botón "Recalcular Totales" SOLO si:
                         1. El formulario tiene auto-suma activado (15 TINAS o maestro)
                         2. La tabla tiene columnas PESO */}
@@ -5991,10 +6086,70 @@ useEffect(() => {
   </div>
 )}
                 </div>
+
+                {/* 📦 Panel de Grupos existentes */}
+                {(rowGroups[elementIndex] || []).length > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '8px',
+                    padding: '8px 12px',
+                    background: '#f5f3ff',
+                    borderRadius: '8px',
+                    marginBottom: '8px',
+                    border: '1px solid #ddd6fe'
+                  }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#6d28d9', alignSelf: 'center' }}>📦 Grupos:</span>
+                    {(rowGroups[elementIndex] || []).map(group => (
+                      <div key={group.id} style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        background: group.collapsed ? '#ede9fe' : 'white',
+                        border: '1px solid #c4b5fd',
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        fontSize: '0.82rem'
+                      }}>
+                        <button
+                          onClick={() => toggleGroupCollapse(elementIndex, group.id)}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '1rem'
+                          }}
+                          title={group.collapsed ? 'Expandir grupo' : 'Colapsar grupo'}
+                        >
+                          {group.collapsed ? '▶' : '▼'}
+                        </button>
+                        <span
+                          onClick={() => renameRowGroup(elementIndex, group.id)}
+                          style={{ fontWeight: 600, color: '#5b21b6', cursor: 'pointer' }}
+                          title="Clic para renombrar"
+                        >
+                          {group.name}
+                        </span>
+                        <span style={{ color: '#7c3aed', fontSize: '0.75rem' }}>
+                          ({group.rows.length} filas: {group.rows.map(r => r + 1).join(', ')})
+                        </span>
+                        <button
+                          onClick={() => removeRowGroup(elementIndex, group.id)}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444',
+                            fontSize: '0.85rem', padding: '0 2px', lineHeight: 1
+                          }}
+                          title="Desagrupar"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="table-wrapper">
                   <table className="data-table complex-header">
                     <thead>
                       <tr>
+                        {groupingMode[elementIndex] && <th rowSpan="2" style={{ width: '40px', background: '#ede9fe' }}>☑️</th>}
                         <th rowSpan="2">#</th>
                         {groupedColumns.map((group, index) => (
                           <th key={index} colSpan={group.columns.length}>{group.groupName}</th>
@@ -6142,7 +6297,7 @@ useEffect(() => {
           return (
             <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border">
               <div style={{ flex: 1 }}>
-                {renderField(col, row[cellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, cellName, value))}
+                {renderField(col, row[cellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, cellName, value), rowIndex)}
               </div>
             </td>
           );
@@ -6155,6 +6310,110 @@ useEffect(() => {
     );
   })}
 </tbody>
+
+{/* 📊 FILA DE TOTALES POR COLUMNA */}
+{(() => {
+  // Solo mostrar si autoSumColumns está activado en la plantilla
+  const autoSumCols = selectedTemplate?.autoSumColumns === true || selectedTemplate?.AutoSumColumns === true;
+  if (!autoSumCols) return null;
+
+  const rows = currentElementData.data || [];
+  if (rows.length === 0) return null;
+
+  // Obtener el mapeo de nombres de columnas
+  const colNameMap = element._columnNameMap || new Map();
+
+  return (
+    <tfoot>
+      <tr style={{ backgroundColor: '#eef2ff', fontWeight: 'bold', borderTop: '3px solid #6366f1' }}>
+        <td style={{ textAlign: 'center', color: '#4338ca', fontWeight: '800', fontSize: '0.9em', padding: '8px 4px' }}>Σ</td>
+        {(element.columns || []).map((col, colIndex) => {
+          const cellName = colNameMap.get(colIndex) || col.label || col.header || col.id || `col_${colIndex}`;
+          const colLabel = (col.label || col.header || '').toUpperCase();
+          const colType = (col.type || '').toLowerCase();
+          
+          // Determinar si esta columna es numérica
+          const isNumericCol = colType === 'number' || colType === 'calculated' || col.formula ||
+            colLabel.includes('PESO') || colLabel.includes('TOTAL') || colLabel.includes('CANTIDAD') ||
+            colLabel.includes('VOLUMEN') || colLabel.includes('TEMPERATURA') || colLabel.includes('TEMP');
+
+          if (!isNumericCol) {
+            // Verificar si los datos de esta columna son numéricos de todos modos
+            let hasAnyNumber = false;
+            for (const row of rows) {
+              const val = parseFloat(row[cellName]);
+              if (!isNaN(val) && val !== 0) {
+                hasAnyNumber = true;
+                break;
+              }
+            }
+            if (!hasAnyNumber) {
+              return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#9ca3af', fontSize: '0.8em' }}>—</td>;
+            }
+          }
+
+          // Sumar todos los valores de esta columna
+          let columnTotal = 0;
+          let hasValues = false;
+
+          // Para columnas TOTAL en formularios 15 Tinas, recalcular desde los PESO de cada fila
+          const tId = Number(selectedTemplate?.TemplateID || selectedTemplate?.id);
+          const tName = (selectedTemplate?.nombre || '').toUpperCase();
+          const esFormulario15Tinas = tId === 38 || tName.includes('15 TINAS');
+          const esColumnaTotal = colLabel.includes('TOTAL');
+
+          if (esFormulario15Tinas && esColumnaTotal) {
+            rows.forEach(row => {
+              let sumaFila = 0;
+              Object.keys(row).forEach(key => {
+                const keyUpper = key.toUpperCase();
+                if (keyUpper.includes('PESO') && !keyUpper.includes('TOTAL')) {
+                  const val = parseFloat(row[key]);
+                  if (!isNaN(val)) sumaFila += val;
+                }
+              });
+              columnTotal += sumaFila;
+              if (sumaFila > 0) hasValues = true;
+            });
+          } else if (col.type === 'calculated' && col.formula) {
+            // Para columnas con fórmula, recalcular
+            rows.forEach(row => {
+              const val = parseFloat(calcularFormulaDinamica(col.formula, row));
+              if (!isNaN(val)) {
+                columnTotal += val;
+                hasValues = true;
+              }
+            });
+          } else {
+            // Columna normal: sumar directamente los valores del row
+            rows.forEach(row => {
+              const val = parseFloat(row[cellName]);
+              if (!isNaN(val)) {
+                columnTotal += val;
+                hasValues = true;
+              }
+            });
+          }
+
+          return (
+            <td key={`total-${colIndex}`} style={{
+              padding: '8px 4px',
+              textAlign: 'right',
+              fontWeight: 'bold',
+              fontSize: '1.05em',
+              color: hasValues ? '#4338ca' : '#9ca3af',
+              backgroundColor: hasValues ? '#e0e7ff' : 'transparent'
+            }}>
+              {hasValues ? columnTotal.toFixed(2) : '—'}
+            </td>
+          );
+        })}
+        <td style={{ textAlign: 'center', color: '#4338ca', fontSize: '0.75em', padding: '8px 4px' }}>TOTALES</td>
+      </tr>
+    </tfoot>
+  );
+})()}
+
                   </table>
                 </div>
               </AccordionSection>
@@ -6278,35 +6537,17 @@ useEffect(() => {
                           title="El nombre del firmante está definido en la plantilla y no puede ser modificado aquí"
                         />
                       </div>
-                      {firma.capturaFecha !== false && (
-                      <div className="form-field">
-                        <label>
-                          Fecha: <span className="auto-hint">(Captura automática - editable)</span>
-                        </label>
-                        <input 
-                          type="date" 
-                          value={firmasData[firma.puesto]?.fecha || ""} 
-                          onChange={(e) => handleFirmaChange(firma.puesto, "fecha", e.target.value)}
-                          disabled={!isCurrentUserSlot && !!nombreAsignado}
-                          style={!isCurrentUserSlot && nombreAsignado ? { backgroundColor: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {}}
-                          title={!isCurrentUserSlot && nombreAsignado ? "Solo el firmante asignado puede editar la fecha" : "Fecha capturada automáticamente al firmar (editable)"}
-                        />
-                      </div>
-                      )}
-                      {firma.capturaHora !== false && (
-                      <div className="form-field">
-                        <label>
-                          Hora: <span className="auto-hint">(Captura automática - editable)</span>
-                        </label>
-                        <input 
-                          type="time" 
-                          value={firmasData[firma.puesto]?.hora || ""} 
-                          onChange={(e) => handleFirmaChange(firma.puesto, "hora", e.target.value)}
-                          disabled={!isCurrentUserSlot && !!nombreAsignado}
-                          style={!isCurrentUserSlot && nombreAsignado ? { backgroundColor: '#f5f5f5', color: '#999', cursor: 'not-allowed' } : {}}
-                          title={!isCurrentUserSlot && nombreAsignado ? "Solo el firmante asignado puede editar la hora" : "Hora capturada automáticamente al firmar (editable)"}
-                        />
-                      </div>
+                      {/* Fecha y hora se capturan automáticamente al firmar - ocultos al usuario */}
+                      {/* Solo se muestran como texto si ya hay valor capturado */}
+                      {(firmasData[firma.puesto]?.fecha || firmasData[firma.puesto]?.hora) && (
+                        <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#666' }}>
+                          {firmasData[firma.puesto]?.fecha && (
+                            <span>📅 {new Date(firmasData[firma.puesto].fecha + 'T00:00:00').toLocaleDateString('es-EC')}</span>
+                          )}
+                          {firmasData[firma.puesto]?.hora && (
+                            <span>🕐 {firmasData[firma.puesto].hora}</span>
+                          )}
+                        </div>
                       )}
                     </div>
 

@@ -225,7 +225,7 @@ const createHeaderSection = (worksheet, headerData, startRow) => {
 /**
  * 📊 Crea las tablas del cuerpo (MÚLTIPLES SECCIONES DINÁMICAS)
  */
-const createBodyTable = (worksheet, bodyData, bodyElements, startRow) => {
+const createBodyTable = (worksheet, bodyData, bodyElements, startRow, template) => {
   let currentRow = startRow;
   
   console.log('📊 Excel - Body Elements:', bodyElements.length);
@@ -353,6 +353,51 @@ const createBodyTable = (worksheet, bodyData, bodyElements, startRow) => {
     worksheet.getRow(currentRow).height = 18;
     currentRow++;
   });
+
+  // 📊 FILA DE TOTALES POR COLUMNA (solo si autoSumColumns está activado)
+  const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true;
+  if (showColumnTotals) {
+  const totalsValues = columns.map((col, colIndex) => {
+    let colTotal = 0;
+    let hasNum = false;
+    dataToRender.forEach(row => {
+      const rowKeys = Object.keys(row);
+      const colLabel = (col.label || col.header || "").trim();
+      let value = row[col.label] ?? row[col.name] ?? row[col.header];
+      if (value === undefined || value === null || value === "") {
+        const suffix = `_col${colIndex}`;
+        const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
+        if (keyWithSuffix) value = row[keyWithSuffix];
+        else if (colLabel.toUpperCase().includes("TOTAL")) {
+          const totalKey = rowKeys.find(k => k.toUpperCase().includes("TOTAL"));
+          if (totalKey) value = row[totalKey];
+        }
+      }
+      const num = parseFloat(value);
+      if (!isNaN(num)) { colTotal += num; hasNum = true; }
+    });
+    return { total: colTotal, hasNum };
+  });
+  const anyTotals = totalsValues.some(t => t.hasNum);
+  if (anyTotals) {
+    columns.forEach((col, colIndex) => {
+      const totalCell = worksheet.getCell(currentRow, colIndex + 1);
+      const t = totalsValues[colIndex];
+      totalCell.value = t.hasNum ? parseFloat(t.total.toFixed(2)) : '—';
+      totalCell.font = { bold: true, size: 10, color: { argb: 'FF4338CA' } };
+      totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } };
+      totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      totalCell.border = {
+        top: { style: 'medium', color: { argb: 'FF6366F1' } },
+        bottom: { style: 'thin', color: { argb: 'FFB4B4B4' } },
+        left: { style: 'thin', color: { argb: 'FFB4B4B4' } },
+        right: { style: 'thin', color: { argb: 'FFB4B4B4' } }
+      };
+    });
+    worksheet.getRow(currentRow).height = 22;
+    currentRow++;
+  }
+  } // end showColumnTotals
     
     // Espacio entre secciones
     currentRow++;
@@ -635,7 +680,7 @@ export const exportFormToExcel = async (form, template) => {
     
     // 3. Crear TODAS las tablas del cuerpo
     console.log('📊 Excel - Dibujando secciones dinámicas del cuerpo...');
-    currentRow = createBodyTable(worksheet, bodyData, bodyElements, currentRow);
+    currentRow = createBodyTable(worksheet, bodyData, bodyElements, currentRow, template);
     
     // 4. Observaciones si existen
     if (form.observaciones) {
@@ -721,7 +766,7 @@ export const exportMultipleFormsToExcel = async (forms, templates) => {
       
       let currentRow = await createFrigolabHeader(worksheet, templateData, logoBase64);
       currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow);
-      currentRow = createBodyTable(worksheet, bodyData, bodyElements, currentRow);
+      currentRow = createBodyTable(worksheet, bodyData, bodyElements, currentRow, template);
       createSignaturesSection(worksheet, firmasData, currentRow);
       
       worksheet.getColumn(1).width = 25;

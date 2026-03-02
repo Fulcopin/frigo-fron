@@ -197,6 +197,46 @@ const signatureService = {
       throw error;
     }
   },
+
+  /**
+   * Obtener reporte de tiempos de firma
+   */
+  async getTimingReport(days = 30) {
+    try {
+      const response = await fetch(`${API_URL_SIGNATURES}/timing-report?days=${days}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error('Error al obtener reporte de tiempos');
+      const data = await response.json();
+      // Unwrap $values de ReferenceHandler.Preserve
+      if (data && data.details && data.details.$values) {
+        data.details = data.details.$values;
+      }
+      return data;
+    } catch (error) {
+      console.error('Error en getTimingReport:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Obtener lista de rechazos con motivos
+   */
+  async getRejections(days = 30) {
+    try {
+      const response = await fetch(`${API_URL_SIGNATURES}/rejections?days=${days}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error('Error al obtener rechazos');
+      const data = await response.json();
+      return data.$values || data || [];
+    } catch (error) {
+      console.error('Error en getRejections:', error);
+      throw error;
+    }
+  },
 };
 
 export default signatureService;

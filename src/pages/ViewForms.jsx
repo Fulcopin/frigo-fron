@@ -809,6 +809,75 @@ function ViewForms() {
                           <tr><td colSpan={templateElement.columns.length + 1}>No hay datos</td></tr>
                         )}
                       </tbody>
+                      
+                      {/* 📊 FILA DE TOTALES POR COLUMNA */}
+                      {tableRows.length > 0 && (correspondingTemplate?.autoSumColumns === true || correspondingTemplate?.AutoSumColumns === true) && (
+                        <tfoot>
+                          <tr style={{ backgroundColor: '#eef2ff', fontWeight: 'bold', borderTop: '3px solid #6366f1' }}>
+                            <td style={{ textAlign: 'center', color: '#4338ca', fontWeight: '800', fontSize: '0.9em', padding: '8px 4px' }}>Σ</td>
+                            {templateElement.columns.map((col, colIndex) => {
+                              const colLabel = (col.label || col.header || '').toUpperCase();
+                              const colId = (col.id || col.name || '').toUpperCase();
+                              
+                              // Sumar valores de esta columna en todas las filas
+                              let columnTotal = 0;
+                              let hasValues = false;
+
+                              tableRows.forEach(row => {
+                                const rowKeys = Object.keys(row);
+                                const colLabelSearch = (col.label || col.header || "").trim();
+                                const colIdSearch = (col.id || col.name || "").trim();
+
+                                // Buscar valor igual que en el renderizado
+                                let cellValue = row[colLabelSearch] ?? row[col.header] ?? row[colIdSearch] ?? row[col.name];
+
+                                if (cellValue === undefined || cellValue === null || cellValue === "") {
+                                  const targetClean = colLabel.replace(/[^A-Z0-9]/g, "");
+                                  const foundKey = rowKeys.find(key => {
+                                    const keyClean = key.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                                    if (keyClean === targetClean && targetClean !== "") return true;
+                                    if (key.toUpperCase().includes(colLabel) && colLabel !== "") return true;
+                                    return false;
+                                  });
+                                  if (foundKey) cellValue = row[foundKey];
+                                }
+
+                                // Para PESO/TOTAL buscar específicamente
+                                if (cellValue === undefined || cellValue === null || cellValue === "") {
+                                  if (colLabel.includes('PESO') || colId.includes('PESO')) {
+                                    const pesoMatch = (col.id || col.label || '').match(/\d+/);
+                                    const pesoNum = pesoMatch ? pesoMatch[0] : '';
+                                    const pesoKey = rowKeys.find(k => k.toUpperCase().includes(`PESO${pesoNum}`) && !k.toUpperCase().includes('TOTAL'));
+                                    if (pesoKey) cellValue = row[pesoKey];
+                                  } else if (colLabel.includes('TOTAL') || colId.includes('TOTAL')) {
+                                    const totalKey = rowKeys.find(k => k.toUpperCase().includes('TOTAL'));
+                                    if (totalKey) cellValue = row[totalKey];
+                                  }
+                                }
+
+                                const val = parseFloat(cellValue);
+                                if (!isNaN(val)) {
+                                  columnTotal += val;
+                                  hasValues = true;
+                                }
+                              });
+
+                              return (
+                                <td key={`total-${colIndex}`} style={{
+                                  textAlign: 'center',
+                                  fontWeight: 'bold',
+                                  fontSize: '1.05em',
+                                  padding: '8px 4px',
+                                  color: hasValues ? '#4338ca' : '#9ca3af',
+                                  backgroundColor: hasValues ? '#e0e7ff' : 'transparent'
+                                }}>
+                                  {hasValues ? columnTotal.toFixed(2) : '—'}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        </tfoot>
+                      )}
                     </table>
                   </div>
                 </div>

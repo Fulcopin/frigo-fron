@@ -772,10 +772,32 @@ const rows = tableData.map((row, rowIndex) => {
           // 🔧 Filtrar filas completamente vacías
           const filteredRows = rows.filter(row => row.some(cell => cell && cell.trim() !== ''));
           
+          // 📊 Calcular fila de TOTALES por columna (solo si autoSumColumns está activado)
+          const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true;
+          let totalsRow = [];
+          let hasTotals = false;
+          if (showColumnTotals) {
+            totalsRow = columns.map((col, colIndex) => {
+              let columnTotal = 0;
+              let hasValues = false;
+              const dataRows = filteredRows.length > 0 ? filteredRows : rows;
+              dataRows.forEach(row => {
+                const val = parseFloat(row[colIndex]);
+                if (!isNaN(val)) {
+                  columnTotal += val;
+                  hasValues = true;
+                }
+              });
+              return hasValues ? columnTotal.toFixed(2) : '—';
+            });
+            hasTotals = totalsRow.some(v => v !== '—');
+          }
+          
           autoTable(doc, {
             startY: currentY,
             head: [columns.map(col => col.header)],
             body: filteredRows.length > 0 ? filteredRows : rows,
+            foot: hasTotals ? [totalsRow] : [],
             theme: 'grid',
             headStyles: {
               fillColor: COLORS.headerBg,
@@ -787,6 +809,13 @@ const rows = tableData.map((row, rowIndex) => {
             bodyStyles: {
               fontSize: 8,
               textColor: COLORS.text
+            },
+            footStyles: {
+              fillColor: [224, 231, 255],
+              textColor: [67, 56, 202],
+              fontSize: 9,
+              fontStyle: 'bold',
+              halign: 'center'
             },
             alternateRowStyles: {
               fillColor: [245, 245, 245]

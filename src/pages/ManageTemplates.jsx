@@ -17,9 +17,8 @@ function ManageTemplates() {
   const [showManualHistory, setShowManualHistory] = useState(false);
   const [manualHistoryTemplate, setManualHistoryTemplate] = useState(null);
   const [manualHistoryEntries, setManualHistoryEntries] = useState([]);
-  const [newHistoryMotivo, setNewHistoryMotivo] = useState('');
+  const [newHistoryFecha, setNewHistoryFecha] = useState('');
   const [newHistoryCambio, setNewHistoryCambio] = useState('');
-  const [newHistoryResponsable, setNewHistoryResponsable] = useState('');
 
   // 👁️ Pre-visualización
   const [showPreview, setShowPreview] = useState(false);
@@ -33,7 +32,8 @@ function ManageTemplates() {
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const response = await fetch(API_URL_TEMPLATES);
+        // Usa /all para que el admin vea también las obsoletas
+        const response = await fetch(`${API_URL_TEMPLATES}/all`);
         if (!response.ok) {
           throw new Error("No se pudieron cargar las plantillas.");
         }
@@ -88,6 +88,36 @@ function ManageTemplates() {
     }
   };
 
+  // ========== 🚫 TOGGLE OBSOLETO ==========
+  const handleToggleObsolete = async (template) => {
+    const newValue = !template.isObsolete;
+    const action = newValue ? 'marcar como OBSOLETA' : 'reactivar';
+    if (!globalThis.confirm(`¿Estás seguro de ${action} la plantilla "${template.nombre}"?${newValue ? '\n\nNo aparecerá en el listado para llenar formularios, pero los registros pasados se mantienen.' : ''}`)) {
+      return;
+    }
+    try {
+      // Traer la plantilla completa para hacer PUT
+      const getResp = await fetch(`${API_URL_TEMPLATES}/${template.templateID}`);
+      if (!getResp.ok) throw new Error('Error al obtener plantilla');
+      const fullTemplate = await getResp.json();
+      
+      const payload = { ...fullTemplate, isObsolete: newValue };
+      const response = await fetch(`${API_URL_TEMPLATES}/${template.templateID}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error('Error al actualizar');
+      
+      setTemplates(prev => prev.map(t => 
+        t.templateID === template.templateID ? { ...t, isObsolete: newValue } : t
+      ));
+      alert(newValue ? '✅ Plantilla marcada como obsoleta.' : '✅ Plantilla reactivada.');
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  };
+
   // ========== 📝 HISTORIAL MANUAL ==========
   const MANUAL_HISTORY_KEY = 'fishcort_manual_template_history';
 
@@ -113,29 +143,26 @@ function ManageTemplates() {
   const handleOpenManualHistory = (template) => {
     setManualHistoryTemplate(template);
     setManualHistoryEntries(loadManualHistory(template.templateID));
-    setNewHistoryMotivo('');
+    setNewHistoryFecha('');
     setNewHistoryCambio('');
-    setNewHistoryResponsable(currentUser?.nombre || currentUser?.username || '');
     setShowManualHistory(true);
   };
 
   const handleAddManualEntry = () => {
-    if (!newHistoryMotivo.trim() || !newHistoryCambio.trim()) {
-      alert('Por favor completa el motivo y el cambio realizado.');
+    if (!newHistoryFecha.trim() || !newHistoryCambio.trim()) {
+      alert('Por favor completa la fecha y el cambio realizado.');
       return;
     }
     const newEntry = {
       id: Date.now(),
-      fecha: new Date().toISOString(),
-      motivo: newHistoryMotivo.trim(),
+      fecha: newHistoryFecha.trim(),
       cambioRealizado: newHistoryCambio.trim(),
-      responsable: newHistoryResponsable.trim() || 'N/A',
       version: manualHistoryTemplate.version || 'N/A'
     };
     const updated = [newEntry, ...manualHistoryEntries];
     setManualHistoryEntries(updated);
     saveManualHistory(manualHistoryTemplate.templateID, updated);
-    setNewHistoryMotivo('');
+    setNewHistoryFecha('');
     setNewHistoryCambio('');
   };
 
@@ -222,6 +249,38 @@ function ManageTemplates() {
         </div>
       ` : '';
 
+      // 📝 Cargar registro de cambios desde localStorage
+      const changeLogEntries = loadManualHistory(template.templateID);
+      const changeLogHtml = `
+        <div style="margin-top:30px;page-break-inside:avoid;">
+          <h3 style="font-size:13px;margin-bottom:8px;text-align:center;font-weight:bold;">📋 HISTORIAL DE CAMBIOS Y/O MODIFICACIONES</h3>
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr>
+                <th style="padding:6px 8px;border:1px solid #ccc;background:#e8eef6;font-weight:bold;width:100px;">FECHA</th>
+                <th style="padding:6px 8px;border:1px solid #ccc;background:#e8eef6;font-weight:bold;width:80px;">VERSIÓN</th>
+                <th style="padding:6px 8px;border:1px solid #ccc;background:#e8eef6;font-weight:bold;">MODIFICACIÓN</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${changeLogEntries.length > 0 
+                ? changeLogEntries.map(entry => {
+                    let fechaDisplay = 'N/A';
+                    if (entry.fecha && entry.fecha.includes('T')) {
+                      fechaDisplay = new Date(entry.fecha).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    } else if (entry.fecha) {
+                      const [y, m, d] = entry.fecha.split('-');
+                      fechaDisplay = d + '/' + m + '/' + y;
+                    }
+                    return '<tr><td style="padding:6px 8px;border:1px solid #ccc;text-align:center;">' + fechaDisplay + '</td><td style="padding:6px 8px;border:1px solid #ccc;text-align:center;">' + (entry.version || 'N/A') + '</td><td style="padding:6px 8px;border:1px solid #ccc;">' + (entry.cambioRealizado || '') + '</td></tr>';
+                  }).join('')
+                : Array.from({ length: 5 }, () => '<tr><td style="padding:6px 8px;border:1px solid #ccc;">&nbsp;</td><td style="padding:6px 8px;border:1px solid #ccc;">&nbsp;</td><td style="padding:6px 8px;border:1px solid #ccc;">&nbsp;</td></tr>').join('')
+              }
+            </tbody>
+          </table>
+        </div>
+      `;
+
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
@@ -266,6 +325,7 @@ function ManageTemplates() {
           ${headerFieldsHtml ? `<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${headerFieldsHtml}</table>` : ''}
           ${bodyHtml}
           ${firmasHtml}
+          ${changeLogHtml}
           <script>window.onload = function() { window.print(); }<\/script>
         </body>
         </html>
@@ -312,10 +372,17 @@ function ManageTemplates() {
       ) : (
         <div className="templates-list">
           {filteredTemplates.map((template) => (
-            <div key={template.templateID} className="template-card-manage">
+            <div key={template.templateID} className={`template-card-manage ${template.isObsolete ? 'template-obsolete' : ''}`}>
               <div className="template-card-info">
                 <span className="template-code">{template.codigo}</span>
-                <h3>{template.nombre}</h3>
+                {template.isObsolete && (
+                  <span style={{
+                    display: 'inline-block', marginLeft: '8px', padding: '2px 10px',
+                    background: '#ef4444', color: 'white', borderRadius: '12px',
+                    fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px'
+                  }}>🚫 OBSOLETA</span>
+                )}
+                <h3 style={template.isObsolete ? { color: '#9ca3af', textDecoration: 'line-through' } : undefined}>{template.nombre}</h3>
                 <span className="template-version">Versión: {template.version}</span>
                 {template.proceso && <span className="template-proceso">📁 {template.proceso}</span>}
               </div>
@@ -327,6 +394,37 @@ function ManageTemplates() {
                   title="Registro manual de cambios"
                 >
                   📝 Registro Cambios
+                </button>
+
+                <button
+                  onClick={() => handlePreview(template)}
+                  className="btn-secondary"
+                  style={{ background: '#0ea5e9', color: 'white', border: 'none' }}
+                  title="Vista previa del formulario"
+                >
+                  👁️ Vista Previa
+                </button>
+
+                <button
+                  onClick={() => handleDownloadEmpty(template)}
+                  className="btn-secondary"
+                  style={{ background: '#16a34a', color: 'white', border: 'none' }}
+                  title="Imprimir formulario en blanco"
+                >
+                  🖨️ Imprimir Vacío
+                </button>
+
+                <button
+                  onClick={() => handleToggleObsolete(template)}
+                  className="btn-secondary"
+                  style={{
+                    background: template.isObsolete ? '#22c55e' : '#ef4444',
+                    color: 'white', border: 'none',
+                    fontSize: '13px'
+                  }}
+                  title={template.isObsolete ? 'Reactivar plantilla' : 'Marcar como obsoleta (no aparece para llenar)'}
+                >
+                  {template.isObsolete ? '✅ Reactivar' : '🚫 Obsoleto'}
                 </button>
 
                 <Link 
@@ -368,16 +466,15 @@ function ManageTemplates() {
               <h3>➕ Agregar Nuevo Registro</h3>
               <div className="mh-form-grid">
                 <div className="mh-field">
-                  <label>Motivo del cambio *</label>
+                  <label>Fecha del cambio *</label>
                   <input 
-                    type="text" 
-                    value={newHistoryMotivo} 
-                    onChange={(e) => setNewHistoryMotivo(e.target.value)}
-                    placeholder="Ej: Solicitud de SGI, Revisión periódica..."
+                    type="date" 
+                    value={newHistoryFecha} 
+                    onChange={(e) => setNewHistoryFecha(e.target.value)}
                   />
                 </div>
                 <div className="mh-field">
-                  <label>Cambio realizado *</label>
+                  <label>Cambio realizado / Modificación *</label>
                   <textarea 
                     value={newHistoryCambio} 
                     onChange={(e) => setNewHistoryCambio(e.target.value)}
@@ -386,12 +483,12 @@ function ManageTemplates() {
                   />
                 </div>
                 <div className="mh-field">
-                  <label>Responsable</label>
+                  <label>Versión</label>
                   <input 
                     type="text" 
-                    value={newHistoryResponsable} 
-                    onChange={(e) => setNewHistoryResponsable(e.target.value)}
-                    placeholder="Nombre de quien solicita/realiza"
+                    value={manualHistoryTemplate?.version || 'N/A'} 
+                    readOnly
+                    style={{ backgroundColor: '#f0f0f0', cursor: 'not-allowed' }}
                   />
                 </div>
               </div>
@@ -420,17 +517,18 @@ function ManageTemplates() {
                       {manualHistoryEntries.map((entry) => (
                         <tr key={entry.id}>
                           <td className="mh-td-fecha">
-                            {new Date(entry.fecha).toLocaleDateString('es-EC', {
-                              day: '2-digit', month: '2-digit', year: 'numeric'
-                            })}
+                            {entry.fecha && entry.fecha.includes('T')
+                              ? new Date(entry.fecha).toLocaleDateString('es-EC', {
+                                  day: '2-digit', month: '2-digit', year: 'numeric'
+                                })
+                              : entry.fecha
+                                ? (() => { const [y, m, d] = entry.fecha.split('-'); return `${d}/${m}/${y}`; })()
+                                : 'N/A'
+                            }
                           </td>
                           <td className="mh-td-version">{entry.version}</td>
                           <td className="mh-td-modificacion">
-                            <strong>{entry.motivo}</strong>
-                            {entry.cambioRealizado && <><br />{entry.cambioRealizado}</>}
-                            {entry.responsable && entry.responsable !== 'N/A' && (
-                              <span className="mh-responsable-tag">👤 {entry.responsable}</span>
-                            )}
+                            {entry.cambioRealizado}
                           </td>
                           <td>
                             <button 

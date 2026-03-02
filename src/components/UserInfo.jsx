@@ -9,7 +9,7 @@ const UserInfo = () => {
 
   const getRoleBadge = (rol) => {
     const badges = {
-      admin: { icon: '👑', text: 'Admin', color: '#667eea' },
+     
       supervisor: { icon: '👔', text: 'Supervisor', color: '#ed8936' },
       trabajador: { icon: '👷', text: 'Trabajador', color: '#48bb78' },
       operador: { icon: '�', text: 'Operador', color: '#48bb78' },

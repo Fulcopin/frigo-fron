@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import signatureService from '../services/signatureService';
 import authService from '../services/authService';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../apiConfig';
 import './SignatureManagement.css';
 
 export default function SignatureManagement() {
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') === 'timing' ? 'timing' : 'pending';
+
   const [pendingForms, setPendingForms] = useState([]);
   const [selectedForms, setSelectedForms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,6 +24,18 @@ export default function SignatureManagement() {
   const [signatureTab, setSignatureTab] = useState('upload'); // 'upload' o 'draw'
   const [isDrawing, setIsDrawing] = useState(false);
 
+  // Estado para modal de rechazo con motivo opcional
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectFormId, setRejectFormId] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  // Estado para pestaña principal: 'pending' o 'timing'
+  const [mainTab, setMainTab] = useState(initialTab);
+  const [timingReport, setTimingReport] = useState(null);
+  const [timingLoading, setTimingLoading] = useState(false);
+  const [timingDays, setTimingDays] = useState(30);
+  const [timingFilter, setTimingFilter] = useState('all'); // all, signed, pending, rejected
+
   // Canvas refs
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
@@ -30,6 +45,10 @@ export default function SignatureManagement() {
 
   useEffect(() => {
     loadData();
+    // Si la URL tiene ?tab=timing, cargar el reporte de tiempos automáticamente
+    if (initialTab === 'timing') {
+      loadTimingReport();
+    }
   }, []);
 
   const loadData = async () => {
@@ -276,26 +295,49 @@ export default function SignatureManagement() {
     }
   };
 
-  const handleReject = async (formId) => {
+  // Abrir modal de rechazo
+  const openRejectModal = (formId) => {
     if (!isSGI) {
       alert('Solo SGI puede rechazar formularios');
       return;
     }
+    setRejectFormId(formId);
+    setRejectReason('');
+    setShowRejectModal(true);
+  };
 
-    const reason = prompt('Ingresa el motivo del rechazo:');
-    if (!reason) return;
+  // Confirmar rechazo desde el modal
+  const handleRejectConfirm = async () => {
+    if (!rejectFormId) return;
 
     try {
-      await signatureService.rejectForm(formId, {
+      await signatureService.rejectForm(rejectFormId, {
         rejectedBy: currentUser.email,
-        reason,
+        reason: rejectReason || '', // Campo OPCIONAL
       });
       
       alert('✅ Formulario rechazado exitosamente');
+      setShowRejectModal(false);
+      setRejectFormId(null);
+      setRejectReason('');
       loadData();
     } catch (error) {
       console.error('Error al rechazar:', error);
       alert('❌ Error al rechazar el formulario: ' + error.message);
+    }
+  };
+
+  // Cargar reporte de tiempos
+  const loadTimingReport = async (daysParam) => {
+    try {
+      setTimingLoading(true);
+      const report = await signatureService.getTimingReport(daysParam || timingDays);
+      setTimingReport(report);
+    } catch (error) {
+      console.error('Error al cargar reporte de tiempos:', error);
+      setTimingReport(null);
+    } finally {
+      setTimingLoading(false);
     }
   };
 
@@ -416,6 +458,55 @@ export default function SignatureManagement() {
         </div>
       )}
 
+      {/* Pestañas Principales - visible para todos los usuarios autenticados */}
+      {currentUser && (
+        <div className="main-tabs" style={{
+          display: 'flex',
+          gap: 0,
+          marginBottom: '1.5rem',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          border: '2px solid #e5e7eb'
+        }}>
+          <button
+            onClick={() => setMainTab('pending')}
+            style={{
+              flex: 1,
+              padding: '12px 20px',
+              border: 'none',
+              background: mainTab === 'pending' ? 'linear-gradient(135deg, #1e40af, #3b82f6)' : '#f8fafc',
+              color: mainTab === 'pending' ? '#fff' : '#64748b',
+              fontWeight: mainTab === 'pending' ? 700 : 500,
+              fontSize: '0.95rem',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            📝 Firmas Pendientes
+          </button>
+          <button
+            onClick={() => { setMainTab('timing'); loadTimingReport(); }}
+            style={{
+              flex: 1,
+              padding: '12px 20px',
+              border: 'none',
+              borderLeft: '1px solid #e5e7eb',
+              background: mainTab === 'timing' ? 'linear-gradient(135deg, #1e40af, #3b82f6)' : '#f8fafc',
+              color: mainTab === 'timing' ? '#fff' : '#64748b',
+              fontWeight: mainTab === 'timing' ? 700 : 500,
+              fontSize: '0.95rem',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            ⏱️ Tiempos y Rechazos
+          </button>
+        </div>
+      )}
+
+      {/* === PESTAÑA: FIRMAS PENDIENTES === */}
+      {mainTab === 'pending' && (
+        <>
       {/* Controles y Filtros */}
       <div className="controls-section">
         <div className="filters">
@@ -557,7 +648,7 @@ export default function SignatureManagement() {
 
                   {isSGI && (
                     <button
-                      onClick={() => handleReject(form.id)}
+                      onClick={() => openRejectModal(form.id)}
                       className="btn-reject"
                     >
                       ❌ Rechazar
@@ -569,6 +660,317 @@ export default function SignatureManagement() {
           </div>
         )}
       </div>
+      </>
+      )}
+
+      {/* === PESTAÑA: TIEMPOS Y RECHAZOS === */}
+      {mainTab === 'timing' && (
+        <div className="timing-dashboard">
+          {/* Controles del reporte */}
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            alignItems: 'center',
+            marginBottom: '1.5rem',
+            flexWrap: 'wrap'
+          }}>
+            <label style={{ fontWeight: 600, color: '#374151', fontSize: '0.9rem' }}>Período:</label>
+            <select
+              value={timingDays}
+              onChange={(e) => { setTimingDays(Number(e.target.value)); loadTimingReport(Number(e.target.value)); }}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid #d1d5db',
+                fontSize: '0.9rem',
+                background: 'white'
+              }}
+            >
+              <option value={7}>Últimos 7 días</option>
+              <option value={15}>Últimos 15 días</option>
+              <option value={30}>Últimos 30 días</option>
+              <option value={60}>Últimos 60 días</option>
+              <option value={90}>Últimos 90 días</option>
+            </select>
+
+            <label style={{ fontWeight: 600, color: '#374151', fontSize: '0.9rem', marginLeft: '12px' }}>Filtrar:</label>
+            <select
+              value={timingFilter}
+              onChange={(e) => setTimingFilter(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid #d1d5db',
+                fontSize: '0.9rem',
+                background: 'white'
+              }}
+            >
+              <option value="all">Todos</option>
+              <option value="signed">Firmados</option>
+              <option value="pending">Pendientes</option>
+              <option value="rejected">Rechazados</option>
+            </select>
+
+            <button
+              onClick={() => loadTimingReport()}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #3b82f6, #1e40af)',
+                color: 'white',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontSize: '0.9rem'
+              }}
+            >
+              🔄 Actualizar
+            </button>
+          </div>
+
+          {timingLoading ? (
+            <div style={{ textAlign: 'center', padding: '3rem' }}>
+              <div className="loading-spinner"></div>
+              <p>Cargando reporte de tiempos...</p>
+            </div>
+          ) : timingReport ? (
+            <>
+              {/* Resumen de tiempos */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '1rem',
+                marginBottom: '1.5rem'
+              }}>
+                <div style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '1.2rem',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  borderLeft: '4px solid #3b82f6',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 700, color: '#1e40af' }}>
+                    {timingReport.averageHoursToSign < 24
+                      ? `${Math.round(timingReport.averageHoursToSign)}h`
+                      : `${Math.round(timingReport.averageHoursToSign / 24)}d`}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: '4px' }}>Promedio para firmar</div>
+                </div>
+                <div style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '1.2rem',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  borderLeft: '4px solid #10b981',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 700, color: '#059669' }}>
+                    {timingReport.fastestHours < 1
+                      ? `${Math.round(timingReport.fastestHours * 60)}min`
+                      : timingReport.fastestHours < 24
+                        ? `${Math.round(timingReport.fastestHours)}h`
+                        : `${Math.round(timingReport.fastestHours / 24)}d`}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: '4px' }}>Más rápido</div>
+                </div>
+                <div style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '1.2rem',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  borderLeft: '4px solid #f59e0b',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 700, color: '#d97706' }}>
+                    {timingReport.slowestHours < 24
+                      ? `${Math.round(timingReport.slowestHours)}h`
+                      : `${Math.round(timingReport.slowestHours / 24)}d`}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: '4px' }}>Más lento</div>
+                </div>
+                <div style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '1.2rem',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  borderLeft: '4px solid #ef4444',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 700, color: '#dc2626' }}>
+                    {timingReport.totalRejected}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: '4px' }}>Rechazados</div>
+                </div>
+              </div>
+
+              {/* Barras de distribución */}
+              <div style={{
+                background: 'white',
+                borderRadius: '12px',
+                padding: '1.5rem',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                marginBottom: '1.5rem'
+              }}>
+                <h3 style={{ margin: '0 0 1rem 0', color: '#1f2937', fontSize: '1rem' }}>📊 Distribución de tiempos de firma</h3>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '0.85rem', color: '#374151' }}>✅ Menos de 24h</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{timingReport.signedWithin24h}</span>
+                    </div>
+                    <div style={{ height: '10px', background: '#e5e7eb', borderRadius: '5px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${timingReport.totalSigned > 0 ? (timingReport.signedWithin24h / timingReport.totalSigned) * 100 : 0}%`,
+                        background: 'linear-gradient(90deg, #10b981, #059669)',
+                        borderRadius: '5px',
+                        transition: 'width 0.5s'
+                      }} />
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '0.85rem', color: '#374151' }}>⚠️ 24h - 72h</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{timingReport.signedAfter24h}</span>
+                    </div>
+                    <div style={{ height: '10px', background: '#e5e7eb', borderRadius: '5px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${timingReport.totalSigned > 0 ? (timingReport.signedAfter24h / timingReport.totalSigned) * 100 : 0}%`,
+                        background: 'linear-gradient(90deg, #f59e0b, #d97706)',
+                        borderRadius: '5px',
+                        transition: 'width 0.5s'
+                      }} />
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '0.85rem', color: '#374151' }}>🔴 Más de 72h</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{timingReport.signedAfter72h}</span>
+                    </div>
+                    <div style={{ height: '10px', background: '#e5e7eb', borderRadius: '5px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${timingReport.totalSigned > 0 ? (timingReport.signedAfter72h / timingReport.totalSigned) * 100 : 0}%`,
+                        background: 'linear-gradient(90deg, #ef4444, #dc2626)',
+                        borderRadius: '5px',
+                        transition: 'width 0.5s'
+                      }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabla detallada */}
+              <div style={{
+                background: 'white',
+                borderRadius: '12px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  padding: '1rem 1.5rem',
+                  borderBottom: '1px solid #e5e7eb',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <h3 style={{ margin: 0, color: '#1f2937', fontSize: '1rem' }}>📋 Detalle de formularios</h3>
+                  <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+                    {(timingReport.details || []).filter(d => timingFilter === 'all' || d.status === timingFilter).length} registros
+                  </span>
+                </div>
+                <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 1 }}>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e5e7eb', color: '#374151', fontWeight: 600 }}>Formulario</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e5e7eb', color: '#374151', fontWeight: 600 }}>Área</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e5e7eb', color: '#374151', fontWeight: 600 }}>Creado</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e5e7eb', color: '#374151', fontWeight: 600 }}>Estado</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e5e7eb', color: '#374151', fontWeight: 600 }}>Tiempo</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid #e5e7eb', color: '#374151', fontWeight: 600 }}>Firmado por / Motivo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(timingReport.details || [])
+                        .filter(d => timingFilter === 'all' || d.status === timingFilter)
+                        .map((item, idx) => (
+                          <tr key={idx} style={{
+                            borderBottom: '1px solid #f1f5f9',
+                            background: item.status === 'rejected' ? '#fef2f2' : item.status === 'signed' ? '#f0fdf4' : '#fffbeb'
+                          }}>
+                            <td style={{ padding: '10px 12px' }}>
+                              <div style={{ fontWeight: 600, color: '#1f2937' }}>{item.templateName}</div>
+                              <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{item.formCode} · #{item.filledFormId}</div>
+                            </td>
+                            <td style={{ padding: '10px 12px', color: '#4b5563' }}>{item.area}</td>
+                            <td style={{ padding: '10px 12px', color: '#4b5563', whiteSpace: 'nowrap' }}>
+                              {new Date(item.createdDate).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </td>
+                            <td style={{ padding: '10px 12px' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '3px 10px',
+                                borderRadius: '20px',
+                                fontSize: '0.78rem',
+                                fontWeight: 600,
+                                background: item.status === 'signed' ? '#dcfce7' : item.status === 'rejected' ? '#fee2e2' : '#fef3c7',
+                                color: item.status === 'signed' ? '#166534' : item.status === 'rejected' ? '#991b1b' : '#92400e'
+                              }}>
+                                {item.status === 'signed' ? '✅ Firmado' : item.status === 'rejected' ? '❌ Rechazado' : '⏳ Pendiente'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 12px', fontWeight: 600, color: item.hoursToSign != null ? (item.hoursToSign < 24 ? '#059669' : item.hoursToSign < 72 ? '#d97706' : '#dc2626') : '#6b7280' }}>
+                              {item.timingLabel || (item.status === 'pending' ? calculatePendingTime(item.createdDate) : '—')}
+                            </td>
+                            <td style={{ padding: '10px 12px' }}>
+                              {item.status === 'signed' && (
+                                <div>
+                                  <div style={{ color: '#374151' }}>{item.signedBy}</div>
+                                  {item.signedDate && (
+                                    <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                                      {new Date(item.signedDate).toLocaleString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {item.status === 'rejected' && (
+                                <div>
+                                  <div style={{ color: '#991b1b', fontWeight: 500 }}>
+                                    {item.rejectionReason || 'Sin motivo especificado'}
+                                  </div>
+                                  <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                                    Por: {item.rejectedBy}
+                                    {item.rejectedDate && ` · ${new Date(item.rejectedDate).toLocaleDateString('es-ES')}`}
+                                  </div>
+                                </div>
+                              )}
+                              {item.status === 'pending' && (
+                                <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Esperando firma...</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                  {(timingReport.details || []).filter(d => timingFilter === 'all' || d.status === timingFilter).length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280' }}>
+                      No hay datos para el filtro seleccionado
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '3rem', color: '#6b7280' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📊</div>
+              <p>No se pudo cargar el reporte. Haz clic en "Actualizar" para intentar nuevamente.</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Modal de Firma */}
       {showSignatureModal && (
@@ -832,6 +1234,109 @@ export default function SignatureManagement() {
               >
                 ✍️ Confirmar Firma
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Rechazo con Motivo Opcional */}
+      {showRejectModal && (
+        <div className="modal-overlay" onClick={() => setShowRejectModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{
+            maxWidth: '500px',
+            borderRadius: '16px',
+            overflow: 'hidden'
+          }}>
+            <div className="modal-header" style={{
+              background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+              color: 'white',
+              padding: '1.2rem 1.5rem'
+            }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>❌ Rechazar Formulario</h2>
+              <button
+                onClick={() => setShowRejectModal(false)}
+                className="modal-close"
+                style={{ color: 'white', fontSize: '1.5rem', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: '1.5rem' }}>
+              <p style={{ color: '#374151', marginBottom: '1rem', fontSize: '0.95rem' }}>
+                Estás por rechazar el formulario <strong>#{rejectFormId}</strong>.
+              </p>
+              
+              <label style={{
+                display: 'block',
+                fontWeight: 600,
+                color: '#374151',
+                marginBottom: '8px',
+                fontSize: '0.9rem'
+              }}>
+                Motivo del rechazo <span style={{ color: '#9ca3af', fontWeight: 400 }}>(opcional)</span>:
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Ej: Datos incorrectos, falta información, requiere corrección..."
+                style={{
+                  width: '100%',
+                  minHeight: '100px',
+                  padding: '12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '10px',
+                  fontSize: '0.9rem',
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  boxSizing: 'border-box'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#ef4444'}
+                onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+              />
+              <p style={{ fontSize: '0.8rem', color: '#9ca3af', marginTop: '6px' }}>
+                Puedes dejar este campo vacío si no deseas especificar un motivo.
+              </p>
+
+              <div style={{
+                display: 'flex',
+                gap: '10px',
+                justifyContent: 'flex-end',
+                marginTop: '1.5rem'
+              }}>
+                <button
+                  onClick={() => setShowRejectModal(false)}
+                  style={{
+                    padding: '10px 20px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    background: 'white',
+                    color: '#374151',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontWeight: 500
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleRejectConfirm}
+                  style={{
+                    padding: '10px 20px',
+                    border: 'none',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                    color: 'white',
+                    cursor: 'pointer',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    boxShadow: '0 2px 6px rgba(239, 68, 68, 0.3)'
+                  }}
+                >
+                  ❌ Confirmar Rechazo
+                </button>
+              </div>
             </div>
           </div>
         </div>
