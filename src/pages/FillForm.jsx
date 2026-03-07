@@ -39,26 +39,165 @@ const processColumnGroups = (columns = []) => {
   }));
 };
 // --- PEGAR AL INICIO DEL ARCHIVO ---
-const calcularFormulaDinamica = (formula, formData) => {
-  if (!formula || !formula.startsWith('sum(')) return "";
+/**
+ * 🧮 Motor de fórmulas tipo Excel para columnas y filas calculadas
+ * Soporta: +, -, *, /, (), nombres de columna, números
+ * 
+ * REFERENCIAS DE CELDAS (como Excel):
+ *   "Columna"          → valor de esa columna en la MISMA fila
+ *   "Columna[3]"       → valor de esa columna en la FILA 3
+ *   "Columna[*]"       → SUMA de esa columna en TODAS las filas
+ * 
+ * Ejemplos:
+ *   "Peso Bruto - Peso Tara"                    → resta en la misma fila
+ *   "Peso Cartón máster + Peso Fundas + Peso Plástico"  → suma columnas misma fila
+ *   "Precio[1] * Cantidad[1] + Precio[2] * Cantidad[2]" → referencia a filas específicas
+ *   "Peso Neto[*]"                               → suma toda la columna "Peso Neto"
+ *   "(Precio * Cantidad) - Descuento"            → paréntesis y operaciones
+ *   "sum(Peso1, Peso2, Peso3)"                   → legacy sum()
+ */
+const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex = -1) => {
+  if (!formula || typeof formula !== 'string' || !formula.trim()) return "";
+  if (!rowData) return "";
+  
+  // Función para normalizar nombres (quita acentos, espacios extra, minúsculas)
+  const normalizeKey = (s) => (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita acentos
+    .replace(/\s+/g, ' ')                              // normaliza espacios
+    .trim();
+  
+  // Construir mapa de claves normalizadas → clave original en rowData
+  const rowKeys = Object.keys(rowData).filter(k => k !== 'id' && k !== 'ID' && k !== 'undefined');
+  const normalizedKeyMap = {}; // normKey → originalKey
+  rowKeys.forEach(k => { normalizedKeyMap[normalizeKey(k)] = k; });
+  
+  // Función para obtener valor de rowData por nombre (con normalización)
+  const getVal = (name) => {
+    // 1. Intento exacto
+    if (rowData[name] !== undefined) {
+      const v = Number.parseFloat(rowData[name]);
+      return Number.isNaN(v) ? 0 : v;
+    }
+    // 2. Intento normalizado
+    const normName = normalizeKey(name);
+    const matchedKey = normalizedKeyMap[normName];
+    if (matchedKey !== undefined) {
+      const v = Number.parseFloat(rowData[matchedKey]);
+      return Number.isNaN(v) ? 0 : v;
+    }
+    return null; // no encontrado
+  };
+  
   try {
-    const variables = formula.replace('sum(', '').replace(')', '').split(',').map(v => v.trim());
-    const total = variables.reduce((acc, nombreVariable) => {
-      // Normalizar: quitar espacios y convertir a minúsculas para comparación flexible
-      // Esto permite que "peso1" matchee "PESO 1", "Peso 1", "peso1", etc.
-      const normalizar = (s) => (s || '').toLowerCase().replace(/[\s_-]/g, '');
-      const varNorm = normalizar(nombreVariable);
-      
-      const key = Object.keys(formData).find(k => {
-        const keyNorm = normalizar(k);
-        return keyNorm === varNorm || k === nombreVariable || k.startsWith(nombreVariable + '_');
+    // 1. Compatibilidad con sum() legacy
+    if (formula.trim().toLowerCase().startsWith('sum(')) {
+      const variables = formula.replace(/sum\(/i, '').replace(')', '').split(',').map(v => v.trim());
+      const total = variables.reduce((acc, nombreVariable) => {
+        const val = getVal(nombreVariable);
+        return acc + (val !== null ? val : 0);
+      }, 0);
+      return total === 0 ? "0.00" : total.toFixed(2);
+    }
+    
+    // 2. Obtener lista de columnas a reemplazar, ordenadas de mayor a menor longitud
+    // Usar las columnas del template (si disponibles) o las claves de rowData
+    const allColNames = rowKeys.sort((a, b) => b.length - a.length);
+    
+    let expression = formula;
+    
+    // 2a. Reemplazar referencias con índice: Columna[N] o Columna[*]
+    if (allRows && allRows.length > 0) {
+      allColNames.forEach(colName => {
+        const escaped = colName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        // "NombreColumna[*]" → suma de toda la columna
+        const regexStar = new RegExp(escaped + '\\[\\*\\]', 'gi');
+        expression = expression.replace(regexStar, () => {
+          let suma = 0;
+          allRows.forEach(r => { const v = Number.parseFloat(r[colName]); if (!Number.isNaN(v)) suma += v; });
+          return String(suma);
+        });
+        
+        // "NombreColumna[N]" → valor de fila N (1-based)
+        const regexRow = new RegExp(escaped + '\\[(\\d+)\\]', 'gi');
+        expression = expression.replace(regexRow, (match, rowNum) => {
+          const idx = parseInt(rowNum) - 1;
+          if (idx >= 0 && idx < allRows.length) {
+            const v = Number.parseFloat(allRows[idx][colName]);
+            return Number.isNaN(v) ? '0' : String(v);
+          }
+          return '0';
+        });
       });
-      const numero = Number.parseFloat(formData[key]);
-      return acc + (Number.isNaN(numero) ? 0 : numero);
-    }, 0);
-    return total === 0 ? "0.00" : total.toFixed(2);
-  } catch (e) { return ""; }
+    }
+    
+    // 2b. Reemplazar nombres de columna → valor numérico (misma fila)
+    allColNames.forEach(colName => {
+      const escaped = colName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'gi');
+      expression = expression.replace(regex, () => {
+        const v = getVal(colName);
+        return v !== null ? String(v) : '0';
+      });
+    });
+    
+    // 3. Validar: solo caracteres numérico/operador
+    // 🔧 FIX: Limpiar operadores dobles (ej: '0++0' de typo 'temperatura+') antes de evaluar
+    const sanitized = expression.replace(/\s/g, '')
+      .replace(/\+\+/g, '+')
+      .replace(/--/g, '+')
+      .replace(/\+-/g, '-')
+      .replace(/-\+/g, '-')
+      .replace(/\*\+/g, '*')
+      .replace(/\/\+/g, '/');
+    if (!/^[0-9.+\-*/()]+$/.test(sanitized)) {
+      // Si aún quedan letras, intentar con nombres normalizados de la fórmula
+      let expression2 = formula;
+      if (allRows && allRows.length > 0) {
+        Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
+          const origKey = normalizedKeyMap[normKey];
+          const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const rx = new RegExp(escaped + '\\[\\*\\]', 'gi');
+          expression2 = expression2.replace(rx, () => { let s = 0; allRows.forEach(r => { const v = parseFloat(r[origKey]); if (!isNaN(v)) s += v; }); return String(s); });
+          const rx2 = new RegExp(escaped + '\\[(\\d+)\\]', 'gi');
+          expression2 = expression2.replace(rx2, (m, n) => { const idx = parseInt(n)-1; if (idx>=0 && idx<allRows.length) { const v=parseFloat(allRows[idx][origKey]); return isNaN(v)?'0':String(v); } return '0'; });
+        });
+      }
+      Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
+        const origKey = normalizedKeyMap[normKey];
+        const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const rx = new RegExp(escaped, 'gi');
+        expression2 = expression2.replace(rx, () => { const v = getVal(origKey); return v !== null ? String(v) : '0'; });
+      });
+      const sanitized2 = expression2.replace(/\s/g, '')
+        .replace(/\+\+/g, '+')
+        .replace(/--/g, '+')
+        .replace(/\+-/g, '-')
+        .replace(/-\+/g, '-')
+        .replace(/\*\+/g, '*')
+        .replace(/\/\+/g, '/');
+      if (!/^[0-9.+\-*/()]+$/.test(sanitized2)) {
+        console.warn('⚠️ Fórmula: nombres de columna no coinciden. Fórmula:', formula, '| Expresión:', expression2, '| Columnas disponibles:', rowKeys);
+        return "⚠️";
+      }
+      const result2 = new Function(`"use strict"; return (${sanitized2})`)();
+      if (typeof result2 !== 'number' || !isFinite(result2)) return "0.00";
+      return result2.toFixed(2);
+    }
+    
+    // 4. Evaluar
+    const result = new Function(`"use strict"; return (${sanitized})`)();
+    if (typeof result !== 'number' || !isFinite(result)) return "0.00";
+    return result.toFixed(2);
+  } catch (e) {
+    console.warn('⚠️ Error evaluando fórmula:', formula, e.message);
+    return "ERR";
+  }
 };
+
+// Mantener compatibilidad con código existente que usa calcularFormulaDinamica
+const calcularFormulaDinamica = evaluarFormula;
 function FillForm() {
   // Hooks de navegación
   const { id } = useParams(); 
@@ -72,6 +211,7 @@ function FillForm() {
   // 📋 NUEVO: Obtener datos de borrador si viene desde MyDrafts
   const resumeDraft = location.state?.resumeDraft;
   const draftAlreadyLoadedRef = useRef(false); // 🔧 FIX: Evitar re-carga del borrador al cambiar pestaña
+  const pendingDraftTabIndexRef = useRef(null); // 🔧 FIX: Índice correcto de la pestaña del borrador
 
   // 🆕 ESTADOS PARA MÚLTIPLES FORMULARIOS EN PESTAÑAS
   const [openTabs, setOpenTabs] = useState([]); // Array de formularios abiertos
@@ -102,6 +242,10 @@ function FillForm() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [draftSaving, setDraftSaving] = useState(false) // 📝 Estado de guardado de borrador
   const [currentDraftId, setCurrentDraftId] = useState(null) // ID del borrador actual
+
+  // Estado para verificar si el usuario revisó el documento antes de firmar
+  const [hasReviewedDocument, setHasReviewedDocument] = useState(false);
+  const documentReviewRef = useRef(null);
 
   // Estados para Acordeón (NUEVO)
   const [expandedSections, setExpandedSections] = useState({
@@ -204,6 +348,8 @@ function FillForm() {
   const [columnImporterForms, setColumnImporterForms] = useState([]); // Formularios disponibles
   const [columnImporterForm, setColumnImporterForm] = useState(null); // Formulario seleccionado para importar
   const [columnImporterTarget, setColumnImporterTarget] = useState(null); // { elementIndex, columnIndex, columnName }
+  const [columnImporterLoading, setColumnImporterLoading] = useState(false); // Estado de carga
+  const [columnImporterError, setColumnImporterError] = useState(null); // Estado de error
 
   // 🔄 Forzar re-render cuando apiDetailsData O apiMovimientoData cambien
   useEffect(() => {
@@ -247,13 +393,9 @@ function FillForm() {
   }, [apiCatalogData]);
   // 🆕 1. EFECTO DE CARGA: Recupera las pestañas del "disco duro" al entrar
   useEffect(() => {
-    // 🔧 FIX: NO restaurar pestañas de localStorage si venimos con un borrador
-    // para que el efecto de carga de borrador tenga prioridad
-    if (resumeDraft) {
-      console.log('📋 Viene borrador → limpiando pestañas anteriores de localStorage');
-      localStorage.removeItem(TABS_PERSISTENCE_KEY);
-      return;
-    }
+    // 🔧 FIX: Si viene un borrador, NO limpiar las pestañas guardadas.
+    // El borrador se agregará como pestaña nueva encima de las existentes.
+    // (antes se borraban, ahora se conservan)
     
     const savedData = localStorage.getItem(TABS_PERSISTENCE_KEY);
     if (savedData && !id) { // No recuperamos si estamos editando un formulario específico por URL
@@ -270,7 +412,10 @@ function FillForm() {
           if (tab) {
             setSelectedTemplate(tab.template);
             setHeaderData(tab.headerData || {});
-            setBodyData(tab.bodyData || []);
+            // 🔧 FIX ROLLO N°: Normalizar claves de bodyData al cargar desde localStorage
+            // Evita que valores queden invisible si el template cambió mayúsculas/acentos
+            const normalizedBody = normalizeBodyDataKeys(tab.bodyData || [], tab.template);
+            setBodyData(normalizedBody);
             setFirmasData(tab.firmasData || {});
             setLotesConfirmados(tab.lotesConfirmados || false);
             setSelectedLotes(tab.selectedLotes || []);
@@ -418,6 +563,60 @@ useEffect(() => {
     });
   };
 
+  /**
+   * 🔧 FIX ROLLO N°: Normaliza las claves de las filas del bodyData para que
+   * coincidan con los labels del template actual. Evita que valores queden
+   * "huérfanos" bajo una clave antigua cuando el template cambió mayúsculas/acentos.
+   */
+  const normalizeBodyDataKeys = (bodyData, template) => {
+    if (!Array.isArray(bodyData) || !template?.bodyElements) return bodyData;
+
+    const normStr = (s) => (s || '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ').trim();
+
+    return bodyData.map((element, elementIndex) => {
+      const templateElement = template.bodyElements[elementIndex];
+      // Support both {data: [...]} and {rows: [...]} formats
+      const elementRows = element.data || element.rows;
+      if (!templateElement || templateElement.type !== 'table' || !elementRows) return element;
+
+      // Construir mapa: normLabel → currentLabel (template columns)
+      const templateColMap = {};
+      (templateElement.columns || []).forEach(col => {
+        const label = col.label || col.header || col.id || col.name;
+        if (label) templateColMap[normStr(label)] = label;
+      });
+
+      const currentTemplateKeys = new Set(Object.values(templateColMap));
+
+      const normalizedData = elementRows.map(row => {
+        const newRow = {};
+        Object.keys(row).forEach(rowKey => {
+          if (currentTemplateKeys.has(rowKey)) {
+            // La clave ya coincide exactamente con el template → mantener
+            newRow[rowKey] = row[rowKey];
+          } else {
+            // Buscar si hay un template label con la misma forma normalizada
+            const normRowKey = normStr(rowKey);
+            const matchedTemplateLabel = templateColMap[normRowKey];
+            if (matchedTemplateLabel && !newRow[matchedTemplateLabel]) {
+              // Migrar a la clave del template actual
+              newRow[matchedTemplateLabel] = row[rowKey];
+            } else {
+              // No hay match o ya existe bajo la clave correcta → mantener original
+              newRow[rowKey] = row[rowKey];
+            }
+          }
+        });
+        return newRow;
+      });
+
+      return { ...element, data: normalizedData };
+    });
+  };
+
   // 🆕 Forzar re-render cuando se carguen catálogos de API externa
   useEffect(() => {
     const totalCatalogItems = Object.values(apiCatalogData).reduce((sum, arr) => sum + arr.length, 0);
@@ -494,8 +693,9 @@ useEffect(() => {
 
   // 📋 NUEVO: Cargar borrador si viene desde MyDrafts
   useEffect(() => {
-    if (!resumeDraft || !templates.length || selectedTemplate || id) return;
-    // 🔧 FIX: Si ya se cargó una vez, no volver a cargar (evita re-trigger al hacer setSelectedTemplate(null))
+    // Esperar a que las plantillas estén cargadas y no ser modo edición por URL
+    if (!resumeDraft || !templates.length || id) return;
+    // 🔧 FIX: Si ya se cargó una vez, no volver a cargar (evita re-trigger)
     if (draftAlreadyLoadedRef.current) return;
     
     console.log('📋 Cargando borrador guardado:', resumeDraft.draftId);
@@ -539,32 +739,34 @@ useEffect(() => {
       templateToUse.bodyElements = safeParse(templateToUse.bodyElements, []);
       templateToUse.firmas = safeParse(templateToUse.firmas, []);
       
-      // Establecer la plantilla
-      setSelectedTemplate(templateToUse);
-      
-      // Cargar datos guardados del borrador
+      // Preparar datos del borrador
       const draftHeader = resumeDraft.headerData && typeof resumeDraft.headerData === 'object' && Object.keys(resumeDraft.headerData).length > 0
-        ? resumeDraft.headerData : null;
-      
-      if (draftHeader) {
-        setHeaderData(draftHeader);
-      } else {
-        const initialHeader = {};
-        (templateToUse.headerFields || []).forEach(f => { initialHeader[f.label] = ""; });
-        setHeaderData(initialHeader);
-      }
-      
+        ? resumeDraft.headerData : (() => {
+          const h = {};
+          (templateToUse.headerFields || []).forEach(f => { h[f.label] = ""; });
+          return h;
+        })();
+
       const draftBody = Array.isArray(resumeDraft.bodyData) && resumeDraft.bodyData.length > 0
-        ? resumeDraft.bodyData : null;
-        
-      if (draftBody) {
-        setBodyData(draftBody);
-      } else {
-        const initialBody = (templateToUse.bodyElements || []).map(element => {
+        ? resumeDraft.bodyData
+        : (templateToUse.bodyElements || []).map(element => {
           if (element.type === 'section') {
-            const sectionData = {};
-            (element.fields || []).forEach(field => { sectionData[field.label] = ""; });
-            return { id: element.id, type: 'section', data: sectionData };
+            const d = {};
+            (element.fields || []).forEach(field => { 
+              // ✅ Si el campo es una tabla, inicializarlo como array
+              if (field.type === 'table') {
+                const numRows = field.defaultRows || 1;
+                const rows = Array.from({ length: numRows }, () => {
+                  const row = {};
+                  (field.columns || []).forEach(col => { row[col.label || col.header || col.name || col.id] = ""; });
+                  return row;
+                });
+                d[field.label] = rows;
+              } else {
+                d[field.label] = "";
+              }
+            });
+            return { id: element.id, type: 'section', data: d };
           }
           if (element.type === 'table') {
             const numRows = element.defaultRows || 3;
@@ -577,27 +779,19 @@ useEffect(() => {
           }
           return null;
         }).filter(Boolean);
-        setBodyData(initialBody);
-      }
-      
+
       const draftFirmas = resumeDraft.firmasData && typeof resumeDraft.firmasData === 'object' && Object.keys(resumeDraft.firmasData).length > 0
-        ? resumeDraft.firmasData : null;
-        
-      if (draftFirmas) {
-        setFirmasData(draftFirmas);
-      } else {
-        const initialFirmas = {};
-        (templateToUse.firmas || []).forEach(firma => {
-          initialFirmas[firma.puesto] = { nombre: firma.nombreCompleto || "", fecha: "" };
-        });
-        setFirmasData(initialFirmas);
-      }
-      
+        ? resumeDraft.firmasData : (() => {
+          const f = {};
+          (templateToUse.firmas || []).forEach(firma => { f[firma.puesto] = { nombre: firma.nombreCompleto || "", fecha: "" }; });
+          return f;
+        })();
+
       // Guardar el ID del borrador para poder actualizarlo
       setCurrentDraftId(resumeDraft.draftId);
       setHasUnsavedChanges(true);
       
-      // Crear pestaña con los datos del borrador
+      // 🔧 FIX: Agregar el borrador como NUEVA PESTAÑA (sin borrar las existentes)
       const isManual = !templateToUse.usaApi;
       const newTab = {
         id: nextTabId,
@@ -605,18 +799,30 @@ useEffect(() => {
         templateName: templateToUse.nombre || 'Borrador',
         template: templateToUse,
         headerData: draftHeader || {},
-        bodyData: draftBody || [],
+        bodyData: normalizeBodyDataKeys(draftBody || [], templateToUse),
         firmasData: draftFirmas || {},
         hasUnsavedChanges: true,
         lotesConfirmados: isManual ? true : (resumeDraft.lotesConfirmados || false),
         selectedLotes: isManual ? ['MANUAL'] : (resumeDraft.selectedLotes || []),
-        draftId: resumeDraft.draftId // 🔧 FIX: Guardar ID del borrador en la pestaña
+        draftId: resumeDraft.draftId
       };
-      setOpenTabs([newTab]);
-      setActiveTabIndex(0);
+
+      // Capturar el índice correcto DENTRO del updater funcional (evita problema de closure con openTabs)
+      // Los updaters funcionales se aplican en orden sobre el estado más reciente,
+      // por eso prev.length aquí refleja las pestañas restauradas de localStorage + las ya existentes.
+      setOpenTabs(prev => {
+        pendingDraftTabIndexRef.current = prev.length; // índice que tendrá la nueva pestaña
+        return [...prev, newTab];
+      });
+      // Activar la nueva pestaña del borrador usando el índice capturado
+      setActiveTabIndex(prev => pendingDraftTabIndexRef.current ?? prev);
       setNextTabId(prev => prev + 1);
       
-      // Sincronizar estados con la pestaña del borrador
+      // Sincronizar estados del formulario con el borrador
+      setSelectedTemplate(templateToUse);
+      setHeaderData(draftHeader || {});
+      setBodyData(normalizeBodyDataKeys(draftBody || [], templateToUse));
+      setFirmasData(draftFirmas || {});
       setLotesConfirmados(newTab.lotesConfirmados);
       setSelectedLotes(newTab.selectedLotes);
       
@@ -633,7 +839,7 @@ useEffect(() => {
       console.error('   Stack:', err.stack);
       alert('Error al cargar el borrador: ' + err.message + '\n\nRevisa la consola (F12) para más detalles.');
     }
-  }, [resumeDraft, templates, selectedTemplate, id]);
+  }, [resumeDraft, templates, id]);
 
   // 2. CARGAR FORMULARIO EXISTENTE (MODO EDICIÓN)
   useEffect(() => {
@@ -658,9 +864,10 @@ useEffect(() => {
         setSelectedTemplate(processedTemplate);
         setHeaderData(typeof data.headerData === 'string' ? JSON.parse(data.headerData) : data.headerData);
         
-        // 🔧 NORMALIZAR bodyData: Corregir claves con sufijos incorrectos
+        // 🔧 NORMALIZAR bodyData: Corregir claves con sufijos incorrectos + migrar claves antiguas
         let parsedBodyData = typeof data.bodyData === 'string' ? JSON.parse(data.bodyData) : data.bodyData;
         parsedBodyData = normalizeBodyDataSuffixes(parsedBodyData);
+        parsedBodyData = normalizeBodyDataKeys(parsedBodyData, processedTemplate); // 🔧 FIX ROLLO N°
         
         setBodyData(parsedBodyData);
         setFirmasData(typeof data.firmasData === 'string' ? JSON.parse(data.firmasData) : data.firmasData);
@@ -1900,52 +2107,59 @@ useEffect(() => {
     console.log('   🎯 Columna destino:', columnName);
     console.log('   📍 Elemento:', elementIndex, 'Columna:', colIndex);
 
+    // Mostrar modal inmediatamente con estado de carga
+    setColumnImporterTarget({ elementIndex, colIndex, columnName });
+    setColumnImporterForm(null);
+    setColumnImporterForms([]);
+    setColumnImporterLoading(true);
+    setColumnImporterError(null);
+    setShowColumnImporter(true);
+
     try {
-      setColumnImporterTarget({ elementIndex, colIndex, columnName });
+      // Usar endpoint /list (ligero, sin BodyData)
+      const url = `${API_URL_FILLED_FORMS}/list`;
+      console.log('   📡 Fetching:', url);
       
-      // 🆕 Cargar formularios con el endpoint /simple para tener nombres de templates
-      const response = await fetch(API_URL_FILLED_FORMS);
-      if (!response.ok) throw new Error('Error al cargar formularios');
+      // AbortController con timeout de 15 segundos
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      console.log('   📡 Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`Error ${response.status}: ${errorText || response.statusText}`);
+      }
       
       let allForms = await response.json();
+      console.log('   📡 Raw response type:', typeof allForms, Array.isArray(allForms) ? `array[${allForms.length}]` : (allForms?.$values ? '$values wrapper' : 'object'));
       
-      // Manejar wrapper $values de ASP.NET
-      if (allForms.$values) allForms = allForms.$values;
+      // Manejar wrapper $values de ASP.NET ReferenceHandler.Preserve
+      if (allForms && allForms.$values) allForms = allForms.$values;
       if (!Array.isArray(allForms)) allForms = [allForms];
       
-      // 🆕 Cargar información completa de cada formulario (con nombre de template)
-      const formsWithDetails = await Promise.all(
-        allForms.slice(0, 50).map(async (form) => {
-          try {
-            const formId = form.filledFormID || form.FormID || form.formID;
-            if (!formId) return null;
-            
-            // Usar el endpoint /simple para obtener el nombre del template
-            const detailResponse = await fetch(`${API_URL_FILLED_FORMS}/${formId}/simple`);
-            if (!detailResponse.ok) return form; // Si falla, usar datos originales
-            
-            const detailData = await detailResponse.json();
-            return {
-              ...form,
-              templateName: detailData.templateName || 'Formulario',
-              formID: detailData.formID
-            };
-          } catch (err) {
-            console.warn('Error cargando detalle de formulario:', err);
-            return form;
-          }
-        })
-      );
-      
-      const availableForms = formsWithDetails.filter(f => f !== null);
+      // Normalizar nombres de campos
+      const availableForms = allForms
+        .filter(f => f != null)
+        .map(form => ({
+          ...form,
+          templateName: form.templateName || form.TemplateName || 'Formulario',
+          formID: form.formID || form.FormID || form.filledFormID || form.FilledFormID
+        }));
       
       console.log(`📋 ${availableForms.length} formularios disponibles para importar`);
       setColumnImporterForms(availableForms);
-      setShowColumnImporter(true);
+      setColumnImporterLoading(false);
       
     } catch (err) {
       console.error('❌ Error al abrir importador de columnas:', err);
-      alert(`❌ Error: ${err.message}`);
+      setColumnImporterLoading(false);
+      const errorMsg = err.name === 'AbortError' 
+        ? 'Tiempo de espera agotado. Verifica que el backend esté corriendo.'
+        : (err.message || 'Error desconocido al cargar formularios');
+      setColumnImporterError(errorMsg);
     }
   };
 
@@ -1955,10 +2169,13 @@ useEffect(() => {
    */
   const loadFormForColumnImport = async (form) => {
     console.log('📖 Cargando formulario para importar columnas...');
-    console.log('   📦 Form object recibido:', form);
+    console.log('   📦 Form object recibido:', JSON.stringify(form, null, 2));
+    
+    setColumnImporterLoading(true);
+    setColumnImporterError(null);
     
     try {
-      // 🔧 FIX: Buscar el ID en múltiples posibles campos
+      // Buscar el ID en múltiples posibles campos
       const formId = form.formID || form.FormID || form.filledFormID || form.FilledFormID || form.id || form.Id;
       
       console.log('   🔢 FormID detectado:', formId);
@@ -1967,26 +2184,54 @@ useEffect(() => {
         throw new Error('No se pudo encontrar el ID del formulario');
       }
       
-      // 🆕 Usar el nuevo endpoint /simple que devuelve datos parseados
+      // Usar el endpoint /simple que devuelve datos parseados
       const endpoint = `${API_URL_FILLED_FORMS}/${formId}/simple`;
       console.log('   📡 Endpoint:', endpoint);
       
       const response = await fetch(endpoint);
+      console.log('   📡 Response status:', response.status);
       
       if (!response.ok) {
-        const errorText = await response.text();
+        const errorText = await response.text().catch(() => '');
         console.error('❌ Error response:', response.status, errorText);
-        throw new Error(`Error al cargar datos: ${response.status}`);
+        throw new Error(`Error al cargar datos: ${response.status} ${errorText}`);
       }
       
       const fullFormData = await response.json();
       console.log('✅ Datos recibidos del endpoint /simple:', fullFormData);
       
+      // Helper para unwrap $values de ReferenceHandler.Preserve
+      const unwrapValues = (obj) => {
+        if (!obj) return obj;
+        if (Array.isArray(obj)) return obj;
+        if (obj.$values && Array.isArray(obj.$values)) return obj.$values;
+        return obj;
+      };
+      
       // Preparar estructura para el importador
-      // El bodyData del endpoint /simple viene como array de objetos con {id, type, data}
-      const parsedBody = Array.isArray(fullFormData.bodyData) 
-        ? fullFormData.bodyData 
+      let rawBody = fullFormData.bodyData;
+      rawBody = unwrapValues(rawBody);
+      const parsedBody = Array.isArray(rawBody) 
+        ? rawBody.map(elem => {
+            if (!elem) return elem;
+            // 🔧 FIX: Soportar tanto elem.data (formato legacy) como elem.rows (formato nuevo)
+            const rawData = elem.data || elem.rows;
+            const unwrappedData = unwrapValues(rawData);
+            if (Array.isArray(unwrappedData)) {
+              return { ...elem, data: unwrappedData.map(row => {
+                if (row && row.$values) return row.$values;
+                return row;
+              })};
+            }
+            return { ...elem, data: unwrappedData };
+          })
         : [];
+      
+      console.log('📦 parsedBody procesado:', parsedBody.length, 'elementos');
+      parsedBody.forEach((el, i) => {
+        const d = el?.data;
+        console.log(`   [${i}] type=${el?.type}, data es ${Array.isArray(d) ? 'array de ' + d.length : typeof d}`);
+      });
       
       setColumnImporterForm({
         ...form,
@@ -1995,16 +2240,18 @@ useEffect(() => {
           formID: fullFormData.formID,
           templateID: fullFormData.templateID,
           headerData: fullFormData.headerData || {},
-          body: parsedBody,  // Estructura esperada por importColumnData
+          body: parsedBody,
           createdAt: fullFormData.createdAt
         }
       });
       
+      setColumnImporterLoading(false);
       console.log('✅ Formulario listo para importar columnas');
       
     } catch (err) {
       console.error('❌ Error cargando formulario:', err);
-      alert(`❌ Error: ${err.message}`);
+      setColumnImporterLoading(false);
+      setColumnImporterError(`Error cargando formulario: ${err.message}`);
     }
   };
 
@@ -2029,15 +2276,45 @@ useEffect(() => {
     console.log('   🔍 elementIndex:', elementIndex, 'colIndex:', colIndex);
     console.log('   📊 sourceBody tiene', sourceBody.length, 'elementos');
     
+    // 🔧 Helper para obtener filas de un elemento (soporta .data y .rows)
+    const getElemRows = (elem) => {
+      if (!elem) return [];
+      if (Array.isArray(elem.data) && elem.data.length > 0) return elem.data;
+      if (Array.isArray(elem.rows) && elem.rows.length > 0) return elem.rows;
+      return [];
+    };
+    
     // 🆕 Determinar cuántas filas destino hay para limitar la búsqueda
-    const targetRowCount = bodyData[elementIndex]?.data?.length || 10;
+    const destElem = bodyData[elementIndex];
+    const targetRowCount = (destElem?.data?.length || destElem?.rows?.length) || 10;
     console.log('   🎯 Filas destino:', targetRowCount);
     
-    // Buscar la tabla origen (puede haber múltiples elementos)
+    // 🔧 FIX: Solo buscar en el elemento CORRESPONDIENTE del formulario origen (misma tabla)
     let sourceColumnData = [];
     
-    sourceBody.forEach((bodyElement, elemIdx) => {
-      const data = bodyElement.data || [];
+    // Encontrar el elemento tipo tabla correcto en el source (soporta .data y .rows)
+    const tableElements = sourceBody
+      .map((elem, idx) => ({ elem, idx }))
+      .filter(({ elem }) => elem && getElemRows(elem).length > 0);
+    
+    // Intentar el índice exacto; si no, usar la primera tabla con datos
+    let sourceElement = sourceBody[elementIndex];
+    if (!sourceElement || getElemRows(sourceElement).length === 0) {
+      console.warn(`⚠️ No se encontró tabla en sourceBody[${elementIndex}]. Buscando fallback...`);
+      const fallback = tableElements[0];
+      sourceElement = fallback ? fallback.elem : null;
+    }
+    
+    if (!sourceElement || getElemRows(sourceElement).length === 0) {
+      console.error(`❌ No se encontró ninguna tabla con datos en el formulario origen`);
+      alert('❌ No se encontraron datos en el formulario origen');
+      return;
+    }
+    
+    const elementsToSearch = [{ elem: sourceElement, idx: elementIndex }];
+    
+    elementsToSearch.forEach(({ elem: bodyElement, idx: elemIdx }) => {
+      const data = getElemRows(bodyElement);
       console.log(`   📦 Elemento ${elemIdx}: ${data.length} filas`);
       
       // 🆕 SOLO procesar las primeras N filas (donde N = número de filas destino)
@@ -2277,7 +2554,7 @@ useEffect(() => {
   };
 
   // --- MANEJADORES DE ESTADO ---
-  const addTableRow = (elementIndex) => {
+  const addTableRow = (elementIndex, fieldLabel) => {
     const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
     if (!tableElement) return;
     
@@ -2285,44 +2562,42 @@ useEffect(() => {
     const currentElementData = bodyData[elementIndex];
     const newRow = {};
     
+    // 🆕 Si fieldLabel está especificado, la tabla está dentro de una sección
+    let tableTemplate = tableElement;
+    let targetData = null;
+    
+    if (fieldLabel) {
+      // Tabla dentro de una sección
+      const sectionField = tableElement.fields?.find(f => f.label === fieldLabel);
+      if (!sectionField) return;
+      tableTemplate = sectionField;
+      targetData = currentElementData.data[fieldLabel] || [];
+    } else {
+      // Tabla como elemento directo
+      targetData = currentElementData?.data || [];
+    }
+    
     // Si el template tiene filas pre-definidas, usar la última fila como referencia para nombres de columnas
-    if (tableElement.rows && tableElement.rows.length > 0) {
+    if (tableTemplate.rows && tableTemplate.rows.length > 0) {
       // Usar los nombres de las celdas de una fila existente si hay data
-      if (currentElementData?.data && currentElementData.data.length > 0) {
-        const lastRow = currentElementData.data[currentElementData.data.length - 1];
-        const nextRowNumber = currentElementData.data.length + 1;
+      if (targetData && targetData.length > 0) {
+        const lastRow = targetData[targetData.length - 1];
+        const nextRowNumber = targetData.length + 1;
         
-        // 🔧 FIX: Incrementar el sufijo (_T1 -> _T2, _T15 -> _T16, etc.)
         Object.keys(lastRow).forEach(key => {
-          // Detectar si la clave tiene un sufijo _Txx
           const suffixMatch = key.match(/^(.+)_T(\d+)$/);
           if (suffixMatch) {
-            // Tiene sufijo: reemplazar el número
-            const baseName = suffixMatch[1]; // Ej: "PESO6"
+            const baseName = suffixMatch[1];
             const newKey = `${baseName}_T${nextRowNumber}`;
             newRow[newKey] = "";
-            
-            // 🐛 DEBUG
-            if (baseName.includes('PESO') || baseName.includes('HORA') || baseName.includes('TINA')) {
-              console.log(`➕ Nueva fila ${nextRowNumber}: ${key} → ${newKey}`);
-            }
           } else {
-            // NO tiene sufijo: verificar si es una clave válida o un col-xxx corrupto
-            const keyUpper = key.toUpperCase();
-            
-            // IGNORAR claves que empiezan con "col-" (son IDs de columna, no datos)
-            if (key.startsWith('col-') || key.startsWith('COL-')) {
-              console.warn(`⚠️ Ignorando clave corrupta en nueva fila: "${key}"`);
-              // No agregar esta clave a la nueva fila
-            } else {
-              // Clave válida sin sufijo: copiar tal cual (ej: metadatos)
+            if (!key.startsWith('col-') && !key.startsWith('COL-')) {
               newRow[key] = "";
             }
           }
         });
       } else {
-        // Si no hay data, usar las celdas de la primera fila del template
-        const templateFirstRow = tableElement.rows[0];
+        const templateFirstRow = tableTemplate.rows[0];
         (templateFirstRow.cells || []).forEach(cell => {
           const cellName = cell.name || cell.columnId;
           newRow[cellName] = "";
@@ -2330,7 +2605,7 @@ useEffect(() => {
       }
     } else {
       // Si no hay filas pre-definidas, usar los nombres de las columnas
-      (tableElement.columns || []).forEach(col => { 
+      (tableTemplate.columns || []).forEach(col => { 
         const colName = col.label || col.header || col.name || col.id;
         newRow[colName] = ""; 
       });
@@ -2338,45 +2613,87 @@ useEffect(() => {
     
     console.log('➕ Nueva fila creada con claves:', Object.keys(newRow));
     
-    setBodyData(prev => prev.map((element, index) => 
-      index === elementIndex ? { ...element, data: [...element.data, newRow] } : element
-    ));
+    if (fieldLabel) {
+      // Tabla dentro de sección
+      setBodyData(prev => prev.map((element, index) => {
+        if (index === elementIndex) {
+          const updatedData = { ...element.data };
+          if (!Array.isArray(updatedData[fieldLabel])) {
+            updatedData[fieldLabel] = [];
+          }
+          updatedData[fieldLabel] = [...updatedData[fieldLabel], newRow];
+          return { ...element, data: updatedData };
+        }
+        return element;
+      }));
+    } else {
+      // Tabla como elemento directo
+      setBodyData(prev => prev.map((element, index) => 
+        index === elementIndex ? { ...element, data: [...element.data, newRow] } : element
+      ));
+    }
     setHasUnsavedChanges(true);
   };
 
-  const removeTableRow = (elementIndex, rowIndex) => {
-    setBodyData(prev => prev.map((element, index) => {
-      if (index === elementIndex && element.data.length > 1) {
-        const filteredRows = element.data.filter((_, rIndex) => rIndex !== rowIndex);
-        return { ...element, data: filteredRows };
-      }
-      return element;
-    }));
+  const removeTableRow = (elementIndex, rowIndex, fieldLabel) => {
+    if (fieldLabel) {
+      // Tabla dentro de sección
+      setBodyData(prev => prev.map((element, index) => {
+        if (index === elementIndex && Array.isArray(element.data[fieldLabel]) && element.data[fieldLabel].length > 1) {
+          const updatedData = { ...element.data };
+          updatedData[fieldLabel] = updatedData[fieldLabel].filter((_, rIndex) => rIndex !== rowIndex);
+          return { ...element, data: updatedData };
+        }
+        return element;
+      }));
+    } else {
+      // Tabla como elemento directo
+      setBodyData(prev => prev.map((element, index) => {
+        if (index === elementIndex && element.data.length > 1) {
+          const filteredRows = element.data.filter((_, rIndex) => rIndex !== rowIndex);
+          return { ...element, data: filteredRows };
+        }
+        return element;
+      }));
+    }
     setHasUnsavedChanges(true);
   };
 
   // ➕ Agregar múltiples filas de una vez
-  const addMultipleRows = (elementIndex) => {
+  const addMultipleRows = (elementIndex, fieldLabel) => {
     const count = parseInt(prompt('¿Cuántas filas deseas agregar?', '5'));
     if (!count || count < 1 || count > 100) return;
     for (let i = 0; i < count; i++) {
-      addTableRow(elementIndex);
+      addTableRow(elementIndex, fieldLabel);
     }
   };
 
   // 🗑️ Eliminar filas vacías de una tabla
-  const removeEmptyRows = (elementIndex) => {
+  const removeEmptyRows = (elementIndex, fieldLabel) => {
     const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
     if (!tableElement) return;
     
-    setBodyData(prev => prev.map((element, index) => {
-      if (index !== elementIndex) return element;
-      const nonEmptyRows = element.data.filter(row => {
-        return Object.values(row).some(val => val && String(val).trim() !== '');
-      });
-      // Mantener al menos 1 fila
-      return { ...element, data: nonEmptyRows.length > 0 ? nonEmptyRows : [element.data[0]] };
-    }));
+    if (fieldLabel) {
+      // Tabla dentro de sección
+      setBodyData(prev => prev.map((element, index) => {
+        if (index !== elementIndex) return element;
+        const updatedData = { ...element.data };
+        const nonEmptyRows = (updatedData[fieldLabel] || []).filter(row => {
+          return Object.values(row).some(val => val && String(val).trim() !== '');
+        });
+        updatedData[fieldLabel] = nonEmptyRows.length > 0 ? nonEmptyRows : updatedData[fieldLabel];
+        return { ...element, data: updatedData };
+      }));
+    } else {
+      // Tabla como elemento directo
+      setBodyData(prev => prev.map((element, index) => {
+        if (index !== elementIndex) return element;
+        const nonEmptyRows = element.data.filter(row => {
+          return Object.values(row).some(val => val && String(val).trim() !== '');
+        });
+        return { ...element, data: nonEmptyRows.length > 0 ? nonEmptyRows : [element.data[0]] };
+      }));
+    }
     setHasUnsavedChanges(true);
   };
 
@@ -2943,6 +3260,15 @@ useEffect(() => {
     }));
   };
 
+  // 📜 Handler de scroll para revisión de documento antes de firmar
+  const handleDocumentReviewScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    // Considerar "revisado" cuando el usuario ha llegado al 90% del scroll
+    if (scrollTop + clientHeight >= scrollHeight - 30) {
+      setHasReviewedDocument(true);
+    }
+  };
+
   // Toggle para elementos del body (tablas y secciones)
   const toggleBodySection = (elementIndex) => {
     setExpandedSections(prev => ({
@@ -3219,11 +3545,28 @@ useEffect(() => {
   }, []);
   
   const handleSectionFieldChangeWithAutoSave = useCallback((elementIndex, fieldLabel, value) => {
-    setBodyData(prev => prev.map((element, index) => 
-      index === elementIndex ? { ...element, data: { ...element.data, [fieldLabel]: value } } : element
-    ));
+    setBodyData(prev => prev.map((element, index) => {
+      if (index !== elementIndex) return element;
+      const updatedData = { ...element.data, [fieldLabel]: value };
+      
+      // 🧮 Recalcular campos tipo "formula" en esta sección
+      const sectionTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+      if (sectionTemplate?.fields) {
+        sectionTemplate.fields.forEach(field => {
+          if (field.type === 'formula' && field.formula) {
+            const result = evaluarFormula(field.formula, updatedData);
+            if (result !== "") {
+              updatedData[field.label] = result;
+              console.log(`🧮 [section-formula] ${field.label} = ${result}`);
+            }
+          }
+        });
+      }
+      
+      return { ...element, data: updatedData };
+    }));
     setHasUnsavedChanges(true);
-  }, []);
+  }, [selectedTemplate]);
   
   const handleTableFieldChangeWithAutoSave = useCallback((elementIndex, rowIndex, columnLabel, value) => {
     // Validar que columnLabel no sea undefined o null
@@ -3237,90 +3580,115 @@ useEffect(() => {
     
     setBodyData(prev => prev.map((element, index) => {
       if (index === elementIndex) {
-        const updatedRows = element.data.map((row, rIndex) => {
+        const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+        
+        // 🔥 PRIMERO: Construir las filas con el valor editado
+        let updatedRows = element.data.map((row, rIndex) => {
           if (rIndex === rowIndex) {
-            // 🔥 PRIMERO: Actualizar el valor que el usuario escribió
-            const updatedRow = { ...row, [columnLabel]: value };
-            
-            // 🔥 PASO 1: Calcular columnas "calculated" con formula
-            // Si la tabla tiene "autoCalculate": true O si el template es maestro
-            const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
-            if ((tableTemplate?.autoCalculate === true || selectedTemplate?.isMasterForm === true || selectedTemplate?.IsMasterForm === true) && tableTemplate?.columns) {
-              tableTemplate.columns.forEach(col => {
-                if (col.type === 'calculated' && col.formula) {
-                  const cellKey = col.label || col.id || col.name;
-                  const result = calcularFormulaDinamica(col.formula, updatedRow);
-                  if (result !== "") {
-                    updatedRow[cellKey] = result;
-                    console.log(`      🧮 [formula] ${cellKey} = ${result} (fórmula: ${col.formula})`);
-                  }
-                }
-              });
-            }
-
-            // 🎯 PASO 2: Auto-suma por nombre PESO/TOTAL (solo para formularios 15 tinas u otros marcados)
-            const isAutoSumEnabled = shouldEnableAutoSum();
-            
-            console.log(`   🔍 ¿Auto-suma habilitado? ${isAutoSumEnabled ? '✅ SÍ' : '⛔ NO'}`);
-            
-            // ⛔ SI AUTO-SUMA ESTÁ DESACTIVADO, RETORNAR (ya se calcularon las fórmulas arriba)
-            if (!isAutoSumEnabled) {
-              console.log(`   ⏭️ Auto-suma por nombre DESACTIVADO`);
-              return updatedRow;
-            }
-            
-            // 🎯 VERIFICAR SI ESTA TABLA TIENE COLUMNAS PESO (en la plantilla, NO en el row)
-            const tienePeso = tableTemplate?.columns?.some(col => {
-              const colId = (col.id || col.name || '').toUpperCase();
-              const colLabel = (col.label || col.header || '').toUpperCase();
-              return colId.includes('PESO') || colLabel.includes('PESO');
-            }) || false;
-            
-            console.log(`      📊 ¿Tabla tiene columnas PESO? ${tienePeso ? '✅ SÍ' : '⛔ NO'}`);
-            
-            // ⚠️ SOLO CALCULAR TOTAL SI LA TABLA TIENE COLUMNAS PESO
-            if (tienePeso) {
-              // 🔢 CALCULAR TOTAL AUTOMÁTICAMENTE
-              const allKeys = Object.keys(updatedRow);
-              const totalKey = allKeys.find(key => 
-                key.toUpperCase().includes('TOTAL')
-              );
-              
-              if (totalKey) {
-                let total = 0;
-                
-                console.log(`      🧮 Calculando total para columna: "${totalKey}"`);
-                
-                // Sumar TODAS las columnas PESO de esta fila
-                allKeys.forEach(key => {
-                  const keyUpper = key.toUpperCase();
-                  const containsPeso = keyUpper.includes('PESO');
-                  const containsTotal = keyUpper.includes('TOTAL');
-                  const cellValue = updatedRow[key];
-                  
-                  // Sumar si contiene PESO y NO contiene TOTAL
-                  if (containsPeso && !containsTotal) {
-                    const pesoValue = Number.parseFloat(cellValue);
-                    
-                    if (!Number.isNaN(pesoValue) && cellValue !== '' && cellValue !== null && cellValue !== undefined) {
-                      total += pesoValue;
-                      console.log(`         ➕ ${key} = ${pesoValue}`);
-                    }
-                  }
-                });
-                
-                // Actualizar el total
-                console.log(`      ✅ TOTAL CALCULADO: ${total.toFixed(2)}`);
-                updatedRow[totalKey] = total.toFixed(2);
-              } else {
-                console.log(`      ⚠️ No se encontró columna TOTAL`);
-              }
-            }
-            
-            return updatedRow;
+            return { ...row, [columnLabel]: value };
           }
           return row;
         });
+        
+        // 🔥 PASO 1: Calcular fórmulas en TODAS las filas (por si referencian otras filas)
+        // Hacer 2 pasadas: primero calculated, luego formula (por si dependen entre sí)
+        updatedRows = updatedRows.map((row, rIndex) => {
+          const updatedRow = { ...row };
+          
+          // PASO 1a: Calcular columnas "calculated" con formula
+          if ((tableTemplate?.autoCalculate === true || selectedTemplate?.isMasterForm === true || selectedTemplate?.IsMasterForm === true) && tableTemplate?.columns) {
+            tableTemplate.columns.forEach(col => {
+              if (col.type === 'calculated' && col.formula) {
+                const cellKey = col.label || col.id || col.name;
+                const result = calcularFormulaDinamica(col.formula, updatedRow, updatedRows, rIndex);
+                if (result !== "") {
+                  updatedRow[cellKey] = result;
+                  if (rIndex === rowIndex) console.log(`      🧮 [formula] ${cellKey} = ${result}`);
+                }
+              }
+            });
+          }
+
+          // PASO 1b: Calcular columnas tipo "formula" para TODOS los templates
+          if (tableTemplate?.columns) {
+            tableTemplate.columns.forEach(col => {
+              if (col.type === 'formula' && col.formula) {
+                const cellKey = col.label || col.id || col.name;
+                const result = evaluarFormula(col.formula, updatedRow, updatedRows, rIndex);
+                if (result !== "") {
+                  updatedRow[cellKey] = result;
+                  if (rIndex === rowIndex) console.log(`      🧮 [formula-col] ${cellKey} = ${result}`);
+                }
+              }
+            });
+          }
+          
+          return updatedRow;
+        });
+
+        // Obtener la fila editada para el resto de la lógica
+        const editedRow = updatedRows[rowIndex];
+
+        // 🎯 PASO 2: Auto-suma por nombre PESO/TOTAL (solo para formularios 15 tinas u otros marcados)
+        const isAutoSumEnabled = shouldEnableAutoSum();
+            
+        console.log(`   🔍 ¿Auto-suma habilitado? ${isAutoSumEnabled ? '✅ SÍ' : '⛔ NO'}`);
+            
+        // ⛔ SI AUTO-SUMA ESTÁ DESACTIVADO, RETORNAR
+        if (!isAutoSumEnabled) {
+          console.log(`   ⏭️ Auto-suma por nombre DESACTIVADO`);
+          return { ...element, data: updatedRows };
+        }
+            
+        // 🎯 VERIFICAR SI ESTA TABLA TIENE COLUMNAS PESO (en la plantilla, NO en el row)
+        const tienePeso = tableTemplate?.columns?.some(col => {
+          const colId = (col.id || col.name || '').toUpperCase();
+          const colLabel = (col.label || col.header || '').toUpperCase();
+          return colId.includes('PESO') || colLabel.includes('PESO');
+        }) || false;
+            
+        console.log(`      📊 ¿Tabla tiene columnas PESO? ${tienePeso ? '✅ SÍ' : '⛔ NO'}`);
+            
+        // ⚠️ SOLO CALCULAR TOTAL SI LA TABLA TIENE COLUMNAS PESO
+        if (tienePeso) {
+          // 🔢 CALCULAR TOTAL AUTOMÁTICAMENTE
+          const allKeys = Object.keys(editedRow);
+          const totalKey = allKeys.find(key => 
+            key.toUpperCase().includes('TOTAL')
+          );
+              
+          if (totalKey) {
+            let total = 0;
+                
+            console.log(`      🧮 Calculando total para columna: "${totalKey}"`);
+                
+            // Sumar TODAS las columnas PESO de esta fila
+            allKeys.forEach(key => {
+              const keyUpper = key.toUpperCase();
+              const containsPeso = keyUpper.includes('PESO');
+              const containsTotal = keyUpper.includes('TOTAL');
+              const cellValue = editedRow[key];
+                  
+              // Sumar si contiene PESO y NO contiene TOTAL
+              if (containsPeso && !containsTotal) {
+                const pesoValue = Number.parseFloat(cellValue);
+                    
+                if (!Number.isNaN(pesoValue) && cellValue !== '' && cellValue !== null && cellValue !== undefined) {
+                  total += pesoValue;
+                  console.log(`         ➕ ${key} = ${pesoValue}`);
+                }
+              }
+            });
+                
+            // Actualizar el total
+            console.log(`      ✅ TOTAL CALCULADO: ${total.toFixed(2)}`);
+            editedRow[totalKey] = total.toFixed(2);
+            updatedRows[rowIndex] = editedRow;
+          } else {
+            console.log(`      ⚠️ No se encontró columna TOTAL`);
+          }
+        }
+
         return { ...element, data: updatedRows };
       }
       return element;
@@ -3655,13 +4023,14 @@ useEffect(() => {
         case "datetime": return <input type="datetime-local" {...commonProps} />;
         
         case "calculated":
+        case "formula":
           return (
             <input 
               type="text" 
               value={value || "0.00"} 
               readOnly 
               className="calculated-field" 
-              style={{ background: '#f3f4f6', fontWeight: 'bold', color: '#1f2937', cursor: 'not-allowed' }} 
+              style={{ background: '#f0fdf4', fontWeight: 'bold', color: '#166534', cursor: 'not-allowed' }} 
             />
           );
         
@@ -4207,7 +4576,10 @@ useEffect(() => {
       {/* 🆕 BARRA DE PESTAÑAS (TABS) */}
       {openTabs.length > 0 && (
         <div className="tabs-container" style={{
-          background: 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 900,  /* ✅ Debajo del sidebar (980) para no superponer */
+          background: 'white',
           padding: '0.75rem 1.5rem',
           borderRadius: '0',
           marginBottom: '0',
@@ -4215,8 +4587,8 @@ useEffect(() => {
           gap: '0.5rem',
           flexWrap: 'wrap',
           alignItems: 'center',
-          borderBottom: '2px solid #3b82f6',
-          boxShadow: '0 2px 8px rgba(30, 64, 175, 0.3)'
+          borderBottom: '1px solid #e1e1e1',  /* ✅ Borde gris suave, no azul */
+          boxShadow: 'none'  /* ✅ Sin sombra azul */
         }}>
           {/* Botón para agregar nueva pestaña */}
           <button
@@ -4273,7 +4645,7 @@ useEffect(() => {
                 background: index === activeTabIndex 
                   ? 'white' 
                   : 'rgba(255, 255, 255, 0.92)',
-                color: index === activeTabIndex ? '#035b8d' : '#1e40af',
+                color: index === activeTabIndex ? '#035b8d' : '#666666',  /* ✅ Gris, no azul */
                 padding: '0.5rem 0.875rem',
                 borderRadius: '3px',
                 cursor: 'pointer',
@@ -4287,23 +4659,23 @@ useEffect(() => {
                 maxWidth: '200px',
                 fontSize: '0.875rem',
                 border: index === activeTabIndex 
-                  ? '2px solid #3b82f6' 
-                  : '1px solid rgba(255,255,255,0.7)',
+                  ? '2px solid #d1d5db'  /* ✅ Borde gris suave, no azul */
+                  : '1px solid #e5e7eb',  /* ✅ Borde gris claro */
                 boxShadow: index === activeTabIndex 
-                  ? '0 2px 6px rgba(30,64,175,0.2)' 
+                  ? '0 2px 4px rgba(0,0,0,0.05)'  /* ✅ Sombra gris suave, no azul */
                   : 'none'
               }}
               onClick={() => switchToTab(index)}
               onMouseOver={(e) => {
                 if (index !== activeTabIndex) {
-                  e.currentTarget.style.background = 'white';
-                  e.currentTarget.style.color = '#035b8d';
+                  e.currentTarget.style.background = '#f9fafb';  /* ✅ Gris claro en hover */
+                  e.currentTarget.style.color = '#4b5563';  /* ✅ Texto gris, no azul */
                 }
               }}
               onMouseOut={(e) => {
                 if (index !== activeTabIndex) {
                   e.currentTarget.style.background = 'rgba(255, 255, 255, 0.92)';
-                  e.currentTarget.style.color = '#1e40af';
+                  e.currentTarget.style.color = '#666666';  /* ✅ Gris, no azul */
                 }
               }}
             >
@@ -4452,18 +4824,19 @@ useEffect(() => {
 
       {/* 🆕 BOTÓN FLOTANTE PARA AGREGAR NUEVA PESTAÑA (SIEMPRE VISIBLE) */}
       {selectedTemplate && !id && (
-        <div style={{
+        <div className="tabs-floating-bar" style={{
           position: 'sticky',
           top: 0,
-          zIndex: 1001,
-          background: 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)',
+          zIndex: 900,
+          background: 'white',
           padding: '0.75rem 1.5rem',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
           gap: '1rem',
-          borderBottom: '2px solid #3b82f6',
-          boxShadow: '0 2px 8px rgba(30, 64, 175, 0.3)'
+          borderBottom: '1px solid #e1e1e1',
+          boxShadow: 'none',
+          transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
         }}>
           <button
             onClick={() => {
@@ -4475,9 +4848,9 @@ useEffect(() => {
               setLotesConfirmados(false);
             }}
             style={{
-              background: 'rgba(255, 255, 255, 0.95)',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              color: '#1e40af',
+              background: '#035b8d',
+              border: '1px solid #024a73',
+              color: 'white',
               padding: '0.5rem 1rem',
               borderRadius: '4px',
               cursor: 'pointer',
@@ -4489,10 +4862,10 @@ useEffect(() => {
               transition: 'background 0.2s'
             }}
             onMouseOver={(e) => {
-              e.currentTarget.style.background = '#f5f5f5';
+              e.currentTarget.style.background = '#024a73';
             }}
             onMouseOut={(e) => {
-              e.currentTarget.style.background = 'white';
+              e.currentTarget.style.background = '#035b8d';
             }}
             title="Abrir una nueva pestaña con otra plantilla"
           >
@@ -4503,8 +4876,8 @@ useEffect(() => {
           {openTabs.length > 0 && (
             <>
               <div style={{
-                background: 'rgba(255, 255, 255, 0.95)',
-                color: '#1e40af',
+                background: 'white',
+                color: '#4b5563',
                 padding: '0.5rem 0.875rem',
                 borderRadius: '3px',
                 fontSize: '0.875rem',
@@ -4514,16 +4887,16 @@ useEffect(() => {
                 gap: '0.5rem',
                 cursor: 'pointer',
                 transition: 'background 0.2s',
-                border: '1px solid rgba(255, 255, 255, 0.8)'
+                border: '1px solid #d1d5db'
               }}
               onClick={() => setShowTabsPanel(!showTabsPanel)}
               onMouseOver={(e) => {
-                e.currentTarget.style.background = 'white';
-                e.currentTarget.style.color = '#035b8d';
+                e.currentTarget.style.background = '#f3f4f6';
+                e.currentTarget.style.color = '#1f2937';
               }}
               onMouseOut={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.95)';
-                e.currentTarget.style.color = '#1e40af';
+                e.currentTarget.style.background = 'white';
+                e.currentTarget.style.color = '#4b5563';
               }}
               title="Click para ver detalles de todas las pestañas">
                 <span>📋</span>
@@ -4837,7 +5210,7 @@ useEffect(() => {
           <span style={{ 
             marginRight: '15px', 
             fontSize: '0.9rem', 
-            color: '#555',
+            color: '#374151',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '5px'
@@ -4848,7 +5221,7 @@ useEffect(() => {
         {selectedTemplate.frecuencia && (
           <span style={{ 
             fontSize: '0.9rem', 
-            color: '#555',
+            color: '#374151',
             display: 'inline-flex',
             alignItems: 'center',
             gap: '5px'
@@ -4956,7 +5329,7 @@ useEffect(() => {
 
               {/* Contenido del modal */}
               <div style={{ padding: '2rem' }}>
-                <p style={{ color: '#666', marginBottom: '2rem' }}>
+                <p style={{ color: '#4b5563', marginBottom: '2rem' }}>
                   Selecciona los campos que deseas copiar del formulario origen al formulario destino actual.
                   Puedes personalizar el mapeo de cada campo.
                 </p>
@@ -4973,7 +5346,7 @@ useEffect(() => {
                   </h3>
                   
                   {sourceFields.header.length === 0 ? (
-                    <p style={{ color: '#999', fontStyle: 'italic' }}>No hay campos de header disponibles</p>
+                    <p style={{ color: '#6b7280', fontStyle: 'italic' }}>No hay campos de header disponibles</p>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
                       {sourceFields.header.map(sourceField => (
@@ -5012,7 +5385,7 @@ useEffect(() => {
                           
                           {selectedHeaderFields.includes(sourceField) && (
                             <div>
-                              <label style={{ fontSize: '0.85rem', color: '#666', marginBottom: '0.25rem', display: 'block' }}>
+                              <label style={{ fontSize: '0.85rem', color: '#4b5563', marginBottom: '0.25rem', display: 'block' }}>
                                 Mapear a campo destino:
                               </label>
                               <select
@@ -5058,7 +5431,7 @@ useEffect(() => {
                   </h3>
                   
                   {sourceFields.body.length === 0 ? (
-                    <p style={{ color: '#999', fontStyle: 'italic' }}>No hay campos de tabla disponibles</p>
+                    <p style={{ color: '#6b7280', fontStyle: 'italic' }}>No hay campos de tabla disponibles</p>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
                       {sourceFields.body.map(sourceField => (
@@ -5098,7 +5471,7 @@ useEffect(() => {
                           
                           {selectedBodyFields.includes(sourceField) && (
                             <div>
-                              <label style={{ fontSize: '0.85rem', color: '#666', marginBottom: '0.25rem', display: 'block' }}>
+                              <label style={{ fontSize: '0.85rem', color: '#4b5563', marginBottom: '0.25rem', display: 'block' }}>
                                 Mapear a campo destino:
                               </label>
                               <select
@@ -5139,9 +5512,9 @@ useEffect(() => {
                     style={{
                       padding: '0.75rem 1.5rem',
                       borderRadius: '6px',
-                      border: '2px solid #ddd',
+                      border: '2px solid #d1d5db',
                       background: 'white',
-                      color: '#666',
+                      color: '#4b5563',
                       fontSize: '1rem',
                       cursor: 'pointer',
                       fontWeight: '600'
@@ -5252,7 +5625,7 @@ useEffect(() => {
                     <h3 style={{ marginBottom: '1rem' }}>1️⃣ Selecciona un formulario guardado:</h3>
                     
                     {availableSourceForms.length === 0 && (
-                      <p style={{ color: '#999', fontStyle: 'italic' }}>
+                      <p style={{ color: '#6b7280', fontStyle: 'italic' }}>
                         📭 No hay formularios guardados disponibles.
                       </p>
                     )}
@@ -5290,7 +5663,7 @@ useEffect(() => {
                               <p style={{ margin: 0, fontWeight: 'bold', color: '#333', fontSize: '1.1rem' }}>
                                 📄 FormID {formId}
                               </p>
-                              <p style={{ margin: '0.5rem 0', color: '#666', fontSize: '0.9rem' }}>
+                              <p style={{ margin: '0.5rem 0', color: '#4b5563', fontSize: '0.9rem' }}>
                                 📅 {new Date(createdAt).toLocaleString('es-EC')}
                               </p>
                               {headerData?.Código && (
@@ -5324,7 +5697,7 @@ useEffect(() => {
                         <h3 style={{ margin: 0, color: '#333' }}>
                           2️⃣ Datos del Formulario
                         </h3>
-                        <p style={{ margin: '0.5rem 0 0 0', color: '#666', fontSize: '0.9rem' }}>
+                        <p style={{ margin: '0.5rem 0 0 0', color: '#4b5563', fontSize: '0.9rem' }}>
                           Haz clic en cualquier celda para copiar su valor
                         </p>
                       </div>
@@ -5380,7 +5753,7 @@ useEffect(() => {
                                 e.currentTarget.style.background = '#f8f9fa';
                               }}
                             >
-                              <div style={{ fontSize: '0.85rem', color: '#666', marginBottom: '0.25rem' }}>
+                              <div style={{ fontSize: '0.85rem', color: '#4b5563', marginBottom: '0.25rem' }}>
                                 {key}
                               </div>
                               <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#333' }}>
@@ -5440,7 +5813,7 @@ useEffect(() => {
                                     padding: '0.75rem', 
                                     borderBottom: '1px solid #e0e0e0',
                                     fontWeight: 'bold',
-                                    color: '#666'
+                                    color: '#4b5563'
                                   }}>
                                     {rowIndex + 1}
                                   </td>
@@ -5575,9 +5948,41 @@ useEffect(() => {
                       }}>1</span>
                       Selecciona el formulario con los datos a importar:
                     </h3>
+
+                    {/* Estado de carga */}
+                    {columnImporterLoading && (
+                      <div style={{ textAlign: 'center', padding: '3rem' }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⏳</div>
+                        <p style={{ color: '#11998e', fontWeight: 'bold', fontSize: '1.1rem' }}>Cargando formularios...</p>
+                        <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Conectando con el servidor</p>
+                      </div>
+                    )}
+
+                    {/* Estado de error */}
+                    {columnImporterError && (
+                      <div style={{ textAlign: 'center', padding: '2rem', background: '#fff3f3', borderRadius: '12px', border: '2px solid #ffcdd2' }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>❌</div>
+                        <p style={{ color: '#d32f2f', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.5rem' }}>Error al cargar formularios</p>
+                        <p style={{ color: '#4b5563', fontSize: '0.9rem', marginBottom: '1rem' }}>{columnImporterError}</p>
+                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                          <button
+                            onClick={() => openColumnImporter(columnImporterTarget.elementIndex, columnImporterTarget.colIndex, columnImporterTarget.columnName)}
+                            style={{ background: '#11998e', color: 'white', border: 'none', padding: '0.7rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.95rem' }}
+                          >
+                            🔄 Reintentar
+                          </button>
+                          <button
+                            onClick={() => { setShowColumnImporter(false); setColumnImporterError(null); }}
+                            style={{ background: '#f3f4f6', color: '#333', border: '2px solid #d1d5db', padding: '0.7rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.95rem' }}
+                          >
+                            Cerrar
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     
-                    {columnImporterForms.length === 0 && (
-                      <p style={{ color: '#999', fontStyle: 'italic', textAlign: 'center', padding: '2rem' }}>
+                    {!columnImporterLoading && !columnImporterError && columnImporterForms.length === 0 && (
+                      <p style={{ color: '#6b7280', fontStyle: 'italic', textAlign: 'center', padding: '2rem' }}>
                         📭 No hay formularios guardados disponibles para importar.
                       </p>
                     )}
@@ -5588,17 +5993,7 @@ useEffect(() => {
                           const formId = form.filledFormID || form.FilledFormID || form.formID || form.FormID || form.id || form.ID;
                           const createdAt = form.createdAt || form.CreatedAt || form.created_at;
                           const templateName = form.templateName || form.TemplateName || 'Formulario';
-                          const headerDataObj = form.headerData || form.HeaderData;
-                          const bodyDataObj = form.bodyData || form.BodyData;
-                          let parsedHeader = headerDataObj;
-                          if (typeof headerDataObj === 'string') {
-                            try { parsedHeader = JSON.parse(headerDataObj); } catch (e) { parsedHeader = {}; }
-                          }
-                          let parsedBody = bodyDataObj;
-                          if (typeof bodyDataObj === 'string') {
-                            try { parsedBody = JSON.parse(bodyDataObj); } catch (e) { parsedBody = []; }
-                          }
-                          const filaCount = parsedBody?.[0]?.data?.length || 0;
+                          const filledBy = form.filledBy || form.FilledBy || '';
                           
                           return (
                             <div
@@ -5627,15 +6022,15 @@ useEffect(() => {
                               <p style={{ margin: 0, fontWeight: 'bold', color: '#333', fontSize: '1.1rem' }}>
                                 📄 {templateName}
                               </p>
-                              <p style={{ margin: '0.3rem 0', color: '#666', fontSize: '0.85rem' }}>
+                              <p style={{ margin: '0.3rem 0', color: '#4b5563', fontSize: '0.85rem' }}>
                                 🔢 ID: {formId}
                               </p>
-                              <p style={{ margin: '0.3rem 0', color: '#666', fontSize: '0.85rem' }}>
+                              <p style={{ margin: '0.3rem 0', color: '#4b5563', fontSize: '0.85rem' }}>
                                 📅 {createdAt ? new Date(createdAt).toLocaleString('es-EC') : 'Sin fecha'}
                               </p>
-                              {parsedHeader?.Código && (
+                              {filledBy && (
                                 <p style={{ margin: '0.3rem 0', color: '#444', fontSize: '0.9rem' }}>
-                                  🔖 Código: <strong>{parsedHeader.Código}</strong>
+                                  👤 {filledBy}
                                 </p>
                               )}
                               <p style={{ 
@@ -5644,7 +6039,7 @@ useEffect(() => {
                                 fontWeight: 'bold',
                                 fontSize: '1rem' 
                               }}>
-                                📊 {filaCount} filas disponibles
+                                Haz clic para ver columnas →
                               </p>
                             </div>
                           );
@@ -5657,6 +6052,32 @@ useEffect(() => {
                 {/* PASO 2: Seleccionar columna origen */}
                 {columnImporterForm && (
                   <div>
+                    {/* Loading state while loading form details */}
+                    {columnImporterLoading && (
+                      <div style={{ textAlign: 'center', padding: '3rem' }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>⏳</div>
+                        <p style={{ color: '#11998e', fontWeight: 'bold', fontSize: '1.1rem' }}>Cargando datos del formulario...</p>
+                        <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Obteniendo columnas disponibles</p>
+                      </div>
+                    )}
+
+                    {/* Error state */}
+                    {columnImporterError && (
+                      <div style={{ textAlign: 'center', padding: '2rem', background: '#fff3f3', borderRadius: '12px', border: '2px solid #ffcdd2' }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>❌</div>
+                        <p style={{ color: '#d32f2f', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.5rem' }}>Error al cargar formulario</p>
+                        <p style={{ color: '#4b5563', fontSize: '0.9rem', marginBottom: '1rem' }}>{columnImporterError}</p>
+                        <button
+                          onClick={() => { setColumnImporterForm(null); setColumnImporterError(null); }}
+                          style={{ background: '#f3f4f6', color: '#333', border: '2px solid #d1d5db', padding: '0.7rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                          ← Volver a lista
+                        </button>
+                      </div>
+                    )}
+
+                    {!columnImporterLoading && !columnImporterError && (
+                    <>
                     <div style={{ 
                       display: 'flex', 
                       justifyContent: 'space-between', 
@@ -5719,9 +6140,40 @@ useEffect(() => {
                     </div>
 
                     {/* Botones de columnas disponibles */}
-                    {columnImporterForm.fullData?.body?.[0]?.data?.[0] && (
+                    {(() => {
+                      const targetIdx = columnImporterTarget?.elementIndex ?? 0;
+                      const bodyArr = columnImporterForm.fullData?.body || [];
+                      
+                      // Encontrar todos los elementos tipo tabla (con data array)
+                      const tableElements = bodyArr
+                        .map((el, i) => ({ el, i }))
+                        .filter(({ el }) => el && Array.isArray(el.data) && el.data.length > 0 && typeof el.data[0] === 'object');
+                      
+                      if (tableElements.length === 0) return (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
+                          <p>⚠️ El formulario origen no tiene datos en ninguna tabla.</p>
+                          <p style={{ fontSize: '0.85rem' }}>Asegúrate de seleccionar un formulario del mismo tipo de plantilla.</p>
+                        </div>
+                      );
+                      
+                      // Intentar el índice exacto; si no funciona, usar la primera tabla con datos
+                      let sourceIdx = targetIdx;
+                      const exactMatch = tableElements.find(({ i }) => i === targetIdx);
+                      if (!exactMatch) {
+                        // Si solo hay una tabla, usarla siempre
+                        sourceIdx = tableElements[0].i;
+                      }
+                      
+                      const sourceData = bodyArr[sourceIdx]?.data;
+                      if (!sourceData || !Array.isArray(sourceData) || sourceData.length === 0) return (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
+                          <p>⚠️ El formulario origen no tiene datos en esta tabla.</p>
+                          <p style={{ fontSize: '0.85rem' }}>Asegúrate de seleccionar un formulario del mismo tipo de plantilla.</p>
+                        </div>
+                      );
+                      return (
                       <div>
-                        <p style={{ marginBottom: '1rem', color: '#666', fontSize: '0.95rem' }}>
+                        <p style={{ marginBottom: '1rem', color: '#4b5563', fontSize: '0.95rem' }}>
                           Haz clic en una columna para importar <strong>todos sus valores</strong> a "{columnImporterTarget?.columnName}":
                         </p>
                         
@@ -5731,12 +6183,12 @@ useEffect(() => {
                           gap: '0.75rem',
                           marginBottom: '2rem'
                         }}>
-                          {Object.keys(columnImporterForm.fullData.body[0].data[0] || {})
+                          {Object.keys(sourceData[0] || {})
                             .filter(key => key !== 'id' && key !== 'ID')
                             .map((columnName) => {
                               // Obtener un valor de muestra
-                              const sampleValue = columnImporterForm.fullData.body[0].data[0][columnName];
-                              const valueCount = columnImporterForm.fullData.body[0].data.filter(
+                              const sampleValue = sourceData[0][columnName];
+                              const valueCount = sourceData.filter(
                                 row => row[columnName] !== null && row[columnName] !== undefined && row[columnName] !== ''
                               ).length;
                               
@@ -5797,7 +6249,7 @@ useEffect(() => {
                               <thead>
                                 <tr style={{ background: '#f3f4f6', position: 'sticky', top: 0 }}>
                                   <th style={{ padding: '0.75rem', borderBottom: '2px solid #e0e0e0', textAlign: 'left' }}>#</th>
-                                  {Object.keys(columnImporterForm.fullData.body[0].data[0] || {})
+                                  {Object.keys(sourceData[0] || {})
                                     .filter(key => key !== 'id' && key !== 'ID')
                                     .map(key => (
                                       <th key={key} style={{ 
@@ -5813,9 +6265,9 @@ useEffect(() => {
                                 </tr>
                               </thead>
                               <tbody>
-                                {columnImporterForm.fullData.body[0].data.slice(0, 10).map((row, rowIndex) => (
+                                {sourceData.slice(0, 10).map((row, rowIndex) => (
                                   <tr key={rowIndex} style={{ background: rowIndex % 2 === 0 ? 'white' : '#f9fafb' }}>
-                                    <td style={{ padding: '0.6rem', borderBottom: '1px solid #e0e0e0', fontWeight: 'bold', color: '#666' }}>
+                                    <td style={{ padding: '0.6rem', borderBottom: '1px solid #e0e0e0', fontWeight: 'bold', color: '#4b5563' }}>
                                       {rowIndex + 1}
                                     </td>
                                     {Object.entries(row)
@@ -5830,13 +6282,16 @@ useEffect(() => {
                               </tbody>
                             </table>
                           </div>
-                          {columnImporterForm.fullData.body[0].data.length > 10 && (
-                            <p style={{ color: '#999', fontSize: '0.85rem', marginTop: '0.5rem', textAlign: 'center' }}>
-                              ... y {columnImporterForm.fullData.body[0].data.length - 10} filas más
+                          {sourceData.length > 10 && (
+                            <p style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: '0.5rem', textAlign: 'center' }}>
+                              ... y {sourceData.length - 10} filas más
                             </p>
                           )}
                         </div>
                       </div>
+                      );
+                    })()}
+                    </>
                     )}
                   </div>
                 )}
@@ -5965,14 +6420,213 @@ useEffect(() => {
                 isExpanded={expandedSections[`body_${elementIndex}`] !== false}
                 onToggle={() => toggleBodySection(elementIndex)}
               >
-                <div className="header-grid">
-                  {(element.fields || []).map((field, fieldIndex) => (
+                {(element.fields || []).map((field, fieldIndex) => {
+                  // ✅ NUEVO: Si el campo es una tabla, renderizarla completa
+                  if (field.type === 'table') {
+                    const groupedColumns = processColumnGroups(field.columns);
+                    const tableData = currentElementData.data[field.label] || [];
+                    const rowCount = Array.isArray(tableData) ? tableData.length : 0;
+                    
+                    return (
+                      <div key={`section-table-${elementIndex}-${fieldIndex}`} style={{ marginTop: '1rem' }}>
+                        <div className="table-header" style={{ marginBottom: '1rem' }}>
+                          <h4 style={{ margin: '0 0 1rem 0', color: '#1e40af', fontSize: '1rem' }}>
+                            {field.label}
+                          </h4>
+                          <div className="table-controls-left" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button 
+                              onClick={() => addTableRow(elementIndex, field.label)} 
+                              className="btn-add-row"
+                              style={{ fontSize: '0.9rem', padding: '8px 12px' }}
+                            >
+                              + Agregar Fila
+                            </button>
+                            <button 
+                              onClick={() => removeEmptyRows(elementIndex, field.label)} 
+                              className="btn-add-row" 
+                              style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.9rem', padding: '8px 12px' }}
+                              title="Eliminar filas vacías"
+                            >
+                              🧹 Limpiar Vacías
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* 📋 TABLA PRINCIPAL */}
+                        <div className="table-wrapper" style={{ overflowX: 'auto', marginBottom: '1rem' }}>
+                          <table className="data-table" style={{
+                            width: '100%',
+                            borderCollapse: 'collapse',
+                            backgroundColor: 'white',
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                          }}>
+                            <thead>
+                              <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
+                                <th style={{ padding: '10px', textAlign: 'center', width: '40px', fontWeight: 600, color: '#374151' }}>
+                                  #
+                                </th>
+                                {groupedColumns.map((group, groupIndex) => (
+                                  group.columns.length === 1 ? (
+                                    <th
+                                      key={`col-${groupIndex}`}
+                                      style={{
+                                        padding: '10px',
+                                        textAlign: 'left',
+                                        fontWeight: 600,
+                                        color: '#374151',
+                                        borderRight: '1px solid #e5e7eb',
+                                        minWidth: group.columns[0].width || '150px'
+                                      }}
+                                    >
+                                      {group.columns[0].label || group.columns[0].name}
+                                    </th>
+                                  ) : (
+                                    <th key={`group-${groupIndex}`} colSpan={group.columns.length} style={{
+                                      padding: '10px',
+                                      textAlign: 'center',
+                                      fontWeight: 600,
+                                      color: '#374151',
+                                      borderRight: '1px solid #e5e7eb',
+                                      background: '#f9fafb'
+                                    }}>
+                                      {group.name}
+                                      <tr>
+                                        {group.columns.map((col, colIndex) => (
+                                          <th
+                                            key={`subcol-${groupIndex}-${colIndex}`}
+                                            style={{
+                                              padding: '8px',
+                                              textAlign: 'left',
+                                              fontWeight: 500,
+                                              fontSize: '0.85rem',
+                                              color: '#6b7280',
+                                              borderRight: colIndex < group.columns.length - 1 ? '1px solid #e5e7eb' : 'none'
+                                            }}
+                                          >
+                                            {col.label || col.name}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </th>
+                                  )
+                                ))}
+                                {field.allowDeleteRows && <th style={{ padding: '10px', textAlign: 'center', width: '50px', fontWeight: 600, color: '#374151' }}>Acción</th>}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Array.isArray(tableData) && tableData.length > 0 ? (
+                                tableData.map((row, rowIndex) => (
+                                  <tr 
+                                    key={`row-${elementIndex}-${fieldIndex}-${rowIndex}`}
+                                    style={{ borderBottom: '1px solid #e5e7eb', background: rowIndex % 2 === 0 ? '#ffffff' : '#f9fafb' }}
+                                  >
+                                    <td style={{ padding: '10px', textAlign: 'center', fontSize: '0.9rem', color: '#6b7280', fontWeight: 500 }}>
+                                      {rowIndex + 1}
+                                    </td>
+                                    {groupedColumns.map((group, groupIndex) =>
+                                      group.columns.map((col, colIndex) => {
+                                        const cellKey = col.label || col.name;
+                                        const cellValue = row?.[cellKey] || '';
+                                        const isEditable = col.editable !== false;
+                                        
+                                        return (
+                                          <td
+                                            key={`cell-${rowIndex}-${groupIndex}-${colIndex}`}
+                                            style={{
+                                              padding: '10px',
+                                              borderRight: colIndex < group.columns.length - 1 ? '1px solid #e5e7eb' : 'none'
+                                            }}
+                                          >
+                                            {isEditable ? (
+                                              <input
+                                                type={col.type === 'date' ? 'date' : col.type === 'number' ? 'number' : 'text'}
+                                                value={cellValue}
+                                                onChange={(e) => {
+                                                  const newBodyData = [...bodyData];
+                                                  if (!Array.isArray(newBodyData[elementIndex].data[field.label])) {
+                                                    newBodyData[elementIndex].data[field.label] = [];
+                                                  }
+                                                  newBodyData[elementIndex].data[field.label][rowIndex] = {
+                                                    ...newBodyData[elementIndex].data[field.label][rowIndex],
+                                                    [cellKey]: e.target.value
+                                                  };
+                                                  setBodyData(newBodyData);
+                                                  setHasUnsavedChanges(true);
+                                                }}
+                                                placeholder={col.label || col.name}
+                                                style={{
+                                                  width: '100%',
+                                                  padding: '8px',
+                                                  border: '1px solid #d1d5db',
+                                                  borderRadius: '4px',
+                                                  fontSize: '0.9rem',
+                                                  fontFamily: 'inherit',
+                                                  boxSizing: 'border-box'
+                                                }}
+                                              />
+                                            ) : (
+                                              <span style={{ color: '#374151' }}>{cellValue}</span>
+                                            )}
+                                          </td>
+                                        );
+                                      })
+                                    )}
+                                    {field.allowDeleteRows && (
+                                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                                        <button
+                                          onClick={() => {
+                                            const newBodyData = [...bodyData];
+                                            const updatedRows = newBodyData[elementIndex].data[field.label].filter((_, idx) => idx !== rowIndex);
+                                            newBodyData[elementIndex].data[field.label] = updatedRows;
+                                            setBodyData(newBodyData);
+                                            setHasUnsavedChanges(true);
+                                          }}
+                                          className="btn-delete-row"
+                                          style={{
+                                            background: '#ef4444',
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '4px',
+                                            padding: '6px 10px',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem'
+                                          }}
+                                        >
+                                          🗑️
+                                        </button>
+                                      </td>
+                                    )}
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan={groupedColumns.reduce((sum, g) => sum + g.columns.length, 0) + (field.allowDeleteRows ? 2 : 1)} style={{
+                                    padding: '2rem',
+                                    textAlign: 'center',
+                                    color: '#6b7280',
+                                    fontSize: '0.95rem'
+                                  }}>
+                                    Sin registros. Haz click en "Agregar Fila" para empezar.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // ✅ Para campos NO-tabla, renderizar normalmente
+                  return (
                     <div key={field.label || `section-field-${elementIndex}-${fieldIndex}`} className="form-field">
                       <label>{field.label}{field.required && <span className="required">*</span>}</label>
                       {renderField(field, currentElementData.data[field.label], value => handleSectionFieldChangeWithAutoSave(elementIndex, field.label, value))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </AccordionSection>
             );
           }
@@ -6222,12 +6876,15 @@ useEffect(() => {
   })()}
 
   {/* RENDERIZADO DE FILAS */}
-  {(currentElementData.data || []).map((row, rowIndex) => {
+  {(Array.isArray(currentElementData?.data)
+    ? currentElementData.data
+    : (Array.isArray(currentElementData?.rows) ? currentElementData.rows : [])
+  ).map((row, rowIndex) => {
     const templateRow = element.rows ? element.rows[rowIndex] : null;
 
     return (
       <tr key={`row-${elementIndex}-${rowIndex}`} style={{ background: rowIndex % 2 === 0 ? 'white' : '#f9fafb' }}>
-        <td style={{ fontWeight: 'bold', color: '#888', textAlign: 'center' }}>{rowIndex + 1}</td>
+        <td style={{ fontWeight: 'bold', color: '#6b7280', textAlign: 'center' }}>{rowIndex + 1}</td>
         
         {/* RENDERIZADO DE CELDAS */}
         {(element.columns || []).map((col, colIndex) => {
@@ -6258,6 +6915,28 @@ useEffect(() => {
              }
           }
 
+          // 🔧 FIX CLAVE: Si el row no tiene la clave exacta, buscar coincidencia normalizada
+          // Esto evita que ROLLO N° (u otras columnas) "desaparezcan" si el label del template
+          // cambió de mayúsculas/acentos respecto a la clave guardada en bodyData
+          let resolvedCellName = cellName;
+          if (row[cellName] === undefined || row[cellName] === null) {
+            const rowKeys = Object.keys(row);
+            const normTarget = (cellName || '').toLowerCase()
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .replace(/\s+/g, ' ').trim();
+            const matchedKey = rowKeys.find(k => {
+              const normK = k.toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/\s+/g, ' ').trim();
+              return normK === normTarget && k !== 'id' && k !== 'ID';
+            });
+            if (matchedKey) {
+              resolvedCellName = matchedKey;
+              // Solo logear en desarrollo para no spamear
+              // console.log(`🔧 [cellName] "${cellName}" → "${matchedKey}"`);
+            }
+          }
+
           // 3. 🔥 CÁLCULO INTELIGENTE (SOLO 15 TINAS + COLUMNA TOTAL)
           const esColumnaTotal = col.type === 'calculated' || colLabel.includes('TOTAL');
 
@@ -6276,7 +6955,7 @@ useEffect(() => {
 
             return (
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border" style={{backgroundColor: '#e6fffa', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1em'}}>
-                {sumaFila > 0 ? sumaFila.toFixed(2) : '0.00'} <span style={{fontSize:'0.7em', color:'#888'}}>kg</span>
+                {sumaFila > 0 ? sumaFila.toFixed(2) : '0.00'} <span style={{fontSize:'0.7em', color: '#6b7280'}}>kg</span>
               </td>
             );
           }
@@ -6284,10 +6963,23 @@ useEffect(() => {
           // 3b. 🧮 COLUMNA CALCULATED CON FORMULA (si la tabla tiene autoCalculate O el template es maestro)
           if ((element.autoCalculate === true || selectedTemplate?.isMasterForm === true || selectedTemplate?.IsMasterForm === true) && col.type === 'calculated' && col.formula) {
             // Recalcular en tiempo real directo desde los valores del row
-            const valorCalculado = calcularFormulaDinamica(col.formula, row);
+            const allTableRows = currentElementData.data || [];
+            const valorCalculado = calcularFormulaDinamica(col.formula, row, allTableRows, rowIndex);
             return (
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
                   style={{backgroundColor: '#e6fffa', textAlign: 'right', fontWeight: 'bold', color: '#1f5c1f'}}>
+                {valorCalculado || row[cellName] || '0.00'}
+              </td>
+            );
+          }
+
+          // 3c. 🧮 COLUMNA TIPO "formula" (funciona en TODOS los templates)
+          if (col.type === 'formula' && col.formula) {
+            const allTableRows = currentElementData.data || [];
+            const valorCalculado = evaluarFormula(col.formula, row, allTableRows, rowIndex);
+            return (
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
+                  style={{backgroundColor: '#f0fdf4', textAlign: 'right', fontWeight: 'bold', color: '#166534'}}>
                 {valorCalculado || row[cellName] || '0.00'}
               </td>
             );
@@ -6297,7 +6989,7 @@ useEffect(() => {
           return (
             <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border">
               <div style={{ flex: 1 }}>
-                {renderField(col, row[cellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, cellName, value), rowIndex)}
+                {renderField(col, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
               </div>
             </td>
           );
@@ -6333,7 +7025,7 @@ useEffect(() => {
           const colType = (col.type || '').toLowerCase();
           
           // Determinar si esta columna es numérica
-          const isNumericCol = colType === 'number' || colType === 'calculated' || col.formula ||
+          const isNumericCol = colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
             colLabel.includes('PESO') || colLabel.includes('TOTAL') || colLabel.includes('CANTIDAD') ||
             colLabel.includes('VOLUMEN') || colLabel.includes('TEMPERATURA') || colLabel.includes('TEMP');
 
@@ -6348,7 +7040,7 @@ useEffect(() => {
               }
             }
             if (!hasAnyNumber) {
-              return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#9ca3af', fontSize: '0.8em' }}>—</td>;
+              return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
             }
           }
 
@@ -6377,8 +7069,8 @@ useEffect(() => {
             });
           } else if (col.type === 'calculated' && col.formula) {
             // Para columnas con fórmula, recalcular
-            rows.forEach(row => {
-              const val = parseFloat(calcularFormulaDinamica(col.formula, row));
+            rows.forEach((row, ri) => {
+              const val = parseFloat(calcularFormulaDinamica(col.formula, row, rows, ri));
               if (!isNaN(val)) {
                 columnTotal += val;
                 hasValues = true;
@@ -6467,7 +7159,7 @@ useEffect(() => {
           return null;
         })}
         
-        {/* FIRMAS CON ACORDEÓN Y CARGA MASIVA */}
+        {/* FIRMAS CON ACORDEÓN - REQUIERE REVISAR DOCUMENTO ANTES DE FIRMAR */}
         {selectedTemplate.firmas?.length > 0 && (
           <AccordionSection
             title="Firmas y Aprobaciones"
@@ -6476,116 +7168,357 @@ useEffect(() => {
             isExpanded={expandedSections.signatures}
             onToggle={() => toggleSection('signatures')}
           >
-            <div className="signatures-grid">
-              {selectedTemplate.firmas.map((firma, index) => {
-                // 🔐 OBTENER USUARIO ACTUAL DE LA SESIÓN
-                const currentUser = authService.getCurrentUser();
-                
-                const nombreAsignado = firma.nombreCompleto || '';
-                // 🔐 VALIDACIÓN QUIRÚRGICA: ¿Este slot le corresponde al usuario logueado?
-                const isCurrentUserSlot = nombreAsignado && currentUser?.nombre && 
-                  nombreAsignado.toLowerCase().trim() === currentUser.nombre.toLowerCase().trim();
-                
-                return (
-                  <div key={index} className="signature-box" style={{
-                    border: isCurrentUserSlot ? '2px solid #3b82f6' : '1px solid #e5e7eb',
-                    background: isCurrentUserSlot ? '#eff6ff' : (!nombreAsignado ? '#fff' : '#f9fafb'),
-                    position: 'relative'
+            {/* 📜 PASO 1: Revisar documento antes de firmar (estilo términos y condiciones) */}
+            {!hasReviewedDocument ? (
+              <div style={{
+                border: '2px solid #3b82f6',
+                borderRadius: '12px',
+                overflow: 'hidden',
+                background: '#f8faff'
+              }}>
+                {/* Header informativo */}
+                <div style={{
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                  color: '#fff',
+                  padding: '16px 20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}>
+                  <span style={{ fontSize: '28px' }}>📋</span>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
+                      Revisión del Documento
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '13px', opacity: 0.9 }}>
+                      Debes leer todo el contenido del formulario antes de poder firmar. Desplázate hasta el final.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Contenedor scrolleable con resumen del documento */}
+                <div 
+                  ref={documentReviewRef}
+                  onScroll={handleDocumentReviewScroll}
+                  style={{
+                    maxHeight: '400px',
+                    overflowY: 'auto',
+                    padding: '20px',
+                    background: '#fff',
+                    borderBottom: '2px solid #e5e7eb'
+                  }}
+                >
+                  {/* Resumen Encabezado */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <h4 style={{ color: '#1e40af', fontSize: '14px', marginBottom: '8px', borderBottom: '1px solid #dbeafe', paddingBottom: '4px' }}>
+                      📄 Información del Formulario
+                    </h4>
+                    <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>
+                      <p><strong>Plantilla:</strong> {selectedTemplate.templateName || 'Sin nombre'}</p>
+                      {selectedTemplate.proceso && <p><strong>Proceso:</strong> {selectedTemplate.proceso}</p>}
+                      {selectedTemplate.codigo && <p><strong>Código:</strong> {selectedTemplate.codigo}</p>}
+                    </div>
+                  </div>
+
+                  {/* Resumen Encabezados llenados */}
+                  {Object.keys(headerData).length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                      <h4 style={{ color: '#1e40af', fontSize: '14px', marginBottom: '8px', borderBottom: '1px solid #dbeafe', paddingBottom: '4px' }}>
+                        📝 Datos del Encabezado
+                      </h4>
+                      <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.8 }}>
+                        {Object.entries(headerData).map(([key, value]) => (
+                          <p key={key} style={{ margin: '2px 0' }}>
+                            <strong>{key}:</strong> {value || <span style={{ color: '#6b7280', fontStyle: 'italic' }}>Sin dato</span>}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Resumen del Body (tablas) */}
+                  {bodyData.length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                      <h4 style={{ color: '#1e40af', fontSize: '14px', marginBottom: '8px', borderBottom: '1px solid #dbeafe', paddingBottom: '4px' }}>
+                        📊 Datos del Cuerpo del Formulario
+                      </h4>
+                      {bodyData.map((element, idx) => {
+                        const tableRows = Array.isArray(element?.data)
+                          ? element.data
+                          : (Array.isArray(element?.rows) ? element.rows : []);
+
+                        if (element.type === 'table' && tableRows.length > 0) {
+                          const columns = Object.keys(tableRows[0]);
+                          return (
+                            <div key={idx} style={{ marginBottom: '12px' }}>
+                              <p style={{ fontSize: '13px', fontWeight: '600', color: '#4b5563', marginBottom: '6px' }}>
+                                Tabla {idx + 1}: {element.title || `${tableRows.length} filas × ${columns.length} columnas`}
+                              </p>
+                              <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                  <thead>
+                                    <tr>
+                                      {columns.map(col => (
+                                        <th key={col} style={{ 
+                                          background: '#eff6ff', padding: '6px 8px', 
+                                          border: '1px solid #dbeafe', textAlign: 'left',
+                                          fontWeight: '600', color: '#1e40af', whiteSpace: 'nowrap'
+                                        }}>
+                                          {col}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {tableRows.map((row, rowIdx) => (
+                                      <tr key={rowIdx}>
+                                        {columns.map(col => (
+                                          <td key={col} style={{ 
+                                            padding: '4px 8px', border: '1px solid #e5e7eb',
+                                            color: '#374151', whiteSpace: 'nowrap'
+                                          }}>
+                                            {row[col] || '-'}
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        }
+                        if (element.type === 'observations' && element.data) {
+                          return (
+                            <div key={idx} style={{ marginBottom: '12px' }}>
+                              <p style={{ fontSize: '13px', fontWeight: '600', color: '#4b5563', marginBottom: '4px' }}>
+                                Observaciones:
+                              </p>
+                              <p style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', padding: '8px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                                {element.data || 'Sin observaciones'}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  )}
+
+                  {/* Resumen de firmas pendientes */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <h4 style={{ color: '#1e40af', fontSize: '14px', marginBottom: '8px', borderBottom: '1px solid #dbeafe', paddingBottom: '4px' }}>
+                      ✍️ Firmas Requeridas
+                    </h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {selectedTemplate.firmas.map((firma, idx) => (
+                        <div key={idx} style={{ 
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '8px 12px', background: '#f9fafb', borderRadius: '6px',
+                          border: '1px solid #e5e7eb', fontSize: '13px'
+                        }}>
+                          <span style={{ fontSize: '18px' }}>👤</span>
+                          <div>
+                            <strong>{firma.puesto}</strong>
+                            {firma.nombreCompleto && (
+                              <span style={{ color: '#6b7280', marginLeft: '8px' }}>— {firma.nombreCompleto}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Mensaje final para que sigan scrolleando */}
+                  <div style={{
+                    marginTop: '24px',
+                    padding: '20px',
+                    background: 'linear-gradient(135deg, #ecfdf5, #d1fae5)',
+                    borderRadius: '10px',
+                    border: '2px solid #6ee7b7',
+                    textAlign: 'center'
                   }}>
-                    {/* Badge indicador */}
-                    {isCurrentUserSlot && (
-                      <div style={{ 
-                        position: 'absolute', top: '-10px', right: '10px', 
-                        background: '#3b82f6', color: '#fff', padding: '2px 10px', 
-                        borderRadius: '10px', fontSize: '11px', fontWeight: 'bold' 
-                      }}>
-                        👤 Tu firma
-                      </div>
-                    )}
-                    {nombreAsignado && !isCurrentUserSlot && (
-                      <div style={{ 
-                        position: 'absolute', top: '-10px', right: '10px', 
-                        background: '#ef4444', color: '#fff', padding: '2px 10px', 
-                        borderRadius: '10px', fontSize: '11px', fontWeight: 'bold' 
-                      }}>
-                        🔒 Asignado a otro usuario
-                      </div>
-                    )}
+                    <span style={{ fontSize: '32px', display: 'block', marginBottom: '8px' }}>✅</span>
+                    <p style={{ fontSize: '14px', fontWeight: '700', color: '#065f46', margin: '0 0 4px' }}>
+                      Has revisado todo el documento
+                    </p>
+                    <p style={{ fontSize: '12px', color: '#047857', margin: 0 }}>
+                      Ahora puedes cerrar este panel y proceder a firmar.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Footer con indicador de progreso */}
+                <div style={{
+                  padding: '16px 20px',
+                  background: '#f0f9ff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '12px'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#b45309',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    animation: 'pulse 2s infinite'
+                  }}>
+                    <span style={{ fontSize: '20px' }}>⬇️</span>
+                    Desplázate hasta el final para habilitar las firmas
+                    <span style={{ fontSize: '20px' }}>⬇️</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* 📝 PASO 2: Usuario ya revisó - mostrar las firmas */
+              <>
+                {/* Indicador de documento revisado */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 16px',
+                  marginBottom: '16px',
+                  background: '#ecfdf5',
+                  border: '1px solid #6ee7b7',
+                  borderRadius: '8px',
+                  fontSize: '13px'
+                }}>
+                  <span style={{ color: '#065f46', fontWeight: '600' }}>
+                    ✅ Documento revisado — ahora puedes firmar
+                  </span>
+                  <button
+                    onClick={() => setHasReviewedDocument(false)}
+                    style={{
+                      background: 'none',
+                      border: '1px solid #a7f3d0',
+                      borderRadius: '6px',
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      color: '#047857',
+                      cursor: 'pointer',
+                      fontWeight: '500'
+                    }}
+                  >
+                    📋 Volver a revisar
+                  </button>
+                </div>
+
+                <div className="signatures-grid">
+                  {selectedTemplate.firmas.map((firma, index) => {
+                    // 🔐 OBTENER USUARIO ACTUAL DE LA SESIÓN
+                    const currentUser = authService.getCurrentUser();
                     
-                    <h4>{firma.puesto}</h4>
+                    const nombreAsignado = firma.nombreCompleto || '';
+                    // 🔐 VALIDACIÓN QUIRÚRGICA: ¿Este slot le corresponde al usuario logueado?
+                    const isCurrentUserSlot = nombreAsignado && currentUser?.nombre && 
+                      nombreAsignado.toLowerCase().trim() === currentUser.nombre.toLowerCase().trim();
                     
-                    {/* Campos de texto: Nombre y Fecha */}
-                    <div className="signature-fields">
-                      <div className="form-field">
-                        <label>
-                          Nombre:
-                          <span className="lock-hint" style={{fontSize: '11px', color: '#666', marginLeft: '5px'}}>🔒 Definido en plantilla</span>
-                        </label>
+                    return (
+                      <div key={index} className="signature-box" style={{
+                        border: isCurrentUserSlot ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                        background: isCurrentUserSlot ? '#eff6ff' : (!nombreAsignado ? '#fff' : '#f9fafb'),
+                        position: 'relative'
+                      }}>
+                        {/* Badge indicador */}
+                        {isCurrentUserSlot && (
+                          <div style={{ 
+                            position: 'absolute', top: '-10px', right: '10px', 
+                            background: '#3b82f6', color: '#fff', padding: '2px 10px', 
+                            borderRadius: '10px', fontSize: '11px', fontWeight: 'bold' 
+                          }}>
+                            👤 Tu firma
+                          </div>
+                        )}
+                        {nombreAsignado && !isCurrentUserSlot && (
+                          <div style={{ 
+                            position: 'absolute', top: '-10px', right: '10px', 
+                            background: '#ef4444', color: '#fff', padding: '2px 10px', 
+                            borderRadius: '10px', fontSize: '11px', fontWeight: 'bold' 
+                          }}>
+                            🔒 Asignado a otro usuario
+                          </div>
+                        )}
                         
-                        {/* 🔒 Nombre bloqueado - cargado automáticamente desde la plantilla */}
-                        <input
-                          type="text"
-                          value={firmasData[firma.puesto]?.nombre || ""}
-                          readOnly
-                          disabled
-                          style={{
-                            backgroundColor: '#f5f5f5',
-                            color: '#666',
-                            borderColor: '#ccc',
-                            cursor: 'not-allowed'
-                          }}
-                          title="El nombre del firmante está definido en la plantilla y no puede ser modificado aquí"
-                        />
-                      </div>
-                      {/* Fecha y hora se capturan automáticamente al firmar - ocultos al usuario */}
-                      {/* Solo se muestran como texto si ya hay valor capturado */}
-                      {(firmasData[firma.puesto]?.fecha || firmasData[firma.puesto]?.hora) && (
-                        <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#666' }}>
-                          {firmasData[firma.puesto]?.fecha && (
-                            <span>📅 {new Date(firmasData[firma.puesto].fecha + 'T00:00:00').toLocaleDateString('es-EC')}</span>
-                          )}
-                          {firmasData[firma.puesto]?.hora && (
-                            <span>🕐 {firmasData[firma.puesto].hora}</span>
+                        <h4>{firma.puesto}</h4>
+                        
+                        {/* Campos de texto: Nombre y Fecha */}
+                        <div className="signature-fields">
+                          <div className="form-field">
+                            <label>
+                              Nombre:
+                              <span className="lock-hint" style={{fontSize: '11px', color: '#4b5563', marginLeft: '5px'}}>🔒 Definido en plantilla</span>
+                            </label>
+                            
+                            {/* 🔒 Nombre bloqueado - cargado automáticamente desde la plantilla */}
+                            <input
+                              type="text"
+                              value={firmasData[firma.puesto]?.nombre || ""}
+                              readOnly
+                              disabled
+                              style={{
+                                backgroundColor: '#f5f5f5',
+                                color: '#4b5563',
+                                borderColor: '#ccc',
+                                cursor: 'not-allowed'
+                              }}
+                              title="El nombre del firmante está definido en la plantilla y no puede ser modificado aquí"
+                            />
+                          </div>
+                          {/* Fecha y hora se capturan automáticamente al firmar - ocultos al usuario */}
+                          {/* Solo se muestran como texto si ya hay valor capturado */}
+                          {(firmasData[firma.puesto]?.fecha || firmasData[firma.puesto]?.hora) && (
+                            <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#4b5563' }}>
+                              {firmasData[firma.puesto]?.fecha && (
+                                <span>📅 {new Date(firmasData[firma.puesto].fecha + 'T00:00:00').toLocaleDateString('es-EC')}</span>
+                              )}
+                              {firmasData[firma.puesto]?.hora && (
+                                <span>🕐 {firmasData[firma.puesto].hora}</span>
+                              )}
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* 🔐 Firma Digital - SOLO si es el usuario correcto o no hay nombre asignado */}
-                    {isCurrentUserSlot || !nombreAsignado ? (
-                      <SignatureUploader
-                        key={`${firma.puesto}-${nombreAsignado}`}
-                        puesto={firma.puesto}
-                        firmaData={firmasData[firma.puesto]}
-                        onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
-                        cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
-                        cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
-                        currentUser={currentUser}
-                        canSign={true}
-                      />
-                    ) : (
-                      <div style={{
-                        padding: '20px',
-                        textAlign: 'center',
-                        background: '#fef2f2',
-                        border: '2px dashed #fca5a5',
-                        borderRadius: '8px',
-                        marginTop: '10px'
-                      }}>
-                        <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔒</div>
-                        <p style={{ color: '#dc2626', fontWeight: 'bold', margin: '0 0 4px 0' }}>
-                          Firma bloqueada
-                        </p>
-                        <p style={{ color: '#666', fontSize: '12px', margin: 0 }}>
-                          Solo <strong>{nombreAsignado}</strong> puede firmar este espacio.
-                          <br/>Inicia sesión con esa cuenta para firmar.
-                        </p>
+                        {/* 🔐 Firma Digital - SOLO si es el usuario correcto o no hay nombre asignado */}
+                        {isCurrentUserSlot || !nombreAsignado ? (
+                          <SignatureUploader
+                            key={`${firma.puesto}-${nombreAsignado}`}
+                            puesto={firma.puesto}
+                            firmaData={firmasData[firma.puesto]}
+                            onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
+                            cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
+                            cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
+                            currentUser={currentUser}
+                            canSign={true}
+                          />
+                        ) : (
+                          <div style={{
+                            padding: '20px',
+                            textAlign: 'center',
+                            background: '#fef2f2',
+                            border: '2px dashed #fca5a5',
+                            borderRadius: '8px',
+                            marginTop: '10px'
+                          }}>
+                            <div style={{ fontSize: '32px', marginBottom: '8px' }}>🔒</div>
+                            <p style={{ color: '#dc2626', fontWeight: 'bold', margin: '0 0 4px 0' }}>
+                              Firma bloqueada
+                            </p>
+                            <p style={{ color: '#4b5563', fontSize: '12px', margin: 0 }}>
+                              Solo <strong>{nombreAsignado}</strong> puede firmar este espacio.
+                              <br/>Inicia sesión con esa cuenta para firmar.
+                            </p>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </AccordionSection>
         )}
 

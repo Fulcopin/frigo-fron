@@ -92,11 +92,14 @@ function Home() {
         </div>
         <div 
           className="stat-card stat-card-highlight"
+          onClick={() => navigate('/signatures')}
+          style={{ cursor: 'pointer' }}
+          title="Ir a Firmas Pendientes"
         >
-          <div className="stat-icon">📅</div>
+          <div className="stat-icon">✍️</div>
           <div className="stat-content">
-            <h3>Por Fecha</h3>
-            <p>Filtrar y exportar formularios</p>
+            <h3>Firmas</h3>
+            <p>Ver firmas pendientes</p>
           </div>
         </div>
       </div>

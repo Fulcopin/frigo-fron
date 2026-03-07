@@ -10,7 +10,7 @@
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import logoUrl from '../assets/logo-9.svg';
+import logoUrl from '../assets/logo-1.png';
 
 /**
  * Convierte imagen a Base64 para incrustar en PDF

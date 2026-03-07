@@ -344,7 +344,7 @@ export default function ConsumptionDashboard() {
                       </span>
                       {form.templateCode && (
                         <span style={{
-                          background: '#f0f0f0', color: '#666', padding: '2px 8px',
+                          background: '#f0f0f0', color: '#4b5563', padding: '2px 8px',
                           borderRadius: '4px', fontSize: '11px', fontFamily: 'monospace'
                         }}>
                           {form.templateCode}

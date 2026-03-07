@@ -26,12 +26,56 @@ body {
   }
 }
 
+/* ============================================
+   🎬 JERARQUÍA DE Z-INDEX (Orden de capas)
+   ============================================
+   
+   ESTRUCTURA DE CAPAS (de arriba hacia abajo):
+   
+   ┌─────────────────────────────────────────┐
+   │ TABS (SIEMPRE VISIBLE)      z-index: 2000│ ← ⬆️⬆️ EXTREMADAMENTE ENCIMA
+   ├─────────────────────────────────────────┤
+   │ Modal/Dialog/Popup          z-index: 1100│
+   ├─────────────────────────────────────────┤
+   │ Autosave Indicator          z-index: 1000│
+   ├─────────────────────────────────────────┤
+   │ Sidebar abierto             z-index: 980 │
+   ├─────────────────────────────────────────┤
+   │ Sidebar Overlay             z-index: 970 │
+   ├─────────────────────────────────────────┤
+   │ ScrollButton                z-index: 800 │
+   ├─────────────────────────────────────────┤
+   │ Contenido normal            z-index: 1   │
+   └─────────────────────────────────────────┘
+   
+   ✅ IMPORTANTE: Las TABS SIEMPRE están ENCIMA
+                de CUALQUIER OTRO ELEMENTO!
+   
+   ============================================ */
+
 /* 🆕 ESTILOS PARA TABS (PESTAÑAS) */
 .tabs-container {
   position: sticky;
   top: 0;
-  z-index: 1000;
+  z-index: 900;  /* ⬇️ Debajo del sidebar (980) para no superponer */
   animation: slideDown 0.3s ease-out;
+  background: white;
+  border-bottom: 2px solid #e1e1e1;
+  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ✅ Cuando el sidebar está abierto, mover tabs a la derecha */
+.sidebar.sidebar-open ~ .main-content .tabs-container,
+.sidebar.sidebar-open ~ .main-content .tabs-floating-bar {
+  margin-left: 290px;  /* Ancho del sidebar */
+}
+
+/* ✅ En móvil, sidebar mide 270px */
+@media (max-width: 640px) {
+  .sidebar.sidebar-open ~ .main-content .tabs-container,
+  .sidebar.sidebar-open ~ .main-content .tabs-floating-bar {
+    margin-left: 270px;
+  }
 }
 
 @keyframes slideDown {
@@ -1025,7 +1069,7 @@ body {
 .filters-container label {
     font-size: 0.9rem;
     font-weight: bold;
-    color: #555;
+    color: #374151;
     margin-bottom: 8px;
 }
 

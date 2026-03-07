@@ -58,9 +58,10 @@ function EditTemplate() {
     { value: "checkbox", label: "☑️ Casillas Múltiples (Checkbox)" },
     { value: "textarea", label: "Área de texto" },
     { value: "image", label: "📷 Imagen (Foto/Captura)" },
+    { value: "formula", label: "🧮 Fórmula (Cálculo automático)" },
   ];
 
-  const sectionFieldTypes = fieldTypes;
+  const sectionFieldTypes = fieldTypes.filter(t => true);
   const tableFieldTypes = fieldTypes.filter(t => t.value !== "image");
 
   // ✅ Cargar puestos desde la API de Signatures
@@ -183,12 +184,12 @@ function EditTemplate() {
   const updateBodyElement = (elementIndex, field, value) => setTemplate(prev => ({...prev, bodyElements: prev.bodyElements.map((el, i) => i === elementIndex ? { ...el, [field]: value } : el)}));
   const removeBodyElement = (elementIndex) => setTemplate(prev => ({...prev, bodyElements: prev.bodyElements.filter((_, i) => i !== elementIndex)}));
   const addFieldToSection = (elementIndex) => {
-    const newField = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" };
+    const newField = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: [...(el.fields || []), newField] } : el)) }));
   };
 
   const addColumnToTable = (elementIndex) => {
-    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" };
+    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: [...(el.columns || []), newColumn] } : el)) }));
   };
   
@@ -318,7 +319,7 @@ function EditTemplate() {
       if (el.type==='section') { const fields=(el.fields||[]).map(f=>`<tr><td style="font-weight:600;width:180px;background:#f9fafb;padding:6px;border:1px solid #ccc;font-size:11px;">${f.label||''}</td><td style="padding:6px;border:1px solid #ccc;">&nbsp;</td></tr>`).join(''); return `<div style="margin-top:16px;"><h3 style="font-size:13px;">${el.title||'Secci\u00f3n'}</h3><table style="width:100%;border-collapse:collapse;">${fields}</table></div>`; }
       return '';
     }).join('');
-    const firmasHtml = fi.length>0 ? `<div style="margin-top:30px;display:flex;justify-content:space-around;flex-wrap:wrap;">${fi.map(f=>`<div style="text-align:center;min-width:150px;margin:10px;"><div style="border-bottom:1px solid #333;height:60px;margin-bottom:5px;"></div><div style="font-size:11px;font-weight:600;">${f.puesto||''}</div><div style="font-size:10px;color:#666;">Fecha: __/__/____</div></div>`).join('')}</div>` : '';
+    const firmasHtml = fi.length>0 ? `<div style="margin-top:30px;display:flex;justify-content:space-around;flex-wrap:wrap;">${fi.map(f=>`<div style="text-align:center;min-width:150px;margin:10px;"><div style="border-bottom:1px solid #333;height:60px;margin-bottom:5px;"></div><div style="font-size:11px;font-weight:600;">${f.puesto||''}</div><div style="font-size:10px;color:#4b5563;">Fecha: __/__/____</div></div>`).join('')}</div>` : '';
     printWindow.document.write(`<!DOCTYPE html><html><head><title>${template.codigo} - ${template.nombre}</title><style>body{font-family:Arial,sans-serif;padding:20px;}</style></head><body><h2 style="text-align:center;">${template.nombre}</h2><p style="text-align:center;font-size:12px;">C\u00f3digo: ${template.codigo} | Versi\u00f3n: ${template.version||'1'}</p>${headerHtml?`<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${headerHtml}</table>`:''}${bodyHtml}${firmasHtml}<script>window.onload=function(){window.print();}<\/script></body></html>`);
     printWindow.document.close();
   };
@@ -741,6 +742,91 @@ function EditTemplate() {
                     
                     {/* Opciones para select/radio/checkbox */}
                     {renderOptionsEditor(field, (prop, val) => updateFieldInSection(elementIndex, fieldIndex, prop, val), `sf-opts-${elementIndex}-${fieldIndex}`)}
+
+                    {/* 🧮 UI DE FÓRMULA PARA CAMPOS DE SECCIÓN */}
+                    {field.type === "formula" && (
+                      <div style={{ 
+                        width: '100%',
+                        marginTop: '25px',
+                        marginBottom: '15px'
+                      }}>
+                        <div style={{ 
+                          background: 'linear-gradient(135deg, #fef9c3, #fef08a)', 
+                          padding: '20px', 
+                          borderRadius: '12px',
+                          border: '2px solid #eab308',
+                          boxShadow: '0 2px 8px rgba(234, 179, 8, 0.15)'
+                        }}>
+                          <label style={{ 
+                            color: '#854d0e', 
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            marginBottom: '12px',
+                            fontSize: '15px'
+                          }}>
+                            <span style={{ fontSize: '22px' }}>🧮</span>
+                            Fórmula de Cálculo
+                          </label>
+                          <input 
+                            type="text" 
+                            value={field.formula || ""}
+                            onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "formula", e.target.value)}
+                            placeholder="Ej: Peso Neto * Porcentaje / 100"
+                            style={{ 
+                              width: '100%',
+                              padding: '12px',
+                              fontSize: '14px',
+                              border: '2px solid #eab308',
+                              borderRadius: '8px',
+                              background: 'white',
+                              boxSizing: 'border-box',
+                              fontFamily: 'monospace'
+                            }}
+                          />
+                          <div style={{ marginTop: '10px', fontSize: '12px', color: '#713f12' }}>
+                            <p style={{ margin: '0 0 6px 0' }}>💡 <strong>Operaciones:</strong> <code>+</code> (suma), <code>-</code> (resta), <code>*</code> (multiplicación), <code>/</code> (división)</p>
+                            <p style={{ margin: '0 0 6px 0' }}>📝 <strong>Misma fila:</strong> Usa nombres de campos. Ej: <code>Peso Bruto - Peso Tara</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>📊 <strong>Números fijos:</strong> <code>Peso * 2.5</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>🔢 <strong>Paréntesis:</strong> <code>(Precio * Cantidad) - Descuento</code></p>
+                          </div>
+                          {(element.fields || []).filter(f => f.label && f.type !== 'formula').length > 0 && (
+                            <div style={{ 
+                              marginTop: '12px',
+                              padding: '10px',
+                              background: 'white',
+                              borderRadius: '8px',
+                              border: '1px solid #fde68a'
+                            }}>
+                              <strong style={{ fontSize: '12px', color: '#854d0e' }}>🏷️ Campos disponibles para la fórmula:</strong>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                {(element.fields || []).filter(f => f.label && f.type !== 'formula').map((f, fi) => (
+                                  <span key={fi} style={{
+                                    background: '#fef9c3',
+                                    border: '1px solid #eab308',
+                                    borderRadius: '6px',
+                                    padding: '4px 10px',
+                                    fontSize: '13px',
+                                    fontFamily: 'monospace',
+                                    color: '#854d0e',
+                                    cursor: 'pointer'
+                                  }}
+                                  onClick={() => {
+                                    const current = field.formula || '';
+                                    updateFieldInSection(elementIndex, fieldIndex, "formula", current + (current ? ' + ' : '') + f.label);
+                                  }}
+                                  title="Clic para agregar a la fórmula"
+                                  >
+                                    {f.label}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -872,6 +958,92 @@ function EditTemplate() {
                     
                     {/* Opciones para select/radio/checkbox */}
                     {renderOptionsEditor(column, (prop, val) => updateColumnInTable(elementIndex, colIndex, prop, val), `col-opts-${elementIndex}-${colIndex}`)}
+
+                    {/* 🧮 UI DE FÓRMULA: Solo si el tipo es 'formula' */}
+                    {column.type === "formula" && (
+                      <div style={{ 
+                        width: '100%',
+                        marginTop: '25px',
+                        marginBottom: '15px'
+                      }}>
+                        <div style={{ 
+                          background: 'linear-gradient(135deg, #fef9c3, #fef08a)', 
+                          padding: '20px', 
+                          borderRadius: '12px',
+                          border: '2px solid #eab308',
+                          boxShadow: '0 2px 8px rgba(234, 179, 8, 0.15)'
+                        }}>
+                          <label style={{ 
+                            color: '#854d0e', 
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            marginBottom: '12px',
+                            fontSize: '15px'
+                          }}>
+                            <span style={{ fontSize: '22px' }}>🧮</span>
+                            Fórmula de Cálculo
+                          </label>
+                          <input 
+                            type="text" 
+                            value={column.formula || ""}
+                            onChange={(e) => updateColumnInTable(elementIndex, colIndex, "formula", e.target.value)}
+                            placeholder="Ej: Peso Neto * Porcentaje / 100"
+                            style={{ 
+                              width: '100%',
+                              padding: '12px',
+                              fontSize: '14px',
+                              border: '2px solid #eab308',
+                              borderRadius: '8px',
+                              background: 'white',
+                              boxSizing: 'border-box',
+                              fontFamily: 'monospace'
+                            }}
+                          />
+                          <div style={{ marginTop: '10px', fontSize: '12px', color: '#713f12' }}>
+                            <p style={{ margin: '0 0 6px 0' }}>💡 <strong>Operaciones:</strong> <code>+</code> (suma), <code>-</code> (resta), <code>*</code> (multiplicación), <code>/</code> (división)</p>
+                            <p style={{ margin: '0 0 6px 0' }}>📝 <strong>Misma fila:</strong> Usa nombres de columnas. Ej: <code>Peso Bruto - Peso Tara</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>📊 <strong>Otra fila:</strong> <code>Columna[Nº fila]</code>. Ej: <code>Precio[1] * Cantidad[2]</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>🔢 <strong>Toda la columna:</strong> <code>Columna[*]</code>. Ej: <code>Peso Neto[*]</code> (suma todas las filas)</p>
+                            <p style={{ margin: '0 0 6px 0' }}>📁 <strong>Paréntesis y números:</strong> <code>(Precio * 2.5) - Descuento</code></p>
+                          </div>
+                          {(element.columns || []).filter(c => c.label && c.type !== 'formula').length > 0 && (
+                            <div style={{ 
+                              marginTop: '12px',
+                              padding: '10px',
+                              background: 'white',
+                              borderRadius: '8px',
+                              border: '1px solid #fde68a'
+                            }}>
+                              <strong style={{ fontSize: '12px', color: '#854d0e' }}>🏷️ Columnas disponibles para usar en la fórmula:</strong>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                {(element.columns || []).filter(c => c.label && c.type !== 'formula').map((c, ci) => (
+                                  <span key={ci} style={{
+                                    background: '#fef9c3',
+                                    border: '1px solid #eab308',
+                                    borderRadius: '6px',
+                                    padding: '4px 10px',
+                                    fontSize: '13px',
+                                    fontFamily: 'monospace',
+                                    color: '#854d0e',
+                                    cursor: 'pointer'
+                                  }}
+                                  onClick={() => {
+                                    const current = column.formula || '';
+                                    updateColumnInTable(elementIndex, colIndex, "formula", current + (current ? ' + ' : '') + c.label);
+                                  }}
+                                  title="Clic para agregar a la fórmula"
+                                  >
+                                    {c.label}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1147,7 +1319,7 @@ function EditTemplate() {
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}}>
               <div>
                 <h2 style={{margin:0,color:'#1e40af'}}>👁️ Vista Previa: {template.nombre}</h2>
-                <p style={{margin:'4px 0 0',color:'#666',fontSize:'13px'}}>{template.codigo} — v{template.version}</p>
+                <p style={{margin:'4px 0 0',color: '#4b5563',fontSize:'13px'}}>{template.codigo} — v{template.version}</p>
               </div>
               <button onClick={()=>setShowPreview(false)} style={{background:'#ef4444',color:'white',border:'none',borderRadius:'8px',padding:'8px 16px',cursor:'pointer',fontWeight:'bold'}}>✕ Cerrar</button>
             </div>
@@ -1155,7 +1327,7 @@ function EditTemplate() {
               <div style={{marginBottom:'20px'}}>
                 <h3 style={{color:'#374151',fontSize:'14px',marginBottom:'8px'}}>📋 Encabezado</h3>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
-                  {(Array.isArray(template.headerFields)?template.headerFields:[]).map((f,i)=>(<tr key={i}><td style={{fontWeight:'600',background:'#f0f4ff',padding:'8px',border:'1px solid #ccc',width:'200px'}}>{f.label}</td><td style={{padding:'8px',border:'1px solid #ccc',color:'#9ca3af',fontStyle:'italic'}}>( vacío )</td></tr>))}
+                  {(Array.isArray(template.headerFields)?template.headerFields:[]).map((f,i)=>(<tr key={i}><td style={{fontWeight:'600',background:'#f0f4ff',padding:'8px',border:'1px solid #ccc',width:'200px'}}>{f.label}</td><td style={{padding:'8px',border:'1px solid #ccc',color: '#6b7280',fontStyle:'italic'}}>( vacío )</td></tr>))}
                 </table>
               </div>
             )}
@@ -1163,7 +1335,7 @@ function EditTemplate() {
               <div key={i} style={{marginBottom:'16px'}}>
                 <h3 style={{color:'#374151',fontSize:'14px',marginBottom:'8px'}}>{el.title||el.type}</h3>
                 {el.type==='table'&&(<table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}><thead><tr>{(el.columns||[]).map((c,j)=><th key={j} style={{padding:'6px',border:'1px solid #ccc',background:'#e8eef6'}}>{c.label}</th>)}</tr></thead><tbody>{Array.from({length:3},(_,r)=><tr key={r}>{(el.columns||[]).map((_,j)=><td key={j} style={{padding:'6px',border:'1px solid #ccc',color:'#d1d5db'}}>—</td>)}</tr>)}</tbody></table>)}
-                {el.type==='section'&&(<table style={{width:'100%',borderCollapse:'collapse'}}>{(el.fields||[]).map((f,j)=><tr key={j}><td style={{fontWeight:'600',background:'#f9fafb',padding:'6px',border:'1px solid #ccc',width:'180px',fontSize:'12px'}}>{f.label}</td><td style={{padding:'6px',border:'1px solid #ccc',color:'#9ca3af',fontStyle:'italic',fontSize:'12px'}}>( vacío )</td></tr>)}</table>)}
+                {el.type==='section'&&(<table style={{width:'100%',borderCollapse:'collapse'}}>{(el.fields||[]).map((f,j)=><tr key={j}><td style={{fontWeight:'600',background:'#f9fafb',padding:'6px',border:'1px solid #ccc',width:'180px',fontSize:'12px'}}>{f.label}</td><td style={{padding:'6px',border:'1px solid #ccc',color: '#6b7280',fontStyle:'italic',fontSize:'12px'}}>( vacío )</td></tr>)}</table>)}
               </div>
             ))}
             {(Array.isArray(template.firmas)?template.firmas:[]).length>0&&(

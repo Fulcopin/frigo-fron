@@ -75,10 +75,12 @@ function ViewForms() {
         const formsArray = Array.isArray(formsDataResponse) ? formsDataResponse : formsDataResponse.$values || [];
         const templatesArray = Array.isArray(templatesDataResponse) ? templatesDataResponse : templatesDataResponse.$values || [];
 
-        // CORREGIDO: Parsear bodyElements en las plantillas
+        // CORREGIDO: Parsear bodyElements, headerFields y firmas en las plantillas
         const parsedTemplates = templatesArray.map(t => ({
           ...t,
-          bodyElements: safeParse(t.bodyElements, [])
+          bodyElements: safeParse(t.bodyElements, []),
+          headerFields: safeParse(t.headerFields, []),
+          firmas: safeParse(t.firmas, []),
         }));
         
         // CORREGIDO: Parsear bodyData en los formularios llenados
@@ -183,9 +185,16 @@ function ViewForms() {
       console.log('📋 Cargando formulario con versión:', form.formID);
       const formWithVersion = await loadFormWithVersionInfo(form.formID);
       
-      // Mantener compatibilidad con el código existente
+      // 🔧 FIX: Usar los datos del formData descargado para asegurar que bodyData esté correcto
+      const formData = formWithVersion.formData;
+      
+      // Mantener compatibilidad con el código existente,
+      // pero sobrescribir bodyData/headerData/firmasData con los parseados frescos
       const enrichedForm = {
         ...form,
+        headerData: formData?.headerData ?? form.headerData,
+        bodyData: formData?.bodyData ?? form.bodyData,
+        firmasData: formData?.firmasData ?? form.firmasData,
         versionInfo: formWithVersion.versionInfo
       };
       
@@ -193,6 +202,7 @@ function ViewForms() {
       setSelectedFormVersionInfo(formWithVersion.versionInfo);
       
       console.log('✅ Información de versión cargada:', formWithVersion.versionInfo);
+      console.log('📦 bodyData listo:', Array.isArray(enrichedForm.bodyData) ? enrichedForm.bodyData.length + ' elementos' : typeof enrichedForm.bodyData);
     } catch (error) {
       console.error('❌ Error al cargar versión:', error);
       // Si falla, mostrar el formulario sin información de versión
@@ -556,9 +566,9 @@ function ViewForms() {
       console.log('📸 Usando snapshot de template (versión histórica)');
       correspondingTemplate = selectedFormVersionInfo.templateSnapshot;
     } else {
-      // Buscar el template actual en la lista
+      // Buscar el template actual en la lista (comparar como string para evitar Number vs String mismatch)
       console.log('📋 Usando template actual de la lista');
-      correspondingTemplate = templates.find(t => t.templateID === selectedForm.templateID);
+      correspondingTemplate = templates.find(t => String(t.templateID) === String(selectedForm.templateID));
     }
 
     return (
@@ -679,7 +689,8 @@ function ViewForms() {
             
             // Renderizar una SECCIÓN
             if (templateElement.type === 'section') {
-              const sectionData = elementData && elementData.data ? elementData.data : {};
+              // 🔧 FIX: Soportar tanto elementData.data como elementData.rows para secciones
+              const sectionData = (elementData && (elementData.data || elementData.rows)) ? (elementData.data || elementData.rows) : {};
               return (
                 <div key={templateElement.id} className="data-section">
                   <h3>{templateElement.title}</h3>
@@ -905,7 +916,7 @@ function ViewForms() {
                     .filter(([puesto]) => puestosValidos.includes(puesto));
                   
                   if (firmasFiltradas.length === 0) {
-                    return <p style={{ color: '#666', fontStyle: 'italic' }}>No hay firmas registradas</p>;
+                    return <p style={{ color: '#4b5563', fontStyle: 'italic' }}>No hay firmas registradas</p>;
                   }
                   
                   return firmasFiltradas.map(([puesto, data]) => {
@@ -965,7 +976,7 @@ function ViewForms() {
                               />
                               <div style={{ 
                                 fontSize: '10px', 
-                                color: '#666', 
+                                color: '#4b5563', 
                                 marginTop: '4px',
                                 fontStyle: 'italic'
                               }}>
@@ -987,7 +998,7 @@ function ViewForms() {
                               canSign={true}
                             />
                           ) : (
-                            <p style={{ fontStyle: 'italic', color: '#999' }}>(Sin firma digital)</p>
+                            <p style={{ fontStyle: 'italic', color: '#6b7280' }}>(Sin firma digital)</p>
                           )}
                           
                           {/* Nombre bloqueado (readonly) */}

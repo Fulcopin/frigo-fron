@@ -10,7 +10,7 @@
 
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import logoUrl from '../assets/logo-9.svg';
+import logoUrl from '../assets/logo-1.png';
 
 /**
  * 🎨 COLORES CORPORATIVOS DE FRIGOLAB
@@ -28,23 +28,31 @@ const EXCEL_COLORS = {
 /**
  * 🖼️ Convierte imagen a Base64 para incrustar en Excel
  */
-const getBase64ImageForExcel = (imgUrl) => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const dataURL = canvas.toDataURL('image/png');
-      // Remover el prefijo 'data:image/png;base64,'
-      resolve(dataURL.split(',')[1]);
-    };
-    img.onerror = reject;
-    img.src = imgUrl;
-  });
+const getBase64ImageForExcel = async (imgUrl) => {
+  try {
+    // Método 1: Si ya es una URL de data, extraer el base64 directamente
+    if (imgUrl.startsWith('data:image')) {
+      return imgUrl.split(',')[1];
+    }
+    
+    // Método 2: Usar fetch para cargar la imagen (funciona con imports de Vite/Webpack)
+    const response = await fetch(imgUrl);
+    const blob = await response.blob();
+    
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64data = reader.result;
+        // Remover el prefijo 'data:image/png;base64,'
+        resolve(base64data.split(',')[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('❌ Error cargando imagen para Excel:', error);
+    throw error;
+  }
 };
 
 /**
@@ -275,11 +283,14 @@ const createBodyTable = (worksheet, bodyData, bodyElements, startRow, template) 
     
     console.log(`📊 Excel - Datos de tabla "${sectionTitle}":`, tableData.length, 'filas');
     
-    // Si no hay datos en esta sección
-    if (!tableData || tableData.length === 0) {
+    // Encabezados de columnas (usar label de las columnas)
+    const columns = section.columns || [];
+    
+    // ✅ Si no hay columnas definidas, saltar esta sección
+    if (!columns || columns.length === 0) {
       worksheet.mergeCells(currentRow, 1, currentRow, 8);
       const noDataCell = worksheet.getCell(currentRow, 1);
-      noDataCell.value = '(No hay datos en esta sección)';
+      noDataCell.value = '(No hay columnas definidas)';
       noDataCell.font = { italic: true, color: { argb: 'FF999999' } };
       noDataCell.alignment = { vertical: 'middle', horizontal: 'center' };
       worksheet.getRow(currentRow).height = 20;
@@ -287,8 +298,11 @@ const createBodyTable = (worksheet, bodyData, bodyElements, startRow, template) 
       return;
     }
     
-    // Encabezados de columnas (usar label de las columnas)
-    const columns = section.columns || [];
+    // 📋 Si no hay datos, crear 10 filas vacías para llenar manualmente
+    if (!tableData || tableData.length === 0) {
+      tableData = Array.from({ length: 10 }, () => ({}));
+      console.log(`📋 Excel - Creando ${tableData.length} filas vacías para imprimir`);
+    }
     columns.forEach((col, colIndex) => {
       const headerCell = worksheet.getCell(currentRow, colIndex + 1);
       headerCell.value = col.label || col.name || 'Columna';

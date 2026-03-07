@@ -379,23 +379,30 @@ export const loadFormWithVersionInfo = async (formId) => {
     const processedData = processFormData(data);
     
     // Agregar información de versión CON el snapshot del template
+    // 🔧 FIX: Soportar tanto data.template (minúsculas) como data.Template (PascalCase)
+    const tpl = data.template || data.Template;
+    
     processedData.versionInfo = {
       templateVersion: data.templateVersion || data.TemplateVersion || null,
       isHistorical: data.isHistorical || data.IsHistorical || false,
       createdAt: data.createdAt || data.CreatedAt,
       updatedAt: data.updatedAt || data.UpdatedAt,
       // Guardar el snapshot del template (con estructura parseada)
-      templateSnapshot: data.template ? {
-        ...data.template,
-        headerFields: typeof data.template.headerFields === 'string' || typeof data.template.HeaderFields === 'string' 
-          ? JSON.parse(data.template.headerFields || data.template.HeaderFields || '[]') 
-          : (data.template.headerFields || data.template.HeaderFields || []),
-        bodyElements: typeof data.template.bodyElements === 'string' || typeof data.template.BodyElements === 'string'
-          ? JSON.parse(data.template.bodyElements || data.template.BodyElements || '[]')
-          : (data.template.bodyElements || data.template.BodyElements || []),
-        firmas: typeof data.template.firmas === 'string' || typeof data.template.Firmas === 'string'
-          ? JSON.parse(data.template.firmas || data.template.Firmas || '[]')
-          : (data.template.firmas || data.template.Firmas || [])
+      templateSnapshot: tpl ? {
+        ...tpl,
+        templateID: tpl.templateID || tpl.TemplateID,
+        codigo: tpl.codigo || tpl.Codigo || 'N/A',
+        nombre: tpl.nombre || tpl.Nombre || 'Sin nombre',
+        version: tpl.version || tpl.Version || '1',
+        headerFields: typeof (tpl.headerFields || tpl.HeaderFields) === 'string'
+          ? JSON.parse(tpl.headerFields || tpl.HeaderFields || '[]') 
+          : (tpl.headerFields || tpl.HeaderFields || []),
+        bodyElements: typeof (tpl.bodyElements || tpl.BodyElements) === 'string'
+          ? JSON.parse(tpl.bodyElements || tpl.BodyElements || '[]')
+          : (tpl.bodyElements || tpl.BodyElements || []),
+        firmas: typeof (tpl.firmas || tpl.Firmas) === 'string'
+          ? JSON.parse(tpl.firmas || tpl.Firmas || '[]')
+          : (tpl.firmas || tpl.Firmas || [])
       } : null
     };
     

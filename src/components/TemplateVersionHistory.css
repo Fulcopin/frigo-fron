@@ -251,7 +251,7 @@
 
 .compare-selections .version-empty {
   background: #f3f4f6;
-  color: #9ca3af;
+  color: #6b7280;
   border: 2px dashed #d1d5db;
   font-style: italic;
 }
@@ -1142,7 +1142,7 @@
 }
 
 .change-values .arrow {
-  color: #9ca3af;
+  color: #6b7280;
   font-weight: bold;
   font-size: 1.2rem;
 }

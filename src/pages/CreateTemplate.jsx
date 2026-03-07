@@ -50,13 +50,14 @@ function CreateTemplate() {
     { value: "radio", label: "🔘 Casillas (Radio - Máx 3 opciones)" }, // ✅ NUEVO
     { value: "checkbox", label: "☑️ Casillas Múltiples (Checkbox)" }, // ✅ NUEVO
     { value: "textarea", label: "Área de texto" },
-    { value: "image", label: "📷 Imagen (Foto/Captura)" }, // ✅ NUEVO
+    { value: "image", label: "📷 Imagen (Foto/Captura)" },
+    { value: "formula", label: "🧮 Fórmula (Cálculo automático)" },
   ];
 
-  // ✅ NUEVO: Tipos de campo solo para secciones (incluye imagen)
-  const sectionFieldTypes = fieldTypes;
+  // Tipos de campo para secciones (incluye imagen y fórmula)
+  const sectionFieldTypes = fieldTypes.filter(t => true);
   
-  // ✅ NUEVO: Tipos de campo para tablas (SIN imagen)
+  // Tipos de campo para tablas (SIN imagen, CON fórmula)
   const tableFieldTypes = fieldTypes.filter(t => t.value !== "image");
 
   // ✅ NUEVO: Cargar puestos desde la API de Signatures
@@ -149,13 +150,13 @@ function CreateTemplate() {
   
   // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' a los campos de sección ---
   const addFieldToSection = (elementIndex) => {
-    const newField = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" };
+    const newField = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: [...el.fields, newField] } : el)) }));
   };
 
   // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' por defecto ---
   const addColumnToTable = (elementIndex) => {
-    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" };
+    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: [...el.columns, newColumn] } : el)) }));
   };
   
@@ -850,6 +851,90 @@ function CreateTemplate() {
                         )}
                       </div>
                     )}
+                    {/* 🧮 UI DE FÓRMULA PARA CAMPOS DE SECCIÓN */}
+                    {field.type === "formula" && (
+                      <div style={{ 
+                        width: '100%',
+                        marginTop: '25px',
+                        marginBottom: '15px'
+                      }}>
+                        <div style={{ 
+                          background: 'linear-gradient(135deg, #fef9c3, #fef08a)', 
+                          padding: '20px', 
+                          borderRadius: '12px',
+                          border: '2px solid #eab308',
+                          boxShadow: '0 2px 8px rgba(234, 179, 8, 0.15)'
+                        }}>
+                          <label style={{ 
+                            color: '#854d0e', 
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            marginBottom: '12px',
+                            fontSize: '15px'
+                          }}>
+                            <span style={{ fontSize: '22px' }}>🧮</span>
+                            Fórmula de Cálculo
+                          </label>
+                          <input 
+                            type="text" 
+                            value={field.formula || ""}
+                            onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "formula", e.target.value)}
+                            placeholder="Ej: Peso Neto * Porcentaje / 100"
+                            style={{ 
+                              width: '100%',
+                              padding: '12px',
+                              fontSize: '14px',
+                              border: '2px solid #eab308',
+                              borderRadius: '8px',
+                              background: 'white',
+                              boxSizing: 'border-box',
+                              fontFamily: 'monospace'
+                            }}
+                          />
+                          <div style={{ marginTop: '10px', fontSize: '12px', color: '#713f12' }}>
+                            <p style={{ margin: '0 0 6px 0' }}>💡 <strong>Operaciones:</strong> <code>+</code> (suma), <code>-</code> (resta), <code>*</code> (multiplicación), <code>/</code> (división)</p>
+                            <p style={{ margin: '0 0 6px 0' }}>📝 <strong>Misma fila:</strong> Usa nombres de campos. Ej: <code>Peso Bruto - Peso Tara</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>📊 <strong>Números fijos:</strong> <code>Peso * 2.5</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>🔢 <strong>Paréntesis:</strong> <code>(Precio * Cantidad) - Descuento</code></p>
+                          </div>
+                          {element.fields.filter(f => f.label && f.type !== 'formula').length > 0 && (
+                            <div style={{ 
+                              marginTop: '12px',
+                              padding: '10px',
+                              background: 'white',
+                              borderRadius: '8px',
+                              border: '1px solid #fde68a'
+                            }}>
+                              <strong style={{ fontSize: '12px', color: '#854d0e' }}>🏷️ Campos disponibles para la fórmula:</strong>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                {element.fields.filter(f => f.label && f.type !== 'formula').map((f, fi) => (
+                                  <span key={fi} style={{
+                                    background: '#fef9c3',
+                                    border: '1px solid #eab308',
+                                    borderRadius: '6px',
+                                    padding: '4px 10px',
+                                    fontSize: '13px',
+                                    fontFamily: 'monospace',
+                                    color: '#854d0e',
+                                    cursor: 'pointer'
+                                  }}
+                                  onClick={() => {
+                                    const current = field.formula || '';
+                                    updateFieldInSection(elementIndex, fieldIndex, "formula", current + (current ? ' + ' : '') + f.label);
+                                  }}
+                                  title="Clic para agregar a la fórmula"
+                                  >
+                                    {f.label}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -1111,6 +1196,92 @@ function CreateTemplate() {
                             </div>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* 🧮 UI DE FÓRMULA: Solo si el tipo es 'formula' */}
+                    {column.type === "formula" && (
+                      <div style={{ 
+                        width: '100%',
+                        marginTop: '25px',
+                        marginBottom: '15px'
+                      }}>
+                        <div style={{ 
+                          background: 'linear-gradient(135deg, #fef9c3, #fef08a)', 
+                          padding: '20px', 
+                          borderRadius: '12px',
+                          border: '2px solid #eab308',
+                          boxShadow: '0 2px 8px rgba(234, 179, 8, 0.15)'
+                        }}>
+                          <label style={{ 
+                            color: '#854d0e', 
+                            fontWeight: '600',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            marginBottom: '12px',
+                            fontSize: '15px'
+                          }}>
+                            <span style={{ fontSize: '22px' }}>🧮</span>
+                            Fórmula de Cálculo
+                          </label>
+                          <input 
+                            type="text" 
+                            value={column.formula || ""}
+                            onChange={(e) => updateColumnInTable(elementIndex, colIndex, "formula", e.target.value)}
+                            placeholder="Ej: Peso Neto * Porcentaje / 100"
+                            style={{ 
+                              width: '100%',
+                              padding: '12px',
+                              fontSize: '14px',
+                              border: '2px solid #eab308',
+                              borderRadius: '8px',
+                              background: 'white',
+                              boxSizing: 'border-box',
+                              fontFamily: 'monospace'
+                            }}
+                          />
+                          <div style={{ marginTop: '10px', fontSize: '12px', color: '#713f12' }}>
+                            <p style={{ margin: '0 0 6px 0' }}>💡 <strong>Operaciones:</strong> <code>+</code> (suma), <code>-</code> (resta), <code>*</code> (multiplicación), <code>/</code> (división)</p>
+                            <p style={{ margin: '0 0 6px 0' }}>📝 <strong>Misma fila:</strong> Usa nombres de columnas. Ej: <code>Peso Bruto - Peso Tara</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>📊 <strong>Otra fila:</strong> <code>Columna[Nº fila]</code>. Ej: <code>Precio[1] * Cantidad[2]</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>🔢 <strong>Toda la columna:</strong> <code>Columna[*]</code>. Ej: <code>Peso Neto[*]</code> (suma todas las filas)</p>
+                            <p style={{ margin: '0 0 6px 0' }}>📁 <strong>Paréntesis y números:</strong> <code>(Precio * 2.5) - Descuento</code></p>
+                          </div>
+                          {element.columns.filter(c => c.label && c.type !== 'formula').length > 0 && (
+                            <div style={{ 
+                              marginTop: '12px',
+                              padding: '10px',
+                              background: 'white',
+                              borderRadius: '8px',
+                              border: '1px solid #fde68a'
+                            }}>
+                              <strong style={{ fontSize: '12px', color: '#854d0e' }}>🏷️ Columnas disponibles para usar en la fórmula:</strong>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                                {element.columns.filter(c => c.label && c.type !== 'formula').map((c, ci) => (
+                                  <span key={ci} style={{
+                                    background: '#fef9c3',
+                                    border: '1px solid #eab308',
+                                    borderRadius: '6px',
+                                    padding: '4px 10px',
+                                    fontSize: '13px',
+                                    fontFamily: 'monospace',
+                                    color: '#854d0e',
+                                    cursor: 'pointer'
+                                  }}
+                                  onClick={() => {
+                                    const current = column.formula || '';
+                                    updateColumnInTable(elementIndex, colIndex, "formula", current + (current ? ' + ' : '') + c.label);
+                                  }}
+                                  title="Clic para agregar a la fórmula"
+                                  >
+                                    {c.label}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1498,7 +1669,7 @@ function CreateTemplate() {
               )}
 
               {template.headerFields.length === 0 && template.bodyElements.length === 0 && template.firmas.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>
+                <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
                   <p>📋 No hay campos definidos aún.</p>
                   <p style={{ fontSize: '0.85rem' }}>Agrega campos de encabezado, secciones o tablas para verlos aquí.</p>
                 </div>

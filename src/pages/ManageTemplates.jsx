@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import "./ManageTemplates.css";
 import { API_BASE_URL } from "../apiConfig";
 import authService from "../services/authService";
+import { exportFormToExcel } from "../services/excelExportService";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 
 function ManageTemplates() {
@@ -207,133 +208,58 @@ function ManageTemplates() {
         firmas: data.firmas ? JSON.parse(data.firmas) : [],
       };
 
-      // Generar HTML para imprimir como PDF
-      const printWindow = globalThis.open('', '_blank');
-      if (!printWindow) {
-        alert('Por favor permite las ventanas emergentes para descargar');
-        return;
-      }
-
-      const headerFieldsHtml = parsed.headerFields.map(f => 
-        `<tr><td style="font-weight:600;width:200px;background:#f0f4ff;padding:8px;border:1px solid #ccc;">${f.label || 'Campo'}</td><td style="padding:8px;border:1px solid #ccc;min-width:250px;">&nbsp;</td></tr>`
-      ).join('');
-
-      const bodyHtml = parsed.bodyElements.map(el => {
-        if (el.type === 'table') {
-          const cols = el.columns || [];
-          const headerRow = cols.map(c => `<th style="padding:6px 8px;border:1px solid #ccc;background:#e8eef6;font-size:11px;">${c.label || ''}</th>`).join('');
-          const emptyRows = Array.from({ length: 10 }, () => 
-            cols.map(() => `<td style="padding:6px 8px;border:1px solid #ccc;min-height:24px;position:relative;" class="empty-cell"></td>`).join('')
-          ).map(r => `<tr>${r}</tr>`).join('');
-          return `<div style="margin-top:16px;"><h3 style="font-size:13px;margin-bottom:6px;">${el.title || 'Tabla'}</h3><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>${headerRow}</tr></thead><tbody>${emptyRows}</tbody></table></div>`;
+      // 📊 Crear formulario vacío con estructura de datos vacía
+      const emptyForm = {
+        templateID: template.templateID,
+        templateCodigo: parsed.codigo,
+        templateNombre: parsed.nombre,
+        version: parsed.version || 1,
+        createdAt: new Date().toISOString(),
+        headerData: {},
+        bodyData: [],
+        firmasData: {
+          firmas: parsed.firmas || []
         }
-        if (el.type === 'section') {
-          const fields = (el.fields || []).map(f => 
-            `<tr><td style="font-weight:600;width:180px;background:#f9fafb;padding:6px;border:1px solid #ccc;font-size:11px;">${f.label || ''}</td><td style="padding:6px;border:1px solid #ccc;">&nbsp;</td></tr>`
-          ).join('');
-          return `<div style="margin-top:16px;"><h3 style="font-size:13px;margin-bottom:6px;">${el.title || 'Sección'}</h3><table style="width:100%;border-collapse:collapse;">${fields}</table></div>`;
+      };
+
+      // Llenar headerData con campos vacíos
+      parsed.headerFields.forEach(field => {
+        emptyForm.headerData[field.name || field.label] = '';
+      });
+
+      // Llenar bodyData con arrays vacíos para tablas
+      emptyForm.bodyData = parsed.bodyElements.map((element, index) => {
+        if (element.type === 'table') {
+          return {
+            elementIndex: index,
+            elementId: element.id || `element_${index}`,
+            title: element.title || 'Tabla',
+            type: 'table',
+            data: [] // Array vacío - Excel mostrará las columnas sin datos
+          };
+        } else if (element.type === 'section') {
+          const sectionData = {};
+          (element.fields || []).forEach(field => {
+            sectionData[field.name || field.label] = '';
+          });
+          return {
+            elementIndex: index,
+            elementId: element.id || `element_${index}`,
+            title: element.title || 'Sección',
+            type: 'section',
+            data: sectionData
+          };
         }
-        return '';
-      }).join('');
+        return null;
+      }).filter(Boolean);
 
-      const firmasHtml = parsed.firmas.length > 0 ? `
-        <div style="margin-top:30px;display:flex;justify-content:space-around;flex-wrap:wrap;">
-          ${parsed.firmas.map(f => `
-            <div style="text-align:center;min-width:150px;margin:10px;">
-              <div style="border-bottom:1px solid #333;height:60px;margin-bottom:5px;"></div>
-              <div style="font-size:11px;font-weight:600;">${f.puesto || 'Firma'}</div>
-              <div style="font-size:10px;color:#666;">Nombre: ____________</div>
-              <div style="font-size:10px;color:#666;">Fecha: __/__/____</div>
-            </div>
-          `).join('')}
-        </div>
-      ` : '';
-
-      // 📝 Cargar registro de cambios desde localStorage
-      const changeLogEntries = loadManualHistory(template.templateID);
-      const changeLogHtml = `
-        <div style="margin-top:30px;page-break-inside:avoid;">
-          <h3 style="font-size:13px;margin-bottom:8px;text-align:center;font-weight:bold;">📋 HISTORIAL DE CAMBIOS Y/O MODIFICACIONES</h3>
-          <table style="width:100%;border-collapse:collapse;font-size:11px;">
-            <thead>
-              <tr>
-                <th style="padding:6px 8px;border:1px solid #ccc;background:#e8eef6;font-weight:bold;width:100px;">FECHA</th>
-                <th style="padding:6px 8px;border:1px solid #ccc;background:#e8eef6;font-weight:bold;width:80px;">VERSIÓN</th>
-                <th style="padding:6px 8px;border:1px solid #ccc;background:#e8eef6;font-weight:bold;">MODIFICACIÓN</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${changeLogEntries.length > 0 
-                ? changeLogEntries.map(entry => {
-                    let fechaDisplay = 'N/A';
-                    if (entry.fecha && entry.fecha.includes('T')) {
-                      fechaDisplay = new Date(entry.fecha).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                    } else if (entry.fecha) {
-                      const [y, m, d] = entry.fecha.split('-');
-                      fechaDisplay = d + '/' + m + '/' + y;
-                    }
-                    return '<tr><td style="padding:6px 8px;border:1px solid #ccc;text-align:center;">' + fechaDisplay + '</td><td style="padding:6px 8px;border:1px solid #ccc;text-align:center;">' + (entry.version || 'N/A') + '</td><td style="padding:6px 8px;border:1px solid #ccc;">' + (entry.cambioRealizado || '') + '</td></tr>';
-                  }).join('')
-                : Array.from({ length: 5 }, () => '<tr><td style="padding:6px 8px;border:1px solid #ccc;">&nbsp;</td><td style="padding:6px 8px;border:1px solid #ccc;">&nbsp;</td><td style="padding:6px 8px;border:1px solid #ccc;">&nbsp;</td></tr>').join('')
-              }
-            </tbody>
-          </table>
-        </div>
-      `;
-
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>${parsed.codigo} - ${parsed.nombre}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-            @media print { body { padding: 10px; } }
-            .header-table { width: 100%; border-collapse: collapse; border: 2px solid #006699; margin-bottom: 16px; }
-            .header-table td { border: 1px solid #006699; padding: 6px 10px; vertical-align: middle; }
-            .logo-cell { width: 80px; text-align: center; }
-            .logo-cell img { max-width: 70px; max-height: 70px; }
-            .title-cell { text-align: center; font-size: 14px; font-weight: bold; }
-            .meta-label { font-weight: bold; font-size: 10px; text-align: right; width: 70px; background: #f9fafb; }
-            .meta-value { font-size: 10px; width: 80px; }
-            .empty-cell { position: relative; min-height: 24px; }
-            .empty-cell::after {
-              content: '';
-              position: absolute;
-              top: 0; left: 0; right: 0; bottom: 0;
-              background: linear-gradient(to bottom right, transparent calc(50% - 0.5px), #ccc calc(50% - 0.5px), #ccc calc(50% + 0.5px), transparent calc(50% + 0.5px));
-            }
-          </style>
-        </head>
-        <body>
-          <table class="header-table">
-            <tr>
-              <td class="logo-cell" rowspan="3"><img src="" alt="Logo" /></td>
-              <td class="title-cell" rowspan="3">${parsed.nombre}</td>
-              <td class="meta-label">CÓDIGO:</td>
-              <td class="meta-value">${parsed.codigo}</td>
-            </tr>
-            <tr>
-              <td class="meta-label">VERSIÓN:</td>
-              <td class="meta-value">${parsed.version || '1'}</td>
-            </tr>
-            <tr>
-              <td class="meta-label">FECHA:</td>
-              <td class="meta-value">${parsed.fechaVersion ? new Date(parsed.fechaVersion).toLocaleDateString('es-EC') : '__/__/____'}</td>
-            </tr>
-          </table>
-          ${headerFieldsHtml ? `<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">${headerFieldsHtml}</table>` : ''}
-          ${bodyHtml}
-          ${firmasHtml}
-          ${changeLogHtml}
-          <script>window.onload = function() { window.print(); }<\/script>
-        </body>
-        </html>
-      `);
-      printWindow.document.close();
+      // 📊 Exportar a Excel
+      console.log('📊 Exportando formulario vacío a Excel...', { emptyForm, template: parsed });
+      await exportFormToExcel(emptyForm, parsed);
 
     } catch (err) {
-      alert('Error al generar la descarga: ' + err.message);
+      console.error('❌ Error al generar Excel:', err);
+      alert('Error al generar el Excel: ' + err.message);
     }
   };
 
@@ -382,7 +308,7 @@ function ManageTemplates() {
                     fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px'
                   }}>🚫 OBSOLETA</span>
                 )}
-                <h3 style={template.isObsolete ? { color: '#9ca3af', textDecoration: 'line-through' } : undefined}>{template.nombre}</h3>
+                <h3 style={template.isObsolete ? { color: '#6b7280', textDecoration: 'line-through' } : undefined}>{template.nombre}</h3>
                 <span className="template-version">Versión: {template.version}</span>
                 {template.proceso && <span className="template-proceso">📁 {template.proceso}</span>}
               </div>

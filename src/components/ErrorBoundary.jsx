@@ -60,7 +60,7 @@ class ErrorBoundary extends React.Component {
           </h2>
           
           <p style={{ 
-            color: '#666',
+            color: '#4b5563',
             fontSize: '16px',
             marginBottom: '30px',
             lineHeight: '1.6'
@@ -180,7 +180,7 @@ class ErrorBoundary extends React.Component {
                       borderRadius: '4px',
                       overflow: 'auto',
                       fontSize: '11px',
-                      color: '#666',
+                      color: '#4b5563',
                       maxHeight: '300px'
                     }}>
                       {this.state.errorInfo.componentStack}

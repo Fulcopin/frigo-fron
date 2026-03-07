@@ -1,0 +1,276 @@
+/* ========================================
+   🧪 UTILIDADES PARA TESTING RESPONSIVE
+   ======================================== */
+
+/* 
+   Agregar esta clase a un elemento para VER qué breakpoint está activo:
+   
+   <div class="show-breakpoint">
+     Contenido...
+   </div>
+   
+   En la consola verá: "Mobile", "Tablet", "Desktop"
+*/
+
+.show-breakpoint {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  background: #035b8d;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: bold;
+  z-index: 800;  /* ⬇️ Bajo: solo para debugging */
+  font-size: 12px;
+  font-family: monospace;
+}
+
+/* Mostrar "Mobile" en móvil */
+@media (max-width: 480px) {
+  .show-breakpoint::before {
+    content: "📱 Mobile";
+  }
+}
+
+/* Mostrar "Tablet" en tablet */
+@media (min-width: 481px) and (max-width: 1024px) {
+  .show-breakpoint::before {
+    content: "🖱️ Tablet";
+  }
+}
+
+/* Mostrar "Desktop" en desktop */
+@media (min-width: 1025px) {
+  .show-breakpoint::before {
+    content: "🖥️ Desktop";
+  }
+}
+
+/* ========================================
+   🎨 OVERLAY DE CONTRASTE CHECKER
+   ======================================== */
+
+/* 
+   Para verificar contraste, agregar data-contrast a cualquier elemento:
+   
+   <p data-contrast="check">Texto para verificar</p>
+*/
+
+[data-contrast="check"] {
+  background: rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 0 0 2px rgba(220, 38, 38, 0.3);
+  padding: 4px;
+  border-radius: 2px;
+}
+
+/* ========================================
+   📐 GRID VISUAL (debuggear layouts)
+   ======================================== */
+
+/*
+   Agregar clase "show-grid" al body para ver grid:
+   
+   <body class="show-grid">
+*/
+
+body.show-grid *{
+  background-color: rgba(0, 0, 255, 0.01);
+  outline: 1px solid rgba(0, 0, 255, 0.1);
+}
+
+body.show-grid [class*="grid"] {
+  background-color: rgba(0, 255, 0, 0.05);
+  outline: 2px dashed rgba(0, 255, 0, 0.3);
+}
+
+/* ========================================
+   📊 TABLA DE TAMAÑOS DE PANTALLA
+   (Para referencia rápida)
+   ======================================== */
+
+/*
+Breakpoints en uso:
+
+MOBILE (320px - 480px)
+└─ iPhone SE, 6, 7, 8, X, 11: 375-390px
+└─ Android pequeños: 320px
+└─ PdA: Todo lo que sea < 481px
+
+TABLET (481px - 1024px)
+├─ iPad Mini: 768px
+├─ iPad Air: 820px
+├─ Samsung Tab: 800px
+└─ PdA: Todo lo que sea entre 481-1024px
+
+DESKTOP (1025px+)
+├─ Monitores 1080p: 1920px+
+├─ Laptops: 1366px-2560px
+└─ Tutto lo que sea > 1024px
+
+MÁS INFORMACIÓN:
+https://www.w3schools.com/css/css_rwd_mediaqueries.asp
+https://www.responsivedesignchecker.com/
+*/
+
+/* ========================================
+   🔍 HIGHLIGHT DE ELEMENTOS SIN PADDING
+   (Para detectar layout breaks)
+   ======================================== */
+
+[style*="padding: 0"] {
+  outline: 2px solid rgba(220, 38, 38, 0.5);
+  outline-offset: -2px;
+}
+
+/* ========================================
+   🔊 VISIBILIDAD DE ELEMENTOS OCULTOS
+   (Para debugging)
+   ======================================== */
+
+/*
+   Ver elementos que están ocultos con display: none:
+   Descomentar para debugging
+*/
+
+/*
+.show-hidden [style*="display: none"],
+.show-hidden [style*="visibility: hidden"],
+.show-hidden [style*="opacity: 0"] {
+  outline: 3px dashed rgba(255, 0, 0, 0.8) !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 0.3 !important;
+}
+*/
+
+/* ========================================
+   ⚡ PERFORMANCE DEBUG
+   (Mostrar repaints y reflows)
+   ======================================== */
+
+/*
+   En Chrome DevTools:
+   1. Presionar F12
+   2. Ir a Rendering (en More tools)
+   3. Marcar "Paint flashing"
+   4. Marcar "Rendering stats"
+*/
+
+/* ========================================
+   📱 EMULACIÓN CLI (Para desarrollo local)
+   ======================================== */
+
+/*
+   Para probar diferentes tamaños en VSCode:
+   
+   1. Instalar "Live Server" extension
+   2. Click derecho en index.html → Open with Live Server
+   3. En navegador, presionar F12
+   4. Presionar Ctrl+Shift+M (o Click device dropdown)
+   5. Seleccionar device:
+      - iPhone SE (test mobile)
+      - iPad (test tablet)
+      - No device - 1920x1080 (test desktop)
+*/
+
+/* ========================================
+   🎯 BENCHMARK DE TAMAÑOS (Copy-paste ready)
+   ======================================== */
+
+/*
+Para agregar carga especial por tamaño:
+
+/* En FillForm.jsx, agregar data attribute: */
+
+/*
+<div data-device="mobile">
+  {isMobile && <MobileOptimizedView />}
+</div>
+
+<div data-device="tablet">
+  {isTablet && <TabletOptimizedView />}
+</div>
+
+<div data-device="desktop">
+  {isDesktop && <DesktopOptimizedView />}
+</div>
+*/
+
+/* ========================================
+   🖨️ PRINT STYLES (Para imprimir formularios)
+   ======================================== */
+
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+
+  .sidebar,
+  .nav,
+  .form-header-bar,
+  .btn-print,
+  button {
+    display: none !important;
+  }
+
+  .fill-form {
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  .data-table {
+    page-break-inside: avoid;
+  }
+}
+
+/* ========================================
+  🌙 DARK MODE (Opcional para futuro)
+  ======================================== */
+
+@media (prefers-color-scheme: dark) {
+  /* Descomentar cuando implemente dark mode:
+  
+  :root {
+    --background: #1f2937;
+    --surface: #111827;
+    --text: #f3f4f6;
+    --text-secondary: #d1d5db;
+    --text-light: #9ca3af;
+    --border: #374151;
+  }
+  
+  body {
+    background: var(--background);
+    color: var(--text);
+  }
+  */
+}
+
+/* ========================================
+   🚨 ADVERTENCIAS PARA MALAS PRÁCTICAS
+   (Comentar en producción si causa issues)
+   ======================================== */
+
+/* Advertencia: Font size hardcoded en píxeles */
+/*[style*="font-size: 12px"],
+[style*="font-size: 14px"],
+[style*="font-size: 16px"] {
+  outline: 2px dashed #ea580c;
+}*/
+
+/* Advertencia: Padding demasiado grande en móvil */
+/*@media (max-width: 480px) {
+  [style*="padding: 2rem"],
+  [style*="padding: 1.5rem"] {
+    outline: 2px dashed #ea580c;
+  }
+}*/
+
+/* Advertencia: Width hardcodeado (responsive unfriendly) */
+/*[style*="width: 100%"],
+[style*="width: 90%"] {
+  max-width: 100%;
+}*/

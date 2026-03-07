@@ -202,7 +202,7 @@
 }
 
 .login-subtitle {
-  color: #666;
+  color: #4b5563;
   font-size: 1.1rem;
   margin: 0.5rem 0 0 0;
   font-weight: 600;
@@ -378,8 +378,8 @@
   border-radius: 10px;
   margin: 0 0 1rem 0;
   font-size: 0.85rem;
-  color: #666;
-  border: 1px dashed #ddd;
+  color: #4b5563;
+  border: 1px dashed #b0b0b0;
 }
 
 .demo-credentials strong {
@@ -387,7 +387,7 @@
 }
 
 .company-info {
-  color: #999;
+  color: #6b7280;
   font-size: 0.8rem;
   margin: 0;
 }

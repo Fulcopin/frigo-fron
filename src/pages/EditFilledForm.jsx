@@ -805,7 +805,7 @@ Template: ${template?.nombre}
                         <div className="form-field">
                           <label>
                             Nombre:
-                            {loadingUsers && <span style={{fontSize:'11px',color:'#999'}}> (Cargando...)</span>}
+                            {loadingUsers && <span style={{fontSize:'11px',color: '#6b7280'}}> (Cargando...)</span>}
                           </label>
                           <UserSelector
                             users={uniqueUsers}
@@ -851,7 +851,7 @@ Template: ${template?.nombre}
                           </>
                         )}
                         {!isAdmin && (firmaObj?.fecha || firmaObj?.hora) && (
-                          <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#666' }}>
+                          <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#4b5563' }}>
                             {firmaObj?.fecha && <span>📅 {new Date(firmaObj.fecha + 'T00:00:00').toLocaleDateString('es-EC')}</span>}
                             {firmaObj?.hora && <span>🕐 {firmaObj.hora}</span>}
                           </div>

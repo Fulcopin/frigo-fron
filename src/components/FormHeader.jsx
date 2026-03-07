@@ -1,6 +1,6 @@
 import { useState } from "react"
 import "./FormHeader.css"
-import logoUrl from "../assets/logo.png"; 
+import logoUrl from "../assets/logo-1.png"; 
 
 export default function FormHeader({ title, code, version, date, tipoProducto }) {
   const [isCollapsed, setIsCollapsed] = useState(true); // Empezar colapsado para ahorrar espacio

@@ -14,8 +14,8 @@
   --surface: #ffffff;           /* Tarjetas/contenedores */
   --border: #e1e1e1;            /* Bordes - Gris claro */
   --text: #2b2b2b;              /* Texto principal - Gris oscuro */
-  --text-secondary: #666666;    /* Texto secundario */
-  --text-light: #999999;        /* Texto deshabilitado */
+  --text-secondary: #4b5563;    /* ⬆️ MEJORADO: Gris más oscuro para mejor contraste (WCAG AA) */
+  --text-light: #6b7280;        /* ⬆️ MEJORADO: Gris más oscuro para mejor contraste (WCAG AA) */
   --success: #16a34a;           /* Verde éxito */
   --error: #dc2626;             /* Rojo error */
   --warning: #ea580c;           /* Naranja advertencia */

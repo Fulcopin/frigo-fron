@@ -1,0 +1,603 @@
+/* ========================================
+   🎯 MEJORAS RESPONSIVE Y ACCESIBILIDAD
+   ======================================== */
+
+/* 📱 MÓVIL PRIMERO (max-width: 480px) */
+@media (max-width: 480px) {
+  /* ⚙️ BASE ELEMENTOS */
+  html, body {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* 📝 PADDING Y MÁRGENES */
+  .fill-form {
+    padding: 0.75rem;
+    margin: 0;
+  }
+
+  .fill-form > h1 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+  }
+
+  /* 📋 GRID Y LAYOUTS */
+  .header-grid {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+    padding: 0.75rem !important;
+  }
+
+  .templates-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  /* 📊 TABLAS RESPONSIVAS */
+  .data-table {
+    font-size: 0.85rem;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.8rem;
+  }
+
+  .table-wrapper {
+    padding: 0.5rem;
+    margin: 0.5rem 0;
+    border-radius: 4px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    background: white;
+    border: 1px solid #e5e7eb;
+  }
+
+  .table-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .table-controls-left,
+  .table-controls-right {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* 🔘 BOTONES */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .btn-add-row,
+  .btn-remove-column,
+  .btn-add-column,
+  .btn-save-structure,
+  .btn-sign,
+  .btn-view,
+  .btn-reject {
+    width: 100%;
+    margin: 0.25rem 0;
+  }
+
+  /* 📝 INPUTS Y CAMPOS */
+  input,
+  textarea,
+  select {
+    font-size: 16px; /* Previene zoom en iOS */
+    padding: 0.75rem;
+    width: 100%;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    line-height: 1.5;
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 100px;
+  }
+
+  /* 📌 ACORDEONES/SECCIONES */
+  .accordion-header {
+    padding: 0.75rem;
+    font-size: 1rem;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .accordion-body {
+    padding: 0.75rem;
+  }
+
+  /* 🎨 MODAL */
+  .modal-overlay {
+    padding: 0.75rem;
+    z-index: 1100;  /* ⬆️ ENCIMA de tabs (1050) */
+  }
+
+  .modal-content {
+    max-width: 95vw !important;
+    max-height: 90vh;
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal-header {
+    padding: 0.75rem !important;
+    min-height: 48px;
+  }
+
+  /* 🔍 CONTRASTE - Aumentar visibilidad de texto ligero */
+  .text-secondary,
+  .text-light,
+  .form-meta,
+  .detail-label {
+    color: #374151 !important;
+    font-weight: 500;
+  }
+
+  /* 🌈 COLORES QUE SON DIFÍCILES DE VER */
+  .badge,
+  .status-badge {
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .badge-pending {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .badge-signed {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .badge-rejected {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  /* 📱 STICKY ELEMENTS */
+  .form-header-bar,
+  .tabs-container {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: white;
+    padding: 0.75rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* 🖼️ IMÁGENES Y FIRMA */
+  img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+  }
+
+  .signature-box,
+  .signature-display {
+    max-height: 200px;
+    max-width: 100%;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+  }
+
+  /* 🔗 LINKS Y ELEMENTOS INTERACTIVOS */
+  a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem;
+    border-radius: 4px;
+    text-decoration: none;
+    color: #035b8d;
+    font-weight: 500;
+  }
+
+  a:active {
+    background: rgba(3, 91, 141, 0.1);
+  }
+
+  /* 📋 LISTAS */
+  ul, ol {
+    padding-left: 1.5rem;
+    margin: 0.75rem 0;
+  }
+
+  li {
+    margin: 0.5rem 0;
+  }
+}
+
+/* 📱 TABLET (481px - 1024px) */
+@media (min-width: 481px) and (max-width: 1024px) {
+  .fill-form {
+    padding: 1rem;
+  }
+
+  .header-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 1rem !important;
+  }
+
+  .templates-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  button {
+    min-height: 40px;
+    padding: 0.6rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 1rem;
+    padding: 0.75rem;
+  }
+}
+
+/* 🖥️ DESKTOP (1025px+) */
+@media (min-width: 1025px) {
+  .fill-form {
+    padding: 1.5rem;
+  }
+
+  .header-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 1.5rem !important;
+  }
+
+  .templates-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+
+  button {
+    min-height: 40px;
+    padding: 0.75rem 1.25rem;
+  }
+}
+
+/* ========================================
+   🌈 MEJORAR CONTRASTE GLOBAL
+   ======================================== */
+
+/* FONDO Y TEXTO */
+body {
+  background-color: #f5f5f5;
+  color: #1f2937; /* Gris oscuro más fuerte */
+}
+
+/* INPUTS CON MEJOR CONTRASTE */
+input,
+textarea,
+select {
+  background-color: white;
+  border: 2px solid #d1d5db;
+  color: #1f2937;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: #035b8d;
+  box-shadow: 0 0 0 3px rgba(3, 91, 141, 0.2);
+}
+
+/* BOTONES CON CONTRASTE MEJORADO */
+button {
+  font-weight: 600;
+}
+
+.btn-primary {
+  background: #035b8d;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #024a73;
+}
+
+.btn-secondary {
+  background: #6b7280;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #4b5563;
+}
+
+.btn-danger,
+.btn-delete,
+.btn-reject,
+.btn-remove-column {
+  background: #dc2626;
+  color: white;
+}
+
+.btn-danger:hover,
+.btn-delete:hover,
+.btn-reject:hover,
+.btn-remove-column:hover {
+  background: #991b1b;
+}
+
+.btn-success,
+.btn-add-row {
+  background: #16a34a;
+  color: white;
+}
+
+.btn-success:hover,
+.btn-add-row:hover {
+  background: #166534;
+}
+
+/* TEXTO SECUNDARIO MEJORADO */
+.text-secondary,
+.form-meta,
+.detail-label,
+.badge-secondary {
+  color: #4b5563 !important;
+  font-weight: 500;
+}
+
+/* SECCIONES Y TARJETAS */
+.accordion-header {
+  background: #e5e7eb;
+  color: #1f2937;
+  font-weight: 600;
+  border-bottom: 2px solid #d1d5db;
+}
+
+.accordion-header:hover {
+  background: #d1d5db;
+}
+
+.form-card,
+.template-card,
+.modal-content {
+  background: white;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* TABLAS */
+.data-table thead {
+  background: #035b8d !important;
+  color: white !important;
+}
+
+.data-table th {
+  font-weight: 700;
+  color: white;
+  border-bottom: 2px solid #024a73;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: #f9fafb;
+}
+
+.data-table tbody tr:hover {
+  background: #eff6ff;
+}
+
+.data-table td {
+  color: #1f2937;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* ESTADO Y BADGES */
+.status-pending,
+.badge-pending {
+  background: #fef3c7 !important;
+  color: #78350f !important;
+  font-weight: 600;
+}
+
+.status-signed,
+.badge-signed {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+  font-weight: 600;
+}
+
+.status-rejected,
+.badge-rejected {
+  background: #fee2e2 !important;
+  color: #991b1b !important;
+  font-weight: 600;
+}
+
+.status-draft,
+.badge-draft {
+  background: #e0e7ff !important;
+  color: #312e81 !important;
+  font-weight: 600;
+}
+
+/* LINKS */
+a {
+  color: #0369a1;
+  text-decoration: underline;
+}
+
+a:visited {
+  color: #5b21b6;
+}
+
+a:hover {
+  color: #0284c7;
+}
+
+a:active {
+  color: #0c4a6e;
+}
+
+/* ========================================
+   🎯 FIXES PARA RENDERIZACIÓN
+   ======================================== */
+
+/* Prevenir saltos de contenido */
+* {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* Mejor scrolling en móvil */
+.fill-form,
+.table-wrapper,
+.modal-content,
+.accordion-body {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Evitar que el contenido se deforme */
+body, html {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Fijar elementos para mejor UX */
+.form-header-bar {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  min-height: 50px;
+}
+
+/* Mejorar visibilidad de checkbox y radio */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  cursor: pointer;
+  accent-color: #035b8d;
+}
+
+input[type="checkbox"]:focus,
+input[type="radio"]:focus {
+  outline: 2px solid #035b8d;
+  outline-offset: 2px;
+}
+
+/* Mejorar label accesibilidad */
+label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 500;
+  color: #1f2937;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+/* VISIBILIDAD DE ERROR */
+.error,
+.text-error,
+.field-error,
+input.error,
+input.invalid {
+  color: #991b1b !important;
+  border-color: #dc2626 !important;
+}
+
+.error-message {
+  color: #991b1b;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+/* ========================================
+   🎬 ANIMACIONES SUAVE (sin motion sickness)
+   ======================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  * {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ========================================
+   ♿ ACCESIBILIDAD VISUAL
+   ======================================== */
+
+@media (prefers-contrast: high) {
+  * {
+    border-width: 2px;
+  }
+
+  button,
+  a {
+    text-decoration: underline;
+    font-weight: 700;
+  }
+
+  .data-table {
+    border: 2px solid #1f2937;
+  }
+
+  input,
+  textarea,
+  select {
+    border: 2px solid #1f2937;
+  }
+}
+
+/* Focus visible para navegación por teclado */
+*:focus-visible {
+  outline: 3px solid #035b8d;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px dashed #035b8d;
+  outline-offset: 3px;
+}

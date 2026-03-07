@@ -29,6 +29,14 @@ export default function SignatureManagement() {
   const [rejectFormId, setRejectFormId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
 
+  // Estado para vista previa del formulario como contrato
+  const [showContractPreview, setShowContractPreview] = useState(false);
+  const [contractFormData, setContractFormData] = useState(null);
+  const [contractTemplate, setContractTemplate] = useState(null);
+  const [contractLoading, setContractLoading] = useState(false);
+  const [hasReadContract, setHasReadContract] = useState(false);
+  const contractRef = useRef(null);
+
   // Estado para pestaña principal: 'pending' o 'timing'
   const [mainTab, setMainTab] = useState(initialTab);
   const [timingReport, setTimingReport] = useState(null);
@@ -187,6 +195,88 @@ export default function SignatureManagement() {
     setShowSignatureModal(true);
   };
 
+  // Función para cargar el formulario completo y mostrar contrato
+  const openContractPreview = async (formId) => {
+    try {
+      setContractLoading(true);
+      setShowContractPreview(true);
+      setHasReadContract(false);
+
+      // Cargar datos del formulario
+      const formResponse = await fetch(`${API_BASE_URL}/FilledForms/${formId}`);
+      if (!formResponse.ok) throw new Error('No se pudo cargar el formulario');
+      const formData = await formResponse.json();
+
+      const safeParse = (data, fallback) => {
+        if (!data) return fallback;
+        if (typeof data === 'string') {
+          try { return JSON.parse(data); } catch { return fallback; }
+        }
+        return data;
+      };
+
+      const parsedForm = {
+        ...formData,
+        headerData: safeParse(formData.headerData, {}),
+        bodyData: safeParse(formData.bodyData, []),
+        firmasData: safeParse(formData.firmasData, {}),
+      };
+      setContractFormData(parsedForm);
+
+      // Cargar template correspondiente
+      const templateId = formData.templateID || formData.templateId;
+      const tplResponse = await fetch(`${API_BASE_URL}/Templates/${templateId}`);
+      if (tplResponse.ok) {
+        const tplData = await tplResponse.json();
+        setContractTemplate({
+          ...tplData,
+          bodyElements: safeParse(tplData.bodyElements, []),
+          headerFields: safeParse(tplData.headerFields, []),
+          firmas: safeParse(tplData.firmas, []),
+        });
+      }
+    } catch (error) {
+      console.error('Error al cargar contrato:', error);
+      alert('❌ Error al cargar el formulario: ' + error.message);
+      setShowContractPreview(false);
+    } finally {
+      setContractLoading(false);
+    }
+  };
+
+  // Detectar scroll al final del contrato
+  const handleContractScroll = (e) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.target;
+    // Si llegó al final (con margen de 50px)
+    if (scrollTop + clientHeight >= scrollHeight - 50) {
+      setHasReadContract(true);
+    }
+  };
+
+  // ✅ Detectar si el contenido cabe sin scroll → habilitar firma automáticamente
+  useEffect(() => {
+    if (showContractPreview && contractRef.current && !hasReadContract) {
+      // Pequeño delay para que el DOM se renderice
+      const timer = setTimeout(() => {
+        const el = contractRef.current;
+        if (el && el.scrollHeight <= el.clientHeight + 10) {
+          // El contenido cabe sin scroll, no necesita desplazarse
+          setHasReadContract(true);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [showContractPreview, contractFormData, contractTemplate, hasReadContract]);
+
+  // Proceder a firmar después de leer el contrato
+  const proceedToSign = () => {
+    setShowContractPreview(false);
+    setIsMassive(false);
+    setSignatureTab('upload');
+    setSignatureImage('');
+    setShowSignatureModal(true);
+  };
+
   // === CANVAS DRAWING FUNCTIONS ===
   useEffect(() => {
     if (showSignatureModal && signatureTab === 'draw' && canvasRef.current) {
@@ -279,16 +369,31 @@ export default function SignatureManagement() {
       if (isMassive) {
         await signatureService.signMultipleForms(selectedForms, signatureData);
         alert(`✅ ${selectedForms.length} formularios firmados exitosamente`);
+        // Actualización optimista del dashboard
+        const count = selectedForms.length;
+        setStats(prev => ({
+          ...prev,
+          signedToday: (prev.signedToday || 0) + count,
+          pendingCount: Math.max(0, (prev.pendingCount || 0) - count),
+          totalSigned: (prev.totalSigned || 0) + count,
+        }));
         setSelectedForms([]);
       } else {
         await signatureService.signForm(selectedForms[0], signatureData);
         alert('✅ Formulario firmado exitosamente');
+        // Actualización optimista del dashboard
+        setStats(prev => ({
+          ...prev,
+          signedToday: (prev.signedToday || 0) + 1,
+          pendingCount: Math.max(0, (prev.pendingCount || 0) - 1),
+          totalSigned: (prev.totalSigned || 0) + 1,
+        }));
       }
 
       setShowSignatureModal(false);
       setSignatureImage('');
       setComments('');
-      loadData();
+      await loadData();
     } catch (error) {
       console.error('Error al firmar:', error);
       alert('❌ Error al firmar los formularios: ' + error.message);
@@ -332,6 +437,33 @@ export default function SignatureManagement() {
     try {
       setTimingLoading(true);
       const report = await signatureService.getTimingReport(daysParam || timingDays);
+      // 🔧 FIX: Normalizar tiempos negativos (desfase de reloj del servidor)
+      if (report && report.details && Array.isArray(report.details)) {
+        report.details = report.details.map(item => {
+          const fixedItem = { ...item };
+          // Corregir hoursToSign negativo
+          if (fixedItem.hoursToSign != null && fixedItem.hoursToSign < 0) {
+            fixedItem.hoursToSign = Math.abs(fixedItem.hoursToSign);
+          }
+          // Corregir minutesToSign negativo
+          if (fixedItem.minutesToSign != null && fixedItem.minutesToSign < 0) {
+            fixedItem.minutesToSign = Math.abs(fixedItem.minutesToSign);
+          }
+          // Corregir timingLabel negativo (e.g., "-3 minutos" → "< 1 minuto")
+          if (fixedItem.timingLabel && typeof fixedItem.timingLabel === 'string') {
+            const numMatch = fixedItem.timingLabel.match(/^-?\d+/);
+            if (numMatch && parseInt(numMatch[0]) < 0) {
+              const absVal = Math.abs(parseInt(numMatch[0]));
+              if (absVal === 0) {
+                fixedItem.timingLabel = '< 1 minuto';
+              } else {
+                fixedItem.timingLabel = fixedItem.timingLabel.replace(/^-/, '');
+              }
+            }
+          }
+          return fixedItem;
+        });
+      }
       setTimingReport(report);
     } catch (error) {
       console.error('Error al cargar reporte de tiempos:', error);
@@ -344,37 +476,36 @@ export default function SignatureManagement() {
   // ✅ Función para verificar si el usuario está asignado para firmar este formulario
   const isUserAssignedToSign = (form) => {
     // Si no hay usuario logueado o no hay firmas, no mostrar
-    if (!currentUser?.email || !form.firmasData) {
+    if (!currentUser || !form.firmasData) {
       return false;
     }
 
-    const userEmail = currentUser.email.toLowerCase();
+    const userEmail = currentUser.email?.toLowerCase();
+    const userNombre = currentUser.nombre?.toLowerCase().trim();
 
     // Revisar cada puesto en FirmasData
     for (const [puesto, firmaInfo] of Object.entries(form.firmasData)) {
       if (!firmaInfo || typeof firmaInfo !== 'object') continue;
 
-      // Verificar si este puesto tiene el email del usuario
       const emailAsignado = firmaInfo.email?.toLowerCase();
-      const nombreAsignado = firmaInfo.nombre?.toLowerCase();
+      const nombreAsignado = firmaInfo.nombre?.toLowerCase().trim();
 
-      // Si el email coincide
-      if (emailAsignado === userEmail) {
-        // Verificar si YA firmó (tiene imagen de firma)
-        const yaFirmo = firmaInfo.firma?.url || firmaInfo.firma?.base64;
-        
-        // Solo mostrar si AÚN NO ha firmado
-        if (!yaFirmo) {
-          return true;
-        }
+      const yaFirmo = firmaInfo.firma?.url || firmaInfo.firma?.base64;
+      if (yaFirmo) continue; // Ya firmó este puesto, saltar
+
+      // ✅ Coincidir por nombre completo (igual que FillForm.jsx "Tu firma")
+      if (userNombre && nombreAsignado && nombreAsignado === userNombre) {
+        return true;
       }
-      
-      // Fallback: si nombre contiene @ y coincide con email
-      if (nombreAsignado && nombreAsignado.includes('@') && nombreAsignado === userEmail) {
-        const yaFirmo = firmaInfo.firma?.url || firmaInfo.firma?.base64;
-        if (!yaFirmo) {
-          return true;
-        }
+
+      // ✅ Coincidir por email si está disponible
+      if (userEmail && emailAsignado && emailAsignado === userEmail) {
+        return true;
+      }
+
+      // Fallback: si nombre almacenado contiene @ y coincide con email
+      if (userEmail && nombreAsignado && nombreAsignado.includes('@') && nombreAsignado === userEmail) {
+        return true;
       }
     }
 
@@ -604,7 +735,7 @@ export default function SignatureManagement() {
                         <span className="created-by-email" style={{ 
                           display: 'block', 
                           fontSize: '0.85em', 
-                          color: '#666',
+                          color: '#4b5563',
                           marginTop: '2px'
                         }}>
                           📧 {form.createdByEmail}
@@ -632,19 +763,14 @@ export default function SignatureManagement() {
                   <button
                     onClick={() => {
                       setSelectedForms([form.id]);
-                      openSignatureModal(false);
+                      openContractPreview(form.id);
                     }}
                     className="btn-sign"
                   >
                     ✍️ Firmar
                   </button>
                   
-                  <Link
-                    to={`/view-form/${form.id}`}
-                    className="btn-view"
-                  >
-                    👁️ Ver
-                  </Link>
+                  
 
                   {isSGI && (
                     <button
@@ -922,7 +1048,7 @@ export default function SignatureManagement() {
                                 {item.status === 'signed' ? '✅ Firmado' : item.status === 'rejected' ? '❌ Rechazado' : '⏳ Pendiente'}
                               </span>
                             </td>
-                            <td style={{ padding: '10px 12px', fontWeight: 600, color: item.hoursToSign != null ? (item.hoursToSign < 24 ? '#059669' : item.hoursToSign < 72 ? '#d97706' : '#dc2626') : '#6b7280' }}>
+                            <td style={{ padding: '10px 12px', fontWeight: 600, color: item.hoursToSign != null ? (Math.abs(item.hoursToSign) < 24 ? '#059669' : Math.abs(item.hoursToSign) < 72 ? '#d97706' : '#dc2626') : '#6b7280' }}>
                               {item.timingLabel || (item.status === 'pending' ? calculatePendingTime(item.createdDate) : '—')}
                             </td>
                             <td style={{ padding: '10px 12px' }}>
@@ -948,7 +1074,7 @@ export default function SignatureManagement() {
                                 </div>
                               )}
                               {item.status === 'pending' && (
-                                <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Esperando firma...</span>
+                                <span style={{ color: '#6b7280', fontStyle: 'italic' }}>Esperando firma...</span>
                               )}
                             </td>
                           </tr>
@@ -969,6 +1095,320 @@ export default function SignatureManagement() {
               <p>No se pudo cargar el reporte. Haz clic en "Actualizar" para intentar nuevamente.</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal de Vista Previa del Contrato */}
+      {showContractPreview && (
+        <div className="modal-overlay" onClick={() => setShowContractPreview(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{
+            maxWidth: '900px',
+            width: '95%',
+            maxHeight: '90vh',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div className="modal-header" style={{
+              background: 'linear-gradient(135deg, #1e40af, #3b82f6)',
+              color: 'white',
+              padding: '1.2rem 1.5rem',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexShrink: 0
+            }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>📋 Revisión del Formulario</h2>
+              <button
+                onClick={() => setShowContractPreview(false)}
+                style={{ color: 'white', fontSize: '1.5rem', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+
+            {contractLoading ? (
+              <div style={{ padding: '3rem', textAlign: 'center' }}>
+                <div className="loading-spinner"></div>
+                <p style={{ marginTop: '1rem', color: '#6b7280' }}>Cargando formulario...</p>
+              </div>
+            ) : contractFormData && contractTemplate ? (
+              <>
+                <div style={{
+                  padding: '10px 20px',
+                  background: '#fef3c7',
+                  borderBottom: '1px solid #fcd34d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexShrink: 0
+                }}>
+                  <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+                  <span style={{ color: '#92400e', fontSize: '0.9rem', fontWeight: 500 }}>
+                    Lee el formulario completo antes de firmar. Desplázate hasta el final para habilitar el botón de firma.
+                  </span>
+                </div>
+
+                <div
+                  ref={contractRef}
+                  onScroll={handleContractScroll}
+                  style={{
+                    flex: 1,
+                    overflow: 'auto',
+                    padding: '1.5rem',
+                    background: '#f8fafc'
+                  }}
+                >
+                  {/* Info del formulario */}
+                  <div style={{
+                    background: 'white',
+                    borderRadius: '12px',
+                    padding: '1.2rem',
+                    marginBottom: '1rem',
+                    border: '1px solid #e5e7eb',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                  }}>
+                    <h3 style={{ margin: '0 0 12px 0', color: '#1e40af', fontSize: '1.1rem' }}>
+                      📄 {contractTemplate.nombre || 'Formulario'}
+                    </h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
+                      {contractTemplate.codigo && (
+                        <div style={{ fontSize: '0.9rem' }}>
+                          <strong>Código:</strong> {contractTemplate.codigo}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '0.9rem' }}>
+                        <strong>Fecha:</strong> {new Date(contractFormData.createdAt || contractFormData.createdDate).toLocaleDateString('es-ES')}
+                      </div>
+                      {contractFormData.filledBy && (
+                        <div style={{ fontSize: '0.9rem' }}>
+                          <strong>Llenado por:</strong> {contractFormData.filledBy}
+                        </div>
+                      )}
+                      {contractFormData.area && (
+                        <div style={{ fontSize: '0.9rem' }}>
+                          <strong>Área:</strong> {contractFormData.area}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Header Data */}
+                  {contractFormData.headerData && typeof contractFormData.headerData === 'object' && Object.keys(contractFormData.headerData).length > 0 && (
+                    <div style={{
+                      background: 'white',
+                      borderRadius: '12px',
+                      padding: '1.2rem',
+                      marginBottom: '1rem',
+                      border: '1px solid #e5e7eb',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                    }}>
+                      <h4 style={{ margin: '0 0 10px 0', color: '#374151' }}>📝 Datos del Encabezado</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
+                        {Object.entries(contractFormData.headerData).map(([key, value]) => (
+                          <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
+                            <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
+                            <span style={{ color: '#111827' }}>{value || '-'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Body Data - Secciones y Tablas */}
+                  {contractFormData.bodyData && Array.isArray(contractFormData.bodyData) && contractFormData.bodyData.map((elementData, elementIndex) => {
+                    const templateElement = contractTemplate.bodyElements?.[elementIndex];
+                    if (!templateElement) return null;
+
+                    // Renderizar SECCIÓN
+                    if (templateElement.type === 'section') {
+                      const sectionData = elementData?.data || {};
+                      return (
+                        <div key={templateElement.id || elementIndex} style={{
+                          background: 'white',
+                          borderRadius: '12px',
+                          padding: '1.2rem',
+                          marginBottom: '1rem',
+                          border: '1px solid #e5e7eb',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                        }}>
+                          <h4 style={{ margin: '0 0 10px 0', color: '#374151' }}>📋 {templateElement.title}</h4>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
+                            {Object.entries(sectionData).map(([key, value]) => (
+                              <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
+                                <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
+                                <span style={{ color: '#111827' }}>{value || '-'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Renderizar TABLA
+                    if (templateElement.type === 'table') {
+                      let tableRows = [];
+                      if (elementData?.rows && Array.isArray(elementData.rows)) {
+                        tableRows = elementData.rows;
+                      } else if (elementData?.data && Array.isArray(elementData.data)) {
+                        tableRows = elementData.data;
+                      } else if (Array.isArray(elementData)) {
+                        tableRows = elementData;
+                      }
+
+                      return (
+                        <div key={templateElement.id || elementIndex} style={{
+                          background: 'white',
+                          borderRadius: '12px',
+                          padding: '1.2rem',
+                          marginBottom: '1rem',
+                          border: '1px solid #e5e7eb',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                          overflow: 'auto'
+                        }}>
+                          <h4 style={{ margin: '0 0 10px 0', color: '#374151' }}>📊 {templateElement.title}</h4>
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{
+                              width: '100%',
+                              borderCollapse: 'collapse',
+                              fontSize: '0.85rem'
+                            }}>
+                              <thead>
+                                <tr style={{ background: '#f1f5f9' }}>
+                                  <th style={{ padding: '8px 6px', border: '1px solid #e5e7eb', fontWeight: 600, color: '#374151' }}>#</th>
+                                  {templateElement.columns?.map((col, colIndex) => (
+                                    <th key={colIndex} style={{ padding: '8px 6px', border: '1px solid #e5e7eb', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>
+                                      {col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {tableRows.map((row, rowIndex) => (
+                                  <tr key={rowIndex} style={{ background: rowIndex % 2 === 0 ? '#fff' : '#f9fafb' }}>
+                                    <td style={{ padding: '6px', border: '1px solid #e5e7eb', textAlign: 'center', fontWeight: 500 }}>{rowIndex + 1}</td>
+                                    {templateElement.columns?.map((col, colIndex) => {
+                                      const colLabel = (col.label || col.header || '').trim();
+                                      const colId = (col.id || col.name || '').trim();
+                                      let cellValue = row[colLabel] ?? row[col.header] ?? row[colId] ?? row[col.name];
+                                      
+                                      if (cellValue === undefined || cellValue === null || cellValue === '') {
+                                        const targetClean = colLabel.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                        const foundKey = Object.keys(row).find(key => {
+                                          const keyClean = key.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                                          if (keyClean === targetClean && targetClean !== '') return true;
+                                          if (key.toUpperCase().includes(colLabel.toUpperCase()) && colLabel !== '') return true;
+                                          return false;
+                                        });
+                                        if (foundKey) cellValue = row[foundKey];
+                                      }
+
+                                      return (
+                                        <td key={colIndex} style={{ padding: '6px', border: '1px solid #e5e7eb', textAlign: 'center' }}>
+                                          {cellValue !== undefined && cellValue !== null && cellValue !== '' ? String(cellValue) : '-'}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                                {tableRows.length === 0 && (
+                                  <tr><td colSpan={(templateElement.columns?.length || 0) + 1} style={{ padding: '12px', textAlign: 'center', color: '#6b7280' }}>No hay datos</td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+
+                  {/* Observaciones */}
+                  {contractFormData.observaciones && (
+                    <div style={{
+                      background: 'white',
+                      borderRadius: '12px',
+                      padding: '1.2rem',
+                      marginBottom: '1rem',
+                      border: '1px solid #e5e7eb'
+                    }}>
+                      <h4 style={{ margin: '0 0 10px 0', color: '#374151' }}>💬 Observaciones</h4>
+                      <p style={{ margin: 0, color: '#4b5563', whiteSpace: 'pre-wrap' }}>{contractFormData.observaciones}</p>
+                    </div>
+                  )}
+
+                  {/* Indicador de fin de documento */}
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '1.5rem',
+                    color: '#6b7280',
+                    borderTop: '2px dashed #d1d5db',
+                    marginTop: '1rem'
+                  }}>
+                    <span style={{ fontSize: '1.5rem' }}>📄</span>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '0.9rem' }}>— Fin del documento —</p>
+                  </div>
+                </div>
+
+                {/* Footer con botones */}
+                <div style={{
+                  padding: '1rem 1.5rem',
+                  background: 'white',
+                  borderTop: '1px solid #e5e7eb',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexShrink: 0
+                }}>
+                  <button
+                    onClick={() => setShowContractPreview(false)}
+                    style={{
+                      padding: '10px 20px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '8px',
+                      background: 'white',
+                      color: '#374151',
+                      cursor: 'pointer',
+                      fontSize: '0.95rem',
+                      fontWeight: 500
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    {!hasReadContract && (
+                      <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 500 }}>
+                        ⬇️ Desplázate para leer todo
+                      </span>
+                    )}
+                    <button
+                      onClick={proceedToSign}
+                      disabled={!hasReadContract}
+                      style={{
+                        padding: '10px 24px',
+                        border: 'none',
+                        borderRadius: '8px',
+                        background: hasReadContract ? 'linear-gradient(135deg, #059669, #10b981)' : '#d1d5db',
+                        color: hasReadContract ? 'white' : '#9ca3af',
+                        cursor: hasReadContract ? 'pointer' : 'not-allowed',
+                        fontSize: '0.95rem',
+                        fontWeight: 600,
+                        boxShadow: hasReadContract ? '0 2px 6px rgba(5, 150, 105, 0.3)' : 'none',
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      ✍️ Proceder a Firmar
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: '3rem', textAlign: 'center', color: '#6b7280' }}>
+                <p>No se pudo cargar el formulario</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1008,22 +1448,7 @@ export default function SignatureManagement() {
                   >
                     📁 Subir Imagen
                   </button>
-                  <button
-                    onClick={() => setSignatureTab('draw')}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '0 8px 8px 0',
-                      background: signatureTab === 'draw' ? '#3b82f6' : '#f5f5f5',
-                      color: signatureTab === 'draw' ? '#fff' : '#333',
-                      fontWeight: signatureTab === 'draw' ? 'bold' : 'normal',
-                      cursor: 'pointer',
-                      fontSize: '14px'
-                    }}
-                  >
-                    ✏️ Dibujar Firma
-                  </button>
+                  
                 </div>
 
                 {/* Tab: Subir imagen */}
@@ -1097,7 +1522,7 @@ export default function SignatureManagement() {
                       }}
                       className="signature-file-input"
                     />
-                    <p className="help-text" style={{ color: '#666', fontSize: '12px', marginTop: '5px' }}>
+                    <p className="help-text" style={{ color: '#4b5563', fontSize: '12px', marginTop: '5px' }}>
                       Sube una imagen de tu firma (PNG, JPG)
                     </p>
                   </div>
@@ -1136,7 +1561,7 @@ export default function SignatureManagement() {
                           top: '50%',
                           left: '50%',
                           transform: 'translate(-50%, -50%)',
-                          color: '#bbb',
+                          color: '#6b7280',
                           fontSize: '14px',
                           pointerEvents: 'none',
                           textAlign: 'center'
@@ -1273,7 +1698,7 @@ export default function SignatureManagement() {
                 marginBottom: '8px',
                 fontSize: '0.9rem'
               }}>
-                Motivo del rechazo <span style={{ color: '#9ca3af', fontWeight: 400 }}>(opcional)</span>:
+                Motivo del rechazo <span style={{ color: '#6b7280', fontWeight: 400 }}>(opcional)</span>:
               </label>
               <textarea
                 value={rejectReason}
@@ -1295,7 +1720,7 @@ export default function SignatureManagement() {
                 onFocus={(e) => e.target.style.borderColor = '#ef4444'}
                 onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
               />
-              <p style={{ fontSize: '0.8rem', color: '#9ca3af', marginTop: '6px' }}>
+              <p style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '6px' }}>
                 Puedes dejar este campo vacío si no deseas especificar un motivo.
               </p>
 
@@ -1350,6 +1775,10 @@ function calculatePendingTime(createdDate) {
   const now = new Date();
   const created = new Date(createdDate);
   const diffMs = now - created;
+
+  // Guard against server clock skew / negative values
+  if (diffMs <= 0) return '< 1 minuto';
+
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffHours / 24);
 
@@ -1359,6 +1788,6 @@ function calculatePendingTime(createdDate) {
     return `${diffHours} hora${diffHours > 1 ? 's' : ''}`;
   } else {
     const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    return `${diffMinutes} minuto${diffMinutes > 1 ? 's' : ''}`;
+    return diffMinutes > 0 ? `${diffMinutes} minuto${diffMinutes > 1 ? 's' : ''}` : '< 1 minuto';
   }
 }

@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { API_BASE_URL } from '../apiConfig';
 import './SignatureUploader.css';
@@ -34,7 +34,6 @@ const SignatureUploader = ({
   const [showPreview, setShowPreview] = useState(false);
   const [activeTab, setActiveTab] = useState('upload');
   const [isDrawing, setIsDrawing] = useState(false);
-  const [autoLoadedSignature, setAutoLoadedSignature] = useState(false);
   
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
@@ -50,70 +49,9 @@ const SignatureUploader = ({
   const isCurrentUserSelected = selectedName && selectedName.toLowerCase() === currentUserName.toLowerCase();
   const canUploadSignature = !selectedName || canSign || isCurrentUserSelected;
 
-  // Auto-carga de firma guardada cuando el nombre seleccionado coincide con el usuario actual
-  useEffect(() => {
-    if (hasFirma || autoLoadedSignature) return;
-    if (!selectedName) return;
-    if (!isCurrentUserSelected) return;
-    
-    const userId = currentUser?.username || currentUser?.email || currentUser?.nombre || '';
-    if (!userId) return;
-
-    const loadSavedSignature = async () => {
-      // 1. Primero intentar localStorage (caché rápida)
-      const signatureKey = `signature_${userId.toLowerCase()}`;
-      const savedSignature = localStorage.getItem(signatureKey);
-
-      if (savedSignature) {
-        console.log(`✅ Auto-cargando firma desde caché local para: ${currentUser.nombre || currentUser.username} en puesto: ${puesto}`);
-        
-        onFirmaChange({
-          ...firmaData,
-          firma: {
-            base64: savedSignature.startsWith('data:') ? savedSignature : undefined,
-            url: savedSignature,
-            provider: 'mysignature-auto',
-            uploaded_at: new Date().toISOString()
-          }
-        });
-        setAutoLoadedSignature(true);
-        return;
-      }
-
-      // 2. Si no hay en localStorage, buscar en backend (CatalogoFirmas)
-      try {
-        const nombre = currentUser.nombre || currentUser.username || '';
-        if (nombre) {
-          const response = await fetch(`${API_BASE_URL}/CatalogoFirmas/by-nombre/${encodeURIComponent(nombre)}`);
-          if (response.ok) {
-            const data = await response.json();
-            if (data.firmaImageUrl) {
-              console.log(`✅ Auto-cargando firma desde servidor para: ${nombre} en puesto: ${puesto}`);
-              
-              // Guardar en localStorage como caché
-              localStorage.setItem(signatureKey, data.firmaImageUrl);
-              localStorage.setItem(`${signatureKey}_date`, data.fechaCreacion || new Date().toISOString());
-
-              onFirmaChange({
-                ...firmaData,
-                firma: {
-                  url: data.firmaImageUrl,
-                  provider: 'mysignature-auto',
-                  uploaded_at: data.fechaCreacion || new Date().toISOString()
-                }
-              });
-              setAutoLoadedSignature(true);
-              return;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('⚠️ No se pudo cargar firma desde backend en auto-carga:', err);
-      }
-    };
-
-    loadSavedSignature();
-  }, [selectedName, isCurrentUserSelected, hasFirma, autoLoadedSignature]);
+  // ❌ Auto-carga de firma DESHABILITADA
+  // La firma ya NO se carga automáticamente. El usuario debe revisar todo el documento
+  // y luego firmar manualmente usando el botón "Usar Mi Firma Guardada".
 
   const uploadToCloudinary = async (file) => {
     console.log('📤 Subiendo a Cloudinary:', file.name);
@@ -888,7 +826,7 @@ const SignatureUploader = ({
         <div className="signature-modal" onClick={cancelRemoveFirma}>
           <div className="signature-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '350px', textAlign: 'center' }}>
             <h3 style={{ marginBottom: '12px' }}>🗑️ Eliminar Firma</h3>
-            <p style={{ marginBottom: '16px', color: '#555' }}>¿Estás seguro de eliminar la firma de <strong>{puesto}</strong>?</p>
+            <p style={{ marginBottom: '16px', color: '#374151' }}>¿Estás seguro de eliminar la firma de <strong>{puesto}</strong>?</p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
               <button 
                 onClick={cancelRemoveFirma}

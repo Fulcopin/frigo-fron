@@ -646,7 +646,7 @@ export default function AlertManagement() {
                       <h3 style={{ color: '#2e7d32' }}>✅ Email Configurado</h3>
                       <p>Email: <strong>{alertConfig.senderEmail}</strong></p>
                       <p>Nombre: <strong>{alertConfig.senderName || 'Frigolab Alertas'}</strong></p>
-                      <p style={{ color: '#666', fontSize: '13px', marginTop: '5px' }}>
+                      <p style={{ color: '#4b5563', fontSize: '13px', marginTop: '5px' }}>
                         La contraseña SMTP se configura en el archivo appsettings.json del backend.
                       </p>
                     </div>

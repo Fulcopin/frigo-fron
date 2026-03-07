@@ -12,7 +12,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
+  z-index: 1100;  /* ⬆️ ENCIMA de tabs (1050) pero no extremadamente */
   animation: fadeIn 0.3s ease;
   backdrop-filter: blur(3px);
 }

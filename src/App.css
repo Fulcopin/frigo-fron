@@ -135,7 +135,7 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 999;
+  z-index: 970;  /* ⬇️ Detrás del sidebar (980) */
   animation: overlayFadeIn 0.25s ease;
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
@@ -157,7 +157,7 @@
   height: 100vh;
   height: 100dvh;
   background: #fff;
-  z-index: 1000;
+  z-index: 980;  /* ⬇️ Menos que tabs (1050) para no cubrir */
   display: flex;
   flex-direction: column;
   transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -288,7 +288,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.2px;
-  color: #9ca3af;
+  color: #6b7280;
   border-top: 1px solid #f3f4f6;
   margin-top: 2px;
 }
