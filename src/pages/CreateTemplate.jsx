@@ -42,6 +42,7 @@ function CreateTemplate() {
   const fieldTypes = [
     { value: "text", label: "Texto" },
     { value: "number", label: "Número" },
+    { value: "percentage", label: "Porcentaje" },
     { value: "date", label: "Fecha" },
     { value: "time", label: "Hora" },
     { value: "datetime", label: "Fecha y Hora" },
@@ -851,6 +852,28 @@ function CreateTemplate() {
                         )}
                       </div>
                     )}
+                    {/* 📊 CONFIG DE PORCENTAJE: Solo si el tipo es 'percentage' */}
+                    {field.type === "percentage" && (
+                      <div style={{ width: '100%', marginTop: '25px', marginBottom: '15px' }}>
+                        <div style={{ background: 'linear-gradient(135deg, #ecfdf5, #d1fae5)', padding: '20px', borderRadius: '12px', border: '2px solid #10b981', boxShadow: '0 2px 8px rgba(16,185,129,0.15)' }}>
+                          <label style={{ color: '#065f46', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '15px' }}>
+                            <span style={{ fontSize: '22px' }}>%</span> Número Base (opcional)
+                          </label>
+                          <input
+                            type="number"
+                            value={field.percentBase || ""}
+                            onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "percentBase", e.target.value !== "" ? Number(e.target.value) : "")}
+                            placeholder="Ej: 500 (para mostrar % de 500)"
+                            style={{ width: '100%', padding: '12px', fontSize: '14px', border: '2px solid #10b981', borderRadius: '8px', background: 'white', boxSizing: 'border-box' }}
+                          />
+                          <div style={{ marginTop: '10px', fontSize: '12px', color: '#065f46' }}>
+                            <p style={{ margin: '0 0 4px 0' }}>💡 Opcional. Si defines un número base, al llenar el formulario se mostrará el resultado calculado.</p>
+                            <p style={{ margin: 0 }}>Ejemplo: Base = <strong>500</strong> → usuario escribe <strong>75%</strong> → se muestra <strong>75% de 500 = 375</strong></p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* 🧮 UI DE FÓRMULA PARA CAMPOS DE SECCIÓN */}
                     {field.type === "formula" && (
                       <div style={{ 
@@ -1196,6 +1219,28 @@ function CreateTemplate() {
                             </div>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* 📊 CONFIG DE PORCENTAJE EN COLUMNA DE TABLA */}
+                    {column.type === "percentage" && (
+                      <div style={{ width: '100%', marginTop: '25px', marginBottom: '15px' }}>
+                        <div style={{ background: 'linear-gradient(135deg, #ecfdf5, #d1fae5)', padding: '20px', borderRadius: '12px', border: '2px solid #10b981', boxShadow: '0 2px 8px rgba(16,185,129,0.15)' }}>
+                          <label style={{ color: '#065f46', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', fontSize: '15px' }}>
+                            <span style={{ fontSize: '22px' }}>%</span> Número Base (opcional)
+                          </label>
+                          <input
+                            type="number"
+                            value={column.percentBase || ""}
+                            onChange={(e) => updateColumnInTable(elementIndex, colIndex, "percentBase", e.target.value !== "" ? Number(e.target.value) : "")}
+                            placeholder="Ej: 1000 (para mostrar % de 1000)"
+                            style={{ width: '100%', padding: '12px', fontSize: '14px', border: '2px solid #10b981', borderRadius: '8px', background: 'white', boxSizing: 'border-box' }}
+                          />
+                          <div style={{ marginTop: '10px', fontSize: '12px', color: '#065f46' }}>
+                            <p style={{ margin: '0 0 4px 0' }}>💡 Opcional. Si defines un número base, cada celda mostrará el resultado calculado.</p>
+                            <p style={{ margin: 0 }}>Ejemplo: Base = <strong>1000</strong> → usuario escribe <strong>20%</strong> → se muestra <strong>20% de 1000 = 200</strong></p>
+                          </div>
+                        </div>
                       </div>
                     )}
 

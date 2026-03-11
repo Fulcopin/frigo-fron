@@ -3769,7 +3769,7 @@ useEffect(() => {
     const fieldType = field.type || 'text';
     
     const isExplicitlySelect = fieldType === 'select';
-    const isNumericField = fieldType === 'number' || fieldType === 'temperature' || fieldType === 'calculated';
+    const isNumericField = fieldType === 'number' || fieldType === 'temperature' || fieldType === 'percentage' || fieldType === 'calculated';
     const isDateField = fieldType === 'date' || fieldType === 'time' || fieldType === 'datetime';
     
     // 2. INICIALIZAR OPCIONES (Siempre cargar locales primero)
@@ -3929,7 +3929,7 @@ useEffect(() => {
     
     // Lógica para validación numérica (porcentajes, enteros)
     const labelLower = fieldLabel.toLowerCase();
-    const isPercentage = labelLower.includes('%') || labelLower.includes('por ciento') || labelLower.includes('glaseo');
+    const isPercentage = field.type === 'percentage' || labelLower.includes('%') || labelLower.includes('por ciento') || labelLower.includes('glaseo');
     const shouldBeInteger = labelLower.includes('cajas') || labelLower.includes('unidades') || labelLower.includes('piezas') || labelLower.includes('cantidad') || labelLower.includes('número');
     
     switch (field.type) {
@@ -4164,9 +4164,34 @@ useEffect(() => {
         
         case "number": 
         case "temperature": 
+        case "percentage":
           if (field.type === 'calculated' || field.readonly) {
             return <input type="text" value={value || "0.00"} readOnly style={{ backgroundColor: '#f3f4f6', fontWeight: 'bold', color: '#374151', cursor: 'not-allowed'}} />;
           }
+
+          const handlePercentageChange = (e) => {
+            const rawValue = (e.target.value || '').replace(',', '.');
+            const numericOnly = rawValue.replace(/[^0-9.]/g, '');
+
+            if (!numericOnly) {
+              onChange('');
+              return;
+            }
+
+            const firstDot = numericOnly.indexOf('.');
+            const normalized = firstDot >= 0
+              ? `${numericOnly.slice(0, firstDot + 1)}${numericOnly.slice(firstDot + 1).replace(/\./g, '')}`
+              : numericOnly;
+
+            const numValue = Number.parseFloat(normalized);
+            if (Number.isNaN(numValue)) {
+              onChange('');
+              return;
+            }
+
+            const clamped = Math.max(0, Math.min(100, numValue));
+            onChange(`${clamped}%`);
+          };
           
           const handleNumberChange = (e) => {
             let inputValue = e.target.value;
@@ -4177,6 +4202,30 @@ useEffect(() => {
             }
             onChange(inputValue);
           };
+
+          if (field.type === 'percentage') {
+            const _pctNum = parseFloat((value || '').replace('%', ''));
+            const _pctBase = field.percentBase ? Number(field.percentBase) : null;
+            const _pctResult = _pctBase && !isNaN(_pctNum) ? ((_pctNum / 100) * _pctBase) : null;
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <input
+                  type="text"
+                  value={value || ""}
+                  onChange={handlePercentageChange}
+                  required={field.required}
+                  placeholder={field.placeholder || "Ej: 20%"}
+                />
+                {_pctBase && (
+                  <span style={{ fontSize: '12px', color: '#065f46', background: '#d1fae5', padding: '3px 8px', borderRadius: '4px', fontWeight: '500' }}>
+                    {value && !isNaN(_pctNum)
+                      ? `${_pctNum}% de ${_pctBase} = ${_pctResult.toFixed(2)}`
+                      : `% de ${_pctBase}`}
+                  </span>
+                )}
+              </div>
+            );
+          }
           
           return (
             <input 
@@ -7449,7 +7498,7 @@ useEffect(() => {
           const colType = (col.type || '').toLowerCase();
           
           // Determinar si esta columna es numérica
-          const isNumericCol = colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
+          const isNumericCol = colType === 'number' || colType === 'temperature' || colType === 'percentage' || colType === 'calculated' || colType === 'formula' || col.formula ||
             colLabel.includes('PESO') || colLabel.includes('TOTAL') || colLabel.includes('CANTIDAD') ||
             colLabel.includes('VOLUMEN') || colLabel.includes('TEMPERATURA') || colLabel.includes('TEMP');
 

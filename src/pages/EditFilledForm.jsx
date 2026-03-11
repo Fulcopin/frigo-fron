@@ -227,7 +227,7 @@ function EditFilledForm() {
                   // Crear una fila con valores por defecto
                   const defaultRow = {};
                   element.columns?.forEach(col => {
-                    defaultRow[col.label] = col.type === 'number' ? 0 : '';
+                    defaultRow[col.label] = (col.type === 'number' || col.type === 'temperature') ? 0 : '';
                   });
                   updated[index].rows.push(defaultRow);
                 }
@@ -490,6 +490,52 @@ function EditFilledForm() {
             disabled={disabled}
           />
         );
+      case "percentage": {
+        const _pctNum = parseFloat((value || '').replace('%', ''));
+        const _pctBase = field.percentBase ? Number(field.percentBase) : null;
+        const _pctResult = _pctBase && !isNaN(_pctNum) ? ((_pctNum / 100) * _pctBase) : null;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <input
+              type="text"
+              value={value || ""}
+              onChange={(e) => {
+                const rawValue = (e.target.value || '').replace(',', '.');
+                const numericOnly = rawValue.replace(/[^0-9.]/g, '');
+
+                if (!numericOnly) {
+                  onChange('');
+                  return;
+                }
+
+                const firstDot = numericOnly.indexOf('.');
+                const normalized = firstDot >= 0
+                  ? `${numericOnly.slice(0, firstDot + 1)}${numericOnly.slice(firstDot + 1).replace(/\./g, '')}`
+                  : numericOnly;
+
+                const parsed = Number.parseFloat(normalized);
+                if (Number.isNaN(parsed)) {
+                  onChange('');
+                  return;
+                }
+
+                const clamped = Math.max(0, Math.min(100, parsed));
+                onChange(`${clamped}%`);
+              }}
+              required={field.required}
+              placeholder={field.placeholder || "Ej: 20%"}
+              disabled={disabled}
+            />
+            {_pctBase && (
+              <span style={{ fontSize: '12px', color: '#065f46', background: '#d1fae5', padding: '3px 8px', borderRadius: '4px', fontWeight: '500' }}>
+                {value && !isNaN(_pctNum)
+                  ? `${_pctNum}% de ${_pctBase} = ${_pctResult.toFixed(2)}`
+                  : `% de ${_pctBase}`}
+              </span>
+            )}
+          </div>
+        );
+      }
       case "select":
         return (
           <select

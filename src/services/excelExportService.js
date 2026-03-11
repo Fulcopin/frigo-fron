@@ -82,6 +82,93 @@ const getBase64ImageForExcel = async (imgUrl) => {
 };
 
 /**
+ * 🔄 Normaliza firmasData (objeto, string JSON, array, etc.) a diccionario por puesto
+ */
+const normalizeFirmasData = (rawFirmasData) => {
+  if (!rawFirmasData) return {};
+
+  let parsed = rawFirmasData;
+
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (e) {
+      console.warn('⚠️ firmasData no es JSON válido en exportación Excel:', e?.message || e);
+      return {};
+    }
+  }
+
+  if (parsed && typeof parsed === 'object' && Array.isArray(parsed.$values)) {
+    parsed = parsed.$values;
+  }
+
+  if (Array.isArray(parsed)) {
+    const dict = {};
+    parsed.forEach((item, idx) => {
+      if (item && typeof item === 'object') {
+        const puesto = item.puesto || item.Puesto || item.rol || item.role || `FIRMA ${idx + 1}`;
+        dict[puesto] = item;
+      }
+    });
+    return dict;
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    return parsed;
+  }
+
+  return {};
+};
+
+/**
+ * ✍️ Extrae nombre/fecha/hora/email/imagen de firma de distintos formatos históricos
+ */
+const extractSignatureInfo = (firmaData) => {
+  let nombre = '';
+  let fecha = '';
+  let hora = '';
+  let email = '';
+  let firmaImg = null;
+
+  if (typeof firmaData === 'string') {
+    nombre = firmaData;
+    return { nombre, fecha, hora, email, firmaImg };
+  }
+
+  if (!firmaData || typeof firmaData !== 'object') {
+    return { nombre, fecha, hora, email, firmaImg };
+  }
+
+  nombre = firmaData.nombre || firmaData.nombreCompleto || firmaData.signedBy || firmaData.firmadoPor || '';
+  email = firmaData.email || firmaData.correo || '';
+  fecha = firmaData.fecha || firmaData.signedDate || firmaData.fechaFirma || '';
+  hora = firmaData.hora || '';
+
+  const firmaRaw = firmaData.firma || firmaData.signature || firmaData.signatureImage || firmaData.firmaUrl || null;
+  if (typeof firmaRaw === 'string') {
+    firmaImg = firmaRaw.trim() || null;
+  } else if (firmaRaw && typeof firmaRaw === 'object') {
+    firmaImg = firmaRaw.url || firmaRaw.base64 || firmaRaw.data || null;
+  }
+
+  // Si viene fecha ISO, separar fecha/hora
+  if (typeof fecha === 'string' && fecha.includes('T')) {
+    const [fechaPart, horaPart] = fecha.split('T');
+    fecha = fechaPart || fecha;
+    if (!hora && horaPart) {
+      hora = horaPart.substring(0, 5);
+    }
+  }
+
+  // Si viene base64 puro sin prefijo data:image
+  if (typeof firmaImg === 'string' && firmaImg && !firmaImg.startsWith('http') && !firmaImg.startsWith('data:image')) {
+    firmaImg = `data:image/png;base64,${firmaImg}`;
+  }
+
+  return { nombre, fecha, hora, email, firmaImg };
+};
+
+/**
  * 🎨 Aplica estilo de encabezado de tabla (columnas)
  */
 const applyHeaderStyle = (cell) => {
@@ -662,9 +749,10 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
  */
 const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols = 8) => {
   let currentRow = startRow;
+  const firmasObject = normalizeFirmasData(firmasData);
   
   // Si no hay datos de firmas, saltar
-  if (!firmasData || Object.keys(firmasData).length === 0) {
+  if (!firmasObject || Object.keys(firmasObject).length === 0) {
     return currentRow;
   }
   
@@ -681,7 +769,7 @@ const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols 
   currentRow++;
   
   // Convertir firmas a array para procesar en pares
-  const firmasArray = Object.entries(firmasData);
+  const firmasArray = Object.entries(firmasObject);
   
   // Procesar firmas en pares (2 por fila)
   for (let i = 0; i < firmasArray.length; i += 2) {
@@ -695,23 +783,9 @@ const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols 
     // COLUMNA IZQUIERDA (Firma 1)
     if (firma1) {
       const [puesto1, firmaData1] = firma1;
-      let nombre1 = '';
-      let fecha1 = '';
-      let firmaImg1 = null;
-      
-      if (typeof firmaData1 === 'object' && firmaData1 !== null) {
-        nombre1 = firmaData1.nombre || '';
-        fecha1 = firmaData1.fecha || '';
-        if (firmaData1.firma) {
-          firmaImg1 = firmaData1.firma.url || firmaData1.firma.base64 || null;
-          if (firmaImg1 && typeof firmaImg1 === 'string' && firmaImg1.trim() !== '') {
-            console.log(`   Firma 1 detectada (${puesto1}):`, firmaImg1.substring(0, 60) + '...');
-          } else {
-            firmaImg1 = null;
-          }
-        }
-      } else {
-        nombre1 = firmaData1 || '';
+      const { nombre: nombre1, fecha: fecha1, hora: hora1, email: email1, firmaImg: firmaImg1 } = extractSignatureInfo(firmaData1);
+      if (firmaImg1 && typeof firmaImg1 === 'string' && firmaImg1.trim() !== '') {
+        console.log(`   Firma 1 detectada (${puesto1}):`, firmaImg1.substring(0, 60) + '...');
       }
       
       // Puesto (columnas 1-halfCol)
@@ -734,7 +808,6 @@ const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols 
       currentRow++;
       
       // Email del firmante (si existe)
-      const email1 = (typeof firmaData1 === 'object' && firmaData1 !== null) ? (firmaData1.email || '') : '';
       if (email1) {
         safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
         const emailCell1 = worksheet.getCell(currentRow, 1);
@@ -764,7 +837,6 @@ const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols 
       }
       
       // Hora (si existe)
-      const hora1 = (typeof firmaData1 === 'object' && firmaData1 !== null) ? (firmaData1.hora || '') : '';
       if (hora1) {
         safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
         const horaCell1 = worksheet.getCell(currentRow, 1);
@@ -822,23 +894,9 @@ const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols 
     
     if (firma2) {
       const [puesto2, firmaData2] = firma2;
-      let nombre2 = '';
-      let fecha2 = '';
-      let firmaImg2 = null;
-      
-      if (typeof firmaData2 === 'object' && firmaData2 !== null) {
-        nombre2 = firmaData2.nombre || '';
-        fecha2 = firmaData2.fecha || '';
-        if (firmaData2.firma) {
-          firmaImg2 = firmaData2.firma.url || firmaData2.firma.base64 || null;
-          if (firmaImg2 && typeof firmaImg2 === 'string' && firmaImg2.trim() !== '') {
-            console.log(`   Firma 2 detectada (${puesto2}):`, firmaImg2.substring(0, 60) + '...');
-          } else {
-            firmaImg2 = null;
-          }
-        }
-      } else {
-        nombre2 = firmaData2 || '';
+      const { nombre: nombre2, fecha: fecha2, hora: hora2, email: email2, firmaImg: firmaImg2 } = extractSignatureInfo(firmaData2);
+      if (firmaImg2 && typeof firmaImg2 === 'string' && firmaImg2.trim() !== '') {
+        console.log(`   Firma 2 detectada (${puesto2}):`, firmaImg2.substring(0, 60) + '...');
       }
       
       // Puesto (columnas rightStart-maxCols)
@@ -859,7 +917,6 @@ const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols 
       currentRow++;
       
       // Email del firmante (si existe)
-      const email2 = (typeof firmaData2 === 'object' && firmaData2 !== null) ? (firmaData2.email || '') : '';
       if (email2) {
         safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
         const emailCell2 = worksheet.getCell(currentRow, rightStart);
@@ -887,7 +944,6 @@ const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols 
       }
       
       // Hora (si existe)
-      const hora2 = (typeof firmaData2 === 'object' && firmaData2 !== null) ? (firmaData2.hora || '') : '';
       if (hora2) {
         safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
         const horaCell2 = worksheet.getCell(currentRow, rightStart);
@@ -992,7 +1048,7 @@ export const exportFormToExcel = async (form, template) => {
     
     const bodyElements = Array.isArray(template?.bodyElements) ? template.bodyElements : [];
     const bodyData = form.bodyData || [];
-    const firmasData = form.firmasData || {};
+    const firmasData = normalizeFirmasData(form.firmasData || {});
     
     // Calcular maxCols dinámicamente basado en la tabla más ancha
     const maxCols = Math.max(8, ...bodyElements.map(s => (s.columns || []).length));
@@ -1112,7 +1168,7 @@ export const exportMultipleFormsToExcel = async (forms, templates) => {
       };
       
       const bodyData = form.bodyData || [];
-      const firmasData = form.firmasData || {};
+      const firmasData = normalizeFirmasData(form.firmasData || {});
       
       let currentRow = await createFrigolabHeader(worksheet, templateData, logoBase64, maxCols);
       currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow, maxCols);
