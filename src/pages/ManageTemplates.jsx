@@ -209,6 +209,15 @@ function ManageTemplates() {
       };
 
       // 📊 Crear formulario vacío con estructura de datos vacía
+      // Construir firmasData con puesto como clave y nombre del catálogo como valor
+      const firmasDataVacio = {};
+      (parsed.firmas || []).forEach(firma => {
+        firmasDataVacio[firma.puesto] = {
+          nombre: firma.nombreCompleto || '',
+          fecha: ''
+        };
+      });
+
       const emptyForm = {
         templateID: template.templateID,
         templateCodigo: parsed.codigo,
@@ -217,9 +226,7 @@ function ManageTemplates() {
         createdAt: new Date().toISOString(),
         headerData: {},
         bodyData: [],
-        firmasData: {
-          firmas: parsed.firmas || []
-        }
+        firmasData: firmasDataVacio
       };
 
       // Llenar headerData con campos vacíos
