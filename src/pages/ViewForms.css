@@ -416,6 +416,27 @@
   font-size: 1rem;
 }
 
+.data-value img {
+  max-width: 300px;
+  max-height: 250px;
+  border-radius: 8px;
+  border: 2px solid #e5e7eb;
+  cursor: pointer;
+  object-fit: contain;
+  display: block;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: transform 0.2s;
+}
+
+.data-value img:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+.data-item-image {
+  min-width: 100%;
+}
+
 .view-table {
   width: 100%;
   border-collapse: collapse;

@@ -1,11 +1,12 @@
 /**
- * 📊 SERVICIO DE EXPORTACIÓN A EXCEL
- * ==================================
+ * 📊 SERVICIO DE EXPORTACIÓN A EXCEL - FRIGOLAB SAN MATEO
+ * ========================================================
  * Genera archivos Excel profesionales con:
- * - Logo y encabezado de Frigolab San Mateo
- * - Formato con colores corporativos
+ * - Logo y encabezado corporativo
+ * - Diseño limpio y moderno
  * - Bordes, celdas combinadas, estilos
- * - Múltiples hojas (Header, Body, Firmas)
+ * - Soporte para imágenes (Cloudinary)
+ * - Firmas digitales embebidas
  */
 
 import ExcelJS from 'exceljs';
@@ -13,16 +14,35 @@ import { saveAs } from 'file-saver';
 import logoUrl from '../assets/logo-1.png';
 
 /**
- * 🎨 COLORES CORPORATIVOS DE FRIGOLAB
+ * 🎨 PALETA DE COLORES CORPORATIVOS FRIGOLAB
  */
 const EXCEL_COLORS = {
-  primary: 'FF0066CC',       // Azul Frigolab
-  secondary: 'FFE6E6E6',     // Gris claro
-  headerBg: 'FF2980B9',      // Azul header
+  primary: 'FF1A5276',       // Azul corporativo oscuro
+  primaryLight: 'FF2980B9',  // Azul medio
+  primarySoft: 'FFD6EAF8',   // Azul muy claro (fondo)
+  accent: 'FF148F77',        // Verde corporativo
+  accentLight: 'FFD5F5E3',   // Verde claro
+  headerBg: 'FF1A5276',      // Fondo encabezado tabla
+  sectionBg: 'FF2E86C1',     // Fondo título de sección
   white: 'FFFFFFFF',
-  black: 'FF000000',
-  lightBlue: 'FFD5E8F7',
-  border: 'FF646464'
+  black: 'FF2C3E50',         // Negro suave
+  gray: 'FF7F8C8D',         // Gris medio
+  lightGray: 'FFF8F9FA',     // Gris claro alternado
+  border: 'FFD5D8DC',        // Bordes suaves
+  borderDark: 'FFAEB6BF',    // Bordes resaltados
+  warmBg: 'FFFEF9E7',        // Fondo cálido (firmas)
+  emptyCell: 'FFEEF2F7'      // Celda vacía
+};
+
+/**
+ * 🛡️ Merge seguro — evita el error "Cannot merge already merged cells"
+ */
+const safeMergeCells = (worksheet, top, left, bottom, right) => {
+  try {
+    worksheet.mergeCells(top, left, bottom, right);
+  } catch (e) {
+    console.warn(`⚠️ mergeCells(${top},${left},${bottom},${right}) omitido:`, e.message);
+  }
 };
 
 /**
@@ -35,19 +55,25 @@ const getBase64ImageForExcel = async (imgUrl) => {
       return imgUrl.split(',')[1];
     }
     
-    // Método 2: Usar fetch para cargar la imagen (funciona con imports de Vite/Webpack)
-    const response = await fetch(imgUrl);
-    const blob = await response.blob();
-    
+    // ✅ Método 2: Usar canvas para convertir cualquier formato (WebP/JPG/PNG) a PNG base64
+    // Esto resuelve problemas de CORS y formatos no soportados como WebP
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64data = reader.result;
-        // Remover el prefijo 'data:image/png;base64,'
-        resolve(base64data.split(',')[1]);
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const dataURL = canvas.toDataURL('image/png');
+        resolve(dataURL.split(',')[1]); // Retorna base64 sin prefijo
       };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
+      img.onerror = (err) => {
+        console.error('❌ Error cargando imagen via canvas:', imgUrl, err);
+        reject(new Error(`No se pudo cargar la imagen: ${imgUrl}`));
+      };
+      img.src = imgUrl;
     });
   } catch (error) {
     console.error('❌ Error cargando imagen para Excel:', error);
@@ -56,7 +82,7 @@ const getBase64ImageForExcel = async (imgUrl) => {
 };
 
 /**
- * 🎨 Aplica estilo de encabezado de tabla
+ * 🎨 Aplica estilo de encabezado de tabla (columnas)
  */
 const applyHeaderStyle = (cell) => {
   cell.fill = {
@@ -67,17 +93,46 @@ const applyHeaderStyle = (cell) => {
   cell.font = {
     bold: true,
     color: { argb: EXCEL_COLORS.white },
-    size: 11
+    size: 10,
+    name: 'Calibri'
   };
   cell.alignment = {
     vertical: 'middle',
     horizontal: 'center'
   };
   cell.border = {
-    top: { style: 'thin', color: { argb: EXCEL_COLORS.border } },
-    left: { style: 'thin', color: { argb: EXCEL_COLORS.border } },
-    bottom: { style: 'thin', color: { argb: EXCEL_COLORS.border } },
-    right: { style: 'thin', color: { argb: EXCEL_COLORS.border } }
+    top: { style: 'thin', color: { argb: EXCEL_COLORS.borderDark } },
+    left: { style: 'thin', color: { argb: EXCEL_COLORS.borderDark } },
+    bottom: { style: 'thin', color: { argb: EXCEL_COLORS.borderDark } },
+    right: { style: 'thin', color: { argb: EXCEL_COLORS.borderDark } }
+  };
+};
+
+/**
+ * 🎨 Aplica estilo de título de sección (fila completa azul)
+ */
+const applySectionTitleStyle = (cell) => {
+  cell.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: EXCEL_COLORS.sectionBg }
+  };
+  cell.font = {
+    bold: true,
+    color: { argb: EXCEL_COLORS.white },
+    size: 11,
+    name: 'Calibri'
+  };
+  cell.alignment = {
+    vertical: 'middle',
+    horizontal: 'left',
+    indent: 1
+  };
+  cell.border = {
+    top: { style: 'medium', color: { argb: EXCEL_COLORS.primary } },
+    left: { style: 'medium', color: { argb: EXCEL_COLORS.primary } },
+    bottom: { style: 'medium', color: { argb: EXCEL_COLORS.primary } },
+    right: { style: 'medium', color: { argb: EXCEL_COLORS.primary } }
   };
 };
 
@@ -88,11 +143,12 @@ const applyCellStyle = (cell, isAlternate = false) => {
   cell.fill = {
     type: 'pattern',
     pattern: 'solid',
-    fgColor: { argb: isAlternate ? 'FFF5F5F5' : EXCEL_COLORS.white }
+    fgColor: { argb: isAlternate ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white }
   };
   cell.font = {
     size: 10,
-    color: { argb: EXCEL_COLORS.black }
+    color: { argb: EXCEL_COLORS.black },
+    name: 'Calibri'
   };
   cell.alignment = {
     vertical: 'middle',
@@ -108,32 +164,57 @@ const applyCellStyle = (cell, isAlternate = false) => {
 };
 
 /**
- * 📋 Crea el encabezado de Frigolab en la hoja (solo logo + metadatos con borde)
+ * 🎨 Aplica borde completo a una celda
  */
-const createFrigolabHeader = async (worksheet, templateData, logoBase64) => {
-  // Logo (A1:B5)
+const applyBorder = (cell, color = EXCEL_COLORS.border) => {
+  cell.border = {
+    top: { style: 'thin', color: { argb: color } },
+    left: { style: 'thin', color: { argb: color } },
+    bottom: { style: 'thin', color: { argb: color } },
+    right: { style: 'thin', color: { argb: color } }
+  };
+};
+
+/**
+ * 📋 Crea el encabezado profesional de Frigolab
+ */
+const createFrigolabHeader = async (worksheet, templateData, logoBase64, maxCols = 8) => {
+  const borderMain = { style: 'medium', color: { argb: EXCEL_COLORS.primary } };
+  const borderThin = { style: 'thin', color: { argb: EXCEL_COLORS.borderDark } };
+  
+  // Logo (A1:B4)
   if (logoBase64) {
     const logoId = worksheet.workbook.addImage({
       base64: logoBase64,
       extension: 'png'
     });
-    
     worksheet.addImage(logoId, {
       tl: { col: 0, row: 0 },
-      ext: { width: 100, height: 100 }
+      ext: { width: 110, height: 95 }
     });
   }
   
-  // Título del formulario (C1:F4) centrado
-  worksheet.mergeCells('C1:F4');
+  // Título del formulario centrado (desde col 3 hasta 2 cols antes del final para metadatos)
+  const titleEndCol = Math.max(6, maxCols - 2);
+  safeMergeCells(worksheet, 1, 3, 4, titleEndCol);
   const formTitleCell = worksheet.getCell('C1');
   formTitleCell.value = templateData.nombre || 'FORMULARIO';
-  formTitleCell.font = { bold: true, size: 14, color: { argb: EXCEL_COLORS.black } };
+  formTitleCell.font = {
+    bold: true,
+    size: 13,
+    color: { argb: EXCEL_COLORS.primary },
+    name: 'Calibri'
+  };
   formTitleCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  formTitleCell.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: EXCEL_COLORS.primarySoft }
+  };
   
   // Metadatos (G1:H3) - CÓDIGO, VERSIÓN, FECHA
-  const codigoFinal = templateData.headerData?.codigo || templateData.headerData?.Código || templateData.codigo || 'N/A';
-  const versionFinal = templateData.headerData?.version || templateData.headerData?.Versión || String(templateData.version || '1.0');
+  const codigoFinal = templateData.headerData?.codigo || templateData.headerData?.['Código'] || templateData.codigo || 'N/A';
+  const versionFinal = templateData.headerData?.version || templateData.headerData?.['Versión'] || String(templateData.version || '1.0');
   
   let fechaFinal = templateData.headerData?.fecha || templateData.headerData?.Fecha;
   if (!fechaFinal && templateData.createdAt) {
@@ -148,42 +229,51 @@ const createFrigolabHeader = async (worksheet, templateData, logoBase64) => {
     fechaFinal = `${day}/${month}/${year}`;
   }
   
-  const metaLabels = ['CÓDIGO:', 'VERSIÓN:', 'FECHA:'];
+  const metaLabels = ['CODIGO:', 'VERSION:', 'FECHA:'];
   const metaValues = [codigoFinal, versionFinal, fechaFinal];
   
-  const borderStyle = { style: 'thin', color: { argb: 'FF006699' } };
+  // Metadatos en las últimas 2 columnas
+  const metaLabelCol = maxCols - 1;
+  const metaValueCol = maxCols;
   
   for (let i = 0; i < metaLabels.length; i++) {
-    const labelCell = worksheet.getCell(i + 1, 7);
+    const labelCell = worksheet.getCell(i + 1, metaLabelCol);
     labelCell.value = metaLabels[i];
-    labelCell.font = { bold: true, size: 10 };
+    labelCell.font = { bold: true, size: 9, color: { argb: EXCEL_COLORS.primary }, name: 'Calibri' };
     labelCell.alignment = { vertical: 'middle', horizontal: 'right' };
-    labelCell.border = { top: borderStyle, left: borderStyle, bottom: borderStyle, right: borderStyle };
+    labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F3F5' } };
+    applyBorder(labelCell, EXCEL_COLORS.borderDark);
     
-    const valueCell = worksheet.getCell(i + 1, 8);
+    const valueCell = worksheet.getCell(i + 1, metaValueCol);
     valueCell.value = metaValues[i];
-    valueCell.font = { size: 10 };
-    valueCell.alignment = { vertical: 'middle', horizontal: 'left' };
-    valueCell.border = { top: borderStyle, left: borderStyle, bottom: borderStyle, right: borderStyle };
+    valueCell.font = { size: 9, name: 'Calibri' };
+    valueCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.white } };
+    applyBorder(valueCell, EXCEL_COLORS.borderDark);
   }
   
-  // Aplicar bordes alrededor de todo el encabezado (filas 1-4, columnas 1-8)
+  // Aplicar bordes al encabezado completo (filas 1-4, columnas 1-maxCols)
   for (let r = 1; r <= 4; r++) {
-    for (let c = 1; c <= 8; c++) {
+    for (let c = 1; c <= maxCols; c++) {
       const cell = worksheet.getCell(r, c);
-      if (!cell.border) {
+      if (!cell.border || Object.keys(cell.border).length === 0) {
         cell.border = {
-          top: r === 1 ? borderStyle : undefined,
-          bottom: r === 4 ? borderStyle : undefined,
-          left: c === 1 ? borderStyle : undefined,
-          right: c === 8 ? borderStyle : undefined
+          top: r === 1 ? borderMain : borderThin,
+          bottom: r === 4 ? borderMain : borderThin,
+          left: c === 1 ? borderMain : borderThin,
+          right: c === maxCols ? borderMain : borderThin
         };
       }
     }
+    worksheet.getRow(r).height = 22;
   }
   
-  // Fila vacía como separador
-  worksheet.getRow(5).height = 8;
+  // Fila separadora decorativa
+  worksheet.getRow(5).height = 4;
+  for (let c = 1; c <= maxCols; c++) {
+    const sep = worksheet.getCell(5, c);
+    sep.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.primary } };
+  }
   
   return 6; // Siguiente fila disponible
 };
@@ -191,7 +281,7 @@ const createFrigolabHeader = async (worksheet, templateData, logoBase64) => {
 /**
  * 📝 Crea la sección de información general (header) - DINÁMICA
  */
-const createHeaderSection = (worksheet, headerData, startRow) => {
+const createHeaderSection = (worksheet, headerData, startRow, maxCols = 8) => {
   let currentRow = startRow;
   
   // Si no hay datos de header, saltar
@@ -200,30 +290,44 @@ const createHeaderSection = (worksheet, headerData, startRow) => {
   }
   
   // Título de sección
-  worksheet.mergeCells(currentRow, 1, currentRow, 8);
+  safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
   const sectionTitle = worksheet.getCell(currentRow, 1);
-  sectionTitle.value = 'INFORMACIÓN GENERAL';
-  applyHeaderStyle(sectionTitle);
-  worksheet.getRow(currentRow).height = 25;
+  sectionTitle.value = '  INFORMACION GENERAL';
+  applySectionTitleStyle(sectionTitle);
+  worksheet.getRow(currentRow).height = 26;
   currentRow++;
   
-  // Renderizar TODOS los campos del header dinámicamente
-  let index = 0;
-  Object.entries(headerData).forEach(([key, value]) => {
+  // Renderizar TODOS los campos del header dinámicamente en 2 columnas
+  const entries = Object.entries(headerData);
+  
+  for (let i = 0; i < entries.length; i++) {
+    const [key, value] = entries[i];
+    const isAlt = i % 2 === 1;
+    
+    // Label (columna 1-2)
+    safeMergeCells(worksheet, currentRow, 1, currentRow, 2);
     const labelCell = worksheet.getCell(currentRow, 1);
     labelCell.value = `${key}:`;
-    labelCell.font = { bold: true, size: 10 };
-    labelCell.alignment = { vertical: 'middle', horizontal: 'left' };
+    labelCell.font = { bold: true, size: 10, color: { argb: EXCEL_COLORS.primary }, name: 'Calibri' };
+    labelCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white } };
+    applyBorder(labelCell);
     
-    worksheet.mergeCells(currentRow, 2, currentRow, 8);
-    const valueCell = worksheet.getCell(currentRow, 2);
+    // Value (columna 3-maxCols)
+    safeMergeCells(worksheet, currentRow, 3, currentRow, maxCols);
+    const valueCell = worksheet.getCell(currentRow, 3);
     valueCell.value = value || '';
-    applyCellStyle(valueCell, index % 2 === 1);
+    valueCell.font = { size: 10, name: 'Calibri' };
+    valueCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white } };
+    applyBorder(valueCell);
     
+    worksheet.getRow(currentRow).height = 22;
     currentRow++;
-    index++;
-  });
+  }
   
+  // Espacio después de la sección
+  worksheet.getRow(currentRow).height = 6;
   return currentRow + 1;
 };
 
@@ -233,34 +337,35 @@ const createHeaderSection = (worksheet, headerData, startRow) => {
 /**
  * 📊 Crea las tablas del cuerpo (MÚLTIPLES SECCIONES DINÁMICAS)
  */
-const createBodyTable = (worksheet, bodyData, bodyElements, startRow, template) => {
+const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, template, maxCols = 8) => {
   let currentRow = startRow;
   
-  console.log('📊 Excel - Body Elements:', bodyElements.length);
+  console.log('📊 Excel - Body Elements:', bodyElements?.length);
   console.log('📊 Excel - Body Data:', bodyData);
   
   // Si no hay secciones definidas
   if (!bodyElements || bodyElements.length === 0) {
-    worksheet.mergeCells(currentRow, 1, currentRow, 8);
+    safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
     const noDataCell = worksheet.getCell(currentRow, 1);
     noDataCell.value = '(No hay secciones definidas)';
-    noDataCell.font = { italic: true, color: { argb: 'FF999999' } };
+    noDataCell.font = { italic: true, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
     noDataCell.alignment = { vertical: 'middle', horizontal: 'center' };
     worksheet.getRow(currentRow).height = 25;
     return currentRow + 2;
   }
   
   // Recorrer cada sección (tabla) definida en bodyElements
-  bodyElements.forEach((section, index) => {
-    console.log(`📋 Excel - Procesando sección ${index + 1}:`, section.title);
+  for (let index = 0; index < bodyElements.length; index++) {
+    const section = bodyElements[index];
+    console.log(`📋 Excel - Procesando seccion ${index + 1}:`, section.title);
     
     // Título de la sección
-    const sectionTitle = section.title || section.sectionTitle || section.label || 'Sección';
-    worksheet.mergeCells(currentRow, 1, currentRow, 8);
+    const sectionTitle = section.title || section.sectionTitle || section.label || 'Seccion';
+    safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
     const titleCell = worksheet.getCell(currentRow, 1);
-    titleCell.value = sectionTitle.toUpperCase();
-    applyHeaderStyle(titleCell);
-    worksheet.getRow(currentRow).height = 25;
+    titleCell.value = `  ${sectionTitle.toUpperCase()}`;
+    applySectionTitleStyle(titleCell);
+    worksheet.getRow(currentRow).height = 26;
     currentRow++;
     
     // Obtener datos de esta sección
@@ -271,38 +376,162 @@ const createBodyTable = (worksheet, bodyData, bodyElements, startRow, template) 
       
       if (sectionData && Array.isArray(sectionData.rows)) {
         tableData = sectionData.rows;
-        console.log(`✅ Excel - Usando sectionData.rows (${tableData.length} filas)`);
+        console.log(`  Excel - Usando sectionData.rows (${tableData.length} filas)`);
       } else if (sectionData && Array.isArray(sectionData.data)) {
-        tableData = sectionData.data;  // ← CASO ACTUAL
-        console.log(`✅ Excel - Usando sectionData.data (${tableData.length} filas)`);
+        tableData = sectionData.data;
+        console.log(`  Excel - Usando sectionData.data (${tableData.length} filas)`);
       } else if (Array.isArray(sectionData)) {
         tableData = sectionData;
-        console.log(`✅ Excel - Usando sectionData directamente (${tableData.length} filas)`);
+        console.log(`  Excel - Usando sectionData directamente (${tableData.length} filas)`);
       }
     }
     
     console.log(`📊 Excel - Datos de tabla "${sectionTitle}":`, tableData.length, 'filas');
     
+    // 🖼️ SECCIÓN DE CAMPOS (key-value, puede incluir imágenes)
+    if (section.type === 'section' && section.fields) {
+      let sectionFieldData = {};
+      if (Array.isArray(bodyData)) {
+        const elementData = bodyData[index];
+        if (elementData && typeof elementData === 'object') {
+          sectionFieldData = elementData.data || elementData.rows || elementData;
+        }
+      }
+      
+      const isImageUrl = (val) => {
+        if (typeof val !== 'string') return false;
+        const lower = val.toLowerCase();
+        return lower.includes('cloudinary.com') || lower.includes('res.cloudinary') || lower.startsWith('data:image/') || /\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i.test(val);
+      };
+      
+      const entries = Object.entries(sectionFieldData).filter(([k]) => k !== 'id' && k !== 'type');
+      
+      if (entries.length > 0) {
+        let fieldIdx = 0;
+        for (const [key, value] of entries) {
+          const strVal = String(value ?? '');
+          const isAlt = fieldIdx % 2 === 1;
+          
+          if (isImageUrl(strVal)) {
+            // 🖼️ IMAGEN: Label en una fila, imagen incrustada en la siguiente
+            safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
+            const labelCell = worksheet.getCell(currentRow, 1);
+            labelCell.value = `  ${key}`;
+            labelCell.font = { bold: true, size: 10, color: { argb: EXCEL_COLORS.primary }, name: 'Calibri' };
+            labelCell.alignment = { vertical: 'middle' };
+            labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.primarySoft } };
+            worksheet.getRow(currentRow).height = 22;
+            currentRow++;
+            
+            try {
+              const base64 = await getBase64ImageForExcel(strVal);
+              const imageId = worksheet.workbook.addImage({
+                base64: base64,
+                extension: 'png'
+              });
+              worksheet.addImage(imageId, {
+                tl: { col: 1, row: currentRow - 1 },
+                ext: { width: 250, height: 180 }
+              });
+              worksheet.getRow(currentRow).height = 140;
+              currentRow++;
+              console.log(`   Imagen "${key}" incrustada en Excel`);
+            } catch (imgError) {
+              console.error(`   Error imagen "${key}" en Excel:`, imgError);
+              safeMergeCells(worksheet, currentRow, 2, currentRow, maxCols);
+              const valueCell = worksheet.getCell(currentRow, 2);
+              valueCell.value = { text: strVal, hyperlink: strVal };
+              valueCell.font = { size: 9, color: { argb: 'FF0066CC' }, underline: true };
+              worksheet.getRow(currentRow).height = 20;
+              currentRow++;
+            }
+          } else {
+            // TEXTO: Label + valor en la misma fila
+            safeMergeCells(worksheet, currentRow, 1, currentRow, 2);
+            const labelCell = worksheet.getCell(currentRow, 1);
+            labelCell.value = `  ${key}`;
+            labelCell.font = { bold: true, size: 10, color: { argb: EXCEL_COLORS.primary }, name: 'Calibri' };
+            labelCell.alignment = { vertical: 'middle' };
+            labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white } };
+            applyBorder(labelCell);
+            
+            safeMergeCells(worksheet, currentRow, 3, currentRow, maxCols);
+            const valueCell = worksheet.getCell(currentRow, 3);
+            valueCell.value = strVal || '-';
+            valueCell.font = { size: 10, name: 'Calibri' };
+            valueCell.alignment = { vertical: 'middle', wrapText: true, indent: 1 };
+            valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white } };
+            applyBorder(valueCell);
+            
+            worksheet.getRow(currentRow).height = 22;
+            currentRow++;
+          }
+          fieldIdx++;
+        }
+      } else {
+        // Sección vacía — campos para llenar
+        if (section.fields && section.fields.length > 0) {
+          for (let fi = 0; fi < section.fields.length; fi++) {
+            const field = section.fields[fi];
+            const isAlt = fi % 2 === 1;
+            
+            safeMergeCells(worksheet, currentRow, 1, currentRow, 2);
+            const labelCell = worksheet.getCell(currentRow, 1);
+            labelCell.value = `  ${field.label || field.name || 'Campo'}`;
+            labelCell.font = { bold: true, size: 10, color: { argb: EXCEL_COLORS.primary }, name: 'Calibri' };
+            labelCell.alignment = { vertical: 'middle' };
+            labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white } };
+            applyBorder(labelCell);
+            
+            safeMergeCells(worksheet, currentRow, 3, currentRow, maxCols);
+            const valueCell = worksheet.getCell(currentRow, 3);
+            valueCell.value = '';
+            valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white } };
+            applyBorder(valueCell);
+            
+            worksheet.getRow(currentRow).height = 22;
+            currentRow++;
+          }
+        } else {
+          safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
+          const noDataCell = worksheet.getCell(currentRow, 1);
+          noDataCell.value = '(Sin datos en esta seccion)';
+          noDataCell.font = { italic: true, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+          noDataCell.alignment = { vertical: 'middle', horizontal: 'center' };
+          worksheet.getRow(currentRow).height = 20;
+          currentRow++;
+        }
+      }
+      
+      // Espacio entre secciones
+      worksheet.getRow(currentRow).height = 6;
+      currentRow++;
+      continue; // Skip the table rendering below
+    }
+    
     // Encabezados de columnas (usar label de las columnas)
     const columns = section.columns || [];
     
-    // ✅ Si no hay columnas definidas, saltar esta sección
+    // ✅ FIX: continue en lugar de return para no salir de la función completa
     if (!columns || columns.length === 0) {
-      worksheet.mergeCells(currentRow, 1, currentRow, 8);
+      safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
       const noDataCell = worksheet.getCell(currentRow, 1);
-      noDataCell.value = '(No hay columnas definidas)';
-      noDataCell.font = { italic: true, color: { argb: 'FF999999' } };
+      noDataCell.value = '(No hay columnas definidas para esta seccion)';
+      noDataCell.font = { italic: true, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
       noDataCell.alignment = { vertical: 'middle', horizontal: 'center' };
       worksheet.getRow(currentRow).height = 20;
       currentRow += 2;
-      return;
+      continue; // ← CORREGIDO: era return; que rompía toda la función
     }
     
-    // 📋 Si no hay datos, crear 10 filas vacías para llenar manualmente
-    if (!tableData || tableData.length === 0) {
+    // 📋 Si no hay datos, crear filas vacías para llenar manualmente
+    const isEmptyTable = !tableData || tableData.length === 0;
+    if (isEmptyTable) {
       tableData = Array.from({ length: 10 }, () => ({}));
-      console.log(`📋 Excel - Creando ${tableData.length} filas vacías para imprimir`);
+      console.log(`📋 Excel - Creando ${tableData.length} filas vacias para imprimir`);
     }
+    
+    // Encabezados de columnas con estilo
     columns.forEach((col, colIndex) => {
       const headerCell = worksheet.getCell(currentRow, colIndex + 1);
       headerCell.value = col.label || col.name || 'Columna';
@@ -313,109 +542,114 @@ const createBodyTable = (worksheet, bodyData, bodyElements, startRow, template) 
         (col.label || '').length,
         ...tableData.map(row => String(row[col.label] || row[col.name] || '').length)
       );
-      worksheet.getColumn(colIndex + 1).width = Math.min(Math.max(maxLength + 2, 12), 30);
+      worksheet.getColumn(colIndex + 1).width = Math.min(Math.max(maxLength + 4, 14), 32);
     });
+    worksheet.getRow(currentRow).height = 24;
     currentRow++;
     
-    // Filas de datos — FILTRAR filas completamente vacías
-  const isRowEmpty = (row) => {
-    return columns.every(col => {
-      const v = row[col.label] ?? row[col.name] ?? row[col.header] ?? '';
-      return String(v).trim() === '';
-    });
-  };
-  const filteredTableData = tableData.filter(row => !isRowEmpty(row));
-  const dataToRender = filteredTableData.length > 0 ? filteredTableData : tableData;
-  
-  dataToRender.forEach((row, rowIndex) => {
-    columns.forEach((col, colIndex) => {
-      const dataCell = worksheet.getCell(currentRow, colIndex + 1);
-      const rowKeys = Object.keys(row);
-      const colLabel = (col.label || col.header || "").trim();
+    // Filas de datos — FILTRAR filas completamente vacías (solo en formato lleno)
+    const isRowEmpty = (row) => {
+      return columns.every(col => {
+        const v = row[col.label] ?? row[col.name] ?? row[col.header] ?? '';
+        return String(v).trim() === '';
+      });
+    };
+    const filteredTableData = isEmptyTable ? tableData : tableData.filter(row => !isRowEmpty(row));
+    const dataToRender = filteredTableData.length > 0 ? filteredTableData : tableData;
+    
+    dataToRender.forEach((row, rowIndex) => {
+      const isAlt = rowIndex % 2 === 1;
       
-      // 1. Intento por nombre exacto
-      let value = row[col.label] ?? row[col.name] ?? row[col.header];
+      columns.forEach((col, colIndex) => {
+        const dataCell = worksheet.getCell(currentRow, colIndex + 1);
+        const rowKeys = Object.keys(row);
+        
+        // 1. Intento por nombre exacto
+        let value = row[col.label] ?? row[col.name] ?? row[col.header];
 
-      // 2. 🎯 RESCATE PARA EXCEL: Si está vacío, buscar por índice (_colX)
-      if (value === undefined || value === null || value === "") {
-        const suffix = `_col${colIndex}`;
-        const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
-        if (keyWithSuffix) {
-          value = row[keyWithSuffix];
-        } else if (colLabel.toUpperCase().includes("TOTAL")) {
-          // Si es total, buscar cualquier llave que diga TOTAL
-          const totalKey = rowKeys.find(k => k.toUpperCase().includes("TOTAL"));
-          if (totalKey) value = row[totalKey];
+        // 2. 🎯 RESCATE: Si está vacío, buscar por índice (_colX)
+        if (value === undefined || value === null || value === "") {
+          const suffix = `_col${colIndex}`;
+          const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
+          if (keyWithSuffix) {
+            value = row[keyWithSuffix];
+          } else if ((col.label || col.header || "").toUpperCase().includes("TOTAL")) {
+            const totalKey = rowKeys.find(k => k.toUpperCase().includes("TOTAL"));
+            if (totalKey) value = row[totalKey];
+          }
         }
-      }
 
-      const cellValue = value ?? "";
-      const isEmpty = String(cellValue).trim() === '';
-      dataCell.value = isEmpty ? '' : cellValue;
-      applyCellStyle(dataCell, rowIndex % 2 === 1);
-      
-      // 🔧 Diagonal en celdas vacías
-      if (isEmpty) {
-        dataCell.fill = {
-          type: 'pattern',
-          pattern: 'darkUp',
-          fgColor: { argb: 'FFD0D0D0' },
-          bgColor: { argb: rowIndex % 2 === 1 ? 'FFF5F5F5' : EXCEL_COLORS.white }
-        };
-      }
-    });
-    worksheet.getRow(currentRow).height = 18;
-    currentRow++;
-  });
-
-  // 📊 FILA DE TOTALES POR COLUMNA (solo si autoSumColumns está activado)
-  const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true;
-  if (showColumnTotals) {
-  const totalsValues = columns.map((col, colIndex) => {
-    let colTotal = 0;
-    let hasNum = false;
-    dataToRender.forEach(row => {
-      const rowKeys = Object.keys(row);
-      const colLabel = (col.label || col.header || "").trim();
-      let value = row[col.label] ?? row[col.name] ?? row[col.header];
-      if (value === undefined || value === null || value === "") {
-        const suffix = `_col${colIndex}`;
-        const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
-        if (keyWithSuffix) value = row[keyWithSuffix];
-        else if (colLabel.toUpperCase().includes("TOTAL")) {
-          const totalKey = rowKeys.find(k => k.toUpperCase().includes("TOTAL"));
-          if (totalKey) value = row[totalKey];
+        const cellValue = value ?? "";
+        const isEmpty = String(cellValue).trim() === '';
+        dataCell.value = isEmpty ? '' : cellValue;
+        
+        // Estilo según si tiene datos o está vacío
+        if (isEmpty && isEmptyTable) {
+          // Celda vacía en formato para imprimir — fondo limpio para escribir
+          dataCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: isAlt ? EXCEL_COLORS.emptyCell : EXCEL_COLORS.white }
+          };
+          dataCell.font = { size: 10, name: 'Calibri' };
+          dataCell.alignment = { vertical: 'middle' };
+          applyBorder(dataCell);
+        } else {
+          applyCellStyle(dataCell, isAlt);
         }
+      });
+      worksheet.getRow(currentRow).height = isEmptyTable ? 20 : 18;
+      currentRow++;
+    });
+
+    // 📊 FILA DE TOTALES POR COLUMNA (solo si autoSumColumns está activado)
+    const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true;
+    if (showColumnTotals && !isEmptyTable) {
+      const totalsValues = columns.map((col, colIndex) => {
+        let colTotal = 0;
+        let hasNum = false;
+        dataToRender.forEach(row => {
+          const rowKeys = Object.keys(row);
+          let value = row[col.label] ?? row[col.name] ?? row[col.header];
+          if (value === undefined || value === null || value === "") {
+            const suffix = `_col${colIndex}`;
+            const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
+            if (keyWithSuffix) value = row[keyWithSuffix];
+            else if ((col.label || col.header || "").toUpperCase().includes("TOTAL")) {
+              const totalKey = rowKeys.find(k => k.toUpperCase().includes("TOTAL"));
+              if (totalKey) value = row[totalKey];
+            }
+          }
+          const num = parseFloat(value);
+          if (!isNaN(num)) { colTotal += num; hasNum = true; }
+        });
+        return { total: colTotal, hasNum };
+      });
+      const anyTotals = totalsValues.some(t => t.hasNum);
+      if (anyTotals) {
+        columns.forEach((col, colIndex) => {
+          const totalCell = worksheet.getCell(currentRow, colIndex + 1);
+          const t = totalsValues[colIndex];
+          totalCell.value = t.hasNum ? parseFloat(t.total.toFixed(2)) : '';
+          totalCell.font = { bold: true, size: 10, color: { argb: EXCEL_COLORS.primary }, name: 'Calibri' };
+          totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.primarySoft } };
+          totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
+          totalCell.border = {
+            top: { style: 'medium', color: { argb: EXCEL_COLORS.primaryLight } },
+            bottom: { style: 'medium', color: { argb: EXCEL_COLORS.primaryLight } },
+            left: { style: 'thin', color: { argb: EXCEL_COLORS.border } },
+            right: { style: 'thin', color: { argb: EXCEL_COLORS.border } }
+          };
+        });
+        worksheet.getRow(currentRow).height = 22;
+        currentRow++;
       }
-      const num = parseFloat(value);
-      if (!isNaN(num)) { colTotal += num; hasNum = true; }
-    });
-    return { total: colTotal, hasNum };
-  });
-  const anyTotals = totalsValues.some(t => t.hasNum);
-  if (anyTotals) {
-    columns.forEach((col, colIndex) => {
-      const totalCell = worksheet.getCell(currentRow, colIndex + 1);
-      const t = totalsValues[colIndex];
-      totalCell.value = t.hasNum ? parseFloat(t.total.toFixed(2)) : '—';
-      totalCell.font = { bold: true, size: 10, color: { argb: 'FF4338CA' } };
-      totalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } };
-      totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
-      totalCell.border = {
-        top: { style: 'medium', color: { argb: 'FF6366F1' } },
-        bottom: { style: 'thin', color: { argb: 'FFB4B4B4' } },
-        left: { style: 'thin', color: { argb: 'FFB4B4B4' } },
-        right: { style: 'thin', color: { argb: 'FFB4B4B4' } }
-      };
-    });
-    worksheet.getRow(currentRow).height = 22;
-    currentRow++;
-  }
-  } // end showColumnTotals
+    }
     
     // Espacio entre secciones
+    worksheet.getRow(currentRow).height = 6;
     currentRow++;
-  });
+  }
   
   return currentRow;
 };
@@ -426,7 +660,7 @@ const createBodyTable = (worksheet, bodyData, bodyElements, startRow, template) 
 /**
  * ✍️ Crea la sección de firmas - EN COLUMNAS (2 firmas por fila)
  */
-const createSignaturesSection = (worksheet, firmasData, startRow) => {
+const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols = 8) => {
   let currentRow = startRow;
   
   // Si no hay datos de firmas, saltar
@@ -434,12 +668,16 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
     return currentRow;
   }
   
+  // Calcular mitad de columnas para dividir firmas izquierda/derecha
+  const halfCol = Math.floor(maxCols / 2);
+  const rightStart = halfCol + 1;
+  
   // Título de sección
-  worksheet.mergeCells(currentRow, 1, currentRow, 8);
+  safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
   const sectionTitle = worksheet.getCell(currentRow, 1);
-  sectionTitle.value = 'FIRMAS Y APROBACIONES';
-  applyHeaderStyle(sectionTitle);
-  worksheet.getRow(currentRow).height = 25;
+  sectionTitle.value = '  FIRMAS Y APROBACIONES';
+  applySectionTitleStyle(sectionTitle);
+  worksheet.getRow(currentRow).height = 26;
   currentRow++;
   
   // Convertir firmas a array para procesar en pares
@@ -451,6 +689,8 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
     const firma2 = firmasArray[i + 1];
     
     const rowStartForPair = currentRow;
+    let leftEndRow = currentRow;
+    let rightEndRow = currentRow;
     
     // COLUMNA IZQUIERDA (Firma 1)
     if (firma1) {
@@ -462,81 +702,119 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
       if (typeof firmaData1 === 'object' && firmaData1 !== null) {
         nombre1 = firmaData1.nombre || '';
         fecha1 = firmaData1.fecha || '';
-        // 🆕 Extraer URL de firma PNG
-        if (firmaData1.firma && firmaData1.firma.url) {
-          firmaImg1 = firmaData1.firma.url;
+        if (firmaData1.firma) {
+          firmaImg1 = firmaData1.firma.url || firmaData1.firma.base64 || null;
+          if (firmaImg1 && typeof firmaImg1 === 'string' && firmaImg1.trim() !== '') {
+            console.log(`   Firma 1 detectada (${puesto1}):`, firmaImg1.substring(0, 60) + '...');
+          } else {
+            firmaImg1 = null;
+          }
         }
       } else {
         nombre1 = firmaData1 || '';
       }
       
-      // Puesto (columnas 1-4)
-      worksheet.mergeCells(currentRow, 1, currentRow, 4);
+      // Puesto (columnas 1-halfCol)
+      safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
       const puestoCell1 = worksheet.getCell(currentRow, 1);
-      puestoCell1.value = puesto1.toUpperCase() + ':';
-      puestoCell1.font = { bold: true, size: 9 };
+      puestoCell1.value = `  ${puesto1.toUpperCase()}`;
+      puestoCell1.font = { bold: true, size: 10, color: { argb: EXCEL_COLORS.primary }, name: 'Calibri' };
       puestoCell1.alignment = { vertical: 'middle', horizontal: 'left' };
-      puestoCell1.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFF5F5F5' }
-      };
-      worksheet.getRow(currentRow).height = 18;
+      puestoCell1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.primarySoft } };
+      worksheet.getRow(currentRow).height = 22;
       currentRow++;
       
       // Nombre
-      worksheet.mergeCells(currentRow, 1, currentRow, 4);
+      safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
       const nombreCell1 = worksheet.getCell(currentRow, 1);
-      nombreCell1.value = nombre1 || '(Sin firmar)';
-      nombreCell1.font = { size: 9, italic: !nombre1 };
-      nombreCell1.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-      worksheet.getRow(currentRow).height = 16;
+      nombreCell1.value = `  Nombre: ${nombre1 || '____________________'}`;
+      nombreCell1.font = { size: 9, italic: !nombre1, name: 'Calibri' };
+      nombreCell1.alignment = { vertical: 'middle', horizontal: 'left' };
+      worksheet.getRow(currentRow).height = 18;
       currentRow++;
       
-      // 🆕 Email del firmante (si existe)
+      // Email del firmante (si existe)
       const email1 = (typeof firmaData1 === 'object' && firmaData1 !== null) ? (firmaData1.email || '') : '';
       if (email1) {
-        worksheet.mergeCells(currentRow, 1, currentRow, 4);
+        safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
         const emailCell1 = worksheet.getCell(currentRow, 1);
-        emailCell1.value = `📧 ${email1}`;
-        emailCell1.font = { size: 8, color: { argb: 'FF0066CC' } };
-        emailCell1.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-        worksheet.getRow(currentRow).height = 14;
+        emailCell1.value = `  Email: ${email1}`;
+        emailCell1.font = { size: 8, color: { argb: EXCEL_COLORS.primaryLight }, name: 'Calibri' };
+        emailCell1.alignment = { vertical: 'middle', horizontal: 'left' };
+        worksheet.getRow(currentRow).height = 16;
         currentRow++;
       }
       
       // Fecha (si existe)
       if (fecha1) {
-        worksheet.mergeCells(currentRow, 1, currentRow, 4);
+        safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
         const fechaCell1 = worksheet.getCell(currentRow, 1);
-        fechaCell1.value = fecha1;
-        fechaCell1.font = { size: 8, color: { argb: 'FF666666' } };
-        fechaCell1.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-        worksheet.getRow(currentRow).height = 14;
+        let fechaFormateada1 = fecha1;
+        try {
+          const parts = fecha1.split('-');
+          if (parts.length === 3) {
+            fechaFormateada1 = `${parts[2]}/${parts[1]}/${parts[0]}`;
+          }
+        } catch(e) {}
+        fechaCell1.value = `  Fecha: ${fechaFormateada1}`;
+        fechaCell1.font = { size: 8, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+        fechaCell1.alignment = { vertical: 'middle', horizontal: 'left' };
+        worksheet.getRow(currentRow).height = 16;
         currentRow++;
       }
       
-      // 🆕 Imagen de firma PNG o línea tradicional
-      if (firmaImg1) {
-        // Mostrar URL de la firma (en Excel, mostraremos la URL como hipervínculo)
-        worksheet.mergeCells(currentRow, 1, currentRow, 4);
-        const firmaCell1 = worksheet.getCell(currentRow, 1);
-        firmaCell1.value = {
-          text: '🖼️ Ver Firma Digital',
-          hyperlink: firmaImg1
-        };
-        firmaCell1.font = { size: 9, color: { argb: 'FF0066CC' }, underline: true };
-        firmaCell1.alignment = { vertical: 'middle', horizontal: 'center' };
+      // Hora (si existe)
+      const hora1 = (typeof firmaData1 === 'object' && firmaData1 !== null) ? (firmaData1.hora || '') : '';
+      if (hora1) {
+        safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
+        const horaCell1 = worksheet.getCell(currentRow, 1);
+        horaCell1.value = `  Hora: ${hora1}`;
+        horaCell1.font = { size: 8, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+        horaCell1.alignment = { vertical: 'middle', horizontal: 'left' };
         worksheet.getRow(currentRow).height = 16;
+        currentRow++;
+      }
+      
+      // Imagen de firma PNG o linea tradicional
+      if (firmaImg1) {
+        try {
+          const base64Firma1 = await getBase64ImageForExcel(firmaImg1);
+          const imgId1 = worksheet.workbook.addImage({
+            base64: base64Firma1,
+            extension: 'png'
+          });
+          worksheet.addImage(imgId1, {
+            tl: { col: 0.5, row: currentRow - 1 },
+            ext: { width: 180, height: 55 }
+          });
+          worksheet.getRow(currentRow).height = 45;
+          currentRow++;
+          console.log('   Firma 1 incrustada en Excel');
+        } catch (imgErr) {
+          console.error('   Error incrustando firma 1 en Excel:', imgErr);
+          safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
+          const firmaCell1 = worksheet.getCell(currentRow, 1);
+          firmaCell1.value = { text: 'Ver Firma Digital', hyperlink: firmaImg1 };
+          firmaCell1.font = { size: 9, color: { argb: EXCEL_COLORS.primaryLight }, underline: true, name: 'Calibri' };
+          firmaCell1.alignment = { vertical: 'middle', horizontal: 'center' };
+          worksheet.getRow(currentRow).height = 18;
+          currentRow++;
+        }
       } else {
-        // Línea de firma tradicional
-        worksheet.mergeCells(currentRow, 1, currentRow, 4);
+        // Línea de firma tradicional con espacio
+        safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
+        worksheet.getRow(currentRow).height = 30;
+        currentRow++;
+        safeMergeCells(worksheet, currentRow, 1, currentRow, halfCol);
         const firmaCell1 = worksheet.getCell(currentRow, 1);
         firmaCell1.value = '________________________';
-        firmaCell1.font = { size: 8, color: { argb: 'FF999999' } };
-        firmaCell1.alignment = { vertical: 'middle', horizontal: 'center' };
-        worksheet.getRow(currentRow).height = 14;
+        firmaCell1.font = { size: 9, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+        firmaCell1.alignment = { vertical: 'bottom', horizontal: 'center' };
+        worksheet.getRow(currentRow).height = 16;
+        currentRow++;
       }
+      
+      leftEndRow = currentRow;
     }
     
     // COLUMNA DERECHA (Firma 2)
@@ -551,80 +829,126 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
       if (typeof firmaData2 === 'object' && firmaData2 !== null) {
         nombre2 = firmaData2.nombre || '';
         fecha2 = firmaData2.fecha || '';
-        // 🆕 Extraer URL de firma PNG
-        if (firmaData2.firma && firmaData2.firma.url) {
-          firmaImg2 = firmaData2.firma.url;
+        if (firmaData2.firma) {
+          firmaImg2 = firmaData2.firma.url || firmaData2.firma.base64 || null;
+          if (firmaImg2 && typeof firmaImg2 === 'string' && firmaImg2.trim() !== '') {
+            console.log(`   Firma 2 detectada (${puesto2}):`, firmaImg2.substring(0, 60) + '...');
+          } else {
+            firmaImg2 = null;
+          }
         }
       } else {
         nombre2 = firmaData2 || '';
       }
       
-      // Puesto (columnas 5-8)
-      worksheet.mergeCells(currentRow, 5, currentRow, 8);
-      const puestoCell2 = worksheet.getCell(currentRow, 5);
-      puestoCell2.value = puesto2.toUpperCase() + ':';
-      puestoCell2.font = { bold: true, size: 9 };
+      // Puesto (columnas rightStart-maxCols)
+      safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
+      const puestoCell2 = worksheet.getCell(currentRow, rightStart);
+      puestoCell2.value = `  ${puesto2.toUpperCase()}`;
+      puestoCell2.font = { bold: true, size: 10, color: { argb: EXCEL_COLORS.primary }, name: 'Calibri' };
       puestoCell2.alignment = { vertical: 'middle', horizontal: 'left' };
-      puestoCell2.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFF5F5F5' }
-      };
+      puestoCell2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.primarySoft } };
       currentRow++;
       
       // Nombre
-      worksheet.mergeCells(currentRow, 5, currentRow, 8);
-      const nombreCell2 = worksheet.getCell(currentRow, 5);
-      nombreCell2.value = nombre2 || '(Sin firmar)';
-      nombreCell2.font = { size: 9, italic: !nombre2 };
-      nombreCell2.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+      safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
+      const nombreCell2 = worksheet.getCell(currentRow, rightStart);
+      nombreCell2.value = `  Nombre: ${nombre2 || '____________________'}`;
+      nombreCell2.font = { size: 9, italic: !nombre2, name: 'Calibri' };
+      nombreCell2.alignment = { vertical: 'middle', horizontal: 'left' };
       currentRow++;
       
-      // 🆕 Email del firmante (si existe)
+      // Email del firmante (si existe)
       const email2 = (typeof firmaData2 === 'object' && firmaData2 !== null) ? (firmaData2.email || '') : '';
       if (email2) {
-        worksheet.mergeCells(currentRow, 5, currentRow, 8);
-        const emailCell2 = worksheet.getCell(currentRow, 5);
-        emailCell2.value = `📧 ${email2}`;
-        emailCell2.font = { size: 8, color: { argb: 'FF0066CC' } };
-        emailCell2.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+        safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
+        const emailCell2 = worksheet.getCell(currentRow, rightStart);
+        emailCell2.value = `  Email: ${email2}`;
+        emailCell2.font = { size: 8, color: { argb: EXCEL_COLORS.primaryLight }, name: 'Calibri' };
+        emailCell2.alignment = { vertical: 'middle', horizontal: 'left' };
         currentRow++;
       }
       
       // Fecha (si existe)
       if (fecha2) {
-        worksheet.mergeCells(currentRow, 5, currentRow, 8);
-        const fechaCell2 = worksheet.getCell(currentRow, 5);
-        fechaCell2.value = fecha2;
-        fechaCell2.font = { size: 8, color: { argb: 'FF666666' } };
-        fechaCell2.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+        safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
+        const fechaCell2 = worksheet.getCell(currentRow, rightStart);
+        let fechaFormateada2 = fecha2;
+        try {
+          const parts = fecha2.split('-');
+          if (parts.length === 3) {
+            fechaFormateada2 = `${parts[2]}/${parts[1]}/${parts[0]}`;
+          }
+        } catch(e) {}
+        fechaCell2.value = `  Fecha: ${fechaFormateada2}`;
+        fechaCell2.font = { size: 8, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+        fechaCell2.alignment = { vertical: 'middle', horizontal: 'left' };
         currentRow++;
       }
       
-      // 🆕 Imagen de firma PNG o línea tradicional
-      if (firmaImg2) {
-        // Mostrar URL de la firma (en Excel, mostraremos la URL como hipervínculo)
-        worksheet.mergeCells(currentRow, 5, currentRow, 8);
-        const firmaCell2 = worksheet.getCell(currentRow, 5);
-        firmaCell2.value = {
-          text: '🖼️ Ver Firma Digital',
-          hyperlink: firmaImg2
-        };
-        firmaCell2.font = { size: 9, color: { argb: 'FF0066CC' }, underline: true };
-        firmaCell2.alignment = { vertical: 'middle', horizontal: 'center' };
-      } else {
-        // Línea de firma tradicional
-        worksheet.mergeCells(currentRow, 5, currentRow, 8);
-        const firmaCell2 = worksheet.getCell(currentRow, 5);
-        firmaCell2.value = '________________________';
-        firmaCell2.font = { size: 8, color: { argb: 'FF999999' } };
-        firmaCell2.alignment = { vertical: 'middle', horizontal: 'center' };
+      // Hora (si existe)
+      const hora2 = (typeof firmaData2 === 'object' && firmaData2 !== null) ? (firmaData2.hora || '') : '';
+      if (hora2) {
+        safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
+        const horaCell2 = worksheet.getCell(currentRow, rightStart);
+        horaCell2.value = `  Hora: ${hora2}`;
+        horaCell2.font = { size: 8, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+        horaCell2.alignment = { vertical: 'middle', horizontal: 'left' };
+        currentRow++;
       }
+      
+      // Imagen de firma PNG o linea tradicional
+      if (firmaImg2) {
+        try {
+          const base64Firma2 = await getBase64ImageForExcel(firmaImg2);
+          const imgId2 = worksheet.workbook.addImage({
+            base64: base64Firma2,
+            extension: 'png'
+          });
+          worksheet.addImage(imgId2, {
+            tl: { col: halfCol + 0.5, row: currentRow - 1 },
+            ext: { width: 180, height: 55 }
+          });
+          worksheet.getRow(currentRow).height = 45;
+          currentRow++;
+          console.log('   Firma 2 incrustada en Excel');
+        } catch (imgErr) {
+          console.error('   Error incrustando firma 2 en Excel:', imgErr);
+          safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
+          const firmaCell2 = worksheet.getCell(currentRow, rightStart);
+          firmaCell2.value = { text: 'Ver Firma Digital', hyperlink: firmaImg2 };
+          firmaCell2.font = { size: 9, color: { argb: EXCEL_COLORS.primaryLight }, underline: true, name: 'Calibri' };
+          firmaCell2.alignment = { vertical: 'middle', horizontal: 'center' };
+          currentRow++;
+        }
+      } else {
+        // Línea de firma tradicional con espacio
+        safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
+        worksheet.getRow(currentRow).height = 30;
+        currentRow++;
+        safeMergeCells(worksheet, currentRow, rightStart, currentRow, maxCols);
+        const firmaCell2 = worksheet.getCell(currentRow, rightStart);
+        firmaCell2.value = '________________________';
+        firmaCell2.font = { size: 9, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+        firmaCell2.alignment = { vertical: 'bottom', horizontal: 'center' };
+        currentRow++;
+      }
+      
+      rightEndRow = currentRow;
     }
     
-    // Avanzar a la siguiente fila después del par
-    currentRow = Math.max(currentRow + 1, rowStartForPair + 4);
-    currentRow++; // Espacio entre pares
+    // Avanzar a la fila más abajo entre izquierda y derecha
+    currentRow = Math.max(leftEndRow, rightEndRow, rowStartForPair + 4);
+    
+    // Línea separadora entre pares de firmas
+    if (i + 2 < firmasArray.length) {
+      for (let c = 1; c <= maxCols; c++) {
+        const sep = worksheet.getCell(currentRow, c);
+        sep.border = { bottom: { style: 'thin', color: { argb: EXCEL_COLORS.border } } };
+      }
+      worksheet.getRow(currentRow).height = 8;
+      currentRow++;
+    }
   }
   
   return currentRow;
@@ -632,11 +956,10 @@ const createSignaturesSection = (worksheet, firmasData, startRow) => {
 
 /**
  * 🎯 FUNCIÓN PRINCIPAL: Exportar formulario a Excel
- * Renderiza TODAS las secciones dinámicamente según template.bodyElements
  */
 export const exportFormToExcel = async (form, template) => {
   try {
-    console.log('📊 Iniciando generación de Excel...', { form, template });
+    console.log('📊 Iniciando generacion de Excel...', { form, template });
     
     // Crear workbook
     const workbook = new ExcelJS.Workbook();
@@ -650,7 +973,8 @@ export const exportFormToExcel = async (form, template) => {
         orientation: 'portrait',
         fitToPage: true,
         fitToWidth: 1,
-        fitToHeight: 0
+        fitToHeight: 0,
+        margins: { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 }
       },
       properties: {
         defaultRowHeight: 18
@@ -663,18 +987,25 @@ export const exportFormToExcel = async (form, template) => {
       nombre: template?.nombre || form.templateNombre || 'Formulario',
       version: template?.version || form.version || 1,
       headerData: form.headerData || {},
-      createdAt: form.createdAt || new Date().toISOString() // ✅ Fecha de creación del formulario
+      createdAt: form.createdAt || new Date().toISOString()
     };
     
-    console.log('📋 Excel - Template Data:', templateData);
-    
-    // bodyElements contiene las SECCIONES dinámicas
     const bodyElements = Array.isArray(template?.bodyElements) ? template.bodyElements : [];
     const bodyData = form.bodyData || [];
     const firmasData = form.firmasData || {};
     
-    console.log('📊 Excel - Body Elements (Secciones):', bodyElements.length);
-    console.log('📊 Excel - Body Data:', Array.isArray(bodyData) ? bodyData.length : 'objeto');
+    // Calcular maxCols dinámicamente basado en la tabla más ancha
+    const maxCols = Math.max(8, ...bodyElements.map(s => (s.columns || []).length));
+    console.log(`   maxCols calculado: ${maxCols} (de ${bodyElements.length} secciones)`);
+    
+    // Anchos de columna dinámicos
+    worksheet.getColumn(1).width = 18;
+    for (let c = 2; c <= Math.min(maxCols, 6); c++) {
+      worksheet.getColumn(c).width = 16;
+    }
+    for (let c = 7; c <= maxCols; c++) {
+      worksheet.getColumn(c).width = 12;
+    }
     
     // Cargar logo
     let logoBase64 = null;
@@ -685,39 +1016,37 @@ export const exportFormToExcel = async (form, template) => {
     }
     
     // 1. Crear encabezado Frigolab
-    console.log('🎨 Excel - Dibujando encabezado...');
-    let currentRow = await createFrigolabHeader(worksheet, templateData, logoBase64);
+    let currentRow = await createFrigolabHeader(worksheet, templateData, logoBase64, maxCols);
     
     // 2. Crear sección de header (Información General)
-    console.log('📝 Excel - Dibujando información del encabezado...');
-    currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow);
+    currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow, maxCols);
     
     // 3. Crear TODAS las tablas del cuerpo
-    console.log('📊 Excel - Dibujando secciones dinámicas del cuerpo...');
-    currentRow = createBodyTable(worksheet, bodyData, bodyElements, currentRow, template);
+    const bodyResult = await createBodyTable(worksheet, bodyData, bodyElements, currentRow, template, maxCols);
+    currentRow = (typeof bodyResult === 'number' && !isNaN(bodyResult)) ? bodyResult : currentRow + 2;
     
     // 4. Observaciones si existen
     if (form.observaciones) {
-      console.log('📝 Excel - Dibujando observaciones...');
-      
-      worksheet.mergeCells(currentRow, 1, currentRow, 8);
+      safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
       const obsTitle = worksheet.getCell(currentRow, 1);
-      obsTitle.value = 'OBSERVACIONES';
-      applyHeaderStyle(obsTitle);
-      worksheet.getRow(currentRow).height = 25;
+      obsTitle.value = '  OBSERVACIONES';
+      applySectionTitleStyle(obsTitle);
+      worksheet.getRow(currentRow).height = 26;
       currentRow++;
       
-      worksheet.mergeCells(currentRow, 1, currentRow, 8);
+      safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
       const obsCell = worksheet.getCell(currentRow, 1);
       obsCell.value = form.observaciones;
-      obsCell.alignment = { vertical: 'top', wrapText: true };
-      worksheet.getRow(currentRow).height = Math.max(20, form.observaciones.length / 50 * 15);
+      obsCell.font = { size: 10, name: 'Calibri' };
+      obsCell.alignment = { vertical: 'top', wrapText: true, indent: 1 };
+      obsCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.warmBg } };
+      applyBorder(obsCell);
+      worksheet.getRow(currentRow).height = Math.max(25, form.observaciones.length / 50 * 15);
       currentRow += 2;
     }
     
     // 5. Crear sección de firmas
-    console.log('✍️ Excel - Dibujando firmas...');
-    createSignaturesSection(worksheet, firmasData, currentRow);
+    await createSignaturesSection(worksheet, firmasData, currentRow, maxCols);
     
     // 6. Generar buffer y descargar
     const buffer = await workbook.xlsx.writeBuffer();
@@ -729,11 +1058,11 @@ export const exportFormToExcel = async (form, template) => {
     
     saveAs(blob, fileName);
     
-    console.log('✅ Excel generado exitosamente:', fileName);
+    console.log('Excel generado exitosamente:', fileName);
     
     return { success: true, fileName };
   } catch (error) {
-    console.error('❌ Error al generar Excel:', error);
+    console.error('Error al generar Excel:', error);
     console.error('Stack:', error.stack);
     throw new Error(`No se pudo generar el Excel: ${error.message}`);
   }
@@ -753,7 +1082,7 @@ export const exportMultipleFormsToExcel = async (forms, templates) => {
     try {
       logoBase64 = await getBase64ImageForExcel(logoUrl);
     } catch (error) {
-      console.warn('⚠️ No se pudo cargar el logo para Excel:', error);
+      console.warn('No se pudo cargar el logo para Excel:', error);
     }
     
     for (let i = 0; i < forms.length; i++) {
@@ -762,31 +1091,34 @@ export const exportMultipleFormsToExcel = async (forms, templates) => {
       
       const worksheetName = `Form_${form.formID || (i + 1)}`;
       const worksheet = workbook.addWorksheet(worksheetName, {
-        pageSetup: { paperSize: 9, orientation: 'portrait' },
+        pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
         properties: { defaultRowHeight: 18 }
       });
+      
+      // Anchos de columna dinámicos
+      const bodyElements = template?.bodyElements || [];
+      const maxCols = Math.max(8, ...bodyElements.map(s => (s.columns || []).length));
+      
+      worksheet.getColumn(1).width = 18;
+      for (let c = 2; c <= Math.min(maxCols, 6); c++) worksheet.getColumn(c).width = 16;
+      for (let c = 7; c <= maxCols; c++) worksheet.getColumn(c).width = 12;
       
       const templateData = {
         codigo: template?.codigo || form.templateCodigo,
         nombre: template?.nombre || 'Formulario',
         version: template?.version || 1,
         headerData: form.headerData || {},
-        createdAt: form.createdAt || new Date().toISOString() // ✅ Fecha de creación del formulario
+        createdAt: form.createdAt || new Date().toISOString()
       };
       
-      const bodyElements = template?.bodyElements || [];
       const bodyData = form.bodyData || [];
       const firmasData = form.firmasData || {};
       
-      let currentRow = await createFrigolabHeader(worksheet, templateData, logoBase64);
-      currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow);
-      currentRow = createBodyTable(worksheet, bodyData, bodyElements, currentRow, template);
-      createSignaturesSection(worksheet, firmasData, currentRow);
-      
-      worksheet.getColumn(1).width = 25;
-      for (let j = 2; j <= 8; j++) {
-        worksheet.getColumn(j).width = 18;
-      }
+      let currentRow = await createFrigolabHeader(worksheet, templateData, logoBase64, maxCols);
+      currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow, maxCols);
+      const bodyResult = await createBodyTable(worksheet, bodyData, bodyElements, currentRow, template, maxCols);
+      currentRow = (typeof bodyResult === 'number' && !isNaN(bodyResult)) ? bodyResult : currentRow + 2;
+      await createSignaturesSection(worksheet, firmasData, currentRow, maxCols);
     }
     
     const buffer = await workbook.xlsx.writeBuffer();
@@ -800,7 +1132,7 @@ export const exportMultipleFormsToExcel = async (forms, templates) => {
     
     return { success: true, fileName, count: forms.length };
   } catch (error) {
-    console.error('❌ Error al generar Excel múltiple:', error);
+    console.error('Error al generar Excel multiple:', error);
     throw new Error(`No se pudo generar el Excel: ${error.message}`);
   }
 };

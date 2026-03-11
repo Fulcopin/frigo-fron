@@ -25,6 +25,48 @@ const safeParse = (val, fallback) => {
   try { return JSON.parse(val); } catch { return fallback; }
 };
 
+// 🖼️ Helper: detectar si un valor es URL de imagen y renderizar apropiadamente
+const isImageUrl = (val) => {
+  if (typeof val !== 'string') return false;
+  const lower = val.toLowerCase();
+  return (
+    lower.includes('cloudinary.com') ||
+    lower.includes('res.cloudinary') ||
+    lower.startsWith('data:image/') ||
+    /\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i.test(val)
+  );
+};
+
+const renderCellValue = (value) => {
+  if (value === undefined || value === null || value === '' || value === '-') return '-';
+  if (typeof value === 'object') return JSON.stringify(value);
+  const strVal = String(value);
+  if (isImageUrl(strVal)) {
+    console.log('🖼️ renderCellValue: detectada imagen →', strVal.substring(0, 80));
+    return (
+      <div style={{ padding: '8px 0' }}>
+        <img 
+          src={strVal} 
+          alt="Imagen" 
+          style={{ 
+            maxWidth: '300px', 
+            maxHeight: '250px', 
+            borderRadius: '8px', 
+            border: '2px solid #e5e7eb',
+            cursor: 'pointer',
+            objectFit: 'contain',
+            display: 'block',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+          }}
+          onClick={() => window.open(strVal, '_blank')}
+          title="Click para ver en tamaño completo"
+        />
+      </div>
+    );
+  }
+  return strVal;
+};
+
 function ViewForms() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -226,12 +268,15 @@ function ViewForms() {
     let updatedFirmaData = { ...firmaData };
     if (firmaData.firma) {
       const now = new Date();
-      const fechaActual = now.toISOString().split('T')[0];
-      const horaActual = now.toTimeString().split(' ')[0].substring(0, 5);
+      // 🔧 FIX: Usar fecha LOCAL (no UTC) para evitar desfase de día en zona horaria Ecuador (UTC-5)
+      const fechaActual = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+      const horaActual = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+      // 🔧 FIX: SIEMPRE capturar fecha/hora actual al firmar (no usar fallback de fecha vieja)
       updatedFirmaData = {
         ...firmaData,
-        fecha: firmaData.fecha || fechaActual,
-        hora: firmaData.hora || horaActual
+        fecha: fechaActual,
+        hora: horaActual,
+        fechaHoraCapturada: true
       };
     }
     
@@ -651,10 +696,14 @@ function ViewForms() {
                     }
                   }
                   
+                  // Renderizar valor (detectar imágenes)
+                  const displayValue = renderCellValue(value);
+                  const isImg = typeof value === 'string' && isImageUrl(value);
+                  
                   return (
-                    <div key={index} className="data-item">
+                    <div key={index} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
                       <span className="data-label">{field.label || field.name || field.id}:</span>
-                      <span className="data-value">{value || "-"}</span>
+                      <div className="data-value">{displayValue}</div>
                     </div>
                   );
                 })}
@@ -695,9 +744,15 @@ function ViewForms() {
                 <div key={templateElement.id} className="data-section">
                   <h3>{templateElement.title}</h3>
                   <div className="data-grid">
-                    {Object.entries(sectionData).map(([key, value]) => (
-                      <div key={key} className="data-item"><span className="data-label">{key}:</span><span className="data-value">{value || "-"}</span></div>
-                    ))}
+                    {Object.entries(sectionData).map(([key, value]) => {
+                      const isImg = typeof value === 'string' && isImageUrl(value);
+                      return (
+                        <div key={key} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
+                          <span className="data-label">{key}:</span>
+                          <div className="data-value">{renderCellValue(value)}</div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -807,9 +862,7 @@ function ViewForms() {
 
                               return (
                                 <td key={`cell-${rowIndex}-${colIndex}`} style={{ textAlign: 'center', minWidth: '100px' }}>
-                                  {cellValue !== undefined && cellValue !== null && cellValue !== "" 
-                                    ? String(cellValue) 
-                                    : "-"}
+                                  {renderCellValue(cellValue)}
                                 </td>
                               );
                             })}
@@ -1006,7 +1059,7 @@ function ViewForms() {
                           {data.email && (
                             <p><strong>📧 Email:</strong> <a href={`mailto:${data.email}`} style={{ color: '#1976d2' }}>{data.email}</a></p>
                           )}
-                          <p><strong>Fecha:</strong> {data.fecha || "-"}</p>
+                          <p><strong>Fecha:</strong> {data.fecha ? new Date(data.fecha + 'T00:00:00').toLocaleDateString('es-EC') : "-"}</p>
                           {data.hora && (
                             <p><strong>Hora:</strong> {data.hora}</p>
                           )}

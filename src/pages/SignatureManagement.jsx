@@ -3,6 +3,7 @@ import signatureService from '../services/signatureService';
 import authService from '../services/authService';
 import { Link, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../apiConfig';
+import { toLocalISOString } from '../utils/dateUtils';
 import './SignatureManagement.css';
 
 export default function SignatureManagement() {
@@ -362,7 +363,7 @@ export default function SignatureManagement() {
       const signatureData = {
         signatureImage,
         signedBy: currentUser.email,
-        signedDate: new Date().toISOString(),
+        signedDate: toLocalISOString(),
         comments,
       };
 

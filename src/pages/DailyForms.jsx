@@ -155,25 +155,80 @@ function DailyForms() {
               try { bodyData = JSON.parse(bodyData); } catch (e) { console.error('Error parse body:', e); }
             }
 
-            // 📊 EXPORTAR BODYDATA COMO TABLA (formato horizontal)
+            // 📊 EXPORTAR BODYDATA - TODAS LAS TABLAS/SECCIONES
             if (Array.isArray(bodyData) && bodyData.length > 0) {
-              // Parsear cada fila si es string
-              const parsedBodyData = bodyData.map(row => {
-                if (typeof row === 'string') {
-                  try { return JSON.parse(row); } catch (e) { return null; }
-                }
-                return row;
-              }).filter(row => row && typeof row === 'object');
+              const templateName = (form.templateName || form.TemplateName || 'Form').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 12);
+              
+              // Detectar si bodyData es un array de secciones (objetos con type/data/title)
+              const isStructured = bodyData.some(item => 
+                item && typeof item === 'object' && !Array.isArray(item) && 
+                (item.type || item.title || item.sectionTitle || item.data || item.rows)
+              );
 
-              if (parsedBodyData.length > 0) {
-                const bodySheet = XLSX.utils.json_to_sheet(parsedBodyData);
-                
-                // Nombre con plantilla y número
-                const templateName = (form.templateName || form.TemplateName || 'Form').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 15);
-                const sheetName = `${formNumber}_${templateName}_Datos`.substring(0, 31);
-                
-                XLSX.utils.book_append_sheet(workbook, bodySheet, sheetName);
-                console.log(`  ✅ Hoja creada: ${sheetName}`);
+              if (isStructured) {
+                // 🆕 FORMATO ESTRUCTURADO: Cada sección/tabla se exporta en su propia hoja
+                let tableCount = 0;
+                bodyData.forEach((section, sectionIdx) => {
+                  if (!section || typeof section !== 'object') return;
+
+                  // Obtener título de la sección
+                  const sectionTitle = (section.title || section.sectionTitle || section.label || `Seccion${sectionIdx + 1}`)
+                    .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ ]/g, '')
+                    .trim()
+                    .substring(0, 15);
+
+                  // Obtener filas de datos
+                  let rows = [];
+                  if (Array.isArray(section.data)) {
+                    rows = section.data;
+                  } else if (Array.isArray(section.rows)) {
+                    rows = section.rows;
+                  } else if (section.type === 'observaciones' || section.type === 'text') {
+                    // Sección de texto/observaciones
+                    rows = [{ 'Contenido': section.value || section.text || section.data || '' }];
+                  }
+
+                  // Parsear filas si son strings
+                  const parsedRows = rows.map(row => {
+                    if (typeof row === 'string') {
+                      try { return JSON.parse(row); } catch (e) { return null; }
+                    }
+                    return row;
+                  }).filter(row => row && typeof row === 'object');
+
+                  // Filtrar filas completamente vacías
+                  const nonEmptyRows = parsedRows.filter(row =>
+                    Object.values(row).some(val => val !== null && val !== undefined && String(val).trim() !== '')
+                  );
+                  const dataToExport = nonEmptyRows.length > 0 ? nonEmptyRows : parsedRows;
+
+                  if (dataToExport.length > 0) {
+                    tableCount++;
+                    const bodySheet = XLSX.utils.json_to_sheet(dataToExport);
+                    const cleanTitle = sectionTitle.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 12);
+                    const sheetName = `${formNumber}_${cleanTitle}`.substring(0, 31);
+                    
+                    XLSX.utils.book_append_sheet(workbook, bodySheet, sheetName);
+                    console.log(`  ✅ Hoja creada: ${sheetName} (${dataToExport.length} filas) - "${sectionTitle}"`);
+                  }
+                });
+                console.log(`  📊 Total tablas exportadas: ${tableCount} de ${bodyData.length} secciones`);
+              } else {
+                // FORMATO PLANO: bodyData es un array simple de filas (compatibilidad hacia atrás)
+                const parsedBodyData = bodyData.map(row => {
+                  if (typeof row === 'string') {
+                    try { return JSON.parse(row); } catch (e) { return null; }
+                  }
+                  return row;
+                }).filter(row => row && typeof row === 'object');
+
+                if (parsedBodyData.length > 0) {
+                  const bodySheet = XLSX.utils.json_to_sheet(parsedBodyData);
+                  const sheetName = `${formNumber}_${templateName}_Datos`.substring(0, 31);
+                  
+                  XLSX.utils.book_append_sheet(workbook, bodySheet, sheetName);
+                  console.log(`  ✅ Hoja creada: ${sheetName}`);
+                }
               }
             }
 
@@ -208,7 +263,7 @@ function DailyForms() {
       XLSX.writeFile(workbook, fileName);
       
       console.log(`✅ Exportación completada: ${fileName}`);
-      alert(`✅ ¡Exportación Completada!\n\n📊 Archivo: ${fileName}\n📝 ${filteredForms.length} formularios exportados\n\n🗂️ Estructura:\n- Hoja "Resumen": Lista completa\n- Hojas numeradas: Datos de cada formulario\n  (Ej: 1_Registro15Tinas_Datos, 1_Registro15Tinas_Info)`);
+      alert(`✅ ¡Exportación Completada!\n\n📊 Archivo: ${fileName}\n📝 ${filteredForms.length} formularios exportados\n\n🗂️ Estructura:\n- Hoja "Resumen": Lista completa\n- Hojas por formulario: TODAS las tablas/secciones\n  (Ej: 1_Registro, 1_Clasificacion, 1_Info)\n- Cada tabla del formulario se exporta en su propia hoja`);
     } catch (err) {
       console.error('❌ Error exportando a Excel:', err);
       alert('❌ Error al exportar a Excel: ' + err.message);

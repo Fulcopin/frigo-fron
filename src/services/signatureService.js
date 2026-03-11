@@ -3,6 +3,7 @@
 // ====================================
 
 import { API_BASE_URL } from '../apiConfig';
+import { toLocalISOString } from '../utils/dateUtils';
 
 const API_URL_SIGNATURES = `${API_BASE_URL}/Signatures`;
 
@@ -45,7 +46,7 @@ const signatureService = {
           formId: formId,
           signatureImage: signatureData.signatureImage,
           signedBy: signatureData.signedBy,
-          signedDate: signatureData.signedDate || new Date().toISOString(),
+          signedDate: signatureData.signedDate || toLocalISOString(),
           comments: signatureData.comments || '',
         }),
       });
@@ -76,7 +77,7 @@ const signatureService = {
           formIds: formIds,
           signatureImage: signatureData.signatureImage,
           signedBy: signatureData.signedBy,
-          signedDate: signatureData.signedDate || new Date().toISOString(),
+          signedDate: signatureData.signedDate || toLocalISOString(),
           comments: signatureData.comments || '',
         }),
       });
@@ -154,7 +155,7 @@ const signatureService = {
           formId: formId,
           rejectedBy: rejectData.rejectedBy,
           reason: rejectData.reason,
-          rejectedDate: rejectData.rejectedDate || new Date().toISOString(),
+          rejectedDate: rejectData.rejectedDate || toLocalISOString(),
         }),
       });
       

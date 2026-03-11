@@ -169,17 +169,28 @@ function processBodyData(bodyDataString) {
       // Verificar si cada item tiene la estructura correcta
       const processedArray = parsed.map((item, index) => {
         if (item && typeof item === 'object') {
+          // 🔧 FIX: Si el item tiene un type definido (section, table, observaciones), 
+          // preservar su estructura original completa para que ViewForms pueda leerla
+          if (item.type && (item.type === 'section' || item.type === 'observaciones')) {
+            console.log(`✅ Item ${index} es tipo '${item.type}', preservando estructura original`);
+            return item; // Preservar tal cual: {id, type:"section", data:{campo:"valor"}}
+          }
           // Si ya tiene .rows, está correcto
           if (item.rows && Array.isArray(item.rows)) {
             console.log(`✅ Item ${index} ya tiene estructura correcta`);
             return item;
           }
-          // Si tiene formato legacy {id, type, data}
+          // Si tiene formato legacy {id, type, data} para tablas
           else if (item.id && item.type === 'table' && item.data && Array.isArray(item.data)) {
-            console.log(`🔄 Item ${index} es formato legacy, convirtiendo {data} -> {rows}`);
-            return { rows: item.data };
+            console.log(`🔄 Item ${index} es formato legacy tabla, convirtiendo {data} -> {rows}`);
+            return { ...item, rows: item.data };
           }
-          // Si es un objeto pero no tiene .rows, podría ser una fila directa
+          // Si tiene type:table pero sin data ni rows, preservar
+          else if (item.type === 'table') {
+            console.log(`✅ Item ${index} es tabla sin datos, preservando`);
+            return item;
+          }
+          // Si es un objeto pero no tiene .rows ni .type, podría ser una fila directa
           else {
             console.log(`🔄 Item ${index} parece ser una fila directa, envolviéndola`);
             return { rows: [item] };

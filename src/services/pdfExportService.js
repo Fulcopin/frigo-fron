@@ -13,6 +13,18 @@ import autoTable from 'jspdf-autotable';
 import logoUrl from '../assets/logo-1.png';
 
 /**
+ * Limpia texto para que jsPDF pueda renderizarlo correctamente.
+ * Helvetica solo soporta WinAnsi (Latin-1): ASCII 0x20-0x7E y Latin-1 Supplement 0xA0-0xFF.
+ * Cualquier caracter fuera de ese rango (emojis, simbolos Unicode, etc.) se elimina.
+ */
+const sanitizeText = (text) => {
+  if (typeof text !== 'string') return String(text ?? '');
+  // Mantener solo: ASCII imprimible (espacio a ~) y Latin-1 Supplement (¡ a ÿ) + saltos de linea/tab
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[^\x20-\x7E\xA0-\xFF\n\r\t]/g, '').trim();
+};
+
+/**
  * Convierte imagen a Base64 para incrustar en PDF
  */
 const getBase64Image = (imgUrl) => {
@@ -103,7 +115,7 @@ const drawFrigolabHeader = async (doc, templateData) => {
   doc.setTextColor(...COLORS.text);
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  const titleLines = doc.splitTextToSize(nombre, titleAreaW);
+  const titleLines = doc.splitTextToSize(sanitizeText(nombre), titleAreaW);
   const titleY = 5 + (headerH / 2) - ((titleLines.length * 6) / 2) + 4;
   doc.text(titleLines, titleAreaX + titleAreaW / 2, titleY, { align: 'center' });
   
@@ -118,8 +130,8 @@ const drawFrigolabHeader = async (doc, templateData) => {
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...COLORS.text);
-  doc.text('CÓDIGO:', metaContentX, 5 + metaRowH * 0.55 + 1);
-  doc.text('VERSIÓN:', metaContentX, 5 + metaRowH * 1.55 + 1);
+  doc.text('CODIGO:', metaContentX, 5 + metaRowH * 0.55 + 1);
+  doc.text('VERSION:', metaContentX, 5 + metaRowH * 1.55 + 1);
   doc.text('FECHA:', metaContentX, 5 + metaRowH * 2.55 + 1);
   
   doc.setFont('helvetica', 'normal');
@@ -127,11 +139,11 @@ const drawFrigolabHeader = async (doc, templateData) => {
   // ✅ CÓDIGO: Usar headerData.codigo (editable) o código del template
   const codigoFinal = headerData?.codigo || headerData?.Código || codigo || 'N/A';
   const metaValueX = metaContentX + 22;
-  doc.text(codigoFinal, metaValueX, 5 + metaRowH * 0.55 + 1);
+  doc.text(sanitizeText(codigoFinal), metaValueX, 5 + metaRowH * 0.55 + 1);
   
-  // ✅ VERSIÓN: Usar headerData.version (editable) o versión del template
+  // VERSION: Usar headerData.version (editable) o versión del template
   const versionFinal = headerData?.version || headerData?.Versión || String(version || '1.0');
-  doc.text(versionFinal, metaValueX, 5 + metaRowH * 1.55 + 1);
+  doc.text(sanitizeText(versionFinal), metaValueX, 5 + metaRowH * 1.55 + 1);
   
   // ✅ FECHA: Usar fechaVersion de la plantilla (NO la fecha de llenado)
   console.log('🔍 DEBUG FECHA PDF:', {
@@ -180,7 +192,7 @@ const drawFrigolabHeader = async (doc, templateData) => {
   
   console.log('✅ FECHA FINAL EN PDF:', fechaFinal);
   
-  doc.text(fechaFinal, metaValueX, 5 + metaRowH * 2.55 + 1);
+  doc.text(sanitizeText(fechaFinal), metaValueX, 5 + metaRowH * 2.55 + 1);
   
   // Resetear color de texto
   doc.setTextColor(...COLORS.text);
@@ -256,12 +268,12 @@ const drawHeaderSection = (doc, headerData, startY) => {
   // Dibujar campos
   headerFields.forEach(field => {
     doc.setFont('helvetica', 'bold');
-    doc.text(field.label, 17, currentY);
+    doc.text(sanitizeText(field.label), 17, currentY);
     doc.setFont('helvetica', 'normal');
     
     // Limitar longitud del valor
     const maxWidth = 120;
-    const textValue = doc.splitTextToSize(field.value, maxWidth);
+    const textValue = doc.splitTextToSize(sanitizeText(field.value), maxWidth);
     doc.text(textValue, 70, currentY);
     
     currentY += 6 * textValue.length;
@@ -470,7 +482,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
       const puestoTexto = puesto.toUpperCase() + ':';
-      const puestoLines = doc.splitTextToSize(puestoTexto, anchoColumna - 6);
+      const puestoLines = doc.splitTextToSize(sanitizeText(puestoTexto), anchoColumna - 6);
       doc.text(puestoLines, xPos, localY);
       localY += puestoLines.length * 4.5;
       
@@ -479,7 +491,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       
       // Mostrar nombre
       if (nombre) {
-        doc.text(`${nombre}`, xPos, localY);
+        doc.text(sanitizeText(nombre), xPos, localY);
         localY += 5;
       } else {
         doc.setTextColor(150, 150, 150);
@@ -490,22 +502,41 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
         localY += 5;
       }
       
-      // 🆕 Mostrar email del firmante (si existe)
+      // Mostrar email del firmante (si existe)
       const email = typeof data === 'object' && data !== null ? (data.email || '') : '';
       if (email) {
         doc.setFontSize(7);
         doc.setTextColor(0, 102, 204);
-        doc.text(`📧 ${email}`, xPos, localY);
+        doc.text(`Email: ${email}`, xPos, localY);
         doc.setTextColor(...COLORS.text);
         doc.setFontSize(9);
         localY += 4;
       }
       
-      // Mostrar fecha (si existe)
+      // Mostrar fecha (si existe) - formateada
       if (fecha) {
         doc.setFontSize(8);
         doc.setTextColor(100, 100, 100);
-        doc.text(`${fecha}`, xPos, localY);
+        // Formatear fecha legible DD/MM/YYYY
+        let fechaFormateada = fecha;
+        try {
+          const parts = fecha.split('-');
+          if (parts.length === 3) {
+            fechaFormateada = `${parts[2]}/${parts[1]}/${parts[0]}`;
+          }
+        } catch(e) {}
+        doc.text(`Fecha: ${fechaFormateada}`, xPos, localY);
+        doc.setTextColor(...COLORS.text);
+        doc.setFontSize(9);
+        localY += 5;
+      }
+      
+      // Mostrar hora (si existe)
+      const hora = typeof data === 'object' && data !== null ? (data.hora || '') : '';
+      if (hora) {
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Hora: ${hora}`, xPos, localY);
         doc.setTextColor(...COLORS.text);
         doc.setFontSize(9);
         localY += 5;
@@ -527,35 +558,21 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
           
           console.log('   📐 Dimensiones:', { width: firmaImgWidth, height: firmaImgHeight, x: xPos, y: localY });
           
-          // 🔧 FIX: Si es URL de Cloudinary, convertir a Base64 primero para evitar problemas CORS y encoding
+          // Convertir imagen a PNG Base64 via canvas (soporta WebP, JPG, etc.)
           let imageToAdd = firmaImg;
           
-          if (firmaImg.startsWith('http')) {
-            console.log('   🌐 Detectada URL externa, convirtiendo a Base64...');
+          if (firmaImg.startsWith('http') || firmaImg.startsWith('data:image')) {
+            console.log('   Convirtiendo imagen de firma a PNG Base64...');
             try {
-              // Descargar imagen y convertir a Base64
-              const response = await fetch(firmaImg);
-              if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-              }
-              const blob = await response.blob();
-              
-              // Convertir blob a Base64
-              imageToAdd = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              });
-              
-              console.log('   ✅ Convertido a Base64 exitosamente');
+              imageToAdd = await getBase64Image(firmaImg);
+              console.log('   Convertido a PNG Base64 exitosamente');
             } catch (fetchError) {
-              console.error('   ❌ Error al descargar imagen:', fetchError);
-              throw new Error(`No se pudo descargar la imagen: ${fetchError.message}`);
+              console.error('   Error al convertir imagen de firma:', fetchError);
+              throw new Error(`No se pudo convertir la imagen: ${fetchError.message}`);
             }
           }
           
-          // Añadir imagen de firma (ahora en Base64)
+          // Añadir imagen de firma (ahora en PNG Base64)
           doc.addImage(imageToAdd, 'PNG', xPos, localY, firmaImgWidth, firmaImgHeight);
           console.log('   ✅ Imagen agregada exitosamente');
           
@@ -676,7 +693,8 @@ export const exportFormToPDF = async (form, template) => {
     // 3. Dibujar TODAS las secciones dinámicas del bodyElements
     console.log('📊 Dibujando secciones dinámicas del cuerpo...');
     
-    bodyElements.forEach((section, index) => {
+    for (let index = 0; index < bodyElements.length; index++) {
+      const section = bodyElements[index];
       console.log(`📌 Sección ${index + 1}:`, section);
       
       // Verificar si hay espacio, si no, agregar nueva página
@@ -692,8 +710,8 @@ export const exportFormToPDF = async (form, template) => {
       doc.rect(15, currentY, 175, 8, 'F');
       doc.setTextColor(...COLORS.text);
       
-      const sectionTitle = section.title || section.sectionTitle || section.label || 'Sección';
-      doc.text(sectionTitle.toUpperCase(), 17, currentY + 5);
+      const sectionTitle = section.title || section.sectionTitle || section.label || 'Seccion';
+      doc.text(sanitizeText(sectionTitle.toUpperCase()), 17, currentY + 5);
       currentY += 10;
       
       // Tipo de sección: tabla
@@ -731,7 +749,7 @@ export const exportFormToPDF = async (form, template) => {
           // Las columnas usan 'label' como nombre (ej: "LOTE DE PROCESO")
           // Los datos también usan 'label' como key: { "LOTE DE PROCESO": "jnd" }
           const columns = section.columns.map((col, colIndex) => ({
-            header: col.label || col.name || 'Columna',
+            header: sanitizeText(col.label || col.name || 'Columna'),
             dataKey: col.label || col.name || col.id || `col_${colIndex}`
           }));
           
@@ -767,10 +785,15 @@ const rows = tableData.map((row, rowIndex) => {
   });
 });
           
-          console.log(`📊 Filas procesadas para "${sectionTitle}":`, rows);
+          console.log(`Filas procesadas para "${sectionTitle}":`, rows);
           
-          // 🔧 Filtrar filas completamente vacías
+          // Filtrar filas completamente vacías
           const filteredRows = rows.filter(row => row.some(cell => cell && cell.trim() !== ''));
+          
+          // Sanitizar todas las celdas de las filas
+          const sanitizedRows = (filteredRows.length > 0 ? filteredRows : rows).map(row => 
+            row.map(cell => sanitizeText(cell))
+          );
           
           // 📊 Calcular fila de TOTALES por columna (solo si autoSumColumns está activado)
           const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true;
@@ -780,7 +803,7 @@ const rows = tableData.map((row, rowIndex) => {
             totalsRow = columns.map((col, colIndex) => {
               let columnTotal = 0;
               let hasValues = false;
-              const dataRows = filteredRows.length > 0 ? filteredRows : rows;
+              const dataRows = sanitizedRows;
               dataRows.forEach(row => {
                 const val = parseFloat(row[colIndex]);
                 if (!isNaN(val)) {
@@ -796,7 +819,7 @@ const rows = tableData.map((row, rowIndex) => {
           autoTable(doc, {
             startY: currentY,
             head: [columns.map(col => col.header)],
-            body: filteredRows.length > 0 ? filteredRows : rows,
+            body: sanitizedRows,
             foot: hasTotals ? [totalsRow] : [],
             theme: 'grid',
             headStyles: {
@@ -845,6 +868,95 @@ const rows = tableData.map((row, rowIndex) => {
           doc.setFont('helvetica', 'normal');
           currentY += 10;
         }
+      } else if (section.type === 'section' && section.fields) {
+        // 🖼️ SECCIÓN DE CAMPOS (key-value, puede incluir imágenes)
+        let sectionData = {};
+        if (Array.isArray(bodyData)) {
+          const elementData = bodyData[index];
+          if (elementData && typeof elementData === 'object') {
+            sectionData = elementData.data || elementData.rows || elementData;
+          }
+        }
+        console.log(`📋 Sección campos "${sectionTitle}":`, sectionData);
+        
+        const isImageUrl = (val) => {
+          if (typeof val !== 'string') return false;
+          const lower = val.toLowerCase();
+          return lower.includes('cloudinary.com') || lower.includes('res.cloudinary') || lower.startsWith('data:image/') || /\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i.test(val);
+        };
+        
+        const entries = Object.entries(sectionData).filter(([k]) => k !== 'id' && k !== 'type');
+        
+        if (entries.length > 0) {
+          for (const [key, value] of entries) {
+            if (currentY > 250) {
+              doc.addPage();
+              currentY = 20;
+            }
+            
+            const strVal = String(value ?? '');
+            
+            if (isImageUrl(strVal)) {
+              // 🖼️ Renderizar imagen
+              doc.setFontSize(9);
+              doc.setFont('helvetica', 'bold');
+              doc.text(sanitizeText(`${key}:`), 17, currentY);
+              currentY += 5;
+              
+              try {
+                // ✅ Usar getBase64Image (canvas) para convertir cualquier formato (WebP/JPG/PNG) a PNG base64
+                let imageData = strVal;
+                if (strVal.startsWith('http') || strVal.startsWith('data:image')) {
+                  imageData = await getBase64Image(strVal);
+                }
+                
+                const imgWidth = 60;
+                const imgHeight = 45;
+                if (currentY + imgHeight > 270) {
+                  doc.addPage();
+                  currentY = 20;
+                }
+                doc.addImage(imageData, 'PNG', 17, currentY, imgWidth, imgHeight);
+                currentY += imgHeight + 5;
+                console.log(`   ✅ Imagen "${key}" agregada al PDF`);
+              } catch (imgError) {
+                console.error(`   ❌ Error imagen "${key}":`, imgError);
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'italic');
+                doc.setTextColor(150, 150, 150);
+                doc.text(`[Imagen no disponible: ${strVal.substring(0, 60)}...]`, 17, currentY);
+                doc.setTextColor(...COLORS.text);
+                currentY += 6;
+              }
+            } else {
+              // Texto normal
+              doc.setFontSize(9);
+              doc.setFont('helvetica', 'bold');
+              doc.text(sanitizeText(`${key}: `), 17, currentY);
+              const labelWidth = doc.getTextWidth(sanitizeText(`${key}: `));
+              doc.setFont('helvetica', 'normal');
+              if (strVal && strVal.trim()) {
+                const textLines = doc.splitTextToSize(sanitizeText(strVal), 175 - labelWidth);
+                doc.text(textLines, 17 + labelWidth, currentY);
+                currentY += (textLines.length * 5) + 3;
+              } else {
+                doc.setTextColor(150, 150, 150);
+                doc.text('-', 17 + labelWidth, currentY);
+                doc.setTextColor(...COLORS.text);
+                currentY += 7;
+              }
+            }
+          }
+          currentY += 5;
+        } else {
+          doc.setFontSize(9);
+          doc.setTextColor(150, 150, 150);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Sin datos en esta sección)', 17, currentY);
+          doc.setTextColor(...COLORS.text);
+          doc.setFont('helvetica', 'normal');
+          currentY += 10;
+        }
       } else if (section.type === 'text' || section.type === 'textarea') {
         // SECCIÓN TIPO TEXTO (como Observaciones)
         let textValue = '';
@@ -860,7 +972,7 @@ const rows = tableData.map((row, rowIndex) => {
         if (textValue) {
           doc.setFontSize(9);
           doc.setFont('helvetica', 'normal');
-          const textLines = doc.splitTextToSize(String(textValue), 175);
+          const textLines = doc.splitTextToSize(sanitizeText(String(textValue)), 175);
           doc.text(textLines, 17, currentY);
           currentY += (textLines.length * 5) + 5;
         } else {
@@ -873,7 +985,7 @@ const rows = tableData.map((row, rowIndex) => {
           currentY += 10;
         }
       }
-    });
+    }
     
     // 4. Dibujar observaciones si existen (y no están en bodyElements)
     if (form.observaciones && !bodyElements.some(s => s.name === 'observaciones')) {
@@ -894,7 +1006,7 @@ const rows = tableData.map((row, rowIndex) => {
       
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
-      const obsLines = doc.splitTextToSize(form.observaciones, 175);
+      const obsLines = doc.splitTextToSize(sanitizeText(form.observaciones), 175);
       doc.text(obsLines, 17, currentY);
       currentY += (obsLines.length * 5) + 5;
     }

@@ -21,6 +21,7 @@
 .accordion-section.expanded {
   box-shadow: none;
   border-color: #e1e1e1;
+  /* overflow: hidden se hereda del .accordion-section base — mantiene contenido dentro del borde */
 }
 
 .accordion-header {
@@ -194,7 +195,7 @@
 .accordion-section.expanded .accordion-content {
   max-height: none; /* ✅ Sin límite de altura — dejar que el contenido defina su tamaño */
   padding: 1rem;
-  overflow-x: auto; /* ✅ Scroll horizontal para tablas anchas */
+  overflow-x: hidden; /* ✅ Contener la tabla — el scroll lo maneja .table-wrapper */
   overflow-y: visible;
   animation: slideDown 0.3s ease;
 }

@@ -241,11 +241,17 @@ function FillForm() {
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [draftSaving, setDraftSaving] = useState(false) // 📝 Estado de guardado de borrador
+  const [formSaving, setFormSaving] = useState(false) // 💾 Estado de guardado de formulario
   const [currentDraftId, setCurrentDraftId] = useState(null) // ID del borrador actual
+  const [showDraftSuccess, setShowDraftSuccess] = useState(false) // 🔔 Overlay de borrador guardado
 
   // Estado para verificar si el usuario revisó el documento antes de firmar
   const [hasReviewedDocument, setHasReviewedDocument] = useState(false);
   const documentReviewRef = useRef(null);
+  
+  // 🛡️ Guards para prevenir doble ejecución de guardado
+  const isSavingRef = useRef(false);
+  const isDraftSavingRef = useRef(false);
 
   // Estados para Acordeón (NUEVO)
   const [expandedSections, setExpandedSections] = useState({
@@ -436,9 +442,14 @@ function FillForm() {
  // 🆕 2. EFECTO DE GUARDADO: Sincroniza los cambios con el "disco duro"
 useEffect(() => {
   // 🔧 FIX: NO guardar si selectedTemplate es null (estamos en selector de plantilla)
-  // Esto evita corromper la pestaña actual cuando el usuario va a agregar nueva pestaña
-  if (openTabs.length > 0 && !id && selectedTemplate) {
+  // 🛡️ FIX: NO guardar si hay un guardado en curso (evita re-grabar datos que ya se eliminaron)
+  if (openTabs.length > 0 && !id && selectedTemplate && !isSavingRef.current && !isDraftSavingRef.current) {
     const timeoutId = setTimeout(() => {
+      // Doble check: no sincronizar si un guardado inició durante el timeout
+      if (isSavingRef.current || isDraftSavingRef.current) {
+        console.log('🔄 [SYNC] Sincronización cancelada: hay un guardado en curso');
+        return;
+      }
       // 🔧 FIX: Usar función updater para evitar race conditions
       setOpenTabs(prev => {
         const updatedTabs = prev.map((tab, i) => {
@@ -2200,37 +2211,73 @@ useEffect(() => {
       const fullFormData = await response.json();
       console.log('✅ Datos recibidos del endpoint /simple:', fullFormData);
       
-      // Helper para unwrap $values de ReferenceHandler.Preserve
-      const unwrapValues = (obj) => {
-        if (!obj) return obj;
-        if (Array.isArray(obj)) return obj;
-        if (obj.$values && Array.isArray(obj.$values)) return obj.$values;
-        return obj;
-      };
+      // 🔧 USAR bodyDataRaw (string puro del DB) para evitar problemas con ReferenceHandler.Preserve
+      let cleanBodyData = [];
+      const rawBodyStr = fullFormData.bodyDataRaw || '';
+      if (rawBodyStr && typeof rawBodyStr === 'string' && rawBodyStr.trim().startsWith('[')) {
+        try {
+          cleanBodyData = JSON.parse(rawBodyStr);
+          console.log('✅ bodyDataRaw parseado directamente:', cleanBodyData.length, 'elementos');
+        } catch(e) {
+          console.warn('⚠️ Error parseando bodyDataRaw, usando fallback bodyData:', e);
+        }
+      }
       
-      // Preparar estructura para el importador
-      let rawBody = fullFormData.bodyData;
-      rawBody = unwrapValues(rawBody);
-      const parsedBody = Array.isArray(rawBody) 
-        ? rawBody.map(elem => {
-            if (!elem) return elem;
-            // 🔧 FIX: Soportar tanto elem.data (formato legacy) como elem.rows (formato nuevo)
-            const rawData = elem.data || elem.rows;
-            const unwrappedData = unwrapValues(rawData);
-            if (Array.isArray(unwrappedData)) {
-              return { ...elem, data: unwrappedData.map(row => {
-                if (row && row.$values) return row.$values;
-                return row;
-              })};
-            }
-            return { ...elem, data: unwrappedData };
-          })
-        : [];
+      // Fallback: si no hay bodyDataRaw, usar bodyData con deep unwrap
+      if (!Array.isArray(cleanBodyData) || cleanBodyData.length === 0) {
+        const deepUnwrap = (obj) => {
+          if (obj === null || obj === undefined) return obj;
+          if (typeof obj !== 'object') return obj;
+          if (obj.$values && Array.isArray(obj.$values)) return obj.$values.map(item => deepUnwrap(item));
+          if (Array.isArray(obj)) return obj.map(item => deepUnwrap(item));
+          const result = {};
+          for (const key of Object.keys(obj)) {
+            if (key === '$id' || key === '$ref') continue;
+            result[key] = deepUnwrap(obj[key]);
+          }
+          return result;
+        };
+        cleanBodyData = deepUnwrap(fullFormData.bodyData);
+        if (!Array.isArray(cleanBodyData)) cleanBodyData = [];
+        console.log('🔄 Usando fallback bodyData con deepUnwrap:', cleanBodyData.length, 'elementos');
+      }
+      
+      // 2. Parsear templateBodyElementsRaw para obtener títulos
+      let templateElementsArr = [];
+      const rawTemplateStr = fullFormData.templateBodyElementsRaw || '';
+      if (rawTemplateStr && typeof rawTemplateStr === 'string' && rawTemplateStr.trim().startsWith('[')) {
+        try { templateElementsArr = JSON.parse(rawTemplateStr); } catch(e) { templateElementsArr = []; }
+      }
+      // Fallback
+      if (templateElementsArr.length === 0 && fullFormData.templateBodyElements) {
+        const tbe = fullFormData.templateBodyElements;
+        if (Array.isArray(tbe)) templateElementsArr = tbe;
+        else if (tbe.$values) templateElementsArr = tbe.$values;
+      }
+      
+      // 3. Crear mapa de id → título desde el template
+      const titleMap = {};
+      templateElementsArr.forEach(te => {
+        if (te && te.id) {
+          titleMap[te.id] = te.title || te.sectionTitle || '';
+        }
+      });
+      console.log('📋 titleMap de template:', titleMap);
+      
+      // 4. Preparar estructura para el importador - ENRIQUECER con títulos
+      const parsedBody = cleanBodyData.map(elem => {
+        if (!elem) return elem;
+        let data = elem.data || elem.rows;
+        // Agregar título del template si no existe en el bodyData
+        const title = elem.title || titleMap[elem.id] || '';
+        return { ...elem, data, title };
+      });
       
       console.log('📦 parsedBody procesado:', parsedBody.length, 'elementos');
       parsedBody.forEach((el, i) => {
         const d = el?.data;
-        console.log(`   [${i}] type=${el?.type}, data es ${Array.isArray(d) ? 'array de ' + d.length : typeof d}`);
+        console.log(`   [${i}] type=${el?.type}, title="${el?.title}", data es ${Array.isArray(d) ? 'array de ' + d.length : typeof d}`, 
+          Array.isArray(d) && d.length > 0 ? `primer row keys: ${Object.keys(d[0]).join(', ')}` : '');
       });
       
       setColumnImporterForm({
@@ -2259,10 +2306,11 @@ useEffect(() => {
    * 🔥 FUNCIÓN PRINCIPAL: Importa toda una columna de un formulario origen
    * al formulario actual (columna destino)
    */
-  const importColumnData = (sourceColumnName) => {
+  const importColumnData = (sourceColumnName, sourceTableIdx) => {
     console.log('🚀 IMPORTANDO COLUMNA AUTOMÁTICAMENTE...');
     console.log('   📤 Columna origen:', sourceColumnName);
     console.log('   📥 Columna destino:', columnImporterTarget?.columnName);
+    console.log('   📊 Tabla origen índice:', sourceTableIdx);
     console.log('   📋 bodyData actual:', bodyData);
     
     if (!columnImporterForm?.fullData || !columnImporterTarget) {
@@ -2289,20 +2337,28 @@ useEffect(() => {
     const targetRowCount = (destElem?.data?.length || destElem?.rows?.length) || 10;
     console.log('   🎯 Filas destino:', targetRowCount);
     
-    // 🔧 FIX: Solo buscar en el elemento CORRESPONDIENTE del formulario origen (misma tabla)
+    // 🔧 FIX: Usar la tabla origen seleccionada si se proporcionó sourceTableIdx
     let sourceColumnData = [];
     
-    // Encontrar el elemento tipo tabla correcto en el source (soporta .data y .rows)
-    const tableElements = sourceBody
-      .map((elem, idx) => ({ elem, idx }))
-      .filter(({ elem }) => elem && getElemRows(elem).length > 0);
+    let sourceElement = null;
     
-    // Intentar el índice exacto; si no, usar la primera tabla con datos
-    let sourceElement = sourceBody[elementIndex];
+    // Si se proporcionó un índice de tabla específico, usarlo directamente
+    if (sourceTableIdx !== undefined && sourceTableIdx !== null) {
+      sourceElement = sourceBody[sourceTableIdx];
+      console.log(`   ✅ Usando tabla origen específica [${sourceTableIdx}]:`, sourceElement?.title || sourceElement?.sectionTitle || 'Sin título');
+    }
+    
+    // Fallback: intentar el índice del elemento destino o la primera tabla
     if (!sourceElement || getElemRows(sourceElement).length === 0) {
-      console.warn(`⚠️ No se encontró tabla en sourceBody[${elementIndex}]. Buscando fallback...`);
-      const fallback = tableElements[0];
-      sourceElement = fallback ? fallback.elem : null;
+      sourceElement = sourceBody[elementIndex];
+      if (!sourceElement || getElemRows(sourceElement).length === 0) {
+        console.warn(`⚠️ No se encontró tabla en sourceBody[${elementIndex}]. Buscando fallback...`);
+        const tableElements = sourceBody
+          .map((elem, idx) => ({ elem, idx }))
+          .filter(({ elem }) => elem && getElemRows(elem).length > 0);
+        const fallback = tableElements[0];
+        sourceElement = fallback ? fallback.elem : null;
+      }
     }
     
     if (!sourceElement || getElemRows(sourceElement).length === 0) {
@@ -3161,8 +3217,9 @@ useEffect(() => {
     // Respetar configuración de la plantilla (capturaFecha / capturaHora)
     if (firmaData.firma) {
       const ahora = new Date();
-      const fechaActual = ahora.toISOString().split('T')[0]; // YYYY-MM-DD
-      const horaActual = ahora.toTimeString().slice(0, 5); // HH:MM
+      // 🔧 FIX: Usar fecha LOCAL (no UTC) para evitar desfase de día en zona horaria Ecuador (UTC-5)
+      const fechaActual = ahora.getFullYear() + '-' + String(ahora.getMonth() + 1).padStart(2, '0') + '-' + String(ahora.getDate()).padStart(2, '0');
+      const horaActual = String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0');
       
       // Buscar la config de esta firma en el template
       const firmaConfig = (selectedTemplate?.firmas || []).find(f => f.puesto === puesto);
@@ -3316,10 +3373,11 @@ useEffect(() => {
   const handleSafeExit = (callback) => {
     if (hasUnsavedChanges && !id) {
       const confirmExit = window.confirm(
-        '⚠️ Tienes cambios sin guardar.\n\nLos datos se han guardado automáticamente como borrador.\n\n¿Estás seguro de que quieres salir?'
+        '⚠️ Tienes cambios sin guardar.\n\nSe creará un respaldo local en el navegador (no en el servidor).\n\n¿Estás seguro de que quieres salir?'
       );
       if (confirmExit) {
-        saveToLocalStorage(); // Guardar antes de salir
+        console.log('🚪 [EXIT] Usuario confirmó salir, guardando respaldo local...');
+        saveToLocalStorage(); // Guardar respaldo local antes de salir
         callback();
       }
     } else {
@@ -3375,9 +3433,14 @@ useEffect(() => {
     handleSafeExit(() => navigate('/historial'));
   };
 
-  // Autoguardado con manejo de errores y limpieza automática
+  // Autoguardado LOCAL (solo localStorage, NO guarda en base de datos)
   const saveToLocalStorage = () => {
     if (!selectedTemplate || id) return; 
+    // 🛡️ No autoguardar si hay un guardado real en curso
+    if (isSavingRef.current || isDraftSavingRef.current) {
+      console.log('🔄 [AUTO-LOCAL] Saltando autoguardado: hay un guardado en curso');
+      return;
+    }
     
     try {
       // Preparar datos sin firmas (solo IDs) para reducir tamaño
@@ -3385,8 +3448,6 @@ useEffect(() => {
         templateID: selectedTemplate.templateID,
         headerData,
         bodyData,
-        // NO guardar firmasData completo (contiene Base64 pesado)
-        // firmasData es un objeto {puesto: {datos}}, convertir a objeto sin firmas
         firmasData: Object.keys(firmasData).reduce((acc, puesto) => {
           const firma = firmasData[puesto];
           acc[puesto] = {
@@ -3394,7 +3455,6 @@ useEffect(() => {
             fecha: firma?.fecha,
             hora: firma?.hora,
             email: firma?.email,
-            // Solo indicar si tiene firma, no el contenido
             hasFirma: !!firma?.firma
           };
           return acc;
@@ -3407,16 +3467,16 @@ useEffect(() => {
       
       // Verificar tamaño antes de guardar
       const sizeInMB = new Blob([dataString]).size / (1024 * 1024);
-      console.log(`💾 Autoguardando (${sizeInMB.toFixed(2)} MB)...`);
+      console.log(`🔄 [AUTO-LOCAL] Autoguardado local (${sizeInMB.toFixed(2)} MB) - solo en navegador, NO en servidor`);
       
       if (sizeInMB > 4) {
-        console.warn('⚠️ Datos muy grandes, limpiando autosaves antiguos...');
+        console.warn('🔄 [AUTO-LOCAL] ⚠️ Datos muy grandes, limpiando autosaves antiguos...');
         cleanOldAutosaves();
       }
       
       localStorage.setItem(key, dataString);
-      setAutoSaveStatus('saved');
-      console.log('✅ Autoguardado exitoso');
+      setAutoSaveStatus('local-saved');
+      console.log('🔄 [AUTO-LOCAL] ✅ Guardado local exitoso (NO es guardado en servidor)');
       setTimeout(() => setAutoSaveStatus(''), 2000);
       
     } catch (error) {
@@ -3447,13 +3507,11 @@ useEffect(() => {
             timestamp: new Date().toISOString()
           };
           localStorage.setItem(key, JSON.stringify(autosaveData));
-          setAutoSaveStatus('saved');
-          console.log('✅ Autoguardado exitoso después de limpiar');
+          setAutoSaveStatus('local-saved');
+          console.log('🔄 [AUTO-LOCAL] ✅ Guardado local exitoso después de limpiar');
         } catch (retryError) {
-          console.error('❌ No se pudo autoguardar incluso después de limpiar:', retryError);
+          console.error('🔄 [AUTO-LOCAL] ❌ No se pudo autoguardar incluso después de limpiar:', retryError);
           setAutoSaveStatus('error');
-          // Mostrar mensaje al usuario
-          alert('⚠️ No se pudo autoguardar. localStorage está lleno. Los cambios se guardarán al enviar el formulario.');
         }
       } else {
         setAutoSaveStatus('error');
@@ -3500,28 +3558,34 @@ useEffect(() => {
     }
   };
 
-  // Autoguardado periódico
+  // Autoguardado periódico LOCAL (solo localStorage, cada 30s)
   useEffect(() => {
     if (!selectedTemplate || !hasUnsavedChanges) return;
+    console.log('🔄 [AUTO-LOCAL] Timer de autoguardado local activado (cada 30s)');
     const autoSaveInterval = setInterval(() => {
       setAutoSaveStatus('saving');
       saveToLocalStorage();
     }, AUTOSAVE_INTERVAL);
-    return () => clearInterval(autoSaveInterval);
+    return () => {
+      console.log('🔄 [AUTO-LOCAL] Timer de autoguardado local desactivado');
+      clearInterval(autoSaveInterval);
+    };
   }, [selectedTemplate, hasUnsavedChanges, headerData, bodyData, firmasData]);
 
   // Guardar antes de salir de la página o navegar
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       if (hasUnsavedChanges && selectedTemplate && !id) {
+        console.log('🔄 [AUTO-LOCAL] beforeunload: Guardando respaldo local antes de salir');
         saveToLocalStorage();
         e.preventDefault();
-        e.returnValue = ''; // Mensaje de confirmación
+        e.returnValue = '';
       }
     };
 
     const handleVisibilityChange = () => {
       if (document.hidden && hasUnsavedChanges && selectedTemplate && !id) {
+        console.log('🔄 [AUTO-LOCAL] visibilitychange: Pestaña oculta, guardando respaldo local');
         saveToLocalStorage();
       }
     };
@@ -3532,6 +3596,7 @@ useEffect(() => {
     return () => {
       // Guardar al desmontar el componente
       if (hasUnsavedChanges && selectedTemplate && !id) {
+        console.log('🔄 [AUTO-LOCAL] cleanup/unmount: Guardando respaldo local');
         saveToLocalStorage();
       }
       window.removeEventListener('beforeunload', handleBeforeUnload);
@@ -3868,7 +3933,7 @@ useEffect(() => {
     const shouldBeInteger = labelLower.includes('cajas') || labelLower.includes('unidades') || labelLower.includes('piezas') || labelLower.includes('cantidad') || labelLower.includes('número');
     
     switch (field.type) {
-        // ✅ NUEVO: Campo de imagen
+        // ✅ Campo de imagen — sube a Cloudinary y guarda URL
         case "image":
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -3878,20 +3943,42 @@ useEffect(() => {
                 capture="environment"
                 onChange={async (e) => {
                   const file = e.target.files[0];
-                  if (file) {
-                    // Verificar tamaño (max 5MB)
-                    if (file.size > 5 * 1024 * 1024) {
-                      alert('⚠️ La imagen es muy grande. Máximo 5MB.');
-                      return;
+                  if (!file) return;
+
+                  // Verificar tamaño (max 5MB)
+                  if (file.size > 5 * 1024 * 1024) {
+                    alert('⚠️ La imagen es muy grande. Máximo 5MB.');
+                    return;
+                  }
+
+                  // Mostrar indicador de carga temporal
+                  onChange('__uploading__');
+
+                  try {
+                    // ☁️ Subir a Cloudinary
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);
+                    formData.append('folder', 'frigo-formularios');
+
+                    const response = await fetch(
+                      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`,
+                      { method: 'POST', body: formData }
+                    );
+
+                    if (!response.ok) {
+                      throw new Error(`Cloudinary error: ${response.status}`);
                     }
+
+                    const data = await response.json();
+                    console.log('✅ Imagen subida a Cloudinary:', data.secure_url);
                     
-                    // Convertir a Base64
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      const base64String = reader.result;
-                      onChange(base64String);
-                    };
-                    reader.readAsDataURL(file);
+                    // Guardar la URL de Cloudinary (no Base64)
+                    onChange(data.secure_url);
+                  } catch (err) {
+                    console.error('❌ Error subiendo imagen a Cloudinary:', err);
+                    alert('❌ Error al subir la imagen. Intenta de nuevo.');
+                    onChange(''); // Limpiar estado de carga
                   }
                 }}
                 required={field.required}
@@ -3902,7 +3989,32 @@ useEffect(() => {
                   cursor: 'pointer'
                 }}
               />
-              {value && (
+              {/* Indicador de carga */}
+              {value === '__uploading__' && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '20px',
+                  background: '#eff6ff',
+                  borderRadius: '8px',
+                  border: '1px solid #bfdbfe'
+                }}>
+                  <div style={{
+                    width: '24px',
+                    height: '24px',
+                    border: '3px solid #3b82f6',
+                    borderTopColor: 'transparent',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                  <span style={{ color: '#1d4ed8', fontWeight: 600 }}>
+                    ☁️ Subiendo imagen a la nube...
+                  </span>
+                </div>
+              )}
+              {/* Preview de la imagen subida */}
+              {value && value !== '__uploading__' && (
                 <div style={{ position: 'relative' }}>
                   <img 
                     src={value} 
@@ -3914,6 +4026,22 @@ useEffect(() => {
                       border: '1px solid #e5e7eb'
                     }} 
                   />
+                  {/* Badge indicando que está en la nube */}
+                  {value.includes('cloudinary.com') && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '5px',
+                      left: '5px',
+                      background: 'rgba(16, 185, 129, 0.9)',
+                      color: 'white',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontWeight: 600
+                    }}>
+                      ☁️ En la nube
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => onChange('')}
@@ -4073,8 +4201,39 @@ useEffect(() => {
 
   // --- GUARDADO DE BORRADOR (Base de datos - persiste hasta 7 días) ---
   const handleSaveDraft = async () => {
+    // 🛡️ Guard contra doble ejecución
+    if (isDraftSavingRef.current) {
+      console.warn('📋 [DRAFT] ⚠️ Ya hay un guardado de borrador en curso, ignorando click duplicado');
+      return;
+    }
+    isDraftSavingRef.current = true;
+    
+    console.log('📋 [DRAFT] === INICIO handleSaveDraft ===' );
+    console.log('📋 [DRAFT] selectedTemplate:', selectedTemplate?.templateID, selectedTemplate?.nombre);
+    console.log('📋 [DRAFT] currentDraftId:', currentDraftId);
+    console.log('📋 [DRAFT] activeTabIndex:', activeTabIndex);
+    
     if (!selectedTemplate) {
+      console.warn('📋 [DRAFT] ❌ No hay plantilla seleccionada, abortando.');
       alert('⚠️ Selecciona una plantilla primero');
+      isDraftSavingRef.current = false;
+      return;
+    }
+
+    // ☁️ Verificar que no haya imágenes subiendo a Cloudinary
+    const hasUploadingImages = bodyData.some(element => {
+      if (element.type === 'section' && element.data) {
+        return Object.values(element.data).some(v => v === '__uploading__');
+      }
+      if (element.type === 'table' && Array.isArray(element.data)) {
+        return element.data.some(row => Object.values(row).some(v => v === '__uploading__'));
+      }
+      return false;
+    });
+    if (hasUploadingImages) {
+      console.warn('📋 [DRAFT] ❌ Hay imágenes subiendo, abortando.');
+      alert('⏳ Espera a que terminen de subir las imágenes antes de guardar.');
+      isDraftSavingRef.current = false;
       return;
     }
     
@@ -4082,6 +4241,7 @@ useEffect(() => {
     
     try {
       const currentUser = authService.getCurrentUser();
+      console.log('📋 [DRAFT] Usuario:', currentUser?.username || currentUser?.nombre);
       
       // Calcular progreso estimado
       const totalFields = Object.keys(headerData).length + bodyData.length;
@@ -4092,6 +4252,7 @@ useEffect(() => {
                             return false;
                           }).length;
       const progress = totalFields > 0 ? Math.round((filledFields / totalFields) * 100) : 0;
+      console.log('📋 [DRAFT] Progreso calculado:', progress, '%');
       
       // Preparar firmas sin imágenes pesadas
       const firmasSinImagenes = Object.keys(firmasData).reduce((acc, puesto) => {
@@ -4121,52 +4282,148 @@ useEffect(() => {
         nota: ''
       };
       
-      let response;
+      const method = currentDraftId ? 'PUT' : 'POST';
+      const url = currentDraftId 
+        ? `${API_BASE_URL}/FormDrafts/${currentDraftId}` 
+        : `${API_BASE_URL}/FormDrafts`;
       
-      if (currentDraftId) {
-        // Actualizar borrador existente
-        response = await fetch(`${API_BASE_URL}/FormDrafts/${currentDraftId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(draftPayload)
-        });
-      } else {
-        // Crear nuevo borrador
-        response = await fetch(`${API_BASE_URL}/FormDrafts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(draftPayload)
-        });
-      }
+      console.log(`📋 [DRAFT] Enviando ${method} a ${url}`);
+      console.log('📋 [DRAFT] Payload templateID:', draftPayload.templateID);
+      
+      const response = await fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draftPayload)
+      });
+      
+      console.log('📋 [DRAFT] Response status:', response.status, response.statusText);
       
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('📋 [DRAFT] ❌ Error response body:', errorText);
         throw new Error(errorText);
       }
       
       const savedDraft = await response.json();
-      setCurrentDraftId(savedDraft.draftID || savedDraft.DraftID);
+      const draftId = savedDraft.draftID || savedDraft.DraftID;
+      setCurrentDraftId(draftId);
       setHasUnsavedChanges(false);
       
-      // Mostrar confirmación
-      setAutoSaveStatus('draft-saved');
-      setTimeout(() => setAutoSaveStatus(''), 4000);
+      console.log(`📋 [DRAFT] ✅ Borrador guardado exitosamente (ID: ${draftId})`);
       
-      console.log(`✅ Borrador guardado (ID: ${savedDraft.draftID || savedDraft.DraftID}) - expira en 7 días`);
+      // Limpiar autosave de localStorage para esta plantilla
+      const autosaveKey = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
+      localStorage.removeItem(autosaveKey);
+      console.log('📋 [DRAFT] 🗑️ Autosave localStorage limpiado:', autosaveKey);
+      
+      // CERRAR PESTAÑA INMEDIATAMENTE
+      const indexToRemove = activeTabIndex;
+      console.log('📋 [DRAFT] Cerrando pestaña index:', indexToRemove, 'de', openTabs.length, 'pestañas INMEDIATAMENTE');
+      
+      // Cerrar la pestaña del formulario guardado como borrador
+      setOpenTabs(prevTabs => {
+        const newTabs = prevTabs.filter((_, i) => i !== indexToRemove);
+        console.log('📋 [DRAFT] Pestañas restantes:', newTabs.length);
+        
+        if (newTabs.length === 0) {
+          // Era la última pestaña: volver al selector de plantillas
+          console.log('📋 [DRAFT] Última pestaña cerrada, volviendo al selector');
+          localStorage.removeItem(TABS_PERSISTENCE_KEY);
+          setSelectedTemplate(null);
+          setLotesConfirmados(false);
+          setSelectedLotes([]);
+          setActiveTabIndex(0);
+          setCurrentDraftId(null);
+        } else {
+          // Quedan otras pestañas: cambiar a la siguiente
+          const nextIndex = Math.max(0, indexToRemove - 1);
+          const nextTab = newTabs[nextIndex];
+          console.log('📋 [DRAFT] Cambiando a pestaña:', nextIndex, nextTab?.templateName);
+          
+          localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
+            tabs: newTabs,
+            activeIdx: nextIndex,
+            nextId: nextTabId
+          }));
+          
+          setActiveTabIndex(nextIndex);
+          setSelectedTemplate(nextTab.template);
+          setHeaderData(nextTab.headerData || {});
+          setBodyData(nextTab.bodyData || []);
+          setFirmasData(nextTab.firmasData || {});
+          setLotesConfirmados(nextTab.lotesConfirmados || false);
+          setSelectedLotes(nextTab.selectedLotes || []);
+          setCurrentDraftId(nextTab.draftId || null);
+        }
+        return newTabs;
+      });
+      
+      // Mostrar confirmación DESPUÉS de cerrar pestaña
+      setShowDraftSuccess(true);
+      setAutoSaveStatus('draft-saved');
+      setTimeout(() => {
+        setShowDraftSuccess(false);
+        setAutoSaveStatus('');
+      }, 2500);
       
     } catch (err) {
-      console.error('❌ Error al guardar borrador:', err);
+      console.error('📋 [DRAFT] ❌ Error completo:', err);
+      console.error('📋 [DRAFT] ❌ Stack:', err.stack);
       alert(`❌ Error al guardar borrador: ${err.message}`);
     } finally {
       setDraftSaving(false);
+      isDraftSavingRef.current = false;
+      console.log('📋 [DRAFT] === FIN handleSaveDraft ===');
     }
   };
 
   // --- GUARDADO FINAL (POST / PUT) ---
  const handleSaveForm = async () => {
+    // 🛡️ Guard contra doble ejecución
+    if (isSavingRef.current) {
+      console.warn('💾 [SAVE] ⚠️ Ya hay un guardado en curso, ignorando click duplicado');
+      return;
+    }
+    isSavingRef.current = true;
+    setFormSaving(true);
+    
+    console.log('💾 [SAVE] === INICIO handleSaveForm ===');
+    console.log('💾 [SAVE] selectedTemplate:', selectedTemplate?.templateID, selectedTemplate?.nombre);
+    console.log('💾 [SAVE] id (editando):', id || 'NUEVO');
+    console.log('💾 [SAVE] activeTabIndex:', activeTabIndex);
+    console.log('💾 [SAVE] openTabs.length:', openTabs.length);
+    console.log('💾 [SAVE] headerData keys:', Object.keys(headerData));
+    console.log('💾 [SAVE] bodyData elements:', bodyData.length);
+    console.log('💾 [SAVE] firmasData keys:', Object.keys(firmasData));
+    
     setError(null);
     
-    // ... (Mantén toda tu lógica inicial de finalHeaderData y payload igual) ...
+    if (!selectedTemplate) {
+      console.error('💾 [SAVE] ❌ No hay selectedTemplate, abortando');
+      alert('⚠️ No hay plantilla seleccionada. Selecciona una plantilla primero.');
+      isSavingRef.current = false;
+      setFormSaving(false);
+      return;
+    }
+    
+    // ☁️ Verificar que no haya imágenes subiendo a Cloudinary
+    const hasUploadingImages = bodyData.some(element => {
+      if (element.type === 'section' && element.data) {
+        return Object.values(element.data).some(v => v === '__uploading__');
+      }
+      if (element.type === 'table' && Array.isArray(element.data)) {
+        return element.data.some(row => Object.values(row).some(v => v === '__uploading__'));
+      }
+      return false;
+    });
+    if (hasUploadingImages) {
+      console.warn('💾 [SAVE] ❌ Hay imágenes subiendo, abortando');
+      alert('⏳ Espera a que terminen de subir las imágenes antes de guardar.');
+      isSavingRef.current = false;
+      setFormSaving(false);
+      return;
+    }
+    
     const finalHeaderData = { ...headerData };
     const fechaCampos = ['fecha', 'Fecha', 'date', 'Date'];
     const tieneFecha = fechaCampos.some(campo => finalHeaderData[campo]);
@@ -4178,11 +4435,13 @@ useEffect(() => {
       );
       if (fechaField) {
         finalHeaderData[fechaField.label || fechaField.name || 'Fecha'] = today;
+        console.log('💾 [SAVE] Fecha auto-asignada:', today);
       }
     }
     
     // 🆕 Obtener datos del usuario logueado para guardar quién creó el formulario
     const currentUser = authService.getCurrentUser();
+    console.log('💾 [SAVE] Usuario:', currentUser?.nombre || currentUser?.username);
     
     // 🧹 Limpiar filas vacías de las tablas antes de guardar
     const cleanedBodyData = bodyData.map(element => {
@@ -4210,6 +4469,10 @@ useEffect(() => {
 
     const method = id ? 'PUT' : 'POST';
     const url = id ? `${API_URL_FILLED_FORMS}/${id}` : API_URL_FILLED_FORMS;
+    
+    console.log(`💾 [SAVE] Enviando ${method} a ${url}`);
+    console.log('💾 [SAVE] Payload templateID:', payload.templateID);
+    console.log('💾 [SAVE] Payload size (aprox):', JSON.stringify(payload).length, 'chars');
 
     try {
       const response = await fetch(url, {
@@ -4218,87 +4481,106 @@ useEffect(() => {
         body: JSON.stringify(payload)
       });
       
+      console.log('💾 [SAVE] Response status:', response.status, response.statusText);
+      
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Error al guardar: ${errorText}`);
+        console.error('💾 [SAVE] ❌ Error response body:', errorText);
+        throw new Error(`Error al guardar (${response.status}): ${errorText}`);
       }
+      
+      const responseData = await response.json().catch(() => null);
+      console.log('💾 [SAVE] ✅ Respuesta exitosa:', responseData);
 
       // ✅ EL GUARDADO FUE EXITOSO
-      setShowSuccess(true);
       setHasUnsavedChanges(false);
       
       // 🗑️ Eliminar borrador de BD si existía
       if (currentDraftId) {
         try {
           await fetch(`${API_BASE_URL}/FormDrafts/${currentDraftId}`, { method: 'DELETE' });
-          console.log('🗑️ Borrador eliminado tras guardar formulario completo');
+          console.log('💾 [SAVE] 🗑️ Borrador eliminado (ID:', currentDraftId, ')');
           setCurrentDraftId(null);
         } catch (draftErr) {
-          console.warn('⚠️ No se pudo eliminar borrador:', draftErr);
+          console.warn('💾 [SAVE] ⚠️ No se pudo eliminar borrador:', draftErr);
         }
       }
       
-      // Guardamos el índice de la pestaña que vamos a eliminar
-      const indexToRemove = activeTabIndex;
-
-      // 1. Borramos el borrador temporal de esta plantilla específica
+      // 1. Borramos el autosave de localStorage de esta plantilla
       if (!id) {
         const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
         localStorage.removeItem(key);
+        console.log('💾 [SAVE] 🗑️ localStorage autosave limpiado:', key);
       }
 
-      // 🕒 Esperamos 1.5s para que el operario vea el check verde
-      setTimeout(() => {
-        setShowSuccess(false);
+      // 2. CERRAR PESTAÑA INMEDIATAMENTE (antes de mostrar overlay)
+      const indexToRemove = activeTabIndex;
+      console.log('💾 [SAVE] Cerrando pestaña index:', indexToRemove, 'INMEDIATAMENTE');
 
-        if (id) {
-          // Si era una edición de un formulario viejo, volvemos a la lista
+      if (id) {
+        // Si era una edición, navegar a vista de formularios
+        console.log('💾 [SAVE] Era edición, navegando a /view-forms');
+        setShowSuccess(true);
+        setTimeout(() => {
+          setShowSuccess(false);
           navigate('/view-forms');
-        } else {
-          // 🆕 MANEJO DE PESTAÑAS ABIERTAS
-          setOpenTabs(prevTabs => {
-            const newTabs = prevTabs.filter((_, i) => i !== indexToRemove);
+        }, 2500);
+      } else {
+        // 🆕 CERRAR PESTAÑA INMEDIATAMENTE después de guardar formulario nuevo
+        setOpenTabs(prevTabs => {
+          const newTabs = prevTabs.filter((_, i) => i !== indexToRemove);
+          console.log('💾 [SAVE] Pestañas restantes:', newTabs.length);
 
-            if (newTabs.length === 0) {
-              // CASO A: Era la última pestaña abierta.
-              // LIMPIAMOS LA PERSISTENCIA para que no aparezca al volver
-              localStorage.removeItem(TABS_PERSISTENCE_KEY);
-              
-              setSelectedTemplate(null);
-              setLotesConfirmados(false);
-              setSelectedLotes([]);
-              setActiveTabIndex(0);
-              setCurrentDraftId(null); // 🔧 FIX: Reset draftId
-            } else {
-              // CASO B: Quedan otras pestañas trabajando.
-              const nextIndex = Math.max(0, indexToRemove - 1);
-              const nextTab = newTabs[nextIndex];
+          if (newTabs.length === 0) {
+            // Era la última pestaña: volver al selector de plantillas
+            console.log('💾 [SAVE] Última pestaña cerrada, volviendo al selector');
+            localStorage.removeItem(TABS_PERSISTENCE_KEY);
+            setSelectedTemplate(null);
+            setLotesConfirmados(false);
+            setSelectedLotes([]);
+            setActiveTabIndex(0);
+            setCurrentDraftId(null);
+          } else {
+            // Quedan otras pestañas: cambiar a la siguiente
+            const nextIndex = Math.max(0, indexToRemove - 1);
+            const nextTab = newTabs[nextIndex];
+            console.log('💾 [SAVE] Cambiando a pestaña:', nextIndex, nextTab?.templateName);
 
-              // Actualizamos la PERSISTENCIA con las pestañas que quedan
-              localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
-                tabs: newTabs,
-                activeIdx: nextIndex,
-                nextId: nextTabId
-              }));
+            localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
+              tabs: newTabs,
+              activeIdx: nextIndex,
+              nextId: nextTabId
+            }));
 
-              // Cambiamos el foco a la pestaña restante
-              setActiveTabIndex(nextIndex);
-              setSelectedTemplate(nextTab.template);
-              setHeaderData(nextTab.headerData || {});
-              setBodyData(nextTab.bodyData || []);
-              setFirmasData(nextTab.firmasData || {});
-              setLotesConfirmados(nextTab.lotesConfirmados || false);
-              setSelectedLotes(nextTab.selectedLotes || []);
-              setCurrentDraftId(nextTab.draftId || null); // 🔧 FIX: Restaurar draftId de la pestaña siguiente
-            }
-            return newTabs;
-          });
-        }
-      }, 1500);
+            setActiveTabIndex(nextIndex);
+            setSelectedTemplate(nextTab.template);
+            setHeaderData(nextTab.headerData || {});
+            setBodyData(nextTab.bodyData || []);
+            setFirmasData(nextTab.firmasData || {});
+            setLotesConfirmados(nextTab.lotesConfirmados || false);
+            setSelectedLotes(nextTab.selectedLotes || []);
+            setCurrentDraftId(nextTab.draftId || null);
+          }
+          return newTabs;
+        });
+        
+        // 3. Mostrar overlay de éxito DESPUÉS de cerrar la pestaña
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 2500);
+      }
 
     } catch (err) {
+      console.error('💾 [SAVE] ❌ Error completo:', err);
+      console.error('💾 [SAVE] ❌ Stack:', err.stack);
       setError(err.message);
+      // 🆕 También mostrar alert para que el usuario lo vea aunque esté scrolleado
+      alert(`❌ Error al guardar formulario: ${err.message}`);
+    } finally {
+      isSavingRef.current = false;
+      setFormSaving(false);
     }
+    
+    console.log('💾 [SAVE] === FIN handleSaveForm ===');
   };
   // --- RENDERIZADO ---
 
@@ -4794,11 +5076,11 @@ useEffect(() => {
           {!id && (
             <button 
               onClick={handleSaveDraft} 
-              disabled={draftSaving}
+              disabled={draftSaving || formSaving}
               style={{
                 background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#ffffff', border: '2px solid #b45309',
-                padding: '8px 16px', borderRadius: '6px', cursor: draftSaving ? 'wait' : 'pointer',
-                fontSize: '14px', fontWeight: 'bold', opacity: draftSaving ? 0.7 : 1,
+                padding: '8px 16px', borderRadius: '6px', cursor: (draftSaving || formSaving) ? 'wait' : 'pointer',
+                fontSize: '14px', fontWeight: 'bold', opacity: (draftSaving || formSaving) ? 0.7 : 1,
                 boxShadow: '0 2px 8px rgba(245, 158, 11, 0.4)', minHeight: '44px',
                 display: 'inline-flex', alignItems: 'center', gap: '4px'
               }}
@@ -4807,8 +5089,9 @@ useEffect(() => {
               {draftSaving ? '⏳ Guardando...' : '📋 Guardar Borrador'}
             </button>
           )}
-          <button onClick={handleSaveForm} className="btn-primary">
-              {id ? 'Actualizar' : 'Guardar Formulario'}
+          <button onClick={handleSaveForm} className="btn-primary" disabled={formSaving || draftSaving}
+            style={{ opacity: (formSaving || draftSaving) ? 0.7 : 1, cursor: (formSaving || draftSaving) ? 'wait' : 'pointer' }}>
+              {formSaving ? '⏳ Guardando...' : (id ? 'Actualizar' : 'Guardar Formulario')}
           </button>
         </div>
         {autoSaveStatus === 'draft-saved' && (
@@ -5181,18 +5464,24 @@ useEffect(() => {
 
       {/* INDICADOR DE AUTOGUARDADO FLOTANTE Y VISIBLE */}
       {!id && (
-        <div className={`autosave-indicator ${autoSaveStatus ? 'visible' : ''} ${autoSaveStatus === 'saving' ? 'saving' : ''} ${autoSaveStatus === 'saved' ? 'saved' : ''} ${hasUnsavedChanges && !autoSaveStatus ? 'unsaved' : ''}`}>
+        <div className={`autosave-indicator ${autoSaveStatus ? 'visible' : ''} ${autoSaveStatus === 'saving' ? 'saving' : ''} ${autoSaveStatus === 'local-saved' ? 'saved' : ''} ${hasUnsavedChanges && !autoSaveStatus ? 'unsaved' : ''}`}>
           <div className="autosave-content">
             {autoSaveStatus === 'saving' && (
               <>
-                <span className="autosave-icon rotating">💾</span>
-                <span className="autosave-text">Guardando borrador...</span>
+                <span className="autosave-icon rotating">🔄</span>
+                <span className="autosave-text">Respaldo local automático...</span>
               </>
             )}
-            {autoSaveStatus === 'saved' && (
+            {autoSaveStatus === 'local-saved' && (
+              <>
+                <span className="autosave-icon">💾</span>
+                <span className="autosave-text">Respaldo local (usa los botones para guardar en servidor)</span>
+              </>
+            )}
+            {autoSaveStatus === 'draft-saved' && (
               <>
                 <span className="autosave-icon">✅</span>
-                <span className="autosave-text">¡Borrador guardado!</span>
+                <span className="autosave-text">¡Borrador guardado en servidor!</span>
               </>
             )}
             {hasUnsavedChanges && !autoSaveStatus && (
@@ -5231,7 +5520,76 @@ useEffect(() => {
         )}
       </div>
 
-      {showSuccess && <div className="success-message">✅ {id ? 'Actualizado' : 'Guardado'} exitosamente</div>}
+      {/* 🔔 NOTIFICACIÓN DE GUARDADO EXITOSO - Overlay fijo visible desde cualquier posición de scroll */}
+      {showSuccess && (
+        <div style={{
+          position: 'fixed',
+          top: '0',
+          left: '0',
+          right: '0',
+          bottom: '0',
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          animation: 'fadeIn 0.3s ease'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #16a34a, #15803d)',
+            color: 'white',
+            padding: '40px 60px',
+            borderRadius: '16px',
+            textAlign: 'center',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            maxWidth: '500px',
+            animation: 'scaleIn 0.3s ease'
+          }}>
+            <div style={{ fontSize: '64px', marginBottom: '16px' }}>✅</div>
+            <h2 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: 'bold' }}>
+              {id ? '¡Formulario Actualizado!' : '¡Formulario Guardado!'}
+            </h2>
+            <p style={{ margin: 0, fontSize: '16px', opacity: 0.9 }}>
+              Los datos se han guardado exitosamente
+            </p>
+          </div>
+        </div>
+      )}
+      {/* 🔔 NOTIFICACIÓN DE BORRADOR GUARDADO EXITOSO */}
+      {showDraftSuccess && (
+        <div style={{
+          position: 'fixed',
+          top: '0',
+          left: '0',
+          right: '0',
+          bottom: '0',
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          animation: 'fadeIn 0.3s ease'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+            color: 'white',
+            padding: '40px 60px',
+            borderRadius: '16px',
+            textAlign: 'center',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            maxWidth: '500px',
+            animation: 'scaleIn 0.3s ease'
+          }}>
+            <div style={{ fontSize: '64px', marginBottom: '16px' }}>📋</div>
+            <h2 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: 'bold' }}>
+              ¡Borrador Guardado!
+            </h2>
+            <p style={{ margin: 0, fontSize: '16px', opacity: 0.9 }}>
+              Disponible por 7 días en "Mis Borradores"
+            </p>
+          </div>
+        </div>
+      )}
       {error && <div className="error-message">❌ {error}</div>}
 
       <div className="form-document">
@@ -6139,15 +6497,31 @@ useEffect(() => {
                       </p>
                     </div>
 
-                    {/* Botones de columnas disponibles */}
+                    {/* Botones de columnas disponibles - TODAS LAS TABLAS */}
                     {(() => {
-                      const targetIdx = columnImporterTarget?.elementIndex ?? 0;
                       const bodyArr = columnImporterForm.fullData?.body || [];
                       
-                      // Encontrar todos los elementos tipo tabla (con data array)
+                      console.log('🔍 MODAL RENDER - bodyArr:', bodyArr.length, 'elementos');
+                      bodyArr.forEach((el, i) => {
+                        const d = el?.data;
+                        console.log(`   [${i}] type="${el?.type}", title="${el?.title}", data isArray=${Array.isArray(d)}, length=${Array.isArray(d) ? d.length : 'N/A'}, firstRowType=${Array.isArray(d) && d.length > 0 ? typeof d[0] : 'N/A'}`);
+                      });
+                      
+                      // 🔧 FIX: Filtro más robusto - buscar tablas con datos
+                      // Condición 1: data es array con objetos (tablas llenas)
+                      // Condición 2: type === 'table' y data es array (incluso vacío lo mostramos como referencia)
                       const tableElements = bodyArr
                         .map((el, i) => ({ el, i }))
-                        .filter(({ el }) => el && Array.isArray(el.data) && el.data.length > 0 && typeof el.data[0] === 'object');
+                        .filter(({ el }) => {
+                          if (!el) return false;
+                          // Siempre incluir si tiene type "table" y data es un array con datos
+                          if (el.type === 'table' && Array.isArray(el.data) && el.data.length > 0) return true;
+                          // Fallback: cualquier elemento con data array de objetos (sin type explícito)
+                          if (Array.isArray(el.data) && el.data.length > 0 && typeof el.data[0] === 'object' && !Array.isArray(el.data[0])) return true;
+                          return false;
+                        });
+                      
+                      console.log('📊 tableElements encontrados:', tableElements.length, tableElements.map(t => `[${t.i}] ${t.el?.title || 'Sin título'}`));
                       
                       if (tableElements.length === 0) return (
                         <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
@@ -6156,138 +6530,188 @@ useEffect(() => {
                         </div>
                       );
                       
-                      // Intentar el índice exacto; si no funciona, usar la primera tabla con datos
-                      let sourceIdx = targetIdx;
-                      const exactMatch = tableElements.find(({ i }) => i === targetIdx);
-                      if (!exactMatch) {
-                        // Si solo hay una tabla, usarla siempre
-                        sourceIdx = tableElements[0].i;
-                      }
+                      // Colores para diferenciar cada tabla
+                      const tableColors = [
+                        { gradient: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', shadow: 'rgba(17, 153, 142, 0.3)', headerBg: '#11998e' },
+                        { gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', shadow: 'rgba(102, 126, 234, 0.3)', headerBg: '#667eea' },
+                        { gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', shadow: 'rgba(245, 87, 108, 0.3)', headerBg: '#f5576c' },
+                        { gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', shadow: 'rgba(79, 172, 254, 0.3)', headerBg: '#4facfe' },
+                        { gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', shadow: 'rgba(67, 233, 123, 0.3)', headerBg: '#43e97b' },
+                        { gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', shadow: 'rgba(250, 112, 154, 0.3)', headerBg: '#fa709a' },
+                      ];
                       
-                      const sourceData = bodyArr[sourceIdx]?.data;
-                      if (!sourceData || !Array.isArray(sourceData) || sourceData.length === 0) return (
-                        <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
-                          <p>⚠️ El formulario origen no tiene datos en esta tabla.</p>
-                          <p style={{ fontSize: '0.85rem' }}>Asegúrate de seleccionar un formulario del mismo tipo de plantilla.</p>
-                        </div>
-                      );
                       return (
                       <div>
                         <p style={{ marginBottom: '1rem', color: '#4b5563', fontSize: '0.95rem' }}>
-                          Haz clic en una columna para importar <strong>todos sus valores</strong> a "{columnImporterTarget?.columnName}":
+                          Haz clic en una columna para importar <strong>todos sus valores</strong> a "<strong>{columnImporterTarget?.columnName}</strong>":
+                        </p>
+
+                        <p style={{ 
+                          marginBottom: '1.5rem', 
+                          color: '#11998e', 
+                          fontSize: '0.9rem',
+                          background: '#eaf9f7',
+                          padding: '0.6rem 1rem',
+                          borderRadius: '8px',
+                          border: '1px solid #b8e8e3'
+                        }}>
+                          📋 Se encontraron <strong>{tableElements.length} tabla(s)</strong> con datos en el formulario origen
                         </p>
                         
-                        <div style={{ 
-                          display: 'flex', 
-                          flexWrap: 'wrap', 
-                          gap: '0.75rem',
-                          marginBottom: '2rem'
-                        }}>
-                          {Object.keys(sourceData[0] || {})
-                            .filter(key => key !== 'id' && key !== 'ID')
-                            .map((columnName) => {
-                              // Obtener un valor de muestra
-                              const sampleValue = sourceData[0][columnName];
-                              const valueCount = sourceData.filter(
-                                row => row[columnName] !== null && row[columnName] !== undefined && row[columnName] !== ''
-                              ).length;
-                              
-                              return (
-                                <button
-                                  key={columnName}
-                                  onClick={() => importColumnData(columnName)}
-                                  style={{
-                                    background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '10px',
-                                    padding: '1rem 1.5rem',
-                                    cursor: 'pointer',
-                                    fontSize: '1rem',
-                                    fontWeight: 'bold',
-                                    transition: 'all 0.3s ease',
-                                    boxShadow: '0 4px 15px rgba(17, 153, 142, 0.3)',
-                                    minWidth: '150px',
-                                    textAlign: 'center'
-                                  }}
-                                  onMouseOver={(e) => {
-                                    e.currentTarget.style.transform = 'scale(1.05)';
-                                    e.currentTarget.style.boxShadow = '0 6px 20px rgba(17, 153, 142, 0.4)';
-                                  }}
-                                  onMouseOut={(e) => {
-                                    e.currentTarget.style.transform = 'scale(1)';
-                                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(17, 153, 142, 0.3)';
-                                  }}
-                                >
-                                  <div style={{ fontSize: '1.1rem', marginBottom: '0.3rem' }}>{columnName}</div>
-                                  <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
-                                    {valueCount} valores
-                                  </div>
-                                  <div style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: '0.2rem' }}>
-                                    Ej: {String(sampleValue || '-').substring(0, 15)}
-                                  </div>
-                                </button>
-                              );
-                            })}
-                        </div>
-
-                        {/* Vista previa de la tabla */}
-                        <div style={{ marginTop: '1rem' }}>
-                          <h4 style={{ color: '#333', marginBottom: '1rem' }}>📊 Vista previa de datos:</h4>
-                          <div style={{ 
-                            overflowX: 'auto',
-                            border: '2px solid #e0e0e0',
-                            borderRadius: '10px',
-                            maxHeight: '300px',
-                            overflow: 'auto'
-                          }}>
-                            <table style={{
-                              width: '100%',
-                              borderCollapse: 'collapse',
-                              fontSize: '0.9rem'
+                        {/* Iterar sobre TODAS las tablas */}
+                        {tableElements.map(({ el: tableEl, i: tableIdx }, colorIdx) => {
+                          const sourceData = tableEl.data;
+                          const tableName = tableEl.title || tableEl.sectionTitle || tableEl.label || `Tabla ${tableIdx + 1}`;
+                          const colors = tableColors[colorIdx % tableColors.length];
+                          
+                          return (
+                            <div key={tableIdx} style={{ 
+                              marginBottom: '2rem',
+                              border: '2px solid #e0e0e0',
+                              borderRadius: '12px',
+                              overflow: 'hidden'
                             }}>
-                              <thead>
-                                <tr style={{ background: '#f3f4f6', position: 'sticky', top: 0 }}>
-                                  <th style={{ padding: '0.75rem', borderBottom: '2px solid #e0e0e0', textAlign: 'left' }}>#</th>
+                              {/* Header de la tabla */}
+                              <div style={{
+                                background: colors.headerBg,
+                                color: 'white',
+                                padding: '0.75rem 1.25rem',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}>
+                                <h4 style={{ margin: 0, fontSize: '1.05rem' }}>
+                                  📊 {tableName.toUpperCase()}
+                                </h4>
+                                <span style={{ 
+                                  background: 'rgba(255,255,255,0.25)', 
+                                  padding: '0.25rem 0.75rem', 
+                                  borderRadius: '20px',
+                                  fontSize: '0.85rem'
+                                }}>
+                                  {sourceData.length} filas · {Object.keys(sourceData[0] || {}).filter(k => k !== 'id' && k !== 'ID').length} columnas
+                                </span>
+                              </div>
+
+                              <div style={{ padding: '1.25rem' }}>
+                                {/* Botones de columnas de esta tabla */}
+                                <div style={{ 
+                                  display: 'flex', 
+                                  flexWrap: 'wrap', 
+                                  gap: '0.75rem',
+                                  marginBottom: '1.25rem'
+                                }}>
                                   {Object.keys(sourceData[0] || {})
                                     .filter(key => key !== 'id' && key !== 'ID')
-                                    .map(key => (
-                                      <th key={key} style={{ 
-                                        padding: '0.75rem', 
-                                        borderBottom: '2px solid #e0e0e0',
-                                        textAlign: 'left',
-                                        fontWeight: 'bold',
-                                        background: '#f3f4f6'
-                                      }}>
-                                        {key}
-                                      </th>
-                                    ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {sourceData.slice(0, 10).map((row, rowIndex) => (
-                                  <tr key={rowIndex} style={{ background: rowIndex % 2 === 0 ? 'white' : '#f9fafb' }}>
-                                    <td style={{ padding: '0.6rem', borderBottom: '1px solid #e0e0e0', fontWeight: 'bold', color: '#4b5563' }}>
-                                      {rowIndex + 1}
-                                    </td>
-                                    {Object.entries(row)
-                                      .filter(([key]) => key !== 'id' && key !== 'ID')
-                                      .map(([key, value]) => (
-                                        <td key={key} style={{ padding: '0.6rem', borderBottom: '1px solid #e0e0e0' }}>
-                                          {value || '-'}
-                                        </td>
-                                      ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                          {sourceData.length > 10 && (
-                            <p style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: '0.5rem', textAlign: 'center' }}>
-                              ... y {sourceData.length - 10} filas más
-                            </p>
-                          )}
-                        </div>
+                                    .map((columnName) => {
+                                      const sampleValue = sourceData[0][columnName];
+                                      const valueCount = sourceData.filter(
+                                        row => row[columnName] !== null && row[columnName] !== undefined && row[columnName] !== ''
+                                      ).length;
+                                      
+                                      return (
+                                        <button
+                                          key={`${tableIdx}_${columnName}`}
+                                          onClick={() => {
+                                            // Guardar referencia a qué tabla se eligió para importar
+                                            columnImporterForm._selectedSourceTableIdx = tableIdx;
+                                            importColumnData(columnName, tableIdx);
+                                          }}
+                                          style={{
+                                            background: colors.gradient,
+                                            color: 'white',
+                                            border: 'none',
+                                            borderRadius: '10px',
+                                            padding: '1rem 1.5rem',
+                                            cursor: 'pointer',
+                                            fontSize: '1rem',
+                                            fontWeight: 'bold',
+                                            transition: 'all 0.3s ease',
+                                            boxShadow: `0 4px 15px ${colors.shadow}`,
+                                            minWidth: '150px',
+                                            textAlign: 'center'
+                                          }}
+                                          onMouseOver={(e) => {
+                                            e.currentTarget.style.transform = 'scale(1.05)';
+                                            e.currentTarget.style.boxShadow = `0 6px 20px ${colors.shadow}`;
+                                          }}
+                                          onMouseOut={(e) => {
+                                            e.currentTarget.style.transform = 'scale(1)';
+                                            e.currentTarget.style.boxShadow = `0 4px 15px ${colors.shadow}`;
+                                          }}
+                                        >
+                                          <div style={{ fontSize: '1.1rem', marginBottom: '0.3rem' }}>{columnName}</div>
+                                          <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
+                                            {valueCount} valores
+                                          </div>
+                                          <div style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: '0.2rem' }}>
+                                            Ej: {String(sampleValue || '-').substring(0, 15)}
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                </div>
+
+                                {/* Vista previa de esta tabla */}
+                                <div>
+                                  <div style={{ 
+                                    overflowX: 'auto',
+                                    border: '2px solid #e0e0e0',
+                                    borderRadius: '10px',
+                                    maxHeight: '250px',
+                                    overflow: 'auto'
+                                  }}>
+                                    <table style={{
+                                      width: '100%',
+                                      borderCollapse: 'collapse',
+                                      fontSize: '0.9rem'
+                                    }}>
+                                      <thead>
+                                        <tr style={{ background: '#f3f4f6', position: 'sticky', top: 0 }}>
+                                          <th style={{ padding: '0.75rem', borderBottom: '2px solid #e0e0e0', textAlign: 'left' }}>#</th>
+                                          {Object.keys(sourceData[0] || {})
+                                            .filter(key => key !== 'id' && key !== 'ID')
+                                            .map(key => (
+                                              <th key={key} style={{ 
+                                                padding: '0.75rem', 
+                                                borderBottom: '2px solid #e0e0e0',
+                                                textAlign: 'left',
+                                                fontWeight: 'bold',
+                                                background: '#f3f4f6'
+                                              }}>
+                                                {key}
+                                              </th>
+                                            ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {sourceData.slice(0, 8).map((row, rowIndex) => (
+                                          <tr key={rowIndex} style={{ background: rowIndex % 2 === 0 ? 'white' : '#f9fafb' }}>
+                                            <td style={{ padding: '0.6rem', borderBottom: '1px solid #e0e0e0', fontWeight: 'bold', color: '#4b5563' }}>
+                                              {rowIndex + 1}
+                                            </td>
+                                            {Object.entries(row)
+                                              .filter(([key]) => key !== 'id' && key !== 'ID')
+                                              .map(([key, value]) => (
+                                                <td key={key} style={{ padding: '0.6rem', borderBottom: '1px solid #e0e0e0' }}>
+                                                  {value || '-'}
+                                                </td>
+                                              ))}
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                  {sourceData.length > 8 && (
+                                    <p style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: '0.5rem', textAlign: 'center' }}>
+                                      ... y {sourceData.length - 8} filas más
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                       );
                     })()}
@@ -6799,7 +7223,7 @@ useEffect(() => {
                   </div>
                 )}
 
-                <div className="table-wrapper">
+                <div className="table-wrapper" style={{ overflowX: 'auto', maxWidth: '100%' }}>
                   <table className="data-table complex-header">
                     <thead>
                       <tr>
@@ -7168,246 +7592,7 @@ useEffect(() => {
             isExpanded={expandedSections.signatures}
             onToggle={() => toggleSection('signatures')}
           >
-            {/* 📜 PASO 1: Revisar documento antes de firmar (estilo términos y condiciones) */}
-            {!hasReviewedDocument ? (
-              <div style={{
-                border: '2px solid #3b82f6',
-                borderRadius: '12px',
-                overflow: 'hidden',
-                background: '#f8faff'
-              }}>
-                {/* Header informativo */}
-                <div style={{
-                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                  color: '#fff',
-                  padding: '16px 20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}>
-                  <span style={{ fontSize: '28px' }}>📋</span>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
-                      Revisión del Documento
-                    </h3>
-                    <p style={{ margin: '4px 0 0', fontSize: '13px', opacity: 0.9 }}>
-                      Debes leer todo el contenido del formulario antes de poder firmar. Desplázate hasta el final.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Contenedor scrolleable con resumen del documento */}
-                <div 
-                  ref={documentReviewRef}
-                  onScroll={handleDocumentReviewScroll}
-                  style={{
-                    maxHeight: '400px',
-                    overflowY: 'auto',
-                    padding: '20px',
-                    background: '#fff',
-                    borderBottom: '2px solid #e5e7eb'
-                  }}
-                >
-                  {/* Resumen Encabezado */}
-                  <div style={{ marginBottom: '16px' }}>
-                    <h4 style={{ color: '#1e40af', fontSize: '14px', marginBottom: '8px', borderBottom: '1px solid #dbeafe', paddingBottom: '4px' }}>
-                      📄 Información del Formulario
-                    </h4>
-                    <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.6 }}>
-                      <p><strong>Plantilla:</strong> {selectedTemplate.templateName || 'Sin nombre'}</p>
-                      {selectedTemplate.proceso && <p><strong>Proceso:</strong> {selectedTemplate.proceso}</p>}
-                      {selectedTemplate.codigo && <p><strong>Código:</strong> {selectedTemplate.codigo}</p>}
-                    </div>
-                  </div>
-
-                  {/* Resumen Encabezados llenados */}
-                  {Object.keys(headerData).length > 0 && (
-                    <div style={{ marginBottom: '16px' }}>
-                      <h4 style={{ color: '#1e40af', fontSize: '14px', marginBottom: '8px', borderBottom: '1px solid #dbeafe', paddingBottom: '4px' }}>
-                        📝 Datos del Encabezado
-                      </h4>
-                      <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.8 }}>
-                        {Object.entries(headerData).map(([key, value]) => (
-                          <p key={key} style={{ margin: '2px 0' }}>
-                            <strong>{key}:</strong> {value || <span style={{ color: '#6b7280', fontStyle: 'italic' }}>Sin dato</span>}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Resumen del Body (tablas) */}
-                  {bodyData.length > 0 && (
-                    <div style={{ marginBottom: '16px' }}>
-                      <h4 style={{ color: '#1e40af', fontSize: '14px', marginBottom: '8px', borderBottom: '1px solid #dbeafe', paddingBottom: '4px' }}>
-                        📊 Datos del Cuerpo del Formulario
-                      </h4>
-                      {bodyData.map((element, idx) => {
-                        const tableRows = Array.isArray(element?.data)
-                          ? element.data
-                          : (Array.isArray(element?.rows) ? element.rows : []);
-
-                        if (element.type === 'table' && tableRows.length > 0) {
-                          const columns = Object.keys(tableRows[0]);
-                          return (
-                            <div key={idx} style={{ marginBottom: '12px' }}>
-                              <p style={{ fontSize: '13px', fontWeight: '600', color: '#4b5563', marginBottom: '6px' }}>
-                                Tabla {idx + 1}: {element.title || `${tableRows.length} filas × ${columns.length} columnas`}
-                              </p>
-                              <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                                  <thead>
-                                    <tr>
-                                      {columns.map(col => (
-                                        <th key={col} style={{ 
-                                          background: '#eff6ff', padding: '6px 8px', 
-                                          border: '1px solid #dbeafe', textAlign: 'left',
-                                          fontWeight: '600', color: '#1e40af', whiteSpace: 'nowrap'
-                                        }}>
-                                          {col}
-                                        </th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {tableRows.map((row, rowIdx) => (
-                                      <tr key={rowIdx}>
-                                        {columns.map(col => (
-                                          <td key={col} style={{ 
-                                            padding: '4px 8px', border: '1px solid #e5e7eb',
-                                            color: '#374151', whiteSpace: 'nowrap'
-                                          }}>
-                                            {row[col] || '-'}
-                                          </td>
-                                        ))}
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </div>
-                          );
-                        }
-                        if (element.type === 'observations' && element.data) {
-                          return (
-                            <div key={idx} style={{ marginBottom: '12px' }}>
-                              <p style={{ fontSize: '13px', fontWeight: '600', color: '#4b5563', marginBottom: '4px' }}>
-                                Observaciones:
-                              </p>
-                              <p style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', padding: '8px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                {element.data || 'Sin observaciones'}
-                              </p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })}
-                    </div>
-                  )}
-
-                  {/* Resumen de firmas pendientes */}
-                  <div style={{ marginBottom: '16px' }}>
-                    <h4 style={{ color: '#1e40af', fontSize: '14px', marginBottom: '8px', borderBottom: '1px solid #dbeafe', paddingBottom: '4px' }}>
-                      ✍️ Firmas Requeridas
-                    </h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {selectedTemplate.firmas.map((firma, idx) => (
-                        <div key={idx} style={{ 
-                          display: 'flex', alignItems: 'center', gap: '8px',
-                          padding: '8px 12px', background: '#f9fafb', borderRadius: '6px',
-                          border: '1px solid #e5e7eb', fontSize: '13px'
-                        }}>
-                          <span style={{ fontSize: '18px' }}>👤</span>
-                          <div>
-                            <strong>{firma.puesto}</strong>
-                            {firma.nombreCompleto && (
-                              <span style={{ color: '#6b7280', marginLeft: '8px' }}>— {firma.nombreCompleto}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Mensaje final para que sigan scrolleando */}
-                  <div style={{
-                    marginTop: '24px',
-                    padding: '20px',
-                    background: 'linear-gradient(135deg, #ecfdf5, #d1fae5)',
-                    borderRadius: '10px',
-                    border: '2px solid #6ee7b7',
-                    textAlign: 'center'
-                  }}>
-                    <span style={{ fontSize: '32px', display: 'block', marginBottom: '8px' }}>✅</span>
-                    <p style={{ fontSize: '14px', fontWeight: '700', color: '#065f46', margin: '0 0 4px' }}>
-                      Has revisado todo el documento
-                    </p>
-                    <p style={{ fontSize: '12px', color: '#047857', margin: 0 }}>
-                      Ahora puedes cerrar este panel y proceder a firmar.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Footer con indicador de progreso */}
-                <div style={{
-                  padding: '16px 20px',
-                  background: '#f0f9ff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '12px'
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    color: '#b45309',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    animation: 'pulse 2s infinite'
-                  }}>
-                    <span style={{ fontSize: '20px' }}>⬇️</span>
-                    Desplázate hasta el final para habilitar las firmas
-                    <span style={{ fontSize: '20px' }}>⬇️</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* 📝 PASO 2: Usuario ya revisó - mostrar las firmas */
-              <>
-                {/* Indicador de documento revisado */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 16px',
-                  marginBottom: '16px',
-                  background: '#ecfdf5',
-                  border: '1px solid #6ee7b7',
-                  borderRadius: '8px',
-                  fontSize: '13px'
-                }}>
-                  <span style={{ color: '#065f46', fontWeight: '600' }}>
-                    ✅ Documento revisado — ahora puedes firmar
-                  </span>
-                  <button
-                    onClick={() => setHasReviewedDocument(false)}
-                    style={{
-                      background: 'none',
-                      border: '1px solid #a7f3d0',
-                      borderRadius: '6px',
-                      padding: '4px 10px',
-                      fontSize: '12px',
-                      color: '#047857',
-                      cursor: 'pointer',
-                      fontWeight: '500'
-                    }}
-                  >
-                    📋 Volver a revisar
-                  </button>
-                </div>
-
-                <div className="signatures-grid">
+            <div className="signatures-grid">
                   {selectedTemplate.firmas.map((firma, index) => {
                     // 🔐 OBTENER USUARIO ACTUAL DE LA SESIÓN
                     const currentUser = authService.getCurrentUser();
@@ -7517,8 +7702,6 @@ useEffect(() => {
                     );
                   })}
                 </div>
-              </>
-            )}
           </AccordionSection>
         )}
 
@@ -7526,12 +7709,12 @@ useEffect(() => {
           {!id && (
             <button 
               onClick={handleSaveDraft} 
-              disabled={draftSaving}
+              disabled={draftSaving || formSaving}
               style={{
                 background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#ffffff', 
                 border: '2px solid #b45309', padding: '12px 24px', borderRadius: '8px', 
-                cursor: draftSaving ? 'wait' : 'pointer', fontSize: '16px', 
-                fontWeight: 'bold', opacity: draftSaving ? 0.7 : 1,
+                cursor: (draftSaving || formSaving) ? 'wait' : 'pointer', fontSize: '16px', 
+                fontWeight: 'bold', opacity: (draftSaving || formSaving) ? 0.7 : 1,
                 boxShadow: '0 2px 8px rgba(245, 158, 11, 0.4)', minHeight: '44px',
                 display: 'inline-flex', alignItems: 'center', gap: '6px'
               }}
@@ -7540,8 +7723,9 @@ useEffect(() => {
               {draftSaving ? '⏳ Guardando borrador...' : '📋 Guardar Borrador'}
             </button>
           )}
-          <button onClick={handleSaveForm} className="btn-primary btn-large">
-            {id ? '💾 Guardar Cambios' : '💾 Guardar Formulario Completo'}
+          <button onClick={handleSaveForm} className="btn-primary btn-large" disabled={formSaving || draftSaving}
+            style={{ opacity: (formSaving || draftSaving) ? 0.7 : 1, cursor: (formSaving || draftSaving) ? 'wait' : 'pointer' }}>
+            {formSaving ? '⏳ Guardando...' : (id ? '💾 Guardar Cambios' : '💾 Guardar Formulario Completo')}
           </button>
         </div>
         {autoSaveStatus === 'draft-saved' && (

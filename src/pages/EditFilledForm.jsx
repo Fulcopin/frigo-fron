@@ -346,9 +346,25 @@ function EditFilledForm() {
 
   // Actualizar firma completa (con imagen desde SignatureUploader)
   const handleFirmaUpdate = (puesto, firmaData) => {
+    let updatedFirmaData = { ...firmaData };
+    
+    // 🔧 FIX: Auto-capturar fecha y hora al firmar (antes no se capturaba)
+    if (firmaData.firma) {
+      const ahora = new Date();
+      const fechaActual = ahora.getFullYear() + '-' + String(ahora.getMonth() + 1).padStart(2, '0') + '-' + String(ahora.getDate()).padStart(2, '0');
+      const horaActual = String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0');
+      updatedFirmaData = {
+        ...firmaData,
+        fecha: fechaActual,
+        hora: horaActual,
+        fechaHoraCapturada: true
+      };
+      console.log(`📅 ✅ CAPTURA AUTOMÁTICA en EditFilledForm para ${puesto}: fecha=${fechaActual}, hora=${horaActual}`);
+    }
+    
     setFormData(prev => ({
       ...prev,
-      firmasData: { ...prev.firmasData, [puesto]: firmaData }
+      firmasData: { ...prev.firmasData, [puesto]: updatedFirmaData }
     }));
     setHasUnsavedChanges(true);
   };
@@ -415,7 +431,7 @@ function EditFilledForm() {
       setShowSuccess(true);
       setTimeout(() => {
         navigate('/view-forms');
-      }, 2000);
+      }, 3000);
 
       console.log('✅ Formulario actualizado:', result);
 
@@ -566,9 +582,39 @@ Template: ${template?.nombre}
         </div>
       </div>
 
+      {/* 🔔 NOTIFICACIÓN DE GUARDADO EXITOSO - Overlay fijo visible desde cualquier posición de scroll */}
       {showSuccess && (
-        <div className="success-message">
-          ✅ ¡Formulario actualizado exitosamente!
+        <div style={{
+          position: 'fixed',
+          top: '0',
+          left: '0',
+          right: '0',
+          bottom: '0',
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          animation: 'fadeIn 0.3s ease'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #16a34a, #15803d)',
+            color: 'white',
+            padding: '40px 60px',
+            borderRadius: '16px',
+            textAlign: 'center',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            maxWidth: '500px',
+            animation: 'scaleIn 0.3s ease'
+          }}>
+            <div style={{ fontSize: '64px', marginBottom: '16px' }}>✅</div>
+            <h2 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: 'bold' }}>
+              ¡Formulario Actualizado!
+            </h2>
+            <p style={{ margin: 0, fontSize: '16px', opacity: 0.9 }}>
+              Los datos se han guardado exitosamente
+            </p>
+          </div>
         </div>
       )}
 
@@ -665,8 +711,8 @@ Template: ${template?.nombre}
               )}
 
               {element.type === "table" && (
-                <div className="table-container">
-                  <div className="table-actions">
+                <div className="table-wrapper" style={{ overflowX: 'auto', maxWidth: '100%' }}>
+                  <div className="table-actions" style={{ marginBottom: '0.5rem' }}>
                     <button 
                       type="button" 
                       onClick={() => addRowToTable(elementIndex)}

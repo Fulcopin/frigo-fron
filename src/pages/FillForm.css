@@ -1,4 +1,4 @@
-/* ⚡ PREVENCIÓN DE SCROLL SIMPLE Y EFECTIVA */
+/* ✅ PREVENCIÓN MÍNIMA — solo evitar saltos al enfocar inputs */
 *, *::before, *::after {
   scroll-margin: 0 !important;
   scroll-padding: 0 !important;
@@ -6,12 +6,10 @@
 
 html {
   scroll-behavior: auto !important;
-  overflow-anchor: none !important;
 }
 
 body {
   overflow-anchor: none !important;
-  overscroll-behavior: none !important;
 }
 
 /* 🆕 ANIMACIÓN PARA INDICADOR DE CAMBIOS SIN GUARDAR */
@@ -24,6 +22,12 @@ body {
     opacity: 0.6;
     transform: scale(1.1);
   }
+}
+
+/* ☁️ ANIMACIÓN SPINNER PARA CARGA DE IMÁGENES */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* ============================================
@@ -118,7 +122,6 @@ body {
   touch-action: pan-y pinch-zoom;
   scroll-behavior: auto !important;
   overflow-anchor: none !important;
-  overscroll-behavior: none !important;
 }
 
 .fill-form > h1 {
@@ -371,7 +374,7 @@ body {
   width: calc(100% - 2rem);
   max-width: calc(100% - 2rem);
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible; /* ✅ Permite scroll con mouse/trackpad */
   position: relative;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
@@ -488,6 +491,8 @@ body {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .table-header h3 {
@@ -500,6 +505,7 @@ body {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 
@@ -617,7 +623,7 @@ body {
    ============================================ */
 
 /* Contenedor de la tabla con sombra y bordes redondeados */
-/* 1. El contenedor debe permitir scroll y NO dejar que la tabla se salga */
+/* 1. El contenedor debe permitir scroll HÍBRIDO (botones + mouse/trackpad) */
 .table-wrapper {
   width: 100%;
   max-width: 100%;
@@ -629,8 +635,8 @@ body {
   background: white;
   box-sizing: border-box;
   display: block;
-  -webkit-overflow-scrolling: touch; /* Scroll suave en iOS/Android */
-  touch-action: pan-x pan-y pinch-zoom; /* ✅ Permite desplazar horizontalmente en táctil */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y pinch-zoom;
 }
 
 /* 2. La tabla debe tener un ancho mínimo para que las columnas no se aplasten */
