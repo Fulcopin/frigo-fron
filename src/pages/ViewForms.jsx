@@ -947,6 +947,73 @@ function ViewForms() {
                 </div>
               );
             }
+
+            // Renderizar TINAS (Control de Tinas)
+            if (templateElement.type === 'tinas') {
+              const config = templateElement.config || {};
+              const groups = config.groups || [];
+              const fields = config.fields || [];
+              const cycles = config.cycles || 3;
+              const tinasData = (elementData && elementData.data) ? elementData.data : {};
+
+              const allTinas = groups.flatMap((g, gIdx) =>
+                Array.from({ length: g.count }, (_, tIdx) => ({
+                  key: `g${gIdx}_t${tIdx}`,
+                  label: (g.labels || [])[tIdx] || `TINA ${tIdx + 1}`,
+                  groupName: g.name || `Grupo ${gIdx + 1}`,
+                  groupIdx: gIdx,
+                  count: g.count
+                }))
+              );
+
+              return (
+                <div key={templateElement.id} className="data-section">
+                  <h3>🧊 {templateElement.title || 'Control de Tinas'}</h3>
+                  <div className="table-wrapper">
+                    <table className="view-table" style={{ fontSize: '12px' }}>
+                      <thead>
+                        <tr>
+                          <th rowSpan={2} style={{ background: '#035b8d', color: 'white', minWidth: '120px' }}>Ciclo / Campo</th>
+                          {groups.map((g, gIdx) => (
+                            <th key={gIdx} colSpan={g.count} style={{ background: '#035b8d', color: 'white', textAlign: 'center' }}>
+                              {g.name}
+                              {g.subtitle && <div style={{ fontSize: '10px', fontWeight: 400, opacity: 0.85 }}>{g.subtitle}</div>}
+                            </th>
+                          ))}
+                        </tr>
+                        <tr>
+                          {allTinas.map(tina => (
+                            <th key={tina.key} style={{ background: '#0284c7', color: 'white', textAlign: 'center', fontSize: '11px' }}>
+                              {tina.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.from({ length: cycles }).map((_, cycleIdx) =>
+                          fields.map((field, fi) => (
+                            <tr key={`${cycleIdx}-${fi}`} style={{ background: (cycleIdx * fields.length + fi) % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                              <td style={{ fontWeight: 600, fontSize: '11px', whiteSpace: 'nowrap' }}>
+                                C{cycleIdx + 1} - {field.label}{field.suffix ? ` (${field.suffix})` : ''}
+                              </td>
+                              {allTinas.map(tina => {
+                                const val = tinasData[tina.key]?.[cycleIdx]?.[field.label] ?? '';
+                                return (
+                                  <td key={`${tina.key}-${cycleIdx}-${fi}`} style={{ textAlign: 'center' }}>
+                                    {renderCellValue(val)}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            }
+
             return null;
           })}
 

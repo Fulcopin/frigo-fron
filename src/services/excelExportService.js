@@ -596,6 +596,107 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
       continue; // Skip the table rendering below
     }
     
+    // 🧊 SECCIÓN TIPO TINAS (Control de Tinas)
+    if (section.type === 'tinas') {
+      const config = section.config || {};
+      const groups = config.groups || [];
+      const fields = config.fields || [];
+      const cycles = config.cycles || 3;
+
+      let tinasData = {};
+      if (Array.isArray(bodyData)) {
+        const elementData = bodyData[index];
+        if (elementData && typeof elementData === 'object') {
+          tinasData = elementData.data || {};
+        }
+      }
+
+      // Build flat list of all tinas
+      const allTinas = groups.flatMap((g, gIdx) =>
+        Array.from({ length: g.count }, (_, tIdx) => ({
+          key: `g${gIdx}_t${tIdx}`,
+          label: (g.labels || [])[tIdx] || `TINA ${tIdx + 1}`,
+          groupName: g.name || `Grupo ${gIdx + 1}`
+        }))
+      );
+
+      if (allTinas.length > 0 && fields.length > 0) {
+        const totalCols = allTinas.length + 1; // +1 for the label column
+
+        // Row: Group headers (merged)
+        let colOffset = 2; // Start at column 2 (col 1 = label)
+        groups.forEach(g => {
+          if (g.count > 1) {
+            safeMergeCells(worksheet, currentRow, colOffset, currentRow, colOffset + g.count - 1);
+          }
+          const groupCell = worksheet.getCell(currentRow, colOffset);
+          groupCell.value = g.name || '';
+          applyHeaderStyle(groupCell);
+          colOffset += g.count;
+        });
+        // Label column header
+        const labelHeaderCell = worksheet.getCell(currentRow, 1);
+        labelHeaderCell.value = '';
+        applyHeaderStyle(labelHeaderCell);
+        worksheet.getRow(currentRow).height = 24;
+        currentRow++;
+
+        // Row: Tina labels
+        const tinaLabelCell = worksheet.getCell(currentRow, 1);
+        tinaLabelCell.value = 'Ciclo / Campo';
+        applyHeaderStyle(tinaLabelCell);
+        allTinas.forEach((tina, tIdx) => {
+          const cell = worksheet.getCell(currentRow, tIdx + 2);
+          cell.value = tina.label;
+          applyHeaderStyle(cell);
+        });
+        worksheet.getRow(currentRow).height = 22;
+        currentRow++;
+
+        // Data rows: cycle x field
+        let rowIdx = 0;
+        for (let c = 0; c < cycles; c++) {
+          for (let fi = 0; fi < fields.length; fi++) {
+            const isAlt = rowIdx % 2 === 1;
+            const labelCell = worksheet.getCell(currentRow, 1);
+            labelCell.value = `C${c + 1} - ${fields[fi].label}${fields[fi].suffix ? ' (' + fields[fi].suffix + ')' : ''}`;
+            applyCellStyle(labelCell, isAlt);
+            labelCell.font = { ...labelCell.font, bold: true };
+
+            allTinas.forEach((tina, tIdx) => {
+              const val = tinasData[tina.key]?.[c]?.[fields[fi].label] ?? '';
+              const dataCell = worksheet.getCell(currentRow, tIdx + 2);
+              dataCell.value = String(val);
+              applyCellStyle(dataCell, isAlt);
+              dataCell.alignment = { vertical: 'middle', horizontal: 'center' };
+            });
+
+            worksheet.getRow(currentRow).height = 20;
+            currentRow++;
+            rowIdx++;
+          }
+        }
+
+        // Set column widths for tinas
+        worksheet.getColumn(1).width = Math.max(worksheet.getColumn(1).width || 18, 22);
+        for (let c = 2; c <= allTinas.length + 1; c++) {
+          worksheet.getColumn(c).width = Math.max(worksheet.getColumn(c).width || 12, 12);
+        }
+      } else {
+        safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
+        const noDataCell = worksheet.getCell(currentRow, 1);
+        noDataCell.value = '(Sin datos de tinas)';
+        noDataCell.font = { italic: true, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+        noDataCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getRow(currentRow).height = 20;
+        currentRow++;
+      }
+
+      worksheet.getRow(currentRow).height = 6;
+      currentRow++;
+      continue;
+    }
+    
     // Encabezados de columnas (usar label de las columnas)
     const columns = section.columns || [];
     

@@ -169,11 +169,11 @@ function processBodyData(bodyDataString) {
       // Verificar si cada item tiene la estructura correcta
       const processedArray = parsed.map((item, index) => {
         if (item && typeof item === 'object') {
-          // 🔧 FIX: Si el item tiene un type definido (section, table, observaciones), 
+          // 🔧 FIX: Si el item tiene un type definido (section, observaciones, tinas, etc.), 
           // preservar su estructura original completa para que ViewForms pueda leerla
-          if (item.type && (item.type === 'section' || item.type === 'observaciones')) {
+          if (item.type && (item.type === 'section' || item.type === 'observaciones' || item.type === 'tinas')) {
             console.log(`✅ Item ${index} es tipo '${item.type}', preservando estructura original`);
-            return item; // Preservar tal cual: {id, type:"section", data:{campo:"valor"}}
+            return item; // Preservar tal cual: {id, type:"section"|"tinas", data:{...}}
           }
           // Si ya tiene .rows, está correcto
           if (item.rows && Array.isArray(item.rows)) {

@@ -977,6 +977,23 @@ useEffect(() => {
         });
         return { id: element.id, type: 'table', data: initialRows };
       }
+      if (element.type === 'tinas') {
+        const config = element.config || {};
+        const allTinas = (config.groups || []).flatMap((g, gIdx) =>
+          Array.from({ length: g.count }, (_, tIdx) => `g${gIdx}_t${tIdx}`)
+        );
+        const tinaData = {};
+        allTinas.forEach(tinaKey => {
+          tinaData[tinaKey] = {};
+          for (let c = 0; c < (config.cycles || 3); c++) {
+            tinaData[tinaKey][c] = {};
+            (config.fields || []).forEach(f => {
+              tinaData[tinaKey][c][f.label] = '';
+            });
+          }
+        });
+        return { id: element.id, type: 'tinas', data: tinaData };
+      }
       return null;
     }).filter(Boolean);
     newTab.bodyData = initialBodyData;
@@ -7616,6 +7633,136 @@ useEffect(() => {
   );
 })()}
 
+                  </table>
+                </div>
+              </AccordionSection>
+            );
+          }
+          
+          // Renderizar tinas (Control de Tinas)
+          if (element.type === 'tinas') {
+            const config = element.config || {};
+            const groups = config.groups || [];
+            const fields = config.fields || [];
+            const cycles = config.cycles || 3;
+            const tinasData = currentElementData?.data || {};
+
+            // Build flat list of all tinas with group info
+            const allTinas = groups.flatMap((g, gIdx) =>
+              Array.from({ length: g.count }, (_, tIdx) => ({
+                key: `g${gIdx}_t${tIdx}`,
+                label: (g.labels || [])[tIdx] || `TINA ${tIdx + 1}`,
+                groupIdx: gIdx,
+              }))
+            );
+            const totalTinas = allTinas.length;
+
+            const handleTinaFieldChange = (tinaKey, cycleIdx, fieldLabel, value) => {
+              const newBodyData = [...bodyData];
+              const elData = { ...newBodyData[elementIndex] };
+              const newTinasData = { ...elData.data };
+              const newTinaData = { ...newTinasData[tinaKey] };
+              const newCycleData = { ...(newTinaData[cycleIdx] || {}) };
+              newCycleData[fieldLabel] = value;
+              newTinaData[cycleIdx] = newCycleData;
+              newTinasData[tinaKey] = newTinaData;
+              elData.data = newTinasData;
+              newBodyData[elementIndex] = elData;
+              setBodyData(newBodyData);
+              setHasUnsavedChanges(true);
+            };
+
+            return (
+              <AccordionSection
+                key={element.id}
+                title={element.title || 'Control de Tinas'}
+                icon="🧊"
+                badge={`${totalTinas} tinas × ${cycles} ciclos`}
+                isExpanded={expandedSections[`body_${elementIndex}`] !== false}
+                onToggle={() => toggleBodySection(elementIndex)}
+              >
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: `${totalTinas * 200}px` }}>
+                    <thead>
+                      {/* Group headers row */}
+                      <tr>
+                        {groups.map((g, gIdx) => (
+                          <th key={gIdx} colSpan={g.count} style={{
+                            background: '#035b8d', color: 'white', padding: '8px 6px',
+                            border: '1px solid #024a73', textAlign: 'center', fontWeight: 700, fontSize: '12px'
+                          }}>
+                            {g.name}
+                            {g.subtitle && <div style={{ fontSize: '10px', fontWeight: 400, opacity: 0.85, marginTop: '2px' }}>{g.subtitle}</div>}
+                          </th>
+                        ))}
+                      </tr>
+                      {/* Individual tina labels */}
+                      <tr>
+                        {allTinas.map((tina) => (
+                          <th key={tina.key} style={{
+                            background: '#0284c7', color: 'white', padding: '6px 4px',
+                            border: '1px solid #024a73', textAlign: 'center', fontSize: '11px', fontWeight: 600
+                          }}>
+                            {tina.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: cycles }).map((_, cycleIdx) => (
+                        <tr key={cycleIdx} style={{ borderBottom: '2px solid #cbd5e1' }}>
+                          {allTinas.map((tina) => {
+                            const cycleData = tinasData[tina.key]?.[cycleIdx] || {};
+                            return (
+                              <td key={`${tina.key}-${cycleIdx}`} style={{
+                                border: '1px solid #e2e8f0', padding: '6px 8px', verticalAlign: 'top',
+                                background: cycleIdx % 2 === 0 ? '#ffffff' : '#f8fafc'
+                              }}>
+                                {fields.map((field) => (
+                                  <div key={field.label} style={{ marginBottom: '6px' }}>
+                                    <label style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '2px' }}>
+                                      {field.label}{field.suffix ? ` (${field.suffix})` : ''}
+                                    </label>
+                                    {field.type === 'siNo' ? (
+                                      <div style={{ display: 'flex', gap: '8px' }}>
+                                        <label style={{ fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                          <input type="radio" name={`${element.id}-${tina.key}-${cycleIdx}-${field.label}`}
+                                            checked={cycleData[field.label] === 'SI'} onChange={() => handleTinaFieldChange(tina.key, cycleIdx, field.label, 'SI')}
+                                          /> SI
+                                        </label>
+                                        <label style={{ fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                          <input type="radio" name={`${element.id}-${tina.key}-${cycleIdx}-${field.label}`}
+                                            checked={cycleData[field.label] === 'NO'} onChange={() => handleTinaFieldChange(tina.key, cycleIdx, field.label, 'NO')}
+                                          /> NO
+                                        </label>
+                                      </div>
+                                    ) : field.type === 'time' ? (
+                                      <input type="time" value={cycleData[field.label] || ''}
+                                        onChange={(e) => handleTinaFieldChange(tina.key, cycleIdx, field.label, e.target.value)}
+                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '12px', boxSizing: 'border-box' }}
+                                      />
+                                    ) : field.type === 'number' ? (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <input type="number" step="any" value={cycleData[field.label] || ''}
+                                          onChange={(e) => handleTinaFieldChange(tina.key, cycleIdx, field.label, e.target.value)}
+                                          style={{ flex: 1, padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '12px', minWidth: 0 }}
+                                        />
+                                        {field.suffix && <span style={{ fontSize: '10px', color: '#94a3b8', whiteSpace: 'nowrap' }}>{field.suffix}</span>}
+                                      </div>
+                                    ) : (
+                                      <input type="text" value={cycleData[field.label] || ''}
+                                        onChange={(e) => handleTinaFieldChange(tina.key, cycleIdx, field.label, e.target.value)}
+                                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '12px', boxSizing: 'border-box' }}
+                                      />
+                                    )}
+                                  </div>
+                                ))}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
                   </table>
                 </div>
               </AccordionSection>

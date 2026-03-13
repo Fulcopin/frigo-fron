@@ -984,6 +984,104 @@ const rows = tableData.map((row, rowIndex) => {
           doc.setFont('helvetica', 'normal');
           currentY += 10;
         }
+      } else if (section.type === 'tinas') {
+        // 🧊 SECCIÓN TIPO TINAS (Control de Tinas)
+        const config = section.config || {};
+        const groups = config.groups || [];
+        const fields = config.fields || [];
+        const cycles = config.cycles || 3;
+
+        let tinasData = {};
+        if (Array.isArray(bodyData)) {
+          const elementData = bodyData[index];
+          if (elementData && typeof elementData === 'object') {
+            tinasData = elementData.data || {};
+          }
+        }
+
+        // Build flat list of all tinas
+        const allTinas = groups.flatMap((g, gIdx) =>
+          Array.from({ length: g.count }, (_, tIdx) => ({
+            key: `g${gIdx}_t${tIdx}`,
+            label: (g.labels || [])[tIdx] || `TINA ${tIdx + 1}`,
+            groupName: g.name || `Grupo ${gIdx + 1}`
+          }))
+        );
+
+        if (allTinas.length > 0 && fields.length > 0) {
+          // Build header rows: Group names + tina labels
+          const head = [];
+          // Row 1: Group headers (merged via colSpan emulation — repeated text)
+          const groupRow = ['Ciclo'];
+          groups.forEach(g => {
+            for (let i = 0; i < g.count; i++) {
+              groupRow.push(sanitizeText(g.name || ''));
+            }
+          });
+          // Row 2: Tina labels
+          const tinaRow = [''];
+          allTinas.forEach(t => tinaRow.push(sanitizeText(t.label)));
+          head.push(groupRow, tinaRow);
+
+          // Build body: for each cycle, for each field, one row
+          const body = [];
+          for (let c = 0; c < cycles; c++) {
+            for (let fi = 0; fi < fields.length; fi++) {
+              const row = [sanitizeText(`C${c + 1} - ${fields[fi].label}${fields[fi].suffix ? ' (' + fields[fi].suffix + ')' : ''}`)];
+              allTinas.forEach(tina => {
+                const val = tinasData[tina.key]?.[c]?.[fields[fi].label] ?? '';
+                row.push(sanitizeText(String(val)));
+              });
+              body.push(row);
+            }
+          }
+
+          // Check page space
+          if (currentY > 220) {
+            doc.addPage();
+            currentY = 20;
+          }
+
+          autoTable(doc, {
+            startY: currentY,
+            head: head,
+            body: body,
+            theme: 'grid',
+            headStyles: {
+              fillColor: COLORS.headerBg,
+              textColor: COLORS.white,
+              fontSize: 7,
+              fontStyle: 'bold',
+              halign: 'center'
+            },
+            bodyStyles: {
+              fontSize: 7,
+              textColor: COLORS.text,
+              halign: 'center'
+            },
+            columnStyles: {
+              0: { halign: 'left', fontStyle: 'bold', fontSize: 7, cellWidth: 35 }
+            },
+            alternateRowStyles: {
+              fillColor: [245, 245, 245]
+            },
+            margin: { left: 15, right: 15 },
+            styles: {
+              cellPadding: 2,
+              overflow: 'linebreak'
+            }
+          });
+
+          currentY = doc.lastAutoTable.finalY + 10;
+        } else {
+          doc.setFontSize(9);
+          doc.setTextColor(150, 150, 150);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Sin datos de tinas)', 17, currentY);
+          doc.setTextColor(...COLORS.text);
+          doc.setFont('helvetica', 'normal');
+          currentY += 10;
+        }
       }
     }
     

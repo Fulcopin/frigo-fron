@@ -134,15 +134,32 @@ function CreateTemplate() {
   const removeHeaderField = (index) => setTemplate((prev) => ({ ...prev, headerFields: prev.headerFields.filter((_, i) => i !== index) }));
 
   const addBodyElement = (type) => {
-    const newElement = {
+    let newElement = {
       id: Date.now(),
       type: type,
-      title: type === 'section' ? 'Nueva Sección de Campos' : type === 'observaciones' ? 'Observaciones' : 'Nueva Tabla de Datos',
-      ...(type === 'section' ? { fields: [] } : type === 'observaciones' ? {} : { 
-        columns: [],
-        defaultRows: 5
-      }),
+      title: type === 'section' ? 'Nueva Sección de Campos' : type === 'observaciones' ? 'Observaciones' : type === 'tinas' ? 'Control de Tinas' : 'Nueva Tabla de Datos',
     };
+    if (type === 'section') {
+      newElement.fields = [];
+    } else if (type === 'observaciones') {
+      // no extra data
+    } else if (type === 'tinas') {
+      newElement.config = {
+        groups: [{ name: 'GRUPO 1', subtitle: '', count: 2, labels: ['TINA 1', 'TINA 2'] }],
+        fields: [
+          { label: 'SE CAMBIA AGUA', type: 'siNo' },
+          { label: 'HORA', type: 'time' },
+          { label: 'Vol.', suffix: 'lts', type: 'number' },
+          { label: 'Resid (I)', suffix: 'ppm', type: 'number' },
+          { label: 'Dosif.', suffix: 'ml', type: 'number' },
+          { label: 'Resid (F)', suffix: 'ppm', type: 'number' },
+        ],
+        cycles: 3,
+      };
+    } else {
+      newElement.columns = [];
+      newElement.defaultRows = 5;
+    }
     setTemplate(prev => ({ ...prev, bodyElements: [...prev.bodyElements, newElement] }));
   };
 
@@ -608,6 +625,7 @@ function CreateTemplate() {
             <button onClick={() => addBodyElement('section')} className="btn-secondary">+ Añadir Sección de Campos</button>
             <button onClick={() => addBodyElement('table')} className="btn-secondary">+ Añadir Tabla de Datos</button>
             <button onClick={() => addBodyElement('observaciones')} className="btn-secondary" style={{ background: '#6366f1' }}>📝 Añadir Observaciones</button>
+            <button onClick={() => addBodyElement('tinas')} className="btn-secondary" style={{ background: '#0891b2' }}>🧊 Añadir Control de Tinas</button>
           </div>
         </div>
         {template.bodyElements.map((element, elementIndex) => (
@@ -961,6 +979,197 @@ function CreateTemplate() {
                   </div>
                 ))}
 
+              </div>
+            )}
+            {element.type === 'tinas' && (
+              <div className="body-element-content" style={{ background: '#f0fdfa', border: '2px solid #99f6e4', borderRadius: '12px', padding: '20px' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <strong style={{ color: '#0f766e', fontSize: '15px' }}>🧊 Configuración de Control de Tinas</strong>
+                  <p style={{ color: '#6b7280', fontSize: '13px', margin: '4px 0 0' }}>Define los grupos de tinas, los campos de medición por ciclo, y cuántos ciclos de medición.</p>
+                </div>
+
+                {/* Ciclos */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                  <label style={{ fontWeight: 600, color: '#0f766e' }}>Ciclos de medición:</label>
+                  <input type="number" min="1" max="10" value={element.config?.cycles || 3}
+                    onChange={(e) => {
+                      const newConfig = { ...element.config, cycles: parseInt(e.target.value) || 3 };
+                      updateBodyElement(elementIndex, 'config', newConfig);
+                    }}
+                    style={{ width: '70px', padding: '6px 10px', border: '2px solid #99f6e4', borderRadius: '8px', fontSize: '14px' }}
+                  />
+                </div>
+
+                {/* Grupos */}
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <h4 style={{ color: '#0f766e', margin: 0 }}>📦 Grupos de Tinas</h4>
+                    <button onClick={() => {
+                      const groups = [...(element.config?.groups || [])];
+                      groups.push({ name: `GRUPO ${groups.length + 1}`, subtitle: '', count: 2, labels: ['TINA 1', 'TINA 2'] });
+                      updateBodyElement(elementIndex, 'config', { ...element.config, groups });
+                    }} className="btn-add-small">+ Agregar Grupo</button>
+                  </div>
+                  {(element.config?.groups || []).map((group, gIdx) => (
+                    <div key={gIdx} style={{ background: 'white', border: '1px solid #d1d5db', borderRadius: '10px', padding: '14px', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'end', marginBottom: '10px' }}>
+                        <div style={{ flex: 2 }}>
+                          <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Nombre del grupo</label>
+                          <input type="text" value={group.name} onChange={(e) => {
+                            const groups = [...element.config.groups];
+                            groups[gIdx] = { ...groups[gIdx], name: e.target.value };
+                            updateBodyElement(elementIndex, 'config', { ...element.config, groups });
+                          }} style={{ width: '100%', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px' }} />
+                        </div>
+                        <div style={{ flex: 2 }}>
+                          <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Subtítulo (ej: AGUA + HIELO...)</label>
+                          <input type="text" value={group.subtitle || ''} onChange={(e) => {
+                            const groups = [...element.config.groups];
+                            groups[gIdx] = { ...groups[gIdx], subtitle: e.target.value };
+                            updateBodyElement(elementIndex, 'config', { ...element.config, groups });
+                          }} style={{ width: '100%', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px' }} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Nº Tinas</label>
+                          <input type="number" min="1" max="20" value={group.count} onChange={(e) => {
+                            const groups = [...element.config.groups];
+                            const newCount = parseInt(e.target.value) || 1;
+                            const labels = [...(groups[gIdx].labels || [])];
+                            while (labels.length < newCount) labels.push(`TINA ${labels.length + 1}`);
+                            groups[gIdx] = { ...groups[gIdx], count: newCount, labels: labels.slice(0, newCount) };
+                            updateBodyElement(elementIndex, 'config', { ...element.config, groups });
+                          }} style={{ width: '100%', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px' }} />
+                        </div>
+                        <button onClick={() => {
+                          const groups = element.config.groups.filter((_, i) => i !== gIdx);
+                          updateBodyElement(elementIndex, 'config', { ...element.config, groups });
+                        }} style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', color: '#dc2626' }}>🗑️</button>
+                      </div>
+                      <div style={{ marginTop: '6px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>Etiquetas de cada tina (separadas por coma)</label>
+                        <input type="text" value={(group.labels || []).join(', ')} onChange={(e) => {
+                          const groups = [...element.config.groups];
+                          const newLabels = e.target.value.split(',').map(l => l.trim());
+                          groups[gIdx] = { ...groups[gIdx], labels: newLabels, count: newLabels.filter(Boolean).length || groups[gIdx].count };
+                          updateBodyElement(elementIndex, 'config', { ...element.config, groups });
+                        }} style={{ width: '100%', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '6px' }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Campos de medición */}
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <h4 style={{ color: '#0f766e', margin: 0 }}>📏 Campos por Ciclo de Medición</h4>
+                    <button onClick={() => {
+                      const fields = [...(element.config?.fields || [])];
+                      fields.push({ label: 'Nuevo Campo', type: 'text', suffix: '' });
+                      updateBodyElement(elementIndex, 'config', { ...element.config, fields });
+                    }} className="btn-add-small">+ Agregar Campo</button>
+                  </div>
+                  {(element.config?.fields || []).map((field, fIdx) => (
+                    <div key={fIdx} style={{ display: 'flex', gap: '8px', alignItems: 'end', marginBottom: '6px', background: 'white', padding: '8px 10px', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                      <div style={{ flex: 2 }}>
+                        <label style={{ fontSize: '11px', color: '#6b7280' }}>Etiqueta</label>
+                        <input type="text" value={field.label} onChange={(e) => {
+                          const fields = [...element.config.fields];
+                          fields[fIdx] = { ...fields[fIdx], label: e.target.value };
+                          updateBodyElement(elementIndex, 'config', { ...element.config, fields });
+                        }} style={{ width: '100%', padding: '5px 8px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', color: '#6b7280' }}>Tipo</label>
+                        <select value={field.type} onChange={(e) => {
+                          const fields = [...element.config.fields];
+                          fields[fIdx] = { ...fields[fIdx], type: e.target.value };
+                          updateBodyElement(elementIndex, 'config', { ...element.config, fields });
+                        }} style={{ width: '100%', padding: '5px 8px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }}>
+                          <option value="text">Texto</option>
+                          <option value="number">Número</option>
+                          <option value="time">Hora</option>
+                          <option value="siNo">Sí / No</option>
+                          <option value="select">Selección</option>
+                        </select>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', color: '#6b7280' }}>Sufijo</label>
+                        <input type="text" value={field.suffix || ''} onChange={(e) => {
+                          const fields = [...element.config.fields];
+                          fields[fIdx] = { ...fields[fIdx], suffix: e.target.value };
+                          updateBodyElement(elementIndex, 'config', { ...element.config, fields });
+                        }} placeholder="ej: lts, ppm, ml" style={{ width: '100%', padding: '5px 8px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
+                      </div>
+                      <button onClick={() => {
+                        const fields = element.config.fields.filter((_, i) => i !== fIdx);
+                        updateBodyElement(elementIndex, 'config', { ...element.config, fields });
+                      }} style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: '#dc2626', fontSize: '12px' }}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Botones rápidos para agregar tinas */}
+                <div style={{ marginBottom: '16px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '14px' }}>
+                  <h4 style={{ color: '#065f46', margin: '0 0 10px', fontSize: '14px' }}>⚡ Agregar tinas rápido a grupos existentes</h4>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {(element.config?.groups || []).map((group, gIdx) => (
+                      <button key={gIdx} onClick={() => {
+                        const groups = [...element.config.groups];
+                        const g = { ...groups[gIdx] };
+                        const labels = [...(g.labels || [])];
+                        labels.push(`TINA ${labels.length + 1}`);
+                        g.count = labels.length;
+                        g.labels = labels;
+                        groups[gIdx] = g;
+                        updateBodyElement(elementIndex, 'config', { ...element.config, groups });
+                      }} style={{
+                        background: '#0d9488', color: 'white', border: 'none', borderRadius: '8px',
+                        padding: '8px 14px', cursor: 'pointer', fontSize: '13px', fontWeight: 600
+                      }}>
+                        + Tina en "{group.name}" ({group.count} → {group.count + 1})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Vista previa */}
+                <div style={{ background: 'white', border: '1px solid #d1d5db', borderRadius: '10px', padding: '14px', overflowX: 'auto' }}>
+                  <strong style={{ color: '#374151', fontSize: '13px', marginBottom: '8px', display: 'block' }}>👁️ Vista previa:</strong>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                    <thead>
+                      <tr>
+                        {(element.config?.groups || []).map((g, gIdx) => (
+                          <th key={gIdx} colSpan={g.count} style={{ background: '#0f766e', color: 'white', padding: '6px', border: '1px solid #0d9488', textAlign: 'center' }}>
+                            {g.name}
+                            {g.subtitle && <div style={{ fontSize: '9px', fontWeight: 'normal', opacity: 0.8 }}>{g.subtitle}</div>}
+                          </th>
+                        ))}
+                      </tr>
+                      <tr>
+                        {(element.config?.groups || []).flatMap((g) =>
+                          (g.labels || []).slice(0, g.count).map((label, lIdx) => (
+                            <th key={`${g.name}-${lIdx}`} style={{ background: '#14b8a6', color: 'white', padding: '4px', border: '1px solid #0d9488', textAlign: 'center', fontSize: '10px' }}>
+                              {label}
+                            </th>
+                          ))
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: element.config?.cycles || 3 }).map((_, cIdx) => (
+                        <tr key={cIdx}>
+                          {(element.config?.groups || []).flatMap((g) =>
+                            Array.from({ length: g.count }).map((_, tIdx) => (
+                              <td key={`${g.name}-${tIdx}-${cIdx}`} style={{ border: '1px solid #e5e7eb', padding: '4px', verticalAlign: 'top', fontSize: '9px', color: '#6b7280' }}>
+                                {(element.config?.fields || []).map(f => f.label).join(', ')}
+                              </td>
+                            ))
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
             {element.type === 'table' && (
