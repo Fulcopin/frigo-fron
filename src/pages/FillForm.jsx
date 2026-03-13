@@ -954,6 +954,19 @@ useEffect(() => {
         return { id: element.id, type: 'observaciones', data: { texto: "" } };
       }
       if (element.type === 'table') {
+        // Si tiene filas predefinidas, usarlas como base
+        if (element.predefinedRows && element.predefinedRows.length > 0) {
+          const initialRows = element.predefinedRows.map(pRow => {
+            const newRow = {};
+            (element.columns || []).forEach((col) => {
+              const colKey = col.label || col.header || col.name || col.id;
+              // Usar valor predefinido si existe, sino vacío
+              newRow[colKey] = pRow[colKey] || '';
+            });
+            return newRow;
+          });
+          return { id: element.id, type: 'table', data: initialRows };
+        }
         const numRows = element.defaultRows || 3;
         const initialRows = Array.from({ length: numRows }, () => {
           const newRow = {};
@@ -7362,6 +7375,30 @@ useEffect(() => {
         {/* RENDERIZADO DE CELDAS */}
         {(element.columns || []).map((col, colIndex) => {
           
+          // 🔗 SOPORTE FILAS PREDEFINIDAS CON COMBINACIÓN (rowSpan)
+          const predefinedRows = element.predefinedRows || [];
+          if (predefinedRows.length > 0 && rowIndex < predefinedRows.length) {
+            const pRow = predefinedRows[rowIndex];
+            const colKey = col.label || col.header || col.name || col.id || `col_${colIndex}`;
+            // Si esta celda está oculta por un rowSpan de fila superior, no renderizar
+            if (pRow._hidden?.[colKey]) return null;
+            const span = pRow._rowSpan?.[colKey] || 1;
+            const predefinedValue = pRow[colKey] || '';
+            // Si tiene valor predefinido, mostrar como solo lectura con estilo
+            if (predefinedValue) {
+              return (
+                <td key={`${elementIndex}-${rowIndex}-${colIndex}`} rowSpan={span > 1 ? span : undefined}
+                  style={{
+                    fontWeight: 600, color: '#1f2937', background: '#f0f9ff',
+                    verticalAlign: 'middle', textAlign: 'center', padding: '8px',
+                    borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb'
+                  }}>
+                  {predefinedValue}
+                </td>
+              );
+            }
+          }
+
           // 1. IDENTIFICACIÓN DEL FORMULARIO (CANDADO)
           // Verificamos por ID (38) O por nombre, por si cambiaste la BD
           const tId = Number(selectedTemplate?.TemplateID || selectedTemplate?.id);

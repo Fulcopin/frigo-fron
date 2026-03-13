@@ -24,6 +24,7 @@ import ConsumptionDashboard from "./pages/ConsumptionDashboard";
 import CatalogoFirmas from "./pages/CatalogoFirmas";
 import SessionHistory from "./pages/SessionHistory";
 import MyDrafts from "./pages/MyDrafts";
+import DocumentRegistry from "./pages/DocumentRegistry";
 import "./App.css"
 
 function Navigation() {
@@ -70,6 +71,8 @@ function Navigation() {
     { to: "/alerts", icon: "🔔", label: "Alertas", show: isAdminOrSupervisor },
     { to: "/consumptions", icon: "📊", label: "Consumos", show: isAdminOrSupervisor },
     { to: "/session-history", icon: "⏱️", label: "Tiempos", show: isAdminOrSupervisor },
+    { divider: true, label: "Documentos", show: true },
+    { to: "/document-registry", icon: "📄", label: "Lista de Documentos", show: true },
   ]
 
   return (
@@ -172,7 +175,8 @@ function getPageName(pathname) {
     '/dashboard-erp': 'Dashboard ERP',
     '/consumption-dashboard': 'Dashboard de Consumos',
     '/session-history': 'Registro de Tiempos',
-    '/my-drafts': 'Mis Borradores'
+    '/my-drafts': 'Mis Borradores',
+    '/document-registry': 'Documentos Registrados'
   }
   
   // Para rutas dinámicas como /edit-template/:id
@@ -309,6 +313,13 @@ function App() {
                 <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
                   <SessionHistory />
                 </RoleBasedRoute>
+              } />
+              
+              {/* Lista de Documentos Registrados - Acceso para todos */}
+              <Route path="/document-registry" element={
+                <ProtectedRoute>
+                  <DocumentRegistry />
+                </ProtectedRoute>
               } />
             </Routes>
           </main>

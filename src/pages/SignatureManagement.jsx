@@ -119,8 +119,9 @@ export default function SignatureManagement() {
           createdByRole: form.filledByRole || form.createdByRole || '',
           createdDate: form.createdDate || form.createdAt,
           isSigned: form.isSigned || false,
+          isRejected: form.isRejected || false,
           hasSignatureImages, // Si el formulario YA tiene firmas PNG dentro
-          status: form.isSigned ? 'signed' : 'pending',
+          status: form.isRejected ? 'rejected' : form.isSigned ? 'signed' : 'pending',
           signed: form.isSigned || false,
           firmasData: firmasDataParsed, // ✅ Agregar FirmasData parseado para filtrado
         };
@@ -415,18 +416,46 @@ export default function SignatureManagement() {
   // Confirmar rechazo desde el modal
   const handleRejectConfirm = async () => {
     if (!rejectFormId) return;
+    const formIdToReject = rejectFormId;
 
     try {
-      await signatureService.rejectForm(rejectFormId, {
+      await signatureService.rejectForm(formIdToReject, {
         rejectedBy: currentUser.email,
         reason: rejectReason || '', // Campo OPCIONAL
       });
+
+      // ✅ Intentar marcar alertas asociadas a este formulario como leídas
+      try {
+        const alertsResponse = await fetch(`${API_BASE_URL}/Alerts/active`);
+        if (alertsResponse.ok) {
+          const alertsData = await alertsResponse.json();
+          const alerts = Array.isArray(alertsData) ? alertsData : alertsData.$values || [];
+          const relatedAlerts = alerts.filter(a => a.formId === formIdToReject);
+          for (const relatedAlert of relatedAlerts) {
+            await fetch(`${API_BASE_URL}/Alerts/mark-read/${relatedAlert.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ No se pudieron limpiar alertas asociadas:', err);
+      }
       
-      alert('✅ Formulario rechazado exitosamente');
+      // Remover inmediatamente del estado local
+      setPendingForms(prev => prev.filter(f => f.id !== formIdToReject));
+      setSelectedForms(prev => prev.filter(id => id !== formIdToReject));
+      // Actualización optimista del dashboard
+      setStats(prev => ({
+        ...prev,
+        pendingCount: Math.max(0, (prev.pendingCount || 0) - 1),
+        rejectedCount: (prev.rejectedCount || 0) + 1,
+      }));
       setShowRejectModal(false);
       setRejectFormId(null);
       setRejectReason('');
-      loadData();
+      alert('✅ Formulario rechazado exitosamente');
+      await loadData();
     } catch (error) {
       console.error('Error al rechazar:', error);
       alert('❌ Error al rechazar el formulario: ' + error.message);
@@ -520,15 +549,21 @@ export default function SignatureManagement() {
     const matchesArea = !filterArea || form.area === filterArea;
     const matchesTemplate = !filterTemplate || form.templateId === filterTemplate;
     
+    // ✅ Excluir formularios rechazados
+    const isNotRejected = !form.isRejected;
+    
     // ✅ NUEVO FILTRO: Solo mostrar formularios donde el usuario está asignado para firmar
     const isAssignedToUser = isUserAssignedToSign(form);
     
-    return matchesSearch && matchesArea && matchesTemplate && isAssignedToUser;
+    return matchesSearch && matchesArea && matchesTemplate && isAssignedToUser && isNotRejected;
   });
 
   // Obtener áreas y plantillas únicas para filtros
   const uniqueAreas = [...new Set(pendingForms.map(f => f.area).filter(Boolean))];
-  const uniqueTemplates = [...new Set(pendingForms.map(f => ({ id: f.templateId, name: f.templateName })))];
+  const uniqueTemplates = Object.values(pendingForms.reduce((acc, f) => {
+    if (!acc[f.templateId]) acc[f.templateId] = { id: f.templateId, name: f.templateName };
+    return acc;
+  }, {}));
 
   if (loading) {
     return (

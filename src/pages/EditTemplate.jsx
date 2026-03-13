@@ -1091,6 +1091,161 @@ function EditTemplate() {
                     )}
                   </div>
                 ))}
+
+                {/* 🔗 FILAS PREDEFINIDAS CON COMBINACIÓN DE CELDAS */}
+                <div style={{
+                  marginTop: '20px',
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, #eff6ff, #dbeafe)',
+                  border: '2px solid #60a5fa',
+                  borderRadius: '12px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <strong style={{ color: '#1e40af', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      🔗 Filas Predefinidas (con combinación de celdas)
+                    </strong>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        onClick={() => {
+                          const newRow = {};
+                          (element.columns || []).forEach(col => { newRow[col.label || 'col'] = ''; });
+                          newRow._rowSpan = {};
+                          newRow._hidden = {};
+                          const rows = [...(element.predefinedRows || []), newRow];
+                          updateBodyElement(elementIndex, 'predefinedRows', rows);
+                        }}
+                        style={{
+                          padding: '6px 12px', borderRadius: '6px', border: '1px solid #3b82f6',
+                          background: '#3b82f6', color: 'white', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500
+                        }}
+                      >
+                        + Agregar Fila
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (element.predefinedRows?.length >= 1) {
+                            updateBodyElement(elementIndex, 'defaultRows', element.predefinedRows.length);
+                          }
+                        }}
+                        style={{
+                          padding: '6px 12px', borderRadius: '6px', border: '1px solid #059669',
+                          background: '#059669', color: 'white', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500
+                        }}
+                        title="Igualar filas por defecto al número de filas predefinidas"
+                      >
+                        📐 Sync Filas ({(element.predefinedRows || []).length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {(element.predefinedRows || []).length === 0 ? (
+                    <p style={{ color: '#6b7280', fontSize: '0.85rem', fontStyle: 'italic', margin: 0 }}>
+                      Sin filas predefinidas. Agrega filas para definir contenido fijo y combinar celdas.
+                    </p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr style={{ background: '#dbeafe' }}>
+                            <th style={{ padding: '6px 8px', border: '1px solid #93c5fd', width: '40px' }}>#</th>
+                            {(element.columns || []).map((col, ci) => (
+                              <th key={ci} style={{ padding: '6px 8px', border: '1px solid #93c5fd' }}>
+                                {col.label || `Col ${ci+1}`}
+                              </th>
+                            ))}
+                            <th style={{ padding: '6px 8px', border: '1px solid #93c5fd', width: '80px' }}>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(element.predefinedRows || []).map((pRow, ri) => (
+                            <tr key={ri} style={{ background: ri % 2 === 0 ? 'white' : '#f0f7ff' }}>
+                              <td style={{ padding: '4px 8px', border: '1px solid #bfdbfe', textAlign: 'center', fontWeight: 600, color: '#6b7280' }}>{ri + 1}</td>
+                              {(element.columns || []).map((col, ci) => {
+                                const colKey = col.label || `col_${ci}`;
+                                const isHidden = pRow._hidden?.[colKey];
+                                if (isHidden) return null;
+                                const span = pRow._rowSpan?.[colKey] || 1;
+                                return (
+                                  <td key={ci} rowSpan={span} style={{ padding: '4px', border: '1px solid #bfdbfe', verticalAlign: 'top' }}>
+                                    <input
+                                      type="text"
+                                      value={pRow[colKey] || ''}
+                                      onChange={(e) => {
+                                        const rows = [...(element.predefinedRows || [])];
+                                        rows[ri] = { ...rows[ri], [colKey]: e.target.value };
+                                        updateBodyElement(elementIndex, 'predefinedRows', rows);
+                                      }}
+                                      placeholder="Texto fijo..."
+                                      style={{
+                                        width: '100%', padding: '4px 6px', border: '1px solid #d1d5db',
+                                        borderRadius: '4px', fontSize: '0.85rem', boxSizing: 'border-box'
+                                      }}
+                                    />
+                                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                                      <button
+                                        onClick={() => {
+                                          const maxSpan = (element.predefinedRows || []).length - ri;
+                                          const currentSpan = pRow._rowSpan?.[colKey] || 1;
+                                          const newSpan = currentSpan < maxSpan ? currentSpan + 1 : 1;
+                                          const rows = [...(element.predefinedRows || [])].map((r, idx) => ({...r, _rowSpan: {...(r._rowSpan || {})}, _hidden: {...(r._hidden || {})}}));
+                                          rows.forEach((r, idx) => { if (idx > ri) r._hidden[colKey] = false; });
+                                          rows[ri]._rowSpan[colKey] = newSpan;
+                                          for (let s = 1; s < newSpan; s++) {
+                                            if (rows[ri + s]) rows[ri + s]._hidden[colKey] = true;
+                                          }
+                                          updateBodyElement(elementIndex, 'predefinedRows', rows);
+                                        }}
+                                        style={{
+                                          padding: '2px 6px', borderRadius: '4px', border: '1px solid #8b5cf6',
+                                          background: (pRow._rowSpan?.[colKey] || 1) > 1 ? '#8b5cf6' : '#f5f3ff',
+                                          color: (pRow._rowSpan?.[colKey] || 1) > 1 ? 'white' : '#6d28d9',
+                                          cursor: 'pointer', fontSize: '0.75rem', fontWeight: 500
+                                        }}
+                                        title={`Combinar filas hacia abajo (actual: ${pRow._rowSpan?.[colKey] || 1})`}
+                                      >
+                                        🔗 {pRow._rowSpan?.[colKey] || 1}
+                                      </button>
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                              <td style={{ padding: '4px', border: '1px solid #bfdbfe', textAlign: 'center' }}>
+                                <button
+                                  onClick={() => {
+                                    const rows = (element.predefinedRows || []).filter((_, idx) => idx !== ri);
+                                    rows.forEach(r => {
+                                      Object.keys(r._rowSpan || {}).forEach(key => {
+                                        if (r._rowSpan[key] > 1) {
+                                          const rowIdx = rows.indexOf(r);
+                                          const maxSpan = rows.length - rowIdx;
+                                          if (r._rowSpan[key] > maxSpan) r._rowSpan[key] = maxSpan;
+                                          for (let s = 1; s < r._rowSpan[key]; s++) {
+                                            if (rows[rowIdx + s]) rows[rowIdx + s]._hidden[key] = true;
+                                          }
+                                        }
+                                      });
+                                    });
+                                    updateBodyElement(elementIndex, 'predefinedRows', rows);
+                                  }}
+                                  style={{
+                                    background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '4px',
+                                    padding: '2px 8px', cursor: 'pointer', color: '#dc2626', fontSize: '0.8rem'
+                                  }}
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <p style={{ color: '#6b7280', fontSize: '0.78rem', marginTop: '8px', margin: '8px 0 0' }}>
+                        💡 Escribe texto fijo en cada celda. Usa el botón <strong>🔗</strong> para combinar celdas hacia abajo. El número indica cuántas filas cubre esa celda.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
               </div>
             )}
           </div>
