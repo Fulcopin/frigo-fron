@@ -25,6 +25,7 @@ import CatalogoFirmas from "./pages/CatalogoFirmas";
 import SessionHistory from "./pages/SessionHistory";
 import MyDrafts from "./pages/MyDrafts";
 import DocumentRegistry from "./pages/DocumentRegistry";
+import SeedBPMTemplates from "./pages/SeedBPMTemplates";
 import "./App.css"
 
 function Navigation() {
@@ -73,6 +74,7 @@ function Navigation() {
     { to: "/session-history", icon: "⏱️", label: "Tiempos", show: isAdminOrSupervisor },
     { divider: true, label: "Documentos", show: true },
     { to: "/document-registry", icon: "📄", label: "Lista de Documentos", show: true },
+    { to: "/seed-bpm-templates", icon: "🧤", label: "Crear Plantillas BPM", show: isAdminOrSupervisor },
   ]
 
   return (
@@ -176,7 +178,8 @@ function getPageName(pathname) {
     '/consumption-dashboard': 'Dashboard de Consumos',
     '/session-history': 'Registro de Tiempos',
     '/my-drafts': 'Mis Borradores',
-    '/document-registry': 'Documentos Registrados'
+    '/document-registry': 'Documentos Registrados',
+    '/seed-bpm-templates': 'Crear Plantillas BPM'
   }
   
   // Para rutas dinámicas como /edit-template/:id
@@ -320,6 +323,13 @@ function App() {
                 <ProtectedRoute>
                   <DocumentRegistry />
                 </ProtectedRoute>
+              } />
+              
+              {/* Crear Plantillas BPM - Solo Admin y Supervisor */}
+              <Route path="/seed-bpm-templates" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <SeedBPMTemplates />
+                </RoleBasedRoute>
               } />
             </Routes>
           </main>
