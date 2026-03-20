@@ -959,6 +959,1659 @@ function getGlaseoFinalTemplate() {
 }
 
 // ============================================================
+// PLANTILLA: FOR-CC-16 - REGISTRO CALIBRACIÓN Y DESAFÍO DEL DETECTOR DE METAL (PCC)
+// Versión: 1 | Fecha: 18/2/2025
+// ============================================================
+function getDetectorMetalTemplate() {
+  const headerFields = [
+    { label: "Fecha", type: "date", required: true, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Máquina #", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Producto / Presentación", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Cliente", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Tipo Empaque - CAJA", type: "radio", required: false, options: ["Sí", "No"], apiMap: "", apiEndpoint: "" },
+    { label: "Tipo Empaque - FUNDA", type: "radio", required: false, options: ["Sí", "No"], apiMap: "", apiEndpoint: "" },
+  ]
+
+  const bodyElements = [
+    // ── Pre Operativo ──
+    {
+      id: Date.now() + 400,
+      type: "section",
+      title: "PRE OPERATIVO - Desafío de la máquina detectora de metales",
+      fields: [
+        { label: "Pre Operativo - Hora", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "2.5 mm Fe - SI", type: "radio", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "3.0 mm Fe - SI", type: "radio", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "3.0 mm Non Fe - SI", type: "radio", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "4.0 mm SS - SI", type: "radio", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "¿Se desafió pasando una curita para cortes? Lote curita", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Curita - Resultado", type: "radio", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // ── Tabla Principal de Monitoreo ──
+    {
+      id: Date.now() + 401,
+      type: "table",
+      title: "Registro de Detección de Metales Durante Producción",
+      defaultRows: 10,
+      columns: [
+        { label: "HORA", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Producto" },
+        { label: "LOTE", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Producto" },
+        { label: "Clasificación", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Producto" },
+        { label: "Todos los productos pasaron a través del detector de metal plenamente funcionando", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Detector" },
+        { label: "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Detector" },
+        { label: "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Desafío" },
+        { label: "OBSERVACIONES", type: "textarea", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Desafío" },
+      ],
+      predefinedRows: [
+        // Cada producto tiene 2 filas: una de datos normales y una de "DESAFÍO CON ESFERAS"
+        { "HORA": "", "LOTE": "", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "DESAFÍO CON ESFERAS", "LOTE": "-", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "-", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "-", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "", "LOTE": "", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "DESAFÍO CON ESFERAS", "LOTE": "-", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "-", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "-", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "", "LOTE": "", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "DESAFÍO CON ESFERAS", "LOTE": "-", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "-", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "-", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "", "LOTE": "", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "DESAFÍO CON ESFERAS", "LOTE": "-", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "-", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "-", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "", "LOTE": "", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "DESAFÍO CON ESFERAS", "LOTE": "-", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "-", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "-", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "", "LOTE": "", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "DESAFÍO CON ESFERAS", "LOTE": "-", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "-", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "-", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "", "LOTE": "", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "DESAFÍO CON ESFERAS", "LOTE": "-", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "-", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "-", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "", "LOTE": "", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "DESAFÍO CON ESFERAS", "LOTE": "-", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "-", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "-", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "", "LOTE": "", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+        { "HORA": "DESAFÍO CON ESFERAS", "LOTE": "-", "Clasificación": "", "Todos los productos pasaron a través del detector de metal plenamente funcionando": "-", "Algún fragmento de metal es detectado en el producto que pasó a través del detector de metales": "-", "Desafío c/hora con esferas: 2.5mm Fe, 3mm Fe, 3mm NoFe, 4mm SS - ¿Exitoso?": "", "OBSERVACIONES": "", _rowSpan: {}, _hidden: {} },
+      ],
+    },
+
+    // ── Terminología ──
+    {
+      id: Date.now() + 402,
+      type: "section",
+      title: "Terminología",
+      fields: [
+        { label: "Nota", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // ── Observación ──
+    {
+      id: Date.now() + 403,
+      type: "observaciones",
+      title: "Observación",
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Analista de Aseg. De Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Obrero de Producción",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Jefe de Aseguramiento de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-16",
+    nombre: "Registro Calibración y Desafío del Detector de Metal (PCC)",
+    version: "1",
+    fechaVersion: "2025-02-18T00:00:00Z",
+    supervisa: "Jefe de Aseguramiento de Calidad",
+    proceso: "Control de Calidad - Detector de Metales",
+    cuandoSeUsa: "Durante cada turno de producción donde se usa detector de metales",
+    quienLoLlena: "Analista de Aseg. De Calidad",
+    frecuencia: "Por turno",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-18 - CONTROL DEL AGUA EN PROCESO
+// Versión: 4 | Fecha: 15/10/2025
+// ============================================================
+function getControlAguaTemplate() {
+  const headerFields = [
+    { label: "Fecha", type: "date", required: true, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Turno", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  // Columnas comunes para cada cuadro de estación (tabla compacta por estación)
+  const estacionColumns = [
+    { label: "SE CAMBIA AGUA", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+    { label: "HORA", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+    { label: "Vol. lts", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+    { label: "Resid. (F) ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+    { label: "Dosif. ml", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+    { label: "Resid. (F) ppm 2", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+  ]
+
+  const estaciones = [
+    { nombre: "PEDILUVIO (Entrada Principal) - Cloro/Peroxiacético", subtitulo: "CLORO ( ) / PEROXIACÉTICO ( )" },
+    { nombre: "ESTACIÓN Desinf. de Botas (Área Recep. Mat. Prima) - Agua + Peroxiacético", subtitulo: "AGUA + PEROXIACÉTICO" },
+    { nombre: "ESTACIÓN Desinf. de Botas (Área Embarque Contenedores) - Agua + Peroxiacético", subtitulo: "AGUA + PEROXIACÉTICO" },
+    { nombre: "TINA Desinf. Producto Entero (Descarga Mat. Prima) - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
+    { nombre: "Desinf. Producto Entero (Previo Fileteo) TINA 1 - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
+    { nombre: "Desinf. Producto Entero (Previo Fileteo) TINA 2 - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
+    { nombre: "Desinf. Producto Entero (Previo Fileteo) TINA 3 - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
+    { nombre: "Desinf. Producto Entero (Previo Fileteo) TINA 4 - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
+    { nombre: "ESTACIONES MOVILES Desinf. Guantes, Cuchillos, Mandiles (Proceso Fileteo) - Agua + Peroxiacético", subtitulo: "AGUA + PEROXIACÉTICO" },
+  ]
+
+  const bodyElements = []
+
+  // Cada estación es una tabla compacta (cuadrito) con 7 filas
+  estaciones.forEach((est, idx) => {
+    bodyElements.push({
+      id: Date.now() + 500 + idx,
+      type: "table",
+      title: est.nombre,
+      defaultRows: 7,
+      columns: estacionColumns.map(c => ({ ...c })),
+    })
+  })
+
+  // Observaciones
+  bodyElements.push({
+    id: Date.now() + 520,
+    type: "observaciones",
+    title: "Observaciones",
+  })
+
+  // Acciones Correctivas (tabla editable)
+  bodyElements.push({
+    id: Date.now() + 521,
+    type: "table",
+    title: "Acciones Correctivas",
+    defaultRows: 3,
+    columns: [
+      { label: "Acción Correctiva", type: "textarea", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+    ],
+  })
+
+  // Tabla de Dosificaciones & Residual ppm
+  bodyElements.push({
+    id: Date.now() + 522,
+    type: "table",
+    title: "Dosificaciones & Residual ppm",
+    defaultRows: 0,
+    columns: [
+      { label: "ESTACIONES - PROCESOS", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Dosificación" },
+      { label: "AGUA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Dosificación" },
+      { label: "HIELO", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Dosificación" },
+      { label: "CLORO 99%", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Dosificación" },
+      { label: "PEROX. 15%", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Dosificación" },
+      { label: "RESIDUAL ppm", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Resultado" },
+      { label: "CAMBIO/DESINF.", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Resultado" },
+    ],
+    predefinedRows: [
+      { "ESTACIONES - PROCESOS": "PEDILUVIO", "AGUA": "500 lts", "HIELO": "-", "CLORO 99%": "-", "PEROX. 15%": "533.33 ml", "RESIDUAL ppm": "160 ppm", "CAMBIO/DESINF.": "CADA 2 HORAS", _rowSpan: {}, _hidden: {} },
+      { "ESTACIONES - PROCESOS": "ESTACIÓN DE DESINFECCIÓN DE BOTAS", "AGUA": "25 lts", "HIELO": "-", "CLORO 99%": "1000 ml", "PEROX. 15%": "26.67 ml", "RESIDUAL ppm": "200 ppm", "CAMBIO/DESINF.": "160 ppm", _rowSpan: {}, _hidden: {} },
+      { "ESTACIONES - PROCESOS": "DESINFECCIÓN DE MATERIA PRIMA (ENTERO)", "AGUA": "300 lts", "HIELO": "100 kg", "CLORO 99%": "-", "PEROX. 15%": "213.33 ml", "RESIDUAL ppm": "80 ppm", "CAMBIO/DESINF.": "CADA 2 HORAS", _rowSpan: {}, _hidden: {} },
+      { "ESTACIONES - PROCESOS": "ESTACIÓN MOVIL DE DESINFECCIÓN DE UTENSILIOS", "AGUA": "25 lts", "HIELO": "-", "CLORO 99%": "-", "PEROX. 15%": "26.67 ml", "RESIDUAL ppm": "160 ppm", "CAMBIO/DESINF.": "CADA HORA", _rowSpan: {}, _hidden: {} },
+    ],
+  })
+
+  const firmas = [
+    {
+      puesto: "Analista de Aseg. De Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Aseguramiento De Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-18",
+    nombre: "Control del Agua en Proceso (Clorinación y Peroxiacético)",
+    version: "4",
+    fechaVersion: "2025-10-15T00:00:00Z",
+    supervisa: "Aseguramiento de Calidad",
+    proceso: "Control de Calidad - Agua en Proceso",
+    cuandoSeUsa: "Durante cada turno de producción para control de agua",
+    quienLoLlena: "Analista de Aseg. De Calidad",
+    frecuencia: "Por turno",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-21 - CONTROL DE ALMACENAMIENTO REFRIGERADO
+// Versión: 1 | Fecha: 24/2/2025
+// ============================================================
+function getAlmacenamientoRefrigeradoTemplate() {
+  const headerFields = [
+    { label: "Fecha", type: "date", required: true, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Especie / Presentación", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Lote", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  // Columnas del inicio de proceso
+  const inicioProcesoColumns = [
+    { label: "# TINA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Inicio Proceso" },
+    { label: "HORA (Inicio)", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Inicio Proceso" },
+    { label: "TEMP. T°C (Inicio)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Inicio Proceso" },
+  ]
+
+  // Columnas de finaliza proceso / inicia almacenamiento
+  const finalizaColumns = [
+    { label: "HORA (Finaliza/Inicia Almac.)", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Finaliza Proc." },
+    { label: "¿SE COLOCÓ SUFICIENTE CANTIDAD DE HIELO ALREDEDOR DEL PRODUCTO DURANTE EL ENHIELADO TIPO SÁNDWICH?", type: "select", required: false, options: ["S", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Finaliza Proc." },
+    { label: "T°C PROM. T°S PESCADO (Finaliza)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Finaliza Proc." },
+  ]
+
+  // Columnas de cada control día
+  const controlDiaColumns = (dia) => [
+    { label: `HORA (Control Día ${dia})`, type: "time", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: `Control Día ${dia}` },
+    { label: `SUFICIENTE HIELO ALREDEDOR DEL PRODUCTO (Día ${dia})`, type: "select", required: false, options: ["S", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: `Control Día ${dia}` },
+    { label: `T°C PROM. DEL PROD. (Día ${dia})`, type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: `Control Día ${dia}` },
+  ]
+
+  const allColumns = [
+    ...inicioProcesoColumns,
+    ...finalizaColumns,
+    ...controlDiaColumns(1),
+    ...controlDiaColumns(2),
+    ...controlDiaColumns(3),
+    ...controlDiaColumns(4),
+    { label: "OBSERVACIÓN / ACCIÓN CORRECTIVA", type: "textarea", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Observación" },
+  ]
+
+  const bodyElements = [
+    // ── Fechas de Control ──
+    {
+      id: Date.now() + 600,
+      type: "section",
+      title: "Fechas de Control Diario",
+      fields: [
+        { label: "Fecha Control Día 1", type: "date", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Fecha Control Día 2", type: "date", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Fecha Control Día 3", type: "date", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Fecha Control Día 4", type: "date", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // ── Tabla Principal ──
+    {
+      id: Date.now() + 601,
+      type: "table",
+      title: "Control de Almacenamiento Refrigerado (por Tina)",
+      defaultRows: 20,
+      columns: allColumns,
+    },
+
+    // ── Se repone hielo ──
+    {
+      id: Date.now() + 602,
+      type: "section",
+      title: "Reposición de Hielo",
+      fields: [
+        { label: "¿SE REPONE HIELO?", type: "radio", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // ── Material ──
+    {
+      id: Date.now() + 603,
+      type: "table",
+      title: "Material Utilizado",
+      defaultRows: 3,
+      columns: [
+        { label: "MATERIAL", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Material" },
+        { label: "LOTE", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Material" },
+        { label: "SE UTILIZÓ EN:", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Material" },
+      ],
+    },
+
+    // ── Observaciones ──
+    {
+      id: Date.now() + 604,
+      type: "observaciones",
+      title: "Observaciones Generales",
+    },
+
+    // ── Acciones Correctivas ──
+    {
+      id: Date.now() + 605,
+      type: "section",
+      title: "Acciones Correctivas",
+      fields: [
+        { label: "Acciones Correctivas", type: "textarea", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Operador",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Supervisor de Aseguram. Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Jefe de Aseguram. Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-21",
+    nombre: "Control de Almacenamiento Refrigerado de Producto con CO (Cantidad de Hielo, T°C y Tiempo) PCC",
+    version: "1",
+    fechaVersion: "2025-02-24T00:00:00Z",
+    supervisa: "Jefe de Aseguram. Calidad",
+    proceso: "Control de Calidad - Almacenamiento Refrigerado",
+    cuandoSeUsa: "Durante el almacenamiento refrigerado de producto con hielo",
+    quienLoLlena: "Operador",
+    frecuencia: "Diaria / por lote",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-34 - LISTA DE INSPECCIÓN SANITARIA DE ÁREAS NO PRODUCTIVAS
+// Versión: 2 | Fecha: 24/04/2025
+// ============================================================
+function getInspeccionAreasNoProductivasTemplate() {
+  const headerFields = [
+    { label: "Fecha/Hora", type: "datetime-local", required: true, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  const areas = {
+    "BODEGA DE INSUMOS": [
+      "Se encuentra limpia y ordenada",
+      "Se observan las puertas cerradas y debidamente protegidas",
+      "Ausencia de plagas, insectos",
+    ],
+    "BODEGA DE CARTONES": [
+      "Se encuentra limpia y ordenada",
+      "Se observan las puertas cerradas y debidamente protegidas",
+      "Ausencia de plagas, insectos",
+    ],
+    "ÁREA PROVISIONAL DE DESECHOS PLÁSTICOS": [
+      "Se encuentra limpia y ordenada",
+      "Área señalizada",
+      "Ausencia de plagas, insectos",
+    ],
+    "ÁREA DE MANTENIMIENTO": [
+      "Se encuentra limpia y ordenada",
+      "Químicos rotulados y almacenados correctamente",
+      "Áreas señalizadas",
+      "Canales de desagüe limpios y secos",
+      "Ausencia de plagas, insectos",
+      "Lavamanos en buen estado, con abastecimiento de agua, papel y jabón.",
+    ],
+    "ÁREA DE LAVADO DE TANQUES": [
+      "Se encuentra limpia y ordenada",
+      "Químicos rotulados y almacenados correctamente",
+      "Área señalizada",
+      "Cisternas se encuentran con candado",
+      "Canales de desagüe limpios y secos",
+      "Zona para tanques por lavar bien delimitada",
+      "Ausencia de plagas, insectos",
+      "Llaves y mangueras en buen estado, sin fugas.",
+    ],
+    "ZONAS EXTERNAS Y PERÍMETRO": [
+      "Se encuentra limpia, libre de maleza y otros desechos",
+      "Disponibilidad de contenedores para desechos (limpios)",
+      "Ausencia de plagas, insectos",
+    ],
+    "PATIO PRINCIPAL (ZONA PUNTO DE REUNIÓN)": [
+      "Se encuentra limpia",
+      "Disponibilidad de contenedores para desechos (limpios)",
+      "Ausencia de plagas, insectos",
+    ],
+    "ZONA DE CARGA DE CONTENEDORES (PATIO DE CÁMARA)": [
+      "Área de patio se encuentra limpia",
+      "Disponibilidad de contenedores para desechos (limpios)",
+      "Dispensadores de jabón de manos abastecidos",
+      "Zona para tanques limpios bien delimitada",
+      "Químicos rotulados y almacenados correctamente",
+      "Ausencia de plagas, insectos",
+      "Buen funcionamiento de los lavamanos",
+    ],
+  }
+
+  // Construir filas predefinidas: cada área es un header + sus ítems
+  const predefinedRows = []
+  Object.entries(areas).forEach(([areaName, items]) => {
+    // Fila de encabezado de área (nombre en negritas)
+    predefinedRows.push({
+      "ÁREA": areaName,
+      "SI": "",
+      "NO": "",
+      "OBSERVACIONES": "",
+      "ACCIÓN CORRECTIVA": "",
+      _rowSpan: {},
+      _hidden: {},
+      _isHeader: true,
+    })
+    items.forEach((item) => {
+      predefinedRows.push({
+        "ÁREA": item,
+        "SI": "",
+        "NO": "",
+        "OBSERVACIONES": "",
+        "ACCIÓN CORRECTIVA": "",
+        _rowSpan: {},
+        _hidden: {},
+      })
+    })
+  })
+
+  const bodyElements = [
+    {
+      id: Date.now() + 700,
+      type: "table",
+      title: "Inspección Sanitaria de Áreas No Productivas",
+      defaultRows: 0,
+      columns: [
+        { label: "ÁREA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "SI", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "NO", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "OBSERVACIONES", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "ACCIÓN CORRECTIVA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+      predefinedRows: predefinedRows,
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Inspeccionado por",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Revisado por",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-34",
+    nombre: "Lista de Inspección Sanitaria de Áreas No Productivas",
+    version: "2",
+    fechaVersion: "2025-04-24T00:00:00Z",
+    supervisa: "Aseguramiento de Calidad",
+    proceso: "Control de Calidad - Inspección Sanitaria",
+    cuandoSeUsa: "Para verificar condiciones sanitarias de áreas no productivas",
+    quienLoLlena: "Inspector de calidad",
+    frecuencia: "Periódica",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-36 - REGISTRO DE LIMPIEZA DE TANQUES Y TINAS
+// Versión: 1 | Fecha: 03/04/2025
+// ============================================================
+function getLimpiezaTanquesTinasTemplate() {
+  const headerFields = [
+    { label: "Fecha", type: "date", required: true, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  // 6 bloques de limpieza (cada uno con H. INICIO y H. FINAL)
+  const bloques = []
+  for (let b = 1; b <= 6; b++) {
+    bloques.push({
+      id: Date.now() + 800 + b,
+      type: "table",
+      title: `Bloque ${b}`,
+      defaultRows: 5,
+      columns: [
+        { label: "HORA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Registro" },
+        { label: "No. Tanque / Tina", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Registro" },
+        { label: "LIMPIÓ TAPA", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Registro" },
+        { label: "VERIFICADOR / SUPERVISOR (OK/NO)", type: "select", required: false, options: ["OK", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Verificación" },
+        { label: "RESPONSABLE DE LA LIMPIEZA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Verificación" },
+        { label: "TINAS PLASTICAS PRODUCTO", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Observación" },
+        { label: "TINAS SUBPRODUCTO", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Observación" },
+        { label: "TANQUES DE PRODUCTO", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Observación" },
+        { label: "PALLETS PLÁSTICOS", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Observación" },
+      ],
+    })
+  }
+
+  const bodyElements = [
+    ...bloques,
+
+    // Control de Máquina Hidrolavadora Karcher
+    {
+      id: Date.now() + 810,
+      type: "section",
+      title: "Control de Máquina Hidrolavadora Karcher",
+      fields: [
+        { label: "CAMBIO DE ACEITE DE LA MAQUINA", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "OTROS MANTENIMIENTOS ADICIONALES", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "OBSERVACIONES DE LA MAQUINA", type: "textarea", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Observación general
+    {
+      id: Date.now() + 811,
+      type: "observaciones",
+      title: "Observación",
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Responsable de la Limpieza",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Aseguramiento de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-36",
+    nombre: "Registro de Limpieza de Tanques y Tinas",
+    version: "1",
+    fechaVersion: "2025-04-03T00:00:00Z",
+    supervisa: "Aseguramiento de Calidad",
+    proceso: "Control de Calidad - Limpieza",
+    cuandoSeUsa: "Para registrar la limpieza de tanques y tinas de proceso",
+    quienLoLlena: "Responsable de la Limpieza",
+    frecuencia: "Diaria",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-4 - INSPECCIÓN DE CONDICIONES SANITARIAS
+// DE LAS ÁREAS DE PROCESO (PRE-OPERATIVA Y EN CADA CAMBIO)
+// Versión: 5 | Fecha: 15/10/2025
+// ============================================================
+function getInspeccionSanitariaAreasTemplate() {
+  const headerFields = [
+    { label: "Fecha", type: "date", required: true, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Supervisores de proceso", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  const areasPreOperativa = [
+    "RECEPCIÓN DE MATERIA PRIMA",
+    "SILO DE HIELO",
+    "ÁREA DE PROCESO 2 (vL)",
+    "PROCESO DE FILETEO",
+    "ÁREA DE CO (ELIMINACIÓN DE CO DE LA FUNDA)",
+    "MANTENIMIENTO REFRIGERADO",
+    "LIMPIEZA, CLASIF. EMPAQ. Y SELLADO DE PRODUCTO FRESCO",
+    "LIBERACIÓN DE PRODUCTO DE TÚNELES EMPAQ. FINAL / PROVISIONAL",
+    "CORTE DE PRODUCTO CONGELADO",
+    "CLASIFICACIÓN DE PORCIONES CONGELADAS",
+    "SELLADO AL VACÍO DE PRODUCTO CONGELADO",
+    "EMPAQUE FINAL DE PRODUCTO CONGELADO",
+    "PRE-TÚNEL / TÚNELES T1, T2, T3 y T4",
+    "PRE-CÁMARA / CÁMARA Pc1, Pc2, Pc3, Pc4",
+    "CÁMARA DE REFRIGERACIÓN",
+    "MANTENIMIENTO DE SUB-PRODUCTOS",
+  ]
+
+  const preOperativaRows = areasPreOperativa.map((area) => ({
+    "HORA INSPECCIÓN": "",
+    "INSPECCIÓN (ÁREAS DE PROCESO)": area,
+    "CONDICIÓN SATISFACTORIA DE INSTALACIONES / SUPERFICIES DE CONTACTO / MAQUINARIAS / EQUIPOS (FÍSICO Y SANITARIO)": "",
+    "SE HA RETIRADO MATERIAL DE ENVASADO Y ETIQUETADO DEL PROCESO ANTERIOR?": "",
+    "PRESENCIA DE PLAGAS": "",
+    _rowSpan: {}, _hidden: {},
+  }))
+
+  const bodyElements = [
+    // Inspección Pre-Operativa
+    {
+      id: Date.now() + 900,
+      type: "table",
+      title: "INSPECCIÓN PRE-OPERATIVA - PREVENCIÓN A LA CONTAMINACIÓN CRUZADA",
+      defaultRows: 0,
+      columns: [
+        { label: "HORA INSPECCIÓN", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "INSPECCIÓN (ÁREAS DE PROCESO)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CONDICIÓN SATISFACTORIA DE INSTALACIONES / SUPERFICIES DE CONTACTO / MAQUINARIAS / EQUIPOS (FÍSICO Y SANITARIO)", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "SE HA RETIRADO MATERIAL DE ENVASADO Y ETIQUETADO DEL PROCESO ANTERIOR?", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "PRESENCIA DE PLAGAS", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+      predefinedRows: preOperativaRows,
+    },
+
+    // Inspección Durante Proceso (Mañana)
+    {
+      id: Date.now() + 901,
+      type: "table",
+      title: "INSPECCIÓN DURANTE PROCESO (MAÑANA)",
+      defaultRows: 5,
+      columns: [
+        { label: "HORA INSPECCIÓN", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "INSPECCIÓN DE ÁREAS DE PROCESO (Indique el área a inspeccionar)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CAMBIO DE PRODUCTO", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Motivo de la Inspección" },
+        { label: "CAMBIO LOTE", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Motivo de la Inspección" },
+        { label: "LIMPIEZA Y DESINFECCIÓN SATISFACTORIA DEL ÁREA Y SUPERFICIES?", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "SE HA RETIRADO MATERIAL DE ENVASADO Y ETIQUETADO DEL PROCESO O LOTE ANTERIOR?", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Enjuague y Sanitización
+    {
+      id: Date.now() + 902,
+      type: "section",
+      title: "Enjuague y Sanitización",
+      fields: [
+        { label: "ENJUAGUE Y SANITIZACIÓN DE MESAS Y UTENSILIOS DURANTE PROCESO C/2 HORAS", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Subproductos
+    {
+      id: Date.now() + 903,
+      type: "table",
+      title: "Subproductos Generados a Partir de los Productos",
+      defaultRows: 0,
+      columns: [
+        { label: "ASPECTO", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "SI / NO", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+      predefinedRows: [
+        { "ASPECTO": "SEPARADOS DEL PISO CONSTANTEMENTE", "SI / NO": "", _rowSpan: {}, _hidden: {} },
+        { "ASPECTO": "RECOLECTADOS / RECOGIDOS CONTINUAMENTE", "SI / NO": "", _rowSpan: {}, _hidden: {} },
+        { "ASPECTO": "CUBIERTOS / TAPADOS Y SEPARADOS DEL ÁREA", "SI / NO": "", _rowSpan: {}, _hidden: {} },
+        { "ASPECTO": "RETIRADOS POR VEHÍCULOS PARTICULARES Mínimo Cada 4 Hrs.", "SI / NO": "", _rowSpan: {}, _hidden: {} },
+      ],
+    },
+
+    // Estaciones de lavamanos
+    {
+      id: Date.now() + 904,
+      type: "table",
+      title: "Revisión del Estado y Funcionamiento de las Estaciones de Lavamanos",
+      defaultRows: 0,
+      columns: [
+        { label: "ASPECTO", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "SI / NO", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+      predefinedRows: [
+        { "ASPECTO": "BUEN FUNCIONAMIENTO, SIN FUGAS", "SI / NO": "", _rowSpan: {}, _hidden: {} },
+        { "ASPECTO": "BUEN FUNCIONAMIENTO DEL SECADOR", "SI / NO": "", _rowSpan: {}, _hidden: {} },
+        { "ASPECTO": "ABASTECIMIENTO DE JABÓN", "SI / NO": "", _rowSpan: {}, _hidden: {} },
+        { "ASPECTO": "TEMPERATURA DEL AGUA", "SI / NO": "", _rowSpan: {}, _hidden: {} },
+      ],
+    },
+
+    // Nota
+    {
+      id: Date.now() + 905,
+      type: "section",
+      title: "NOTA",
+      fields: [
+        { label: "NOTA: Cuando El Inspector de Aseg. de Calidad evidencie cualquier peligro inminente que pueda ocasionar directa o indirectamente algún tipo de contaminación hacia el producto, deberá comunicar al dpto. de mantenimiento para que solucione. No podrán iniciar las labores y/o seguir procesando en el área afectada si el problema no se ha resuelto.", type: "label", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Observación
+    {
+      id: Date.now() + 906,
+      type: "observaciones",
+      title: "Observación",
+    },
+
+    // Acción correctiva
+    {
+      id: Date.now() + 907,
+      type: "section",
+      title: "Acción Correctiva",
+      fields: [
+        { label: "Acción correctiva", type: "textarea", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Inspeccionado por - Aseguramiento de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Revisado por - Aseguramiento de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-4",
+    nombre: "Inspección de Condiciones Sanitarias de las Áreas de Proceso (Pre-Operativa y en Cada Cambio de Producto/Lote)",
+    version: "5",
+    fechaVersion: "2025-10-15T00:00:00Z",
+    supervisa: "Aseguramiento de Calidad",
+    proceso: "Control de Calidad - Inspección Sanitaria",
+    cuandoSeUsa: "Pre-operativa y en cada cambio de producto o lote",
+    quienLoLlena: "Inspector de Aseg. de Calidad",
+    frecuencia: "Diaria / por cambio",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-38 - VERIFICACIÓN DE BALANZAS
+// Versión: 2 | Fecha: 12/05/2025
+// ============================================================
+function getVerificacionBalanzasTemplate() {
+  const headerFields = [
+    { label: "Fecha y Hora", type: "datetime-local", required: true, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  const balanzasData = [
+    { n: "01", marca: "SUPER-6", serie: "S63022E011", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "02", marca: "CAS", serie: "19H0604009", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002kg" },
+    { n: "03", marca: "CAS", serie: "19H0604010", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002kg" },
+    { n: "04", marca: "CAS WATERPROOF", serie: "NXK22I110347", tipo: "DE CUELLO", capacidad: "18 kg", division: "0.002 kg" },
+    { n: "05", marca: "CAS", serie: "17H03007075", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "06", marca: "CAS", serie: "XH21080150341", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "07", marca: "CAS WATERPROOF", serie: "8336806025", tipo: "GRAMERA", capacidad: "18 kg", division: "0.002 kg" },
+    { n: "08", marca: "CAS", serie: "17H09004477", tipo: "GRAMERA", capacidad: "15 kg", division: "0.005 kg" },
+    { n: "09", marca: "CAS", serie: "XH20070068876", tipo: "GRAMERA", capacidad: "15 Kg", division: "0.002 kg" },
+    { n: "10", marca: "CAS WATERPROOF", serie: "8336806025", tipo: "BALANZA DE CUELLO", capacidad: "50 Kg", division: "0.005 kg" },
+    { n: "11", marca: "CAS WATERPROOF", serie: "17080842", tipo: "GRAMERA", capacidad: "15 Kg", division: "0.002 kg" },
+    { n: "12", marca: "SUPER S6", serie: "5615004", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "13", marca: "CAS", serie: "17H03007068", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "14", marca: "CAS", serie: "17H03007070", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "15", marca: "CAS", serie: "17H09004478", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "16", marca: "CAS", serie: "XH20070068878", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "17", marca: "CAS WATERPROOF", serie: "XH20070068877", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "18", marca: "WATER PROS", serie: "XH24100100153", tipo: "GRAMERA", capacidad: "30 kg", division: "2 g" },
+    { n: "19", marca: "SUPER-6", serie: "S63022E014", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "20", marca: "SUPER-6", serie: "S3022E012", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "21", marca: "METTLER TOLEDO", serie: "08081-6JK", tipo: "COLGANTE", capacidad: "500 kg", division: "0.5 kg" },
+    { n: "22", marca: "CAS WATERPROOF", serie: "19050435", tipo: "COLGANTE", capacidad: "500 kg", division: "0.5 kg" },
+  ]
+
+  const predefinedRows = balanzasData.map((b) => ({
+    "N° BALANZA": b.n,
+    "MARCA DE BALANZA": b.marca,
+    "SERIE DE BALANZA": b.serie,
+    "TIPO DE BALANZA": b.tipo,
+    "CAPACIDAD DE BALANZA": b.capacidad,
+    "DIVISIÓN DE ESCALA (d)": b.division,
+    "MASAS PATRÓN (GRAMOS) UTILIZADA PARA LA VERIFICACIÓN": "",
+    "APROB.": "",
+    "ÁREA DE PROC.": "",
+    "OBSERVACIONES": "",
+    _rowSpan: {}, _hidden: {},
+  }))
+
+  const bodyElements = [
+    {
+      id: Date.now() + 1000,
+      type: "table",
+      title: "Verificación de Balanzas",
+      defaultRows: 0,
+      columns: [
+        { label: "N° BALANZA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Datos de la Balanza" },
+        { label: "MARCA DE BALANZA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Datos de la Balanza" },
+        { label: "SERIE DE BALANZA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Datos de la Balanza" },
+        { label: "TIPO DE BALANZA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Datos de la Balanza" },
+        { label: "CAPACIDAD DE BALANZA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Datos de la Balanza" },
+        { label: "DIVISIÓN DE ESCALA (d)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Datos de la Balanza" },
+        { label: "MASAS PATRÓN (GRAMOS) UTILIZADA PARA LA VERIFICACIÓN", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Verificación" },
+        { label: "APROB.", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Verificación" },
+        { label: "ÁREA DE PROC.", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Verificación" },
+        { label: "OBSERVACIONES", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+      predefinedRows: predefinedRows,
+    },
+
+    // Observaciones Generales
+    {
+      id: Date.now() + 1001,
+      type: "observaciones",
+      title: "Observaciones Generales",
+    },
+
+    // Acciones Correctivas
+    {
+      id: Date.now() + 1002,
+      type: "section",
+      title: "Acciones Correctivas",
+      fields: [
+        { label: "Acciones Correctivas", type: "textarea", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Elaborado por - Aseguramiento de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Revisión - Jefe de Aseguramiento de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-38",
+    nombre: "Verificación de Balanzas",
+    version: "2",
+    fechaVersion: "2025-05-12T00:00:00Z",
+    supervisa: "Jefe de Aseguramiento de Calidad",
+    proceso: "Control de Calidad - Verificación de Equipos",
+    cuandoSeUsa: "Para verificar el estado y calibración de las balanzas",
+    quienLoLlena: "Aseguramiento de Calidad",
+    frecuencia: "Diaria",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-40 - MONITOREO-VERIFICACIÓN DE
+// ESPECIFICACIONES DE PRODUCTOS TERMINADOS
+// Versión: 1 | Fecha: 14/04/2025
+// ============================================================
+function getMonitoreoProductosTerminadosTemplate() {
+  const headerFields = [
+    { label: "Fecha", type: "date", required: true, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Hora", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Muestreo #", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  const bodyElements = [
+    // Datos Generales del Producto
+    {
+      id: Date.now() + 1100,
+      type: "section",
+      title: "Datos Generales del Producto",
+      fields: [
+        { label: "PRODUCTO / CLASIFICACIÓN", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "SUPERV. C. CALIDAD", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "TIPO EMPAQUE (Peso Neto declarado)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CAJA (LBS)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "FUNDA MASTER (LBS)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "RANGO CLASIF. PORCIONES oz (Mín.)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "RANGO CLASIF. PORCIONES oz (Máx.)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "LOTE", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CLIENTE", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "FECHA EMPAQUE", type: "date", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Peso Tara Caja
+    {
+      id: Date.now() + 1101,
+      type: "section",
+      title: "Peso Tara Caja (lbs)",
+      fields: [
+        { label: "PESO BRUTO CAJA (Tapa + fondo)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso Caja", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Fundas VP - Peso Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Fundas VP - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso Plástico Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Bolsas Master - Peso Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Bolsas Master - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "GLASEO % (Requerido según cliente)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "PESO TOTAL TARA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso total Fundas VP", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso total Bolsas Master", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso Glaseo", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Tabla de Contenido por Bolsa Master
+    {
+      id: Date.now() + 1102,
+      type: "table",
+      title: "Contenido por Bolsa Master (Monitoreo de pesos netos de porciones)",
+      defaultRows: 15,
+      columns: [
+        { label: "#", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "BOLSA 1 - Cant. Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 1" },
+        { label: "BOLSA 1 - P. Bruto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 1" },
+        { label: "BOLSA 1 - P. Neto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 1" },
+        { label: "BOLSA 2 - Cant. Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 2" },
+        { label: "BOLSA 2 - P. Bruto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 2" },
+        { label: "BOLSA 2 - P. Neto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 2" },
+        { label: "BOLSA 3 - Cant. Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 3" },
+        { label: "BOLSA 3 - P. Bruto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 3" },
+        { label: "BOLSA 3 - P. Neto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 3" },
+        { label: "BOLSA 4 - Cant. Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 4" },
+        { label: "BOLSA 4 - P. Bruto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 4" },
+        { label: "BOLSA 4 - P. Neto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 4" },
+        { label: "PESO NETO CAJA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Evaluación Física
+    {
+      id: Date.now() + 1103,
+      type: "table",
+      title: "Evaluación Física",
+      defaultRows: 1,
+      columns: [
+        { label: "Mala limpieza", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Honeycombing", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Parásitos", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Hematomas", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Restos de Piel", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Restos de plástico", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Bordes irregulares", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Deshidratación", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Piezas con Peso fuera de especif.", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Piezas con medida fuera de especif.", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Color uniforme", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Material extraño", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Evaluación Organoléptica
+    {
+      id: Date.now() + 1104,
+      type: "table",
+      title: "Evaluación Organoléptica",
+      defaultRows: 1,
+      columns: [
+        { label: "Olor crudo", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Olor cocinado", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Sabor cocinado", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Textura", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Color (línea de sangre)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Análisis Químico
+    {
+      id: Date.now() + 1105,
+      type: "table",
+      title: "Análisis Químico",
+      defaultRows: 1,
+      columns: [
+        { label: "HISTAMINA ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "MF1 ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "MF2 ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "MF3 ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Observación
+    {
+      id: Date.now() + 1106,
+      type: "observaciones",
+      title: "Observación",
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Analista C. Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Jefe Aseg. de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-40",
+    nombre: "Monitoreo-Verificación de Especificaciones de Productos Terminados",
+    version: "1",
+    fechaVersion: "2025-04-14T00:00:00Z",
+    supervisa: "Jefe Aseg. de Calidad",
+    proceso: "Control de Calidad - Productos Terminados",
+    cuandoSeUsa: "Para monitorear y verificar especificaciones de productos terminados",
+    quienLoLlena: "Analista C. Calidad",
+    frecuencia: "Por muestreo",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-41 - CONTROL / VERIFICACIÓN DIARIA DE
+// LOS TERMÓMETROS
+// Versión: 1 | Fecha: 11/09/2025
+// ============================================================
+function getVerificacionTermometrosTemplate() {
+  const headerFields = [
+    { label: "Fecha", type: "date", required: true, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "N° de Certificado de Calibración", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Temp. Ref. del Equipo Patrón", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  // 8 grupos de termómetros, cada uno con sub-ítems
+  const gruposTermometros = []
+  for (let g = 1; g <= 8; g++) {
+    const subItems = [
+      "Termómetro",
+      "Infrarrojo",
+      "Digital",
+      "Bimetálico",
+    ]
+    subItems.forEach((sub) => {
+      gruposTermometros.push({
+        "EQUIPO / IDENTIFICACIÓN": `Grupo ${g} - ${sub}`,
+        "CÓDIGO / SERIE": "",
+        "FRÍA / COLD - PATRÓN": "",
+        "FRÍA / COLD - TERMÓMETRO": "",
+        "FRÍA / COLD - DIFERENCIA °C": "",
+        "FRÍA / COLD - CUMPLE TOLERANCIA (±1°C)": "",
+        "AMBIENTAL / ENVIRONMENTAL - PATRÓN": "",
+        "AMBIENTAL / ENVIRONMENTAL - TERMÓMETRO": "",
+        "AMBIENTAL / ENVIRONMENTAL - DIFERENCIA °C": "",
+        "AMBIENTAL / ENVIRONMENTAL - CUMPLE TOLERANCIA (±1°C)": "",
+        "CALIENTE / HOT - PATRÓN": "",
+        "CALIENTE / HOT - TERMÓMETRO": "",
+        "CALIENTE / HOT - DIFERENCIA °C": "",
+        "CALIENTE / HOT - CUMPLE (±0.5°C)": "",
+        _rowSpan: {}, _hidden: {},
+      })
+    })
+  }
+
+  const bodyElements = [
+    {
+      id: Date.now() + 1200,
+      type: "table",
+      title: "Verificación Diaria de Termómetros",
+      defaultRows: 0,
+      columns: [
+        { label: "EQUIPO / IDENTIFICACIÓN", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CÓDIGO / SERIE", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "FRÍA / COLD - PATRÓN", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "FRÍA / COLD" },
+        { label: "FRÍA / COLD - TERMÓMETRO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "FRÍA / COLD" },
+        { label: "FRÍA / COLD - DIFERENCIA °C", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "FRÍA / COLD" },
+        { label: "FRÍA / COLD - CUMPLE TOLERANCIA (±1°C)", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "FRÍA / COLD" },
+        { label: "AMBIENTAL / ENVIRONMENTAL - PATRÓN", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "AMBIENTAL" },
+        { label: "AMBIENTAL / ENVIRONMENTAL - TERMÓMETRO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "AMBIENTAL" },
+        { label: "AMBIENTAL / ENVIRONMENTAL - DIFERENCIA °C", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "AMBIENTAL" },
+        { label: "AMBIENTAL / ENVIRONMENTAL - CUMPLE TOLERANCIA (±1°C)", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "AMBIENTAL" },
+        { label: "CALIENTE / HOT - PATRÓN", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "CALIENTE / HOT" },
+        { label: "CALIENTE / HOT - TERMÓMETRO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "CALIENTE / HOT" },
+        { label: "CALIENTE / HOT - DIFERENCIA °C", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "CALIENTE / HOT" },
+        { label: "CALIENTE / HOT - CUMPLE (±0.5°C)", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "CALIENTE / HOT" },
+      ],
+      predefinedRows: gruposTermometros,
+    },
+
+    // Observaciones
+    {
+      id: Date.now() + 1201,
+      type: "observaciones",
+      title: "Observaciones",
+    },
+
+    // Acciones Correctivas
+    {
+      id: Date.now() + 1202,
+      type: "section",
+      title: "Acciones Correctivas",
+      fields: [
+        { label: "Acciones Correctivas", type: "textarea", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Elaborado por - Aseguramiento de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Revisado por - Jefe Aseguramiento de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-41",
+    nombre: "Control / Verificación Diaria de los Termómetros",
+    version: "1",
+    fechaVersion: "2025-09-11T00:00:00Z",
+    supervisa: "Jefe Aseguramiento de Calidad",
+    proceso: "Control de Calidad - Verificación de Equipos",
+    cuandoSeUsa: "Para verificar diariamente la calibración de los termómetros",
+    quienLoLlena: "Aseguramiento de Calidad",
+    frecuencia: "Diaria",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-5 - CONTROL DE LA CONTAMINACIÓN CON
+// VIDRIOS Y MATERIALES QUEBRADIZOS
+// Versión: 6 | Fecha: 29/09/2025
+// ============================================================
+function getControlVidriosQuebradizosTemplate() {
+  const headerFields = [
+    { label: "Fecha", type: "date", required: true, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  const areas = {
+    "Sala de proceso (Área de Fileteo - Corte - Clasificación y Empaque)": [
+      { tipo: "Protectores de luminarias (acrílico)", cantidad: "de 116" },
+      { tipo: "Protectores de luminarias redondas", cantidad: "de 4" },
+      { tipo: "Protector de lámparas de emergencia", cantidad: "de 7" },
+      { tipo: "Bulbos insectocapadores UV (antisalillas)", cantidad: "de 10" },
+      { tipo: "Lente de cámara de videovigilancia", cantidad: "de 4" },
+      { tipo: "Lente de cámara de vigilancia (pasillo escolla bodega)", cantidad: "de 1" },
+      { tipo: "Alarma (incendio)", cantidad: "de 1" },
+      { tipo: "Protectores de luminarias (pasillo escolla bodega)", cantidad: "de 2" },
+      { tipo: "Protector de tablero de mando detector de metales", cantidad: "de 1" },
+      { tipo: "Baliza (alarma) detector de metales", cantidad: "de 1" },
+      { tipo: "Baliza (alarma) máquina clasif. Cam.", cantidad: "de 1" },
+      { tipo: "Pantallas video jet", cantidad: "de 3" },
+      { tipo: "Pantallas máquinas clasificadoras Marel/c", cantidad: "de 2" },
+      { tipo: "Kit de medición de presión (Máq. Marel/c)", cantidad: "de 2" },
+      { tipo: "Cobertores de sellado (Máq. VC999)", cantidad: "de 4" },
+      { tipo: "Panel superior (cortina de ingreso a proceso)", cantidad: "de 1" },
+      { tipo: "Ventanas (protección antisatélite)", cantidad: "de 2" },
+      { tipo: "Puerta (entrada al laboratorio)", cantidad: "de 1" },
+      { tipo: "Pantallas Máq. VC999", cantidad: "de 2" },
+      { tipo: "Reloj de pared", cantidad: "de 1" },
+      { tipo: "Protector de lámpara (zona de inspección de producto C. Calidad)", cantidad: "de 1" },
+      { tipo: "Baliza roja (Alarma de emergencia)", cantidad: "de 1" },
+      { tipo: "Etiquetas de Acrílico (voltaje)", cantidad: "de 38" },
+      { tipo: "Porta hojas de acrílico (C. Calidad)", cantidad: "de 5" },
+    ],
+    "Cámara de refrigeración": [
+      { tipo: "Protectores de luminarias", cantidad: "de 1" },
+      { tipo: "Protectores de luminarias", cantidad: "de 12" },
+    ],
+    "Área de CO": [
+      { tipo: "Lámparas de emergencia", cantidad: "de 1" },
+      { tipo: "Manómetros", cantidad: "de 4" },
+    ],
+    "Protúnel": [
+      { tipo: "Protectores de luminarias (acrílico)", cantidad: "de 8" },
+    ],
+    "Túnel (1, 2, 3, 4)": [
+      { tipo: "Protectores de luminarias (acrílico)", cantidad: "de 8" },
+    ],
+    "Cám. Alm. Prod. Cong.": [
+      { tipo: "Protectores de luminarias", cantidad: "de 32" },
+      { tipo: "Lente de cámara de videovigilancia", cantidad: "de 2" },
+      { tipo: "Lámparas de emergencia", cantidad: "de 2" },
+      { tipo: "Protectores de luminarias", cantidad: "de 24" },
+      { tipo: "Pantalla laptop", cantidad: "de 1" },
+      { tipo: "Protector acrílico para laptop Recep. MP", cantidad: "de 1" },
+    ],
+    "Recepción de Materia Prima": [
+      { tipo: "Bulbos insectocapadores UV (antisalillas)", cantidad: "de 6" },
+      { tipo: "Protector de enchufe de acrílico", cantidad: "de 2" },
+      { tipo: "Puerta", cantidad: "de 1" },
+      { tipo: "Paneles de la cabina", cantidad: "de 1" },
+    ],
+    "Cabina - Oficina Superv. Recep. MP.": [
+      { tipo: "Ventana pequeña", cantidad: "de 1" },
+      { tipo: "Protector de lámpara para mesa de calibración de producto", cantidad: "de 1" },
+      { tipo: "Protectores de luminarias", cantidad: "de 1" },
+    ],
+    "Área de almacenamiento de hielo": [
+      { tipo: "Lámparas de emergencia", cantidad: "de 1" },
+      { tipo: "Protectores de luminarias", cantidad: "de 2" },
+      { tipo: "Vidrio de cabina \u2013 Oficina", cantidad: "de 1" },
+      { tipo: "Pantalla laptop", cantidad: "de 1" },
+      { tipo: "Protector impresora", cantidad: "de 1" },
+    ],
+    "Área de proceso a2": [
+      { tipo: "Lámparas de emergencia", cantidad: "de 1" },
+      { tipo: "Etiquetas de Acrílico (voltaje)", cantidad: "de 13" },
+      { tipo: "Protectores de luminarias", cantidad: "de 6" },
+      { tipo: "Bulbos insectocapadores UV (antisalillas)", cantidad: "de 8" },
+      { tipo: "Protector de lámpara de emergencia", cantidad: "de 1" },
+    ],
+    "Salida subproductos": [
+      { tipo: "Protectores de luminaria", cantidad: "de 2" },
+      { tipo: "Bulbos insectocapadores UV (antisalillas)", cantidad: "de 2" },
+    ],
+  }
+
+  const predefinedRows = []
+  Object.entries(areas).forEach(([areaName, items]) => {
+    items.forEach((item, idx) => {
+      predefinedRows.push({
+        "AREA/UBICACIÓN": idx === 0 ? areaName : "",
+        "TIPO": item.tipo,
+        "CANTIDAD VERIFICADAS": item.cantidad,
+        "PRESENTA FISURAS/OTRO RIESGO?": "",
+        "OBSERVACIONES": "",
+        _rowSpan: idx === 0 ? { "AREA/UBICACIÓN": items.length } : {},
+        _hidden: idx > 0 ? { "AREA/UBICACIÓN": true } : {},
+      })
+    })
+  })
+
+  const bodyElements = [
+    {
+      id: Date.now() + 1300,
+      type: "table",
+      title: "Listado de Elementos Quebradizo",
+      defaultRows: 0,
+      columns: [
+        { label: "AREA/UBICACIÓN", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "TIPO", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CANTIDAD VERIFICADAS", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "PRESENTA FISURAS/OTRO RIESGO?", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "VERIFICACIÓN" },
+        { label: "OBSERVACIONES", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "VERIFICACIÓN" },
+      ],
+      predefinedRows: predefinedRows,
+    },
+    {
+      id: Date.now() + 1301,
+      type: "observaciones",
+      title: "Observaciones",
+    },
+    {
+      id: Date.now() + 1302,
+      type: "section",
+      title: "Acciones Correctivas",
+      fields: [
+        { label: "Acciones Correctivas", type: "textarea", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Elaborado por - Analista de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Revisión - Aseguramiento De Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-5",
+    nombre: "Control de la Contaminación con Vidrios y Materiales Quebradizos",
+    version: "6",
+    fechaVersion: "2025-09-29T00:00:00Z",
+    supervisa: "Aseguramiento De Calidad",
+    proceso: "Control de Calidad - Contaminación Física",
+    cuandoSeUsa: "Para verificar el estado de vidrios y materiales quebradizos en todas las áreas",
+    quienLoLlena: "Analista de Calidad",
+    frecuencia: "Periódica",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
+// PLANTILLA: FOR-CC-8 - INSPECCIÓN DE MATERIALES DE EMPAQUE
+// DURANTE LA RECEPCIÓN
+// Versión: 1 | Fecha: 18/02/2025
+// ============================================================
+function getInspeccionMaterialesEmpaqueTemplate() {
+  const headerFields = [
+    { label: "Fecha - Hora", type: "datetime-local", required: true, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  const bodyElements = [
+    // Tipo de material
+    {
+      id: Date.now() + 1400,
+      type: "section",
+      title: "Tipo de Material",
+      fields: [
+        { label: "Cajas de cartón/empaque", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Caja de cartón", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Rollo de fundas (plástico)", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Fundas de plástico (varios tamaños)", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Fundas litografiadas", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Láminas FOAM", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Etiquetas (vaso)", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Detalle del producto
+    {
+      id: Date.now() + 1401,
+      type: "section",
+      title: "Detalle del Producto",
+      fields: [
+        { label: "Producto", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Proveedor", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Entrega a Dpt. Calidad", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Vehículo (Placa)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Inspección General
+    {
+      id: Date.now() + 1402,
+      type: "table",
+      title: "Inspección General",
+      defaultRows: 2,
+      columns: [
+        { label: "TIPO DE TRANSPORTE", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "FUNCIÓN", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CONTENEDOR", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CONDICIÓN ÓPTIMA TRANSPORTE SI/NO", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "PROTECCIÓN DEL MATERIAL", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CAJA DE CARTÓN PUERTA CORRECTA SI/NO", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Transporte seguro
+    {
+      id: Date.now() + 1403,
+      type: "section",
+      title: "Condiciones de Transporte",
+      fields: [
+        { label: "TRANSPORTE SEGURO CONTRA POLVO Y HUMEDAD", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "DOCUMENTO DE PLACAS TRANSPORTE", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "DAÑO DEL MATERIAL POR MAL ESTIBA U OTROS (Especif.)", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Inspección Específica - Detalle del Material
+    {
+      id: Date.now() + 1404,
+      type: "table",
+      title: "Inspección Específica - Detalle del Material",
+      defaultRows: 4,
+      columns: [
+        { label: "LOTE / O.P", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Detalle del Material" },
+        { label: "CANTIDAD (Tamaño del Lote) BULTOS/ROLLOS", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Detalle del Material" },
+        { label: "UNIDADES", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Detalle del Material" },
+        { label: "TOTAL INSPECCIÓN (Tamaño muestra) BULTOS/ROLLOS", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Detalle del Material" },
+        { label: "UNIDADES (muestra)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Detalle del Material" },
+      ],
+    },
+
+    // Inspección Específica - Parámetros
+    {
+      id: Date.now() + 1405,
+      type: "table",
+      title: "Inspección Específica - Parámetros de Inspección",
+      defaultRows: 0,
+      columns: [
+        { label: "PARÁMETRO DE INSPECCIÓN", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "LOTE #1 SI/NO", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Resultados" },
+        { label: "LOTE #2 SI/NO", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Resultados" },
+        { label: "LOTE #3 SI/NO", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Resultados" },
+        { label: "LOTE #4 SI/NO", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Resultados" },
+      ],
+      predefinedRows: [
+        { "PARÁMETRO DE INSPECCIÓN": "PROTECCIÓN INSP. DE LOS MATERIALES EN BUEN ESTADO", "LOTE #1 SI/NO": "", "LOTE #2 SI/NO": "", "LOTE #3 SI/NO": "", "LOTE #4 SI/NO": "", _rowSpan: {}, _hidden: {} },
+        { "PARÁMETRO DE INSPECCIÓN": "DIMENSIONES CORRECTAS", "LOTE #1 SI/NO": "", "LOTE #2 SI/NO": "", "LOTE #3 SI/NO": "", "LOTE #4 SI/NO": "", _rowSpan: {}, _hidden: {} },
+        { "PARÁMETRO DE INSPECCIÓN": "ESTIRONES RESISTENTE AL INTENTO DE DESPRENDIMIENTO (CAJAS/FUNDAS)", "LOTE #1 SI/NO": "", "LOTE #2 SI/NO": "", "LOTE #3 SI/NO": "", "LOTE #4 SI/NO": "", _rowSpan: {}, _hidden: {} },
+        { "PARÁMETRO DE INSPECCIÓN": "PARTÍCULAS EXTRAÑAS", "LOTE #1 SI/NO": "", "LOTE #2 SI/NO": "", "LOTE #3 SI/NO": "", "LOTE #4 SI/NO": "", _rowSpan: {}, _hidden: {} },
+        { "PARÁMETRO DE INSPECCIÓN": "IMPUREZAS", "LOTE #1 SI/NO": "", "LOTE #2 SI/NO": "", "LOTE #3 SI/NO": "", "LOTE #4 SI/NO": "", _rowSpan: {}, _hidden: {} },
+        { "PARÁMETRO DE INSPECCIÓN": "GOLPES", "LOTE #1 SI/NO": "", "LOTE #2 SI/NO": "", "LOTE #3 SI/NO": "", "LOTE #4 SI/NO": "", _rowSpan: {}, _hidden: {} },
+        { "PARÁMETRO DE INSPECCIÓN": "OLORES EXTRAÑOS", "LOTE #1 SI/NO": "", "LOTE #2 SI/NO": "", "LOTE #3 SI/NO": "", "LOTE #4 SI/NO": "", _rowSpan: {}, _hidden: {} },
+        { "PARÁMETRO DE INSPECCIÓN": "PINZAS / ARRUGAS (if apply)", "LOTE #1 SI/NO": "", "LOTE #2 SI/NO": "", "LOTE #3 SI/NO": "", "LOTE #4 SI/NO": "", _rowSpan: {}, _hidden: {} },
+        { "PARÁMETRO DE INSPECCIÓN": "ROLLO MAL REBOBINADO (if apply)", "LOTE #1 SI/NO": "", "LOTE #2 SI/NO": "", "LOTE #3 SI/NO": "", "LOTE #4 SI/NO": "", _rowSpan: {}, _hidden: {} },
+      ],
+    },
+
+    // Espesor plástico
+    {
+      id: Date.now() + 1406,
+      type: "section",
+      title: "Espesor de Plástico",
+      fields: [
+        { label: "# DE ROLLO / ESPESOR DE PLÁSTICO mm - μm", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Plan de muestreo
+    {
+      id: Date.now() + 1407,
+      type: "table",
+      title: "Tabla #1: PLAN DE MUESTREO PARA EVALUAR REQUISITOS GENERALES",
+      defaultRows: 0,
+      columns: [
+        { label: "Tamaño Lote (Cantidad)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Tamaño Muestra (Un)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Aceptación", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Rechazo", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+      predefinedRows: [
+        { "Tamaño Lote (Cantidad)": "2 - 8", "Tamaño Muestra (Un)": "2", "Aceptación": "0", "Rechazo": "1", _rowSpan: {}, _hidden: {} },
+        { "Tamaño Lote (Cantidad)": "9 - 15", "Tamaño Muestra (Un)": "2", "Aceptación": "0", "Rechazo": "1", _rowSpan: {}, _hidden: {} },
+        { "Tamaño Lote (Cantidad)": "16 - 50", "Tamaño Muestra (Un)": "3", "Aceptación": "0", "Rechazo": "1", _rowSpan: {}, _hidden: {} },
+        { "Tamaño Lote (Cantidad)": "51 - 150", "Tamaño Muestra (Un)": "5", "Aceptación": "0", "Rechazo": "1", _rowSpan: {}, _hidden: {} },
+        { "Tamaño Lote (Cantidad)": "151 - 500", "Tamaño Muestra (Un)": "8", "Aceptación": "0", "Rechazo": "1", _rowSpan: {}, _hidden: {} },
+      ],
+    },
+
+    // Criterio de aceptación
+    {
+      id: Date.now() + 1408,
+      type: "section",
+      title: "Criterio de aceptación",
+      fields: [
+        { label: "Criterio: Si el número de unidades defectuosas de la muestra es menor o igual al número de aceptación se aprueba el lote (siempre y cuando cumpla con los requisitos). Si el número de unidades defectuosas es mayor o igual al número de rechazo, el lote se rechaza.", type: "label", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "NTE INEN ISO 2859-1", type: "label", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Comentarios Generales
+    {
+      id: Date.now() + 1409,
+      type: "observaciones",
+      title: "Comentarios Generales",
+    },
+  ]
+
+  const firmas = [
+    {
+      puesto: "Inspeccionado por - Supervisor Aseg. De Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Revisado por - Bodeguero",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+    {
+      puesto: "Revisión - Aseguramiento de Calidad",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-8",
+    nombre: "Inspección de Materiales de Empaque Durante la Recepción",
+    version: "1",
+    fechaVersion: "2025-02-18T00:00:00Z",
+    supervisa: "Aseguramiento de Calidad",
+    proceso: "Control de Calidad - Recepción de Materiales",
+    cuandoSeUsa: "Durante la recepción de materiales de empaque",
+    quienLoLlena: "Supervisor Aseg. De Calidad",
+    frecuencia: "Por recepción",
+    isMasterForm: false,
+    autoSumColumns: false,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
 // COMPONENTE DE PÁGINA
 // ============================================================
 function SeedBPMTemplates() {
@@ -1000,6 +2653,83 @@ function SeedBPMTemplates() {
       code: "FOR-CC-15",
       getData: getGlaseoFinalTemplate,
       icon: "🐟",
+    },
+    {
+      key: "detector-metal",
+      label: "Registro Calibración y Desafío del Detector de Metal (PCC)",
+      code: "FOR-CC-16",
+      getData: getDetectorMetalTemplate,
+      icon: "🔍",
+    },
+    {
+      key: "control-agua",
+      label: "Control del Agua en Proceso (Clorinación y Peroxiacético)",
+      code: "FOR-CC-18",
+      getData: getControlAguaTemplate,
+      icon: "💧",
+    },
+    {
+      key: "almacenamiento-refrigerado",
+      label: "Control de Almacenamiento Refrigerado de Producto con CO (PCC)",
+      code: "FOR-CC-21",
+      getData: getAlmacenamientoRefrigeradoTemplate,
+      icon: "❄️",
+    },
+    {
+      key: "inspeccion-areas-no-productivas",
+      label: "Lista de Inspección Sanitaria de Áreas No Productivas",
+      code: "FOR-CC-34",
+      getData: getInspeccionAreasNoProductivasTemplate,
+      icon: "🏭",
+    },
+    {
+      key: "limpieza-tanques-tinas",
+      label: "Registro de Limpieza de Tanques y Tinas",
+      code: "FOR-CC-36",
+      getData: getLimpiezaTanquesTinasTemplate,
+      icon: "🪣",
+    },
+    {
+      key: "inspeccion-sanitaria-areas",
+      label: "Inspección de Condiciones Sanitarias de las Áreas de Proceso",
+      code: "FOR-CC-4",
+      getData: getInspeccionSanitariaAreasTemplate,
+      icon: "🔬",
+    },
+    {
+      key: "verificacion-balanzas",
+      label: "Verificación de Balanzas",
+      code: "FOR-CC-38",
+      getData: getVerificacionBalanzasTemplate,
+      icon: "⚖️",
+    },
+    {
+      key: "monitoreo-productos-terminados",
+      label: "Monitoreo-Verificación de Especificaciones de Productos Terminados",
+      code: "FOR-CC-40",
+      getData: getMonitoreoProductosTerminadosTemplate,
+      icon: "📦",
+    },
+    {
+      key: "verificacion-termometros",
+      label: "Control / Verificación Diaria de los Termómetros",
+      code: "FOR-CC-41",
+      getData: getVerificacionTermometrosTemplate,
+      icon: "🌡️",
+    },
+    {
+      key: "control-vidrios-quebradizos",
+      label: "Control de la Contaminación con Vidrios y Materiales Quebradizos",
+      code: "FOR-CC-5",
+      getData: getControlVidriosQuebradizosTemplate,
+      icon: "🪟",
+    },
+    {
+      key: "inspeccion-materiales-empaque",
+      label: "Inspección de Materiales de Empaque Durante la Recepción",
+      code: "FOR-CC-8",
+      getData: getInspeccionMaterialesEmpaqueTemplate,
+      icon: "📥",
     },
   ]
 
