@@ -12,6 +12,7 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import logoUrl from '../assets/logo-1.png';
+import { evaluarFormula, buildGroupedRowAlias } from '../utils/formulaEngine';
 
 /**
  * 🎨 PALETA DE COLORES CORPORATIVOS FRIGOLAB
@@ -737,8 +738,14 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     
     // Filas de datos — FILTRAR filas completamente vacías (solo en formato lleno)
     const isRowEmpty = (row) => {
-      return columns.every(col => {
-        const v = row[col.label] ?? row[col.name] ?? row[col.header] ?? '';
+      const rowKeys = Object.keys(row);
+      return columns.every((col, colIndex) => {
+        let v = row[col.label] ?? row[col.name] ?? row[col.header] ?? '';
+        // También revisar clave con sufijo _colN (tablas con encabezados agrupados)
+        if (String(v).trim() === '') {
+          const suffixKey = rowKeys.find(k => k.endsWith(`_col${colIndex}`));
+          if (suffixKey) v = row[suffixKey] ?? '';
+        }
         return String(v).trim() === '';
       });
     };
@@ -764,6 +771,16 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
           } else if ((col.label || col.header || "").toUpperCase().includes("TOTAL")) {
             const totalKey = rowKeys.find(k => k.toUpperCase().includes("TOTAL"));
             if (totalKey) value = row[totalKey];
+          }
+        }
+
+        // 3. 🧮 Columna tipo "formula": recalcular con alias de grupo (etiquetas duplicadas)
+        const colType = (col.type || '').toLowerCase();
+        if ((colType === 'formula' || colType === 'calculated') && col.formula) {
+          const rowAlias = buildGroupedRowAlias(row, columns, colIndex);
+          const calculado = evaluarFormula(col.formula, rowAlias, dataToRender, rowIndex);
+          if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
+            value = calculado;
           }
         }
 

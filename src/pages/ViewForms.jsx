@@ -13,6 +13,7 @@ import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import "./ViewForms.css"
 import { API_BASE_URL } from "../apiConfig"; 
 import authService from "../services/authService";
+import { evaluarFormula, buildGroupedRowAlias } from "../utils/formulaEngine";
 //const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
 //const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -806,8 +807,8 @@ function ViewForms() {
               return (
                 <div key={templateElement.id} className="data-section">
                   <h3>{templateElement.title}</h3>
-                  <div className="table-wrapper">
-                    <table className="view-table">
+                  <div className="table-wrapper" style={templateElement.columns.length > 10 ? { fontSize: '0.78rem' } : {}}>
+                    <table className={`view-table${templateElement.columns.length > 8 ? ' view-table-compact' : ''}`}>
                       <thead>
                         {/* Grouped column headers */}
                         {templateElement.columns.some(col => col.group) && (() => {
@@ -906,8 +907,26 @@ function ViewForms() {
                                 }
                               }
 
+                              // 4. 🔑 FALLBACK _colN para tablas con encabezados agrupados y etiquetas duplicadas
+                              // FillForm guarda columnas duplicadas como "Etiqueta_colN"
+                              if (cellValue === undefined || cellValue === null || cellValue === "") {
+                                const suffixKey = `${colLabel}_col${colIndex}`;
+                                if (row[suffixKey] !== undefined) {
+                                  cellValue = row[suffixKey];
+                                }
+                              }
+
+                              // 5. 🧮 Columnas de fórmula: recalcular en tiempo real con alias de grupo
+                              if ((col.type === 'formula' || col.type === 'calculated') && col.formula) {
+                                const rowAlias = buildGroupedRowAlias(row, templateElement.columns, colIndex);
+                                const calculado = evaluarFormula(col.formula, rowAlias, tableRows, rowIndex);
+                                if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
+                                  cellValue = calculado;
+                                }
+                              }
+
                               return (
-                                <td key={`cell-${rowIndex}-${colIndex}`} style={{ textAlign: 'center', minWidth: '100px' }}>
+                                <td key={`cell-${rowIndex}-${colIndex}`} style={{ textAlign: 'center', minWidth: templateElement.columns.length > 12 ? '60px' : templateElement.columns.length > 8 ? '75px' : '100px' }}>
                                   {renderCellValue(cellValue, col.type)}
                                 </td>
                               );
@@ -1132,8 +1151,10 @@ function ViewForms() {
                                 src={data.firma.url || data.firma.base64} 
                                 alt={`Firma ${puesto}`} 
                                 style={{ 
-                                  maxHeight: '100px', 
+                                  maxHeight: '150px', 
                                   maxWidth: '100%', 
+                                  minHeight: '60px',
+                                  objectFit: 'contain',
                                   border: '1px solid #eee',
                                   padding: '5px',
                                   backgroundColor: 'white',

@@ -656,11 +656,12 @@ body {
   touch-action: pan-x pan-y pinch-zoom;
 }
 
-/* 2. La tabla debe tener un ancho mínimo para que las columnas no se aplasten */
+/* 2. La tabla ocupa el 100% del contenedor — sin scroll horizontal */
 .data-table {
-  width: max-content; /* Toma el espacio que necesita realmente */
-  min-width: 100%; /* Como mínimo, ocupa el 100% del wrapper */
+  width: 100%;
+  min-width: 0;
   border-collapse: collapse;
+  table-layout: auto;
 }
 
 /* 3. Estilo específico para la columna de Acciones */
@@ -695,9 +696,9 @@ body {
   background: #64748b;
 }
 .data-table {
-  width: max-content; /* No se comprime — scrollea horizontalmente */
-  min-width: 100%;
-  border-collapse: collapse; /* Cambiado de separate para alinear líneas */
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
   table-layout: auto;
   font-size: 0.875rem;
 }
@@ -729,7 +730,9 @@ body {
 
 /* Evitar que las celdas se compriman demasiado */
 .data-table th, .data-table td {
-  min-width: 120px; 
+  min-width: 65px;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 /* 🔒 ESTILO PARA TOTALES (AZUL PROFESIONAL) */

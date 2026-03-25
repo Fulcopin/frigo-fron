@@ -11,6 +11,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logoUrl from '../assets/logo-1.png';
+import { evaluarFormula, buildGroupedRowAlias } from '../utils/formulaEngine';
 
 /**
  * Limpia texto para que jsPDF pueda renderizarlo correctamente.
@@ -586,10 +587,10 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       
       // Si es una nueva fila, ajustar Y
       if (columna === 0 && index > 0) {
-        currentY += 32; // Espacio entre filas
+        currentY += 52; // Espacio entre filas (ajustado para firma más alta)
         
         // Verificar si hay espacio
-        if (currentY > 240) {
+        if (currentY > 200) {
           doc.addPage();
           currentY = 20;
         }
@@ -705,7 +706,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
         try {
           // Dimensiones de la imagen de firma
           const firmaImgWidth = anchoColumna - 8;
-          const firmaImgHeight = 20; // Altura fija para mantener consistencia
+          const firmaImgHeight = 28; // Altura ajustada para mayor visibilidad
           
           console.log('   📐 Dimensiones:', { width: firmaImgWidth, height: firmaImgHeight, x: xPos, y: localY });
           
@@ -907,7 +908,9 @@ export const exportFormToPDF = async (form, template) => {
           const columns = section.columns.map((col, colIndex) => ({
             header: sanitizeText(col.label || col.name || 'Columna'),
             dataKey: col.label || col.name || col.id || `col_${colIndex}`,
-            type: (col.type || '').toLowerCase()
+            type: (col.type || '').toLowerCase(),
+            formula: col.formula || '',
+            group: col.group || null
           }));
           
           console.log(`📋 Columnas de "${sectionTitle}":`, columns.map(c => c.header));
@@ -936,6 +939,16 @@ const rows = tableData.map((row, rowIndex) => {
       const suffix = `_col${colIndex}`;
       const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
       if (keyWithSuffix) value = row[keyWithSuffix];
+    }
+
+    // 4. 🧮 Columna tipo "formula": recalcular con alias de grupo (etiquetas duplicadas)
+    const colType = (col.type || '').toLowerCase();
+    if ((colType === 'formula' || colType === 'calculated') && col.formula) {
+      const rowAlias = buildGroupedRowAlias(row, section.columns, colIndex);
+      const calculado = evaluarFormula(col.formula, rowAlias, tableData, rowIndex);
+      if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
+        value = calculado;
+      }
     }
 
     let strValue = String(value ?? "");

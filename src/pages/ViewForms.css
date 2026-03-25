@@ -443,6 +443,34 @@
   overflow-x: auto;
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+
+/* Scrollbar visible y atractivo */
+.table-wrapper::-webkit-scrollbar {
+  height: 8px;
+}
+.table-wrapper::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Tabla compacta para muchas columnas */
+.view-table-compact th,
+.view-table-compact td {
+  padding: 0.35rem 0.45rem !important;
+}
+.view-table-compact {
+  font-size: 0.82rem;
 }
 
 .view-table {

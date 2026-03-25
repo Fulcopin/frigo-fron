@@ -14,6 +14,7 @@ import "./FillForm.css"
 import "./FillForm.tablet.css"  // 📱 Estilos optimizados para tablets
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import authService from "../services/authService";
+import { evaluarFormula as evaluarFormulaEngine, buildGroupedRowAlias } from "../utils/formulaEngine";
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -38,173 +39,8 @@ const processColumnGroups = (columns = []) => {
     columns: groupsMap[groupName]
   }));
 };
-// --- PEGAR AL INICIO DEL ARCHIVO ---
-/**
- * 🧮 Motor de fórmulas tipo Excel para columnas y filas calculadas
- * Soporta: +, -, *, /, (), nombres de columna, números
- * 
- * REFERENCIAS DE CELDAS (como Excel):
- *   "Columna"          → valor de esa columna en la MISMA fila
- *   "Columna[3]"       → valor de esa columna en la FILA 3
- *   "Columna[*]"       → SUMA de esa columna en TODAS las filas
- * 
- * Ejemplos:
- *   "Peso Bruto - Peso Tara"                    → resta en la misma fila
- *   "Peso Cartón máster + Peso Fundas + Peso Plástico"  → suma columnas misma fila
- *   "Precio[1] * Cantidad[1] + Precio[2] * Cantidad[2]" → referencia a filas específicas
- *   "Peso Neto[*]"                               → suma toda la columna "Peso Neto"
- *   "(Precio * Cantidad) - Descuento"            → paréntesis y operaciones
- *   "sum(Peso1, Peso2, Peso3)"                   → legacy sum()
- */
-const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex = -1) => {
-  if (!formula || typeof formula !== 'string' || !formula.trim()) return "";
-  if (!rowData) return "";
-
-  // 🆕 Detectar fórmula de PORCENTAJE: porcentaje(expr) o percent(expr)
-  const percentMatch = formula.trim().match(/^(?:porcentaje|percent|pct)\((.+)\)$/i);
-  if (percentMatch) {
-    const innerResult = evaluarFormula(percentMatch[1], rowData, allRows, currentRowIndex);
-    if (innerResult === "" || innerResult === "ERR" || innerResult === "⚠️") return innerResult;
-    const numVal = Number.parseFloat(innerResult);
-    if (Number.isNaN(numVal)) return "0.00";
-    return (numVal * 100).toFixed(2);
-  }
-  
-  // Función para normalizar nombres (quita acentos, espacios extra, minúsculas)
-  const normalizeKey = (s) => (s || '')
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita acentos
-    .replace(/\s+/g, ' ')                              // normaliza espacios
-    .trim();
-  
-  // Construir mapa de claves normalizadas → clave original en rowData
-  const rowKeys = Object.keys(rowData).filter(k => k !== 'id' && k !== 'ID' && k !== 'undefined');
-  const normalizedKeyMap = {}; // normKey → originalKey
-  rowKeys.forEach(k => { normalizedKeyMap[normalizeKey(k)] = k; });
-  
-  // Función para obtener valor de rowData por nombre (con normalización)
-  const getVal = (name) => {
-    // 1. Intento exacto
-    if (rowData[name] !== undefined) {
-      const v = Number.parseFloat(rowData[name]);
-      return Number.isNaN(v) ? 0 : v;
-    }
-    // 2. Intento normalizado
-    const normName = normalizeKey(name);
-    const matchedKey = normalizedKeyMap[normName];
-    if (matchedKey !== undefined) {
-      const v = Number.parseFloat(rowData[matchedKey]);
-      return Number.isNaN(v) ? 0 : v;
-    }
-    return null; // no encontrado
-  };
-  
-  try {
-    // 1. Compatibilidad con sum() legacy
-    if (formula.trim().toLowerCase().startsWith('sum(')) {
-      const variables = formula.replace(/sum\(/i, '').replace(')', '').split(',').map(v => v.trim());
-      const total = variables.reduce((acc, nombreVariable) => {
-        const val = getVal(nombreVariable);
-        return acc + (val !== null ? val : 0);
-      }, 0);
-      return total === 0 ? "0.00" : total.toFixed(2);
-    }
-    
-    // 2. Obtener lista de columnas a reemplazar, ordenadas de mayor a menor longitud
-    // Usar las columnas del template (si disponibles) o las claves de rowData
-    const allColNames = rowKeys.sort((a, b) => b.length - a.length);
-    
-    let expression = formula;
-    
-    // 2a. Reemplazar referencias con índice: Columna[N] o Columna[*]
-    if (allRows && allRows.length > 0) {
-      allColNames.forEach(colName => {
-        const escaped = colName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        
-        // "NombreColumna[*]" → suma de toda la columna
-        const regexStar = new RegExp(escaped + '\\[\\*\\]', 'gi');
-        expression = expression.replace(regexStar, () => {
-          let suma = 0;
-          allRows.forEach(r => { const v = Number.parseFloat(r[colName]); if (!Number.isNaN(v)) suma += v; });
-          return String(suma);
-        });
-        
-        // "NombreColumna[N]" → valor de fila N (1-based)
-        const regexRow = new RegExp(escaped + '\\[(\\d+)\\]', 'gi');
-        expression = expression.replace(regexRow, (match, rowNum) => {
-          const idx = parseInt(rowNum) - 1;
-          if (idx >= 0 && idx < allRows.length) {
-            const v = Number.parseFloat(allRows[idx][colName]);
-            return Number.isNaN(v) ? '0' : String(v);
-          }
-          return '0';
-        });
-      });
-    }
-    
-    // 2b. Reemplazar nombres de columna → valor numérico (misma fila)
-    allColNames.forEach(colName => {
-      const escaped = colName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(escaped, 'gi');
-      expression = expression.replace(regex, () => {
-        const v = getVal(colName);
-        return v !== null ? String(v) : '0';
-      });
-    });
-    
-    // 3. Validar: solo caracteres numérico/operador
-    // 🔧 FIX: Limpiar operadores dobles (ej: '0++0' de typo 'temperatura+') antes de evaluar
-    const sanitized = expression.replace(/\s/g, '')
-      .replace(/\+\+/g, '+')
-      .replace(/--/g, '+')
-      .replace(/\+-/g, '-')
-      .replace(/-\+/g, '-')
-      .replace(/\*\+/g, '*')
-      .replace(/\/\+/g, '/');
-    if (!/^[0-9.+\-*/()]+$/.test(sanitized)) {
-      // Si aún quedan letras, intentar con nombres normalizados de la fórmula
-      let expression2 = formula;
-      if (allRows && allRows.length > 0) {
-        Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
-          const origKey = normalizedKeyMap[normKey];
-          const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const rx = new RegExp(escaped + '\\[\\*\\]', 'gi');
-          expression2 = expression2.replace(rx, () => { let s = 0; allRows.forEach(r => { const v = parseFloat(r[origKey]); if (!isNaN(v)) s += v; }); return String(s); });
-          const rx2 = new RegExp(escaped + '\\[(\\d+)\\]', 'gi');
-          expression2 = expression2.replace(rx2, (m, n) => { const idx = parseInt(n)-1; if (idx>=0 && idx<allRows.length) { const v=parseFloat(allRows[idx][origKey]); return isNaN(v)?'0':String(v); } return '0'; });
-        });
-      }
-      Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
-        const origKey = normalizedKeyMap[normKey];
-        const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const rx = new RegExp(escaped, 'gi');
-        expression2 = expression2.replace(rx, () => { const v = getVal(origKey); return v !== null ? String(v) : '0'; });
-      });
-      const sanitized2 = expression2.replace(/\s/g, '')
-        .replace(/\+\+/g, '+')
-        .replace(/--/g, '+')
-        .replace(/\+-/g, '-')
-        .replace(/-\+/g, '-')
-        .replace(/\*\+/g, '*')
-        .replace(/\/\+/g, '/');
-      if (!/^[0-9.+\-*/()]+$/.test(sanitized2)) {
-        console.warn('⚠️ Fórmula: nombres de columna no coinciden. Fórmula:', formula, '| Expresión:', expression2, '| Columnas disponibles:', rowKeys);
-        return "⚠️";
-      }
-      const result2 = new Function(`"use strict"; return (${sanitized2})`)();
-      if (typeof result2 !== 'number' || !isFinite(result2)) return "0.00";
-      return result2.toFixed(2);
-    }
-    
-    // 4. Evaluar
-    const result = new Function(`"use strict"; return (${sanitized})`)();
-    if (typeof result !== 'number' || !isFinite(result)) return "0.00";
-    return result.toFixed(2);
-  } catch (e) {
-    console.warn('⚠️ Error evaluando fórmula:', formula, e.message);
-    return "ERR";
-  }
-};
+// Motor de fórmulas: importado desde src/utils/formulaEngine.js
+const evaluarFormula = evaluarFormulaEngine;
 
 // Mantener compatibilidad con código existente que usa calcularFormulaDinamica
 const calcularFormulaDinamica = evaluarFormula;
@@ -7110,9 +6946,10 @@ useEffect(() => {
                                         fontWeight: 600,
                                         color: '#374151',
                                         borderRight: '1px solid #b0c4d8',
-                                        fontSize: '0.75rem',
-                                        minWidth: group.columns[0].width || '80px',
-                                        whiteSpace: 'nowrap'
+                                        fontSize: '0.72rem',
+                                        minWidth: '60px',
+                                        whiteSpace: 'normal',
+                                        wordBreak: 'break-word'
                                       }}
                                     >
                                       {group.columns[0].label || group.columns[0].name}
@@ -7683,7 +7520,9 @@ useEffect(() => {
           // 3c. 🧮 COLUMNA TIPO "formula" (funciona en TODOS los templates)
           if (col.type === 'formula' && col.formula) {
             const allTableRows = currentElementData.data || [];
-            const valorCalculado = evaluarFormula(col.formula, row, allTableRows, rowIndex);
+            // Para tablas con grupos de columnas y etiquetas duplicadas, resolver alias
+            const rowAlias = buildGroupedRowAlias(row, element.columns, colIndex);
+            const valorCalculado = evaluarFormula(col.formula, rowAlias, allTableRows, rowIndex);
             return (
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
                   style={{backgroundColor: '#f0fdf4', textAlign: 'right', fontWeight: 'bold', color: '#166534'}}>
@@ -7695,7 +7534,9 @@ useEffect(() => {
           // 3d. 📊 COLUMNA TIPO "percentage" (porcentaje = fórmula * 100)
           if (col.type === 'percentage' && col.formula) {
             const allTableRows = currentElementData.data || [];
-            const rawResult = evaluarFormula(col.formula, row, allTableRows, rowIndex);
+            // Para tablas con grupos de columnas y etiquetas duplicadas, resolver alias
+            const rowAlias = buildGroupedRowAlias(row, element.columns, colIndex);
+            const rawResult = evaluarFormula(col.formula, rowAlias, allTableRows, rowIndex);
             let displayVal = '0.00';
             if (rawResult && rawResult !== 'ERR' && rawResult !== '⚠️') {
               const numVal = Number.parseFloat(rawResult);
