@@ -954,7 +954,6 @@ const rows = tableData.map((row, rowIndex) => {
     let strValue = String(value ?? "");
     
     // Agregar °C a columnas de temperatura
-    const colType = (col.type || '').toLowerCase();
     const colHeaderUp = colHeader; // ya está en UPPERCASE
     const isTemp = colType === 'temperature' || colHeaderUp.includes('TEMPERATURA') || colHeaderUp.includes('TEMP');
     if (isTemp && strValue.trim() !== '' && !strValue.includes('°')) {
