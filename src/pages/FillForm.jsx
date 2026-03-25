@@ -59,6 +59,16 @@ const processColumnGroups = (columns = []) => {
 const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex = -1) => {
   if (!formula || typeof formula !== 'string' || !formula.trim()) return "";
   if (!rowData) return "";
+
+  // 🆕 Detectar fórmula de PORCENTAJE: porcentaje(expr) o percent(expr)
+  const percentMatch = formula.trim().match(/^(?:porcentaje|percent|pct)\((.+)\)$/i);
+  if (percentMatch) {
+    const innerResult = evaluarFormula(percentMatch[1], rowData, allRows, currentRowIndex);
+    if (innerResult === "" || innerResult === "ERR" || innerResult === "⚠️") return innerResult;
+    const numVal = Number.parseFloat(innerResult);
+    if (Number.isNaN(numVal)) return "0.00";
+    return (numVal * 100).toFixed(2);
+  }
   
   // Función para normalizar nombres (quita acentos, espacios extra, minúsculas)
   const normalizeKey = (s) => (s || '')
@@ -252,6 +262,9 @@ function FillForm() {
   // 🛡️ Guards para prevenir doble ejecución de guardado
   const isSavingRef = useRef(false);
   const isDraftSavingRef = useRef(false);
+
+  // 🔍 Estado de Zoom para el formulario
+  const [zoomLevel, setZoomLevel] = useState(100);
 
   // Estados para Acordeón (NUEVO)
   const [expandedSections, setExpandedSections] = useState({
@@ -3644,18 +3657,28 @@ useEffect(() => {
       if (index !== elementIndex) return element;
       const updatedData = { ...element.data, [fieldLabel]: value };
       
-      // 🧮 Recalcular campos tipo "formula" en esta sección
+      // 🧮 Recalcular campos tipo "formula" y "percentage" en esta sección (múltiples pasadas para cascada)
       const sectionTemplate = selectedTemplate?.bodyElements?.[elementIndex];
       if (sectionTemplate?.fields) {
-        sectionTemplate.fields.forEach(field => {
-          if (field.type === 'formula' && field.formula) {
-            const result = evaluarFormula(field.formula, updatedData);
-            if (result !== "") {
-              updatedData[field.label] = result;
-              console.log(`🧮 [section-formula] ${field.label} = ${result}`);
+        for (let pass = 0; pass < 3; pass++) {
+          sectionTemplate.fields.forEach(field => {
+            if (field.type === 'formula' && field.formula) {
+              const result = evaluarFormula(field.formula, updatedData);
+              if (result !== "") {
+                updatedData[field.label] = result;
+                if (pass === 0) console.log(`🧮 [section-formula] ${field.label} = ${result}`);
+              }
+            } else if (field.type === 'percentage' && field.formula) {
+              const rawResult = evaluarFormula(field.formula, updatedData);
+              if (rawResult && rawResult !== 'ERR' && rawResult !== '⚠️') {
+                const numVal = Number.parseFloat(rawResult);
+                const percentVal = Number.isNaN(numVal) ? '0.00' : (numVal * 100).toFixed(2);
+                updatedData[field.label] = percentVal;
+                if (pass === 0) console.log(`📊 [section-percentage] ${field.label} = ${percentVal}%`);
+              }
             }
-          }
-        });
+          });
+        }
       }
       
       return { ...element, data: updatedData };
@@ -3686,7 +3709,9 @@ useEffect(() => {
         });
         
         // 🔥 PASO 1: Calcular fórmulas en TODAS las filas (por si referencian otras filas)
-        // Hacer 2 pasadas: primero calculated, luego formula (por si dependen entre sí)
+        // Hacer MÚLTIPLES PASADAS para resolver dependencias en cascada (ej: d=a+b, luego e=c*d)
+        const MAX_FORMULA_PASSES = 3;
+        for (let pass = 0; pass < MAX_FORMULA_PASSES; pass++) {
         updatedRows = updatedRows.map((row, rIndex) => {
           const updatedRow = { ...row };
           
@@ -3698,7 +3723,7 @@ useEffect(() => {
                 const result = calcularFormulaDinamica(col.formula, updatedRow, updatedRows, rIndex);
                 if (result !== "") {
                   updatedRow[cellKey] = result;
-                  if (rIndex === rowIndex) console.log(`      🧮 [formula] ${cellKey} = ${result}`);
+                  if (pass === 0 && rIndex === rowIndex) console.log(`      🧮 [formula] ${cellKey} = ${result}`);
                 }
               }
             });
@@ -3712,7 +3737,24 @@ useEffect(() => {
                 const result = evaluarFormula(col.formula, updatedRow, updatedRows, rIndex);
                 if (result !== "") {
                   updatedRow[cellKey] = result;
-                  if (rIndex === rowIndex) console.log(`      🧮 [formula-col] ${cellKey} = ${result}`);
+                  if (pass === 0 && rIndex === rowIndex) console.log(`      🧮 [formula-col] ${cellKey} = ${result}`);
+                }
+              }
+            });
+          }
+
+          // PASO 1c: 🆕 Calcular columnas tipo "percentage" (porcentaje)
+          if (tableTemplate?.columns) {
+            tableTemplate.columns.forEach(col => {
+              if (col.type === 'percentage' && col.formula) {
+                const cellKey = col.label || col.id || col.name;
+                // Evaluar la fórmula de división y multiplicar por 100
+                const rawResult = evaluarFormula(col.formula, updatedRow, updatedRows, rIndex);
+                if (rawResult !== "" && rawResult !== "ERR" && rawResult !== "⚠️") {
+                  const numVal = Number.parseFloat(rawResult);
+                  const percentVal = Number.isNaN(numVal) ? "0.00" : (numVal * 100).toFixed(2);
+                  updatedRow[cellKey] = percentVal;
+                  if (pass === 0 && rIndex === rowIndex) console.log(`      📊 [percentage] ${cellKey} = ${percentVal}%`);
                 }
               }
             });
@@ -3720,6 +3762,7 @@ useEffect(() => {
           
           return updatedRow;
         });
+        } // fin de pasadas múltiples
 
         // Obtener la fila editada para el resto de la lógica
         const editedRow = updatedRows[rowIndex];
@@ -4129,8 +4172,38 @@ useEffect(() => {
             </div>
           );
         
-        // ✅ NUEVO: Checkbox (casillas de selección múltiple)
+        // ✅ Checkbox (casillas de selección múltiple o toggle simple)
         case "checkbox":
+          // Si no hay opciones, renderizar como checkbox binario (SI/NO)
+          if (!options || options.length === 0) {
+            const isCheckedBinary = value === 'SI' || value === 'true' || value === true;
+            return (
+              <label 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '10px',
+                  padding: '10px 14px',
+                  border: isCheckedBinary ? '2px solid #10b981' : '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  backgroundColor: isCheckedBinary ? '#d1fae5' : 'white',
+                  transition: 'all 0.2s',
+                  userSelect: 'none'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isCheckedBinary}
+                  onChange={(e) => onChange(e.target.checked ? 'SI' : '')}
+                  style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#10b981' }}
+                />
+                <span style={{ fontSize: '14px', fontWeight: isCheckedBinary ? '600' : '400', color: isCheckedBinary ? '#065f46' : '#374151' }}>
+                  {isCheckedBinary ? '✓ SI' : 'NO'}
+                </span>
+              </label>
+            );
+          }
           // Valor es un array de strings separadas por coma
           const selectedValues = value ? value.split(',').map(v => v.trim()) : [];
           return (
@@ -4195,6 +4268,18 @@ useEffect(() => {
         case "number": 
         case "temperature": 
         case "percentage":
+          // Si es percentage CON fórmula → campo calculado (solo lectura)
+          if (field.type === 'percentage' && field.formula) {
+            return (
+              <input 
+                type="text" 
+                value={value ? `${value}%` : "0.00%"} 
+                readOnly 
+                className="calculated-field" 
+                style={{ background: '#fef3c7', fontWeight: 'bold', color: '#92400e', cursor: 'not-allowed' }} 
+              />
+            );
+          }
           if (field.type === 'calculated' || field.readonly) {
             return <input type="text" value={value || "0.00"} readOnly style={{ backgroundColor: '#f3f4f6', fontWeight: 'bold', color: '#374151', cursor: 'not-allowed'}} />;
           }
@@ -4253,6 +4338,24 @@ useEffect(() => {
                       : `% de ${_pctBase}`}
                   </span>
                 )}
+              </div>
+            );
+          }
+          
+          // Si es tipo temperature, envolver con indicador °C
+          if (field.type === 'temperature') {
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  value={value || ""} 
+                  onChange={handleNumberChange}
+                  required={field.required}
+                  placeholder={field.placeholder || "°C"}
+                  style={{ flex: 1, minWidth: 0 }}
+                />
+                <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 600, whiteSpace: 'nowrap' }}>°C</span>
               </div>
             );
           }
@@ -5671,7 +5774,35 @@ useEffect(() => {
       )}
       {error && <div className="error-message">❌ {error}</div>}
 
-      <div className="form-document">
+      {/* 🔍 BARRA DE ZOOM */}
+      <div className="zoom-controls-bar">
+        <div className="zoom-controls-group">
+          <button
+            className="zoom-btn"
+            onClick={() => setZoomLevel(prev => Math.max(50, prev - 10))}
+            title="Reducir zoom"
+          >
+            −
+          </button>
+          <span className="zoom-label">{zoomLevel}%</span>
+          <button
+            className="zoom-btn"
+            onClick={() => setZoomLevel(prev => Math.min(150, prev + 10))}
+            title="Aumentar zoom"
+          >
+            +
+          </button>
+          <button
+            className="zoom-btn zoom-btn-reset"
+            onClick={() => setZoomLevel(100)}
+            title="Restablecer zoom"
+          >
+            ↺
+          </button>
+        </div>
+      </div>
+
+      <div className="form-document" style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}>
         {(() => {
           // 📅 FECHA DE VERSIÓN DE LA PLANTILLA (NO la fecha de llenado)
           // Siempre usar fechaVersion del template, que es la fecha de la versión registrada
@@ -6923,6 +7054,7 @@ useEffect(() => {
                 isExpanded={expandedSections[`body_${elementIndex}`] !== false}
                 onToggle={() => toggleBodySection(elementIndex)}
               >
+                <div className="section-fields-grid">
                 {(element.fields || []).map((field, fieldIndex) => {
                   // ✅ NUEVO: Si el campo es una tabla, renderizarla completa
                   if (field.type === 'table') {
@@ -6955,19 +7087,17 @@ useEffect(() => {
                           </div>
                         </div>
                         
-                        {/* 📋 TABLA PRINCIPAL */}
-                        <div className="table-wrapper" style={{ overflowX: 'auto', marginBottom: '1rem' }}>
-                          <table className="data-table" style={{
+                        {/* 📋 TABLA PRINCIPAL - ESTILO EXCEL */}
+                        <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', marginBottom: '1rem' }}>
+                          <table className="data-table excel-table" style={{
                             width: '100%',
                             borderCollapse: 'collapse',
                             backgroundColor: 'white',
-                            borderRadius: '8px',
-                            overflow: 'hidden',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                            border: '1px solid #8ea9c1'
                           }}>
                             <thead>
-                              <tr style={{ background: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}>
-                                <th style={{ padding: '10px', textAlign: 'center', width: '40px', fontWeight: 600, color: '#374151' }}>
+                              <tr style={{ background: 'linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%)', borderBottom: '1px solid #8ea9c1' }}>
+                                <th style={{ padding: '4px 6px', textAlign: 'center', width: '30px', fontWeight: 600, color: '#374151', fontSize: '0.75rem', borderRight: '1px solid #b0c4d8' }}>
                                   #
                                 </th>
                                 {groupedColumns.map((group, groupIndex) => (
@@ -6975,24 +7105,27 @@ useEffect(() => {
                                     <th
                                       key={`col-${groupIndex}`}
                                       style={{
-                                        padding: '10px',
-                                        textAlign: 'left',
+                                        padding: '4px 6px',
+                                        textAlign: 'center',
                                         fontWeight: 600,
                                         color: '#374151',
-                                        borderRight: '1px solid #e5e7eb',
-                                        minWidth: group.columns[0].width || '150px'
+                                        borderRight: '1px solid #b0c4d8',
+                                        fontSize: '0.75rem',
+                                        minWidth: group.columns[0].width || '80px',
+                                        whiteSpace: 'nowrap'
                                       }}
                                     >
                                       {group.columns[0].label || group.columns[0].name}
                                     </th>
                                   ) : (
                                     <th key={`group-${groupIndex}`} colSpan={group.columns.length} style={{
-                                      padding: '10px',
+                                      padding: '4px 6px',
                                       textAlign: 'center',
                                       fontWeight: 600,
                                       color: '#374151',
-                                      borderRight: '1px solid #e5e7eb',
-                                      background: '#f9fafb'
+                                      borderRight: '1px solid #b0c4d8',
+                                      fontSize: '0.75rem',
+                                      background: 'linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%)'
                                     }}>
                                       {group.name}
                                       <tr>
@@ -7000,12 +7133,12 @@ useEffect(() => {
                                           <th
                                             key={`subcol-${groupIndex}-${colIndex}`}
                                             style={{
-                                              padding: '8px',
-                                              textAlign: 'left',
+                                              padding: '3px 5px',
+                                              textAlign: 'center',
                                               fontWeight: 500,
-                                              fontSize: '0.85rem',
+                                              fontSize: '0.7rem',
                                               color: '#6b7280',
-                                              borderRight: colIndex < group.columns.length - 1 ? '1px solid #e5e7eb' : 'none'
+                                              borderRight: colIndex < group.columns.length - 1 ? '1px solid #b0c4d8' : 'none'
                                             }}
                                           >
                                             {col.label || col.name}
@@ -7015,7 +7148,7 @@ useEffect(() => {
                                     </th>
                                   )
                                 ))}
-                                {field.allowDeleteRows && <th style={{ padding: '10px', textAlign: 'center', width: '50px', fontWeight: 600, color: '#374151' }}>Acción</th>}
+                                {field.allowDeleteRows && <th style={{ padding: '4px 6px', textAlign: 'center', width: '36px', fontWeight: 600, color: '#374151', fontSize: '0.75rem', borderLeft: '1px solid #b0c4d8' }}>Acción</th>}
                               </tr>
                             </thead>
                             <tbody>
@@ -7023,26 +7156,50 @@ useEffect(() => {
                                 tableData.map((row, rowIndex) => (
                                   <tr 
                                     key={`row-${elementIndex}-${fieldIndex}-${rowIndex}`}
-                                    style={{ borderBottom: '1px solid #e5e7eb', background: rowIndex % 2 === 0 ? '#ffffff' : '#f9fafb' }}
+                                    style={{ borderBottom: '1px solid #c5d3e0', background: rowIndex % 2 === 0 ? '#ffffff' : '#f5f8fb' }}
                                   >
-                                    <td style={{ padding: '10px', textAlign: 'center', fontSize: '0.9rem', color: '#6b7280', fontWeight: 500 }}>
+                                    <td style={{ padding: '2px 4px', textAlign: 'center', fontSize: '0.75rem', color: '#6b7280', fontWeight: 500, borderRight: '1px solid #c5d3e0', background: '#f0f4f8' }}>
                                       {rowIndex + 1}
                                     </td>
                                     {groupedColumns.map((group, groupIndex) =>
                                       group.columns.map((col, colIndex) => {
                                         const cellKey = col.label || col.name;
                                         const cellValue = row?.[cellKey] || '';
-                                        const isEditable = col.editable !== false;
+                                        const isFormulaCol = col.type === 'formula' || col.type === 'calculated';
+                                        const isPercentageCol = col.type === 'percentage';
+                                        const isEditable = col.editable !== false && !isFormulaCol && !isPercentageCol;
+
+                                        // Calcular valor de fórmula/porcentaje en tiempo real
+                                        let displayValue = cellValue;
+                                        if (isFormulaCol && col.formula) {
+                                          const allTableRows = tableData || [];
+                                          displayValue = evaluarFormula(col.formula, row, allTableRows, rowIndex) || '0.00';
+                                        } else if (isPercentageCol && col.formula) {
+                                          const allTableRows = tableData || [];
+                                          const rawResult = evaluarFormula(col.formula, row, allTableRows, rowIndex);
+                                          if (rawResult && rawResult !== 'ERR' && rawResult !== '⚠️') {
+                                            const numVal = Number.parseFloat(rawResult);
+                                            displayValue = Number.isNaN(numVal) ? '0.00' : (numVal * 100).toFixed(2);
+                                          } else {
+                                            displayValue = '0.00';
+                                          }
+                                        }
                                         
                                         return (
                                           <td
                                             key={`cell-${rowIndex}-${groupIndex}-${colIndex}`}
                                             style={{
-                                              padding: '10px',
-                                              borderRight: colIndex < group.columns.length - 1 ? '1px solid #e5e7eb' : 'none'
+                                              padding: '1px 2px',
+                                              borderRight: '1px solid #c5d3e0',
+                                              ...(isFormulaCol ? { backgroundColor: '#f0fdf4', textAlign: 'right', fontWeight: 'bold', color: '#166534' } : {}),
+                                              ...(isPercentageCol ? { backgroundColor: '#fef3c7', textAlign: 'right', fontWeight: 'bold', color: '#92400e' } : {})
                                             }}
                                           >
-                                            {isEditable ? (
+                                            {isFormulaCol || isPercentageCol ? (
+                                              <span style={{ fontSize: '0.78rem', padding: '3px 4px', display: 'block' }}>
+                                                {displayValue}{isPercentageCol ? '%' : ''}
+                                              </span>
+                                            ) : isEditable ? (
                                               <input
                                                 type={col.type === 'date' ? 'date' : col.type === 'number' ? 'number' : 'text'}
                                                 value={cellValue}
@@ -7051,22 +7208,44 @@ useEffect(() => {
                                                   if (!Array.isArray(newBodyData[elementIndex].data[field.label])) {
                                                     newBodyData[elementIndex].data[field.label] = [];
                                                   }
-                                                  newBodyData[elementIndex].data[field.label][rowIndex] = {
+                                                  const updatedRow = {
                                                     ...newBodyData[elementIndex].data[field.label][rowIndex],
                                                     [cellKey]: e.target.value
                                                   };
+                                                  // Recalcular fórmulas en esta fila
+                                                  const allCols = field.columns || [];
+                                                  const allRows = [...(newBodyData[elementIndex].data[field.label] || [])];
+                                                  allRows[rowIndex] = updatedRow;
+                                                  for (let pass = 0; pass < 3; pass++) {
+                                                    allCols.forEach(c => {
+                                                      const ck = c.label || c.name;
+                                                      if ((c.type === 'formula' || c.type === 'calculated') && c.formula) {
+                                                        const res = evaluarFormula(c.formula, updatedRow, allRows, rowIndex);
+                                                        if (res !== '') updatedRow[ck] = res;
+                                                      } else if (c.type === 'percentage' && c.formula) {
+                                                        const raw = evaluarFormula(c.formula, updatedRow, allRows, rowIndex);
+                                                        if (raw && raw !== 'ERR' && raw !== '⚠️') {
+                                                          const n = Number.parseFloat(raw);
+                                                          updatedRow[ck] = Number.isNaN(n) ? '0.00' : (n * 100).toFixed(2);
+                                                        }
+                                                      }
+                                                    });
+                                                  }
+                                                  newBodyData[elementIndex].data[field.label][rowIndex] = updatedRow;
                                                   setBodyData(newBodyData);
                                                   setHasUnsavedChanges(true);
                                                 }}
                                                 placeholder={col.label || col.name}
                                                 style={{
                                                   width: '100%',
-                                                  padding: '8px',
-                                                  border: '1px solid #d1d5db',
-                                                  borderRadius: '4px',
-                                                  fontSize: '0.9rem',
+                                                  padding: '3px 4px',
+                                                  border: '1px solid #c5d3e0',
+                                                  borderRadius: '0',
+                                                  fontSize: '0.78rem',
                                                   fontFamily: 'inherit',
-                                                  boxSizing: 'border-box'
+                                                  boxSizing: 'border-box',
+                                                  background: 'transparent',
+                                                  lineHeight: '1.3'
                                                 }}
                                               />
                                             ) : (
@@ -7077,7 +7256,7 @@ useEffect(() => {
                                       })
                                     )}
                                     {field.allowDeleteRows && (
-                                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                                      <td style={{ padding: '2px 4px', textAlign: 'center', borderLeft: '1px solid #c5d3e0' }}>
                                         <button
                                           onClick={() => {
                                             const newBodyData = [...bodyData];
@@ -7091,10 +7270,10 @@ useEffect(() => {
                                             background: '#ef4444',
                                             color: 'white',
                                             border: 'none',
-                                            borderRadius: '4px',
-                                            padding: '6px 10px',
+                                            borderRadius: '2px',
+                                            padding: '3px 6px',
                                             cursor: 'pointer',
-                                            fontSize: '0.85rem'
+                                            fontSize: '0.7rem'
                                           }}
                                         >
                                           🗑️
@@ -7106,10 +7285,10 @@ useEffect(() => {
                               ) : (
                                 <tr>
                                   <td colSpan={groupedColumns.reduce((sum, g) => sum + g.columns.length, 0) + (field.allowDeleteRows ? 2 : 1)} style={{
-                                    padding: '2rem',
+                                    padding: '1rem',
                                     textAlign: 'center',
                                     color: '#6b7280',
-                                    fontSize: '0.95rem'
+                                    fontSize: '0.8rem'
                                   }}>
                                     Sin registros. Haz click en "Agregar Fila" para empezar.
                                   </td>
@@ -7130,6 +7309,7 @@ useEffect(() => {
                     </div>
                   );
                 })}
+              </div>
               </AccordionSection>
             );
           }
@@ -7508,6 +7688,23 @@ useEffect(() => {
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
                   style={{backgroundColor: '#f0fdf4', textAlign: 'right', fontWeight: 'bold', color: '#166534'}}>
                 {valorCalculado || row[cellName] || '0.00'}
+              </td>
+            );
+          }
+
+          // 3d. 📊 COLUMNA TIPO "percentage" (porcentaje = fórmula * 100)
+          if (col.type === 'percentage' && col.formula) {
+            const allTableRows = currentElementData.data || [];
+            const rawResult = evaluarFormula(col.formula, row, allTableRows, rowIndex);
+            let displayVal = '0.00';
+            if (rawResult && rawResult !== 'ERR' && rawResult !== '⚠️') {
+              const numVal = Number.parseFloat(rawResult);
+              displayVal = Number.isNaN(numVal) ? '0.00' : (numVal * 100).toFixed(2);
+            }
+            return (
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
+                  style={{backgroundColor: '#fef3c7', textAlign: 'right', fontWeight: 'bold', color: '#92400e'}}>
+                {displayVal}%
               </td>
             );
           }

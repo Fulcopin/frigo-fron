@@ -37,10 +37,35 @@ const isImageUrl = (val) => {
   );
 };
 
-const renderCellValue = (value) => {
+const renderCellValue = (value, fieldType) => {
   if (value === undefined || value === null || value === '' || value === '-') return '-';
   if (typeof value === 'object') return JSON.stringify(value);
   const strVal = String(value);
+  
+  // Formatear fechas ISO (quitar la "T" y mostrar bonito)
+  // Detecta: 2026-03-18T16:03, 2026-03-18T16:03:00, etc.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(strVal)) {
+    const d = new Date(strVal);
+    if (!Number.isNaN(d.getTime())) {
+      const fecha = d.toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const hora = d.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', hour12: false });
+      return `${fecha}  ${hora}`;
+    }
+  }
+  // Detecta fecha sola: 2026-03-18
+  if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
+    const [y, m, day] = strVal.split('-');
+    return `${day}/${m}/${y}`;
+  }
+  
+  // Checkbox visual rendering
+  if (fieldType === 'checkbox') {
+    if (strVal === 'SI' || strVal === 'true') {
+      return <span style={{ color: '#059669', fontWeight: '700', fontSize: '1.1em' }}>✓</span>;
+    }
+    return <span style={{ color: '#9ca3af' }}>—</span>;
+  }
+  
   if (isImageUrl(strVal)) {
     console.log('🖼️ renderCellValue: detectada imagen →', strVal.substring(0, 80));
     return (
@@ -697,7 +722,7 @@ function ViewForms() {
                   }
                   
                   // Renderizar valor (detectar imágenes)
-                  const displayValue = renderCellValue(value);
+                  const displayValue = renderCellValue(value, field.type);
                   const isImg = typeof value === 'string' && isImageUrl(value);
                   
                   return (
@@ -749,7 +774,7 @@ function ViewForms() {
                       return (
                         <div key={key} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
                           <span className="data-label">{key}:</span>
-                          <div className="data-value">{renderCellValue(value)}</div>
+                          <div className="data-value">{renderCellValue(value, templateElement.fields?.find(f => f.label === key || f.id === key || f.name === key)?.type)}</div>
                         </div>
                       );
                     })}
@@ -784,20 +809,41 @@ function ViewForms() {
                   <div className="table-wrapper">
                     <table className="view-table">
                       <thead>
-                        <tr>
-                          <th>#</th>
-                          {templateElement.columns.map((col, colIndex) => {
-                            // 🐛 DEBUG: Log para ver qué columnas se renderizan
-                            if (colIndex < 3) {
-                              console.log(`🔍 Renderizando header columna ${colIndex}:`, {
-                                id: col.id,
-                                label: col.label,
-                                header: col.header,
-                                name: col.name
-                              });
+                        {/* Grouped column headers */}
+                        {templateElement.columns.some(col => col.group) && (() => {
+                          // Build group spans: consecutive columns with same group get merged
+                          const headerItems = [];
+                          templateElement.columns.forEach((col) => {
+                            if (!col.group) {
+                              // Non-grouped column: render individually with rowSpan=2
+                              headerItems.push({ type: 'single', label: col.label || col.header || col.name || col.id, span: 1 });
+                            } else {
+                              const last = headerItems[headerItems.length - 1];
+                              if (last && last.type === 'group' && last.name === col.group) {
+                                last.span++;
+                              } else {
+                                headerItems.push({ type: 'group', name: col.group, span: 1 });
+                              }
                             }
+                          });
+                          return (
+                            <tr>
+                              <th rowSpan={2} style={{ verticalAlign: 'bottom' }}>#</th>
+                              {headerItems.map((item, i) => (
+                                item.type === 'single'
+                                  ? <th key={`hdr-${i}`} rowSpan={2} style={{ verticalAlign: 'bottom', fontSize: '0.8rem' }}>{item.label}</th>
+                                  : <th key={`hdr-${i}`} colSpan={item.span} style={{ textAlign: 'center', background: '#eef2ff', color: '#3730a3', fontWeight: '700', fontSize: '0.8rem', borderBottom: '2px solid #6366f1' }}>{item.name}</th>
+                              ))}
+                            </tr>
+                          );
+                        })()}
+                        <tr>
+                          {!templateElement.columns.some(col => col.group) && <th>#</th>}
+                          {templateElement.columns.map((col, colIndex) => {
+                            // Skip non-grouped columns (they already have rowSpan=2 in the group row)
+                            if (templateElement.columns.some(c => c.group) && !col.group) return null;
                             return (
-                              <th key={`header-${colIndex}`}>{col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}</th>
+                              <th key={`subhdr-${colIndex}`} style={{ fontSize: '0.8rem' }}>{col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}</th>
                             );
                           })}
                         </tr>
@@ -862,7 +908,7 @@ function ViewForms() {
 
                               return (
                                 <td key={`cell-${rowIndex}-${colIndex}`} style={{ textAlign: 'center', minWidth: '100px' }}>
-                                  {renderCellValue(cellValue)}
+                                  {renderCellValue(cellValue, col.type)}
                                 </td>
                               );
                             })}
@@ -1000,7 +1046,7 @@ function ViewForms() {
                                 const val = tinasData[tina.key]?.[cycleIdx]?.[field.label] ?? '';
                                 return (
                                   <td key={`${tina.key}-${cycleIdx}-${fi}`} style={{ textAlign: 'center' }}>
-                                    {renderCellValue(val)}
+                                    {renderCellValue(val, field.type)}
                                   </td>
                                 );
                               })}

@@ -50,10 +50,11 @@ const getBase64Image = (imgUrl) => {
  */
 const COLORS = {
   primary: [0, 102, 204],      // Azul Frigolab
-  secondary: [230, 230, 230],  // Gris claro para fondos
+  secondary: [221, 235, 247],  // Azul claro Excel para fondos de sección
   text: [0, 0, 0],             // Negro
   border: [100, 100, 100],     // Gris oscuro
-  headerBg: [41, 128, 185],    // Azul header
+  headerBg: [68, 114, 196],    // Azul Excel header
+  sectionTitle: [31, 78, 121], // Azul oscuro para texto de secciones
   white: [255, 255, 255]
 };
 
@@ -61,15 +62,113 @@ const COLORS = {
  * 📐 CONFIGURACIÓN DE PÁGINA
  */
 const PAGE_CONFIG = {
-  orientation: 'portrait',
+  orientation: 'landscape',
   unit: 'mm',
-  format: 'letter',  // 8.5" x 11" (215.9mm x 279.4mm)
+  format: 'letter',  // 8.5" x 11" — landscape: 279.4mm x 215.9mm
   margins: {
     top: 60,
-    left: 15,
-    right: 15,
-    bottom: 20
+    left: 10,
+    right: 10,
+    bottom: 15
   }
+};
+
+/**
+ * 📊 Calcula tamaños dinámicos para tablas según número de columnas
+ * Estilo Excel: compacto, legible, con bordes definidos
+ */
+const getTableStyles = (columnCount, pageWidth, margins) => {
+  const availableWidth = pageWidth - margins.left - margins.right;
+  const avgColWidth = availableWidth / columnCount;
+  
+  let headerFontSize, bodyFontSize, cellPadding;
+  
+  if (columnCount <= 5) {
+    headerFontSize = 8;
+    bodyFontSize = 7;
+    cellPadding = { top: 2, right: 3, bottom: 2, left: 3 };
+  } else if (columnCount <= 8) {
+    headerFontSize = 7;
+    bodyFontSize = 6.5;
+    cellPadding = { top: 1.5, right: 2, bottom: 1.5, left: 2 };
+  } else if (columnCount <= 12) {
+    headerFontSize = 6;
+    bodyFontSize = 5.5;
+    cellPadding = { top: 1, right: 1.5, bottom: 1, left: 1.5 };
+  } else if (columnCount <= 16) {
+    headerFontSize = 5.5;
+    bodyFontSize = 5;
+    cellPadding = { top: 0.8, right: 1, bottom: 0.8, left: 1 };
+  } else {
+    headerFontSize = 4.5;
+    bodyFontSize = 4;
+    cellPadding = { top: 0.5, right: 0.8, bottom: 0.5, left: 0.8 };
+  }
+  
+  return { headerFontSize, bodyFontSize, cellPadding, avgColWidth, availableWidth };
+};
+
+/**
+ * 📏 Calcula anchos inteligentes de columna basados en contenido real
+ */
+const calculateSmartColumnWidths = (columns, rows, availableWidth, doc, fontSize) => {
+  doc.setFontSize(fontSize);
+  
+  // Medir ancho real de cada columna (header + contenido)
+  const colWidths = columns.map((col, ci) => {
+    const headerText = col.header || '';
+    // Medir ancho del header (podría tener varias palabras)
+    const headerWords = headerText.split(/\s+/);
+    // El ancho mínimo es la palabra más larga del header
+    const longestWord = headerWords.reduce((max, w) => Math.max(max, doc.getTextWidth(w)), 0);
+    let maxWidth = longestWord + 3; // +3mm padding
+    
+    // Medir contenido de las filas
+    rows.forEach(row => {
+      const cellText = String(row[ci] || '');
+      if (cellText) {
+        const textW = doc.getTextWidth(cellText);
+        if (textW + 3 > maxWidth) maxWidth = textW + 3;
+      }
+    });
+    
+    return { index: ci, idealWidth: maxWidth, minWidth: longestWord + 2 };
+  });
+  
+  // Calcular total ideal
+  const totalIdeal = colWidths.reduce((sum, c) => sum + c.idealWidth, 0);
+  
+  if (totalIdeal <= availableWidth) {
+    // Cabe todo: distribuir espacio sobrante proporcionalmente
+    const ratio = availableWidth / totalIdeal;
+    const result = {};
+    colWidths.forEach(c => {
+      result[c.index] = { cellWidth: c.idealWidth * ratio };
+    });
+    return result;
+  }
+  
+  // No cabe → comprimir proporcionalmente pero respetar mínimos
+  const totalMin = colWidths.reduce((sum, c) => sum + c.minWidth, 0);
+  const result = {};
+  
+  if (totalMin >= availableWidth) {
+    // Ni los mínimos caben → distribuir equitativamente
+    const eqWidth = availableWidth / columns.length;
+    colWidths.forEach(c => {
+      result[c.index] = { cellWidth: eqWidth };
+    });
+  } else {
+    // Distribuir: cada col obtiene su mínimo + proporción del espacio restante
+    const extraSpace = availableWidth - totalMin;
+    const totalExtra = colWidths.reduce((sum, c) => sum + (c.idealWidth - c.minWidth), 0);
+    colWidths.forEach(c => {
+      const extra = totalExtra > 0 ? ((c.idealWidth - c.minWidth) / totalExtra) * extraSpace : 0;
+      result[c.index] = { cellWidth: c.minWidth + extra };
+    });
+  }
+  
+  return result;
 };
 
 /**
@@ -80,8 +179,8 @@ const drawFrigolabHeader = async (doc, templateData) => {
   
   const headerH = 40;
   const pageW = doc.internal.pageSize.getWidth();
-  const marginL = 15;
-  const marginR = 15;
+  const marginL = 10;
+  const marginR = 10;
   const contentW = pageW - marginL - marginR;
   
   // Borde exterior del encabezado
@@ -204,14 +303,20 @@ const drawFrigolabHeader = async (doc, templateData) => {
 const drawHeaderSection = (doc, headerData, startY) => {
   let currentY = startY + 5;
   
-  doc.setFontSize(11);
+  const hdrPageW = doc.internal.pageSize.getWidth();
+  const hdrContentW = hdrPageW - 16; // 8mm margins
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   doc.setFillColor(...COLORS.secondary);
-  doc.rect(15, currentY, 175, 8, 'F');
-  doc.setTextColor(...COLORS.text);
-  doc.text('INFORMACION DEL ENCABEZADO', 17, currentY + 5);
+  doc.rect(8, currentY, hdrContentW, 7, 'F');
+  // Borde inferior azul
+  doc.setDrawColor(68, 114, 196);
+  doc.setLineWidth(0.5);
+  doc.line(8, currentY + 7, 8 + hdrContentW, currentY + 7);
+  doc.setTextColor(...COLORS.sectionTitle);
+  doc.text('INFORMACION DEL ENCABEZADO', 10, currentY + 5);
   
-  currentY += 10;
+  currentY += 9;
   
   // Renderizar campos del header
   doc.setFontSize(9);
@@ -259,25 +364,35 @@ const drawHeaderSection = (doc, headerData, startY) => {
   if (headerFields.length === 0) {
     doc.setTextColor(150, 150, 150);
     doc.setFont('helvetica', 'italic');
-    doc.text('(No hay informacion de encabezado)', 17, currentY);
+    doc.text('(No hay informacion de encabezado)', 12, currentY);
     doc.setTextColor(...COLORS.text);
     doc.setFont('helvetica', 'normal');
     return currentY + 10;
   }
   
-  // Dibujar campos
-  headerFields.forEach(field => {
+  // Dibujar campos en grid (aprovechar ancho landscape)
+  const hdrFieldPageW = doc.internal.pageSize.getWidth();
+  const fieldsPerRow = hdrFieldPageW > 250 ? 3 : 2;
+  const fieldColWidth = (hdrFieldPageW - 20) / fieldsPerRow;
+  
+  doc.setFontSize(8);
+  for (let i = 0; i < headerFields.length; i++) {
+    const col = i % fieldsPerRow;
+    if (col === 0 && i > 0) currentY += 6;
+    
+    const xBase = 12 + col * fieldColWidth;
+    const field = headerFields[i];
+    
     doc.setFont('helvetica', 'bold');
-    doc.text(sanitizeText(field.label), 17, currentY);
+    doc.text(sanitizeText(field.label), xBase, currentY);
+    const labelW = doc.getTextWidth(sanitizeText(field.label));
     doc.setFont('helvetica', 'normal');
     
-    // Limitar longitud del valor
-    const maxWidth = 120;
-    const textValue = doc.splitTextToSize(sanitizeText(field.value), maxWidth);
-    doc.text(textValue, 70, currentY);
-    
-    currentY += 6 * textValue.length;
-  });
+    const maxValW = fieldColWidth - labelW - 6;
+    const textValue = doc.splitTextToSize(sanitizeText(field.value), maxValW > 20 ? maxValW : 50);
+    doc.text(textValue, xBase + labelW + 2, currentY);
+  }
+  currentY += 6;
   
   return currentY + 5;
 };
@@ -294,7 +409,7 @@ const drawBodyTable = (doc, bodyData, bodyElements, startY) => {
     doc.setFontSize(9);
     doc.setTextColor(150, 150, 150);
     doc.setFont('helvetica', 'italic');
-    doc.text('(No hay datos en el cuerpo de la tabla)', 17, startY + 5);
+    doc.text('(No hay datos en el cuerpo de la tabla)', 12, startY + 5);
     doc.setTextColor(...COLORS.text);
     doc.setFont('helvetica', 'normal');
     return startY + 15;
@@ -322,38 +437,67 @@ const drawBodyTable = (doc, bodyData, bodyElements, startY) => {
     startY
   });
   
-  // Generar tabla con autoTable
+  // 📊 Calcular estilos dinámicos
+  const pgW = doc.internal.pageSize.getWidth();
+  const tblMargins2 = { left: 8, right: 8 };
+  const tblStyles2 = getTableStyles(columns.length, pgW, tblMargins2);
+  
+  // Preparar filas de datos
+  const bodyRows = rows.map(row => columns.map(col => String(row[col.dataKey] || '')));
+  
+  // Calcular anchos inteligentes
+  const smartStyles = calculateSmartColumnWidths(
+    columns, bodyRows, tblStyles2.availableWidth, doc, tblStyles2.bodyFontSize
+  );
+  
+  // Generar tabla con autoTable - Estilo Excel
   autoTable(doc, {
     startY: startY,
     head: [columns.map(col => col.header)],
-    body: rows.map(row => columns.map(col => String(row[col.dataKey] || ''))),
+    body: bodyRows,
     theme: 'grid',
+    tableWidth: tblStyles2.availableWidth,
     headStyles: {
-      fillColor: COLORS.headerBg,
-      textColor: COLORS.white,
-      fontSize: 9,
+      fillColor: [68, 114, 196],
+      textColor: [255, 255, 255],
+      fontSize: tblStyles2.headerFontSize,
       fontStyle: 'bold',
-      halign: 'center'
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: tblStyles2.cellPadding,
+      overflow: 'ellipsize',
+      lineWidth: 0.2,
+      lineColor: [55, 95, 170]
     },
     bodyStyles: {
-      fontSize: 8,
-      textColor: COLORS.text
+      fontSize: tblStyles2.bodyFontSize,
+      textColor: [51, 51, 51],
+      cellPadding: tblStyles2.cellPadding,
+      overflow: 'ellipsize',
+      halign: 'center',
+      valign: 'middle',
+      lineWidth: 0.15,
+      lineColor: [200, 200, 200]
     },
+    columnStyles: smartStyles,
     alternateRowStyles: {
-      fillColor: [245, 245, 245]
+      fillColor: [242, 247, 252]
     },
-    margin: { left: 15, right: 15 },
-    didDrawPage: (data) => {
-      // Pie de página en cada página
-      const pageCount = doc.internal.getNumberOfPages();
-      const currentPage = doc.internal.getCurrentPageInfo().pageNumber;
-      
-      doc.setFontSize(8);
-      doc.setTextColor(100);
+    margin: tblMargins2,
+    styles: {
+      lineWidth: 0.15,
+      lineColor: [200, 200, 200],
+      font: 'helvetica'
+    },
+    didDrawPage: () => {
+      const pgCount = doc.internal.getNumberOfPages();
+      const curPg = doc.internal.getCurrentPageInfo().pageNumber;
+      doc.setFontSize(7);
+      doc.setTextColor(130, 130, 130);
       doc.text(
-        `Pagina ${currentPage} de ${pageCount}`,
+        `Pag. ${curPg} / ${pgCount}`,
         doc.internal.pageSize.getWidth() / 2,
-        doc.internal.pageSize.getHeight() - 10,
+        doc.internal.pageSize.getHeight() - 8,
         { align: 'center' }
       );
     }
@@ -380,12 +524,17 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
     currentY = 20;
   }
   
-  doc.setFontSize(11);
+  const sigPageW = doc.internal.pageSize.getWidth();
+  const sigContentW = sigPageW - 16;
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   doc.setFillColor(...COLORS.secondary);
-  doc.rect(15, currentY, 175, 8, 'F');
-  doc.setTextColor(...COLORS.text);
-  doc.text('FIRMAS Y APROBACIONES', 17, currentY + 5);
+  doc.rect(8, currentY, sigContentW, 7, 'F');
+  doc.setDrawColor(68, 114, 196);
+  doc.setLineWidth(0.5);
+  doc.line(8, currentY + 7, 8 + sigContentW, currentY + 7);
+  doc.setTextColor(...COLORS.sectionTitle);
+  doc.text('FIRMAS Y APROBACIONES', 10, currentY + 5);
   
   currentY += 15;
   
@@ -412,13 +561,15 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       doc.setFontSize(9);
       doc.setFont('helvetica', 'italic');
       doc.setTextColor(150, 150, 150);
-      doc.text('No hay firmas registradas', 17, currentY);
+      doc.text('No hay firmas registradas', 12, currentY);
       return currentY + 10;
     }
     
     // Calcular cuántas firmas por fila (máximo 2)
-    const firmasPorFila = Math.min(2, totalFirmas);
-    const anchoColumna = 175 / firmasPorFila;
+    const sigPgW = doc.internal.pageSize.getWidth();
+    const sigAvailW = sigPgW - 20; // 10mm margins
+    const firmasPorFila = Math.min(sigAvailW > 200 ? 3 : 2, totalFirmas);
+    const anchoColumna = sigAvailW / firmasPorFila;
     
     // Usar for...of para soportar await
     for (let index = 0; index < firmasArray.length; index++) {
@@ -431,7 +582,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       
       // Determinar posición (columna izquierda o derecha)
       const columna = index % firmasPorFila;
-      const xPos = 15 + (columna * anchoColumna) + 2;
+      const xPos = 10 + (columna * anchoColumna) + 2;
       
       // Si es una nueva fila, ajustar Y
       if (columna === 0 && index > 0) {
@@ -641,7 +792,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
     doc.setFontSize(9);
     firmaFields.forEach(field => {
       doc.setFont('helvetica', 'bold');
-      doc.text(field.label, 17, currentY);
+      doc.text(field.label, 12, currentY);
       doc.setFont('helvetica', 'normal');
       doc.text(field.value, field.space, currentY);
       currentY += 8;
@@ -703,15 +854,20 @@ export const exportFormToPDF = async (form, template) => {
         currentY = 20;
       }
       
-      // Título de la sección
-      doc.setFontSize(11);
+      // Título de la sección - Estilo Excel
+      const secPageW = doc.internal.pageSize.getWidth();
+      const secContentW = secPageW - 16;
+      doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
       doc.setFillColor(...COLORS.secondary);
-      doc.rect(15, currentY, 175, 8, 'F');
-      doc.setTextColor(...COLORS.text);
+      doc.rect(8, currentY, secContentW, 7, 'F');
+      doc.setDrawColor(68, 114, 196);
+      doc.setLineWidth(0.5);
+      doc.line(8, currentY + 7, 8 + secContentW, currentY + 7);
+      doc.setTextColor(...COLORS.sectionTitle);
       
       const sectionTitle = section.title || section.sectionTitle || section.label || 'Seccion';
-      doc.text(sanitizeText(sectionTitle.toUpperCase()), 17, currentY + 5);
+      doc.text(sanitizeText(sectionTitle.toUpperCase()), 10, currentY + 5);
       currentY += 10;
       
       // Tipo de sección: tabla
@@ -750,7 +906,8 @@ export const exportFormToPDF = async (form, template) => {
           // Los datos también usan 'label' como key: { "LOTE DE PROCESO": "jnd" }
           const columns = section.columns.map((col, colIndex) => ({
             header: sanitizeText(col.label || col.name || 'Columna'),
-            dataKey: col.label || col.name || col.id || `col_${colIndex}`
+            dataKey: col.label || col.name || col.id || `col_${colIndex}`,
+            type: (col.type || '').toLowerCase()
           }));
           
           console.log(`📋 Columnas de "${sectionTitle}":`, columns.map(c => c.header));
@@ -781,7 +938,17 @@ const rows = tableData.map((row, rowIndex) => {
       if (keyWithSuffix) value = row[keyWithSuffix];
     }
 
-    return String(value ?? "");
+    let strValue = String(value ?? "");
+    
+    // Agregar °C a columnas de temperatura
+    const colType = (col.type || '').toLowerCase();
+    const colHeaderUp = colHeader; // ya está en UPPERCASE
+    const isTemp = colType === 'temperature' || colHeaderUp.includes('TEMPERATURA') || colHeaderUp.includes('TEMP');
+    if (isTemp && strValue.trim() !== '' && !strValue.includes('°')) {
+      strValue = `${strValue} °C`;
+    }
+    
+    return strValue;
   });
 });
           
@@ -816,45 +983,101 @@ const rows = tableData.map((row, rowIndex) => {
             hasTotals = totalsRow.some(v => v !== '—');
           }
           
+          // 📊 Calcular estilos dinámicos según número de columnas
+          const pageW = doc.internal.pageSize.getWidth();
+          const tblMargins = { left: 8, right: 8 };
+          const tblStyles = getTableStyles(columns.length, pageW, tblMargins);
+          
+          // Headers para autoTable (con °C si aplica)
+          const headRow = columns.map(col => {
+            const hdr = col.header;
+            const isTemp = col.type === 'temperature' || hdr.toUpperCase().includes('TEMPERATURA') || hdr.toUpperCase().includes('TEMP');
+            return isTemp && !hdr.includes('°') ? `${hdr} (°C)` : hdr;
+          });
+          
+          // 📏 Calcular anchos inteligentes basados en contenido real
+          const smartColStyles = calculateSmartColumnWidths(
+            columns.map((c, i) => ({ ...c, header: headRow[i] })),
+            sanitizedRows,
+            tblStyles.availableWidth,
+            doc,
+            tblStyles.bodyFontSize
+          );
+          
+          // 🎨 Estilo Excel: bordes definidos, colores suaves, compacto
           autoTable(doc, {
             startY: currentY,
-            head: [columns.map(col => col.header)],
+            head: [headRow],
             body: sanitizedRows,
             foot: hasTotals ? [totalsRow] : [],
             theme: 'grid',
+            tableWidth: tblStyles.availableWidth,
             headStyles: {
-              fillColor: COLORS.headerBg,
-              textColor: COLORS.white,
-              fontSize: 9,
+              fillColor: [68, 114, 196],
+              textColor: [255, 255, 255],
+              fontSize: tblStyles.headerFontSize,
               fontStyle: 'bold',
-              halign: 'center'
+              halign: 'center',
+              valign: 'middle',
+              cellPadding: tblStyles.cellPadding,
+              overflow: 'ellipsize',
+              lineWidth: 0.2,
+              lineColor: [55, 95, 170]
             },
             bodyStyles: {
-              fontSize: 8,
-              textColor: COLORS.text
+              fontSize: tblStyles.bodyFontSize,
+              textColor: [51, 51, 51],
+              cellPadding: tblStyles.cellPadding,
+              overflow: 'ellipsize',
+              halign: 'center',
+              valign: 'middle',
+              lineWidth: 0.15,
+              lineColor: [200, 200, 200]
             },
             footStyles: {
-              fillColor: [224, 231, 255],
-              textColor: [67, 56, 202],
-              fontSize: 9,
+              fillColor: [221, 235, 247],
+              textColor: [31, 78, 121],
+              fontSize: tblStyles.headerFontSize,
               fontStyle: 'bold',
-              halign: 'center'
+              halign: 'center',
+              cellPadding: tblStyles.cellPadding,
+              lineWidth: 0.2,
+              lineColor: [155, 195, 230]
             },
+            columnStyles: smartColStyles,
             alternateRowStyles: {
-              fillColor: [245, 245, 245]
+              fillColor: [242, 247, 252]
             },
-            margin: { left: 15, right: 15 },
-            // 🔧 Diagonal en celdas vacías
+            margin: tblMargins,
+            styles: {
+              lineWidth: 0.15,
+              lineColor: [200, 200, 200],
+              font: 'helvetica'
+            },
             didDrawCell: (data) => {
+              // Diagonal en celdas vacías
               if (data.section === 'body') {
                 const cellText = String(data.cell.raw || '').trim();
                 if (!cellText) {
                   const { x, y, width, height } = data.cell;
-                  doc.setDrawColor(180, 180, 180);
-                  doc.setLineWidth(0.2);
+                  doc.setDrawColor(210, 210, 210);
+                  doc.setLineWidth(0.1);
                   doc.line(x, y, x + width, y + height);
                 }
               }
+            },
+            didDrawPage: () => {
+              // Pie de página
+              const pgCount = doc.internal.getNumberOfPages();
+              const curPg = doc.internal.getCurrentPageInfo().pageNumber;
+              doc.setFontSize(7);
+              doc.setTextColor(130, 130, 130);
+              doc.text(
+                `Pag. ${curPg} / ${pgCount}`,
+                doc.internal.pageSize.getWidth() / 2,
+                doc.internal.pageSize.getHeight() - 8,
+                { align: 'center' }
+              );
             }
           });
           
@@ -863,7 +1086,7 @@ const rows = tableData.map((row, rowIndex) => {
           doc.setFontSize(9);
           doc.setTextColor(150, 150, 150);
           doc.setFont('helvetica', 'italic');
-          doc.text('(No hay datos en esta sección)', 17, currentY);
+          doc.text('(No hay datos en esta sección)', 12, currentY);
           doc.setTextColor(...COLORS.text);
           doc.setFont('helvetica', 'normal');
           currentY += 10;
@@ -900,7 +1123,7 @@ const rows = tableData.map((row, rowIndex) => {
               // 🖼️ Renderizar imagen
               doc.setFontSize(9);
               doc.setFont('helvetica', 'bold');
-              doc.text(sanitizeText(`${key}:`), 17, currentY);
+              doc.text(sanitizeText(`${key}:`), 12, currentY);
               currentY += 5;
               
               try {
@@ -916,7 +1139,7 @@ const rows = tableData.map((row, rowIndex) => {
                   doc.addPage();
                   currentY = 20;
                 }
-                doc.addImage(imageData, 'PNG', 17, currentY, imgWidth, imgHeight);
+                doc.addImage(imageData, 'PNG', 12, currentY, imgWidth, imgHeight);
                 currentY += imgHeight + 5;
                 console.log(`   ✅ Imagen "${key}" agregada al PDF`);
               } catch (imgError) {
@@ -924,7 +1147,7 @@ const rows = tableData.map((row, rowIndex) => {
                 doc.setFontSize(8);
                 doc.setFont('helvetica', 'italic');
                 doc.setTextColor(150, 150, 150);
-                doc.text(`[Imagen no disponible: ${strVal.substring(0, 60)}...]`, 17, currentY);
+                doc.text(`[Imagen no disponible: ${strVal.substring(0, 60)}...]`, 12, currentY);
                 doc.setTextColor(...COLORS.text);
                 currentY += 6;
               }
@@ -932,12 +1155,13 @@ const rows = tableData.map((row, rowIndex) => {
               // Texto normal
               doc.setFontSize(9);
               doc.setFont('helvetica', 'bold');
-              doc.text(sanitizeText(`${key}: `), 17, currentY);
+              doc.text(sanitizeText(`${key}: `), 12, currentY);
               const labelWidth = doc.getTextWidth(sanitizeText(`${key}: `));
               doc.setFont('helvetica', 'normal');
               if (strVal && strVal.trim()) {
-                const textLines = doc.splitTextToSize(sanitizeText(strVal), 175 - labelWidth);
-                doc.text(textLines, 17 + labelWidth, currentY);
+                const secPgW2 = doc.internal.pageSize.getWidth();
+                const textLines = doc.splitTextToSize(sanitizeText(strVal), (secPgW2 - 20) - labelWidth);
+                doc.text(textLines, 12 + labelWidth, currentY);
                 currentY += (textLines.length * 5) + 3;
               } else {
                 doc.setTextColor(150, 150, 150);
@@ -952,7 +1176,7 @@ const rows = tableData.map((row, rowIndex) => {
           doc.setFontSize(9);
           doc.setTextColor(150, 150, 150);
           doc.setFont('helvetica', 'italic');
-          doc.text('(Sin datos en esta sección)', 17, currentY);
+          doc.text('(Sin datos en esta sección)', 12, currentY);
           doc.setTextColor(...COLORS.text);
           doc.setFont('helvetica', 'normal');
           currentY += 10;
@@ -972,14 +1196,15 @@ const rows = tableData.map((row, rowIndex) => {
         if (textValue) {
           doc.setFontSize(9);
           doc.setFont('helvetica', 'normal');
-          const textLines = doc.splitTextToSize(sanitizeText(String(textValue)), 175);
-          doc.text(textLines, 17, currentY);
+          const txtPgW = doc.internal.pageSize.getWidth();
+          const textLines = doc.splitTextToSize(sanitizeText(String(textValue)), txtPgW - 20);
+          doc.text(textLines, 12, currentY);
           currentY += (textLines.length * 5) + 5;
         } else {
           doc.setFontSize(9);
           doc.setTextColor(150, 150, 150);
           doc.setFont('helvetica', 'italic');
-          doc.text('(Sin contenido)', 17, currentY);
+          doc.text('(Sin contenido)', 12, currentY);
           doc.setTextColor(...COLORS.text);
           doc.setFont('helvetica', 'normal');
           currentY += 10;
@@ -1048,27 +1273,37 @@ const rows = tableData.map((row, rowIndex) => {
             body: body,
             theme: 'grid',
             headStyles: {
-              fillColor: COLORS.headerBg,
-              textColor: COLORS.white,
-              fontSize: 7,
+              fillColor: [68, 114, 196],
+              textColor: [255, 255, 255],
+              fontSize: 6,
               fontStyle: 'bold',
-              halign: 'center'
+              halign: 'center',
+              valign: 'middle',
+              lineWidth: 0.2,
+              lineColor: [55, 95, 170],
+              cellPadding: { top: 1, right: 1.5, bottom: 1, left: 1.5 }
             },
             bodyStyles: {
-              fontSize: 7,
-              textColor: COLORS.text,
-              halign: 'center'
+              fontSize: 6,
+              textColor: [51, 51, 51],
+              halign: 'center',
+              valign: 'middle',
+              lineWidth: 0.15,
+              lineColor: [200, 200, 200],
+              cellPadding: { top: 0.8, right: 1, bottom: 0.8, left: 1 }
             },
             columnStyles: {
-              0: { halign: 'left', fontStyle: 'bold', fontSize: 7, cellWidth: 35 }
+              0: { halign: 'left', fontStyle: 'bold', fontSize: 6, cellWidth: 35 }
             },
             alternateRowStyles: {
-              fillColor: [245, 245, 245]
+              fillColor: [242, 247, 252]
             },
-            margin: { left: 15, right: 15 },
+            margin: { left: 8, right: 8 },
             styles: {
-              cellPadding: 2,
-              overflow: 'linebreak'
+              cellPadding: 1,
+              overflow: 'ellipsize',
+              lineWidth: 0.15,
+              lineColor: [200, 200, 200]
             }
           });
 
@@ -1077,7 +1312,7 @@ const rows = tableData.map((row, rowIndex) => {
           doc.setFontSize(9);
           doc.setTextColor(150, 150, 150);
           doc.setFont('helvetica', 'italic');
-          doc.text('(Sin datos de tinas)', 17, currentY);
+          doc.text('(Sin datos de tinas)', 12, currentY);
           doc.setTextColor(...COLORS.text);
           doc.setFont('helvetica', 'normal');
           currentY += 10;
@@ -1094,18 +1329,23 @@ const rows = tableData.map((row, rowIndex) => {
         currentY = 20;
       }
       
-      doc.setFontSize(11);
+      const obsPgW = doc.internal.pageSize.getWidth();
+      const obsContentW = obsPgW - 16;
+      doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
       doc.setFillColor(...COLORS.secondary);
-      doc.rect(15, currentY, 175, 8, 'F');
-      doc.setTextColor(...COLORS.text);
-      doc.text('OBSERVACIONES', 17, currentY + 5);
-      currentY += 10;
+      doc.rect(8, currentY, obsContentW, 7, 'F');
+      doc.setDrawColor(68, 114, 196);
+      doc.setLineWidth(0.5);
+      doc.line(8, currentY + 7, 8 + obsContentW, currentY + 7);
+      doc.setTextColor(...COLORS.sectionTitle);
+      doc.text('OBSERVACIONES', 10, currentY + 5);
+      currentY += 9;
       
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      const obsLines = doc.splitTextToSize(sanitizeText(form.observaciones), 175);
-      doc.text(obsLines, 17, currentY);
+      const obsLines = doc.splitTextToSize(sanitizeText(form.observaciones), obsContentW);
+      doc.text(obsLines, 12, currentY);
       currentY += (obsLines.length * 5) + 5;
     }
     
@@ -1160,12 +1400,18 @@ export const exportMultipleFormsToPDF = async (forms, templates) => {
       await drawFrigolabHeader(doc, templateData);
       let currentY = drawHeaderSection(doc, templateData.headerData, 60);
       
-      doc.setFontSize(11);
+      const ptPgW = doc.internal.pageSize.getWidth();
+      const ptContentW = ptPgW - 16;
+      doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
       doc.setFillColor(...COLORS.secondary);
-      doc.rect(15, currentY, 175, 8, 'F');
-      doc.text('PRODUCTO TERMINADO', 17, currentY + 5);
-      currentY += 10;
+      doc.rect(8, currentY, ptContentW, 7, 'F');
+      doc.setDrawColor(68, 114, 196);
+      doc.setLineWidth(0.5);
+      doc.line(8, currentY + 7, 8 + ptContentW, currentY + 7);
+      doc.setTextColor(...COLORS.sectionTitle);
+      doc.text('PRODUCTO TERMINADO', 10, currentY + 5);
+      currentY += 9;
       
       currentY = drawBodyTable(doc, bodyData, bodyElements, currentY);
       await drawSignaturesSection(doc, firmasData, currentY, template);

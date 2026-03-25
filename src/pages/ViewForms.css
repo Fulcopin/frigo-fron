@@ -391,6 +391,7 @@
   margin-bottom: 1rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--border);
+  text-align: center;
 }
 
 .data-grid {
@@ -435,6 +436,13 @@
 
 .data-item-image {
   min-width: 100%;
+}
+
+/* Table wrapper for horizontal scroll on wide tables */
+.table-wrapper {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
 .view-table {

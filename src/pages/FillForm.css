@@ -457,6 +457,23 @@ body {
   gap: 1.5rem;
 }
 
+/* Grid layout for body section fields */
+.section-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem 1.5rem;
+}
+
+.section-fields-grid .form-field {
+  margin-bottom: 0;
+}
+
+/* Tables and images inside section grid should span full width */
+.section-fields-grid > div:has(.table-wrapper),
+.section-fields-grid > div:has(.data-table) {
+  grid-column: 1 / -1;
+}
+
 .form-field {
   display: flex;
   flex-direction: column;
@@ -2234,6 +2251,191 @@ body {
   
   .version-indicator-content {
     font-size: 0.875rem;
+  }
+}
+
+/* ============================================
+   🔍 CONTROLES DE ZOOM
+   ============================================ */
+.zoom-controls-bar {
+  position: sticky;
+  top: 52px;
+  z-index: 850;
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.zoom-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 2px 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.zoom-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: #374151;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  line-height: 1;
+}
+
+.zoom-btn:hover {
+  background: #e5e7eb;
+}
+
+.zoom-btn:active {
+  background: #d1d5db;
+}
+
+.zoom-btn-reset {
+  font-size: 0.85rem;
+  margin-left: 2px;
+}
+
+.zoom-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4b5563;
+  min-width: 38px;
+  text-align: center;
+  user-select: none;
+}
+
+/* ============================================
+   📊 TABLAS ESTILO EXCEL - COMPACTAS
+   ============================================ */
+
+/* Wrapper Excel */
+.excel-table-wrapper {
+  border: 1px solid #8ea9c1 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Tabla Excel */
+.excel-table {
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  font-size: 0.78rem !important;
+}
+
+.excel-table thead th {
+  background: linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%) !important;
+  color: #2d3748 !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  padding: 4px 6px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  border: 1px solid #b0c4d8 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+.excel-table tbody td {
+  padding: 1px 2px !important;
+  border: 1px solid #c5d3e0 !important;
+  font-size: 0.78rem !important;
+  background: #fff !important;
+  vertical-align: middle !important;
+}
+
+.excel-table tbody tr:nth-child(even) td {
+  background: #f5f8fb !important;
+}
+
+.excel-table tbody tr:hover td {
+  background: #e8f0fe !important;
+}
+
+/* Inputs dentro de tabla Excel */
+.excel-table input,
+.excel-table select,
+.excel-table textarea {
+  padding: 3px 4px !important;
+  border: 1px solid #c5d3e0 !important;
+  border-radius: 0 !important;
+  font-size: 0.78rem !important;
+  min-width: 60px !important;
+  min-height: 24px !important;
+  line-height: 1.3 !important;
+  background: transparent !important;
+}
+
+.excel-table input:focus,
+.excel-table select:focus,
+.excel-table textarea:focus {
+  border-color: #2563eb !important;
+  outline: none !important;
+  background: #eff6ff !important;
+  box-shadow: inset 0 0 0 1px #2563eb !important;
+}
+
+/* Columna de número de fila */
+.excel-table td:first-child {
+  background: #f0f4f8 !important;
+  font-weight: 500 !important;
+  text-align: center !important;
+  color: #6b7280 !important;
+  min-width: 30px !important;
+  width: 30px !important;
+  border-right: 1px solid #b0c4d8 !important;
+}
+
+/* Columna de acciones */
+.excel-table th:last-child,
+.excel-table td:last-child {
+  min-width: 36px !important;
+  width: 36px !important;
+}
+
+/* Desactivar estilos previos que interfieran */
+.excel-table th, .excel-table td {
+  min-width: auto !important;
+}
+
+/* Responsive: En tablets el zoom se ajusta mejor */
+@media (max-width: 1024px) {
+  .zoom-controls-bar {
+    top: 48px;
+    padding: 4px 12px;
+  }
+
+  .zoom-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 1.1rem;
+  }
+
+  .zoom-label {
+    font-size: 0.85rem;
+    min-width: 42px;
+  }
+
+  .excel-table input,
+  .excel-table select,
+  .excel-table textarea {
+    min-height: 32px !important;
+    padding: 4px 6px !important;
+    font-size: 0.82rem !important;
   }
 }
 

@@ -1833,6 +1833,28 @@ function getVerificacionBalanzasTemplate() {
     { n: "20", marca: "SUPER-6", serie: "S3022E012", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
     { n: "21", marca: "METTLER TOLEDO", serie: "08081-6JK", tipo: "COLGANTE", capacidad: "500 kg", division: "0.5 kg" },
     { n: "22", marca: "CAS WATERPROOF", serie: "19050435", tipo: "COLGANTE", capacidad: "500 kg", division: "0.5 kg" },
+    { n: "23", marca: "CAS WATERPROOF", serie: "WXK21070009", tipo: "BALANZA DE CUELLO", capacidad: "30 kg", division: "0.1 kg" },
+    { n: "24", marca: "METTLER TOLEDO", serie: "B651462101", tipo: "PLATAFORMA", capacidad: "2000 kg", division: "0.5 kg" },
+    { n: "25", marca: "CAS WATERPROOF", serie: "WXK21070041", tipo: "BALANZA DE CUELLO", capacidad: "200 Kg", division: "0.01 kg" },
+    { n: "26", marca: "CAS", serie: "740390", tipo: "PLATAFORMA", capacidad: "2000 kg", division: "1 kg" },
+    { n: "27", marca: "CAS", serie: "911372", tipo: "PLATAFORMA", capacidad: "2000 kg", division: "1 kg" },
+    { n: "28", marca: "CAS", serie: "XH2007006875", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "29", marca: "CAS", serie: "13283", tipo: "BALANZA DE CUELLO", capacidad: "200 kg", division: "0.1 kg" },
+    { n: "30", marca: "HIWEIGH", serie: "XH2007006146", tipo: "BALANZA DE CUELLO", capacidad: "300 kg", division: "50 gr" },
+    { n: "31", marca: "CAS", serie: "19H0604012", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "32", marca: "SUPER-6", serie: "S63022E018", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "33", marca: "CAS WATERPROOF", serie: "19050432", tipo: "BALANZA DE CUELLO", capacidad: "200 kg", division: "0.1 kg" },
+    { n: "34", marca: "CAS", serie: "XH190079005", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "35", marca: "WATER PROS", serie: "XH24100100152", tipo: "GRAMERA", capacidad: "30 kg", division: "2 g" },
+    { n: "36", marca: "CAS WATERPROOF", serie: "XH2202001368", tipo: "GRAMERA", capacidad: "30 kg", division: "2 kg" },
+    { n: "37", marca: "CAS", serie: "XH190079008", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "38", marca: "SUPER-SS", serie: "XH21050041090", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "39", marca: "WATERPROOF", serie: "XH21050041087", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "40", marca: "SUPER-SS", serie: "XH21050041088", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "41", marca: "SUPER-SS", serie: "XH21050041121", tipo: "GRAMERA", capacidad: "15 kg", division: "0.002 kg" },
+    { n: "42", marca: "DA600", serie: "51920", tipo: "ANALÍTICA", capacidad: "600 g", division: "0.01 g" },
+    { n: "43", marca: "BENCH SCALE", serie: "XH24100100587", tipo: "BALANZA DE CUELLO", capacidad: "500 kg", division: "50 g" },
+    { n: "44", marca: "BENCH SCALE", serie: "XH24030040634", tipo: "BALANZA DE CUELLO", capacidad: "200 kg", division: "20 g" },
   ]
 
   const predefinedRows = balanzasData.map((b) => ({
@@ -1842,7 +1864,10 @@ function getVerificacionBalanzasTemplate() {
     "TIPO DE BALANZA": b.tipo,
     "CAPACIDAD DE BALANZA": b.capacidad,
     "DIVISIÓN DE ESCALA (d)": b.division,
-    "MASAS PATRÓN (GRAMOS) UTILIZADA PARA LA VERIFICACIÓN": "",
+    "MASA PATRÓN 1 (g)": "",
+    "MASA PATRÓN 2 (g)": "",
+    "MASA PATRÓN 3 (g)": "",
+    "MASA PATRÓN 4 (g)": "",
     "APROB.": "",
     "ÁREA DE PROC.": "",
     "OBSERVACIONES": "",
@@ -1862,7 +1887,10 @@ function getVerificacionBalanzasTemplate() {
         { label: "TIPO DE BALANZA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Datos de la Balanza" },
         { label: "CAPACIDAD DE BALANZA", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Datos de la Balanza" },
         { label: "DIVISIÓN DE ESCALA (d)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Datos de la Balanza" },
-        { label: "MASAS PATRÓN (GRAMOS) UTILIZADA PARA LA VERIFICACIÓN", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Verificación" },
+        { label: "MASA PATRÓN 1 (g)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Masas Patrón (Gramos) Utilizada para la Verificación" },
+        { label: "MASA PATRÓN 2 (g)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Masas Patrón (Gramos) Utilizada para la Verificación" },
+        { label: "MASA PATRÓN 3 (g)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Masas Patrón (Gramos) Utilizada para la Verificación" },
+        { label: "MASA PATRÓN 4 (g)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Masas Patrón (Gramos) Utilizada para la Verificación" },
         { label: "APROB.", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "", group: "Verificación" },
         { label: "ÁREA DE PROC.", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Verificación" },
         { label: "OBSERVACIONES", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
@@ -1940,6 +1968,28 @@ function getMonitoreoProductosTerminadosTemplate() {
     { label: "Muestreo #", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "" },
   ]
 
+  // Generar columnas de las 12 bolsas dinámicamente
+  const bolsaColumns = []
+  for (let i = 1; i <= 12; i++) {
+    bolsaColumns.push(
+      { label: `BOLSA ${i} - Coef. Unid.`, type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: `BOLSA ${i}` },
+      { label: `BOLSA ${i} - P. Bruto Bolsa (lbs)`, type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: `BOLSA ${i}` },
+      { label: `BOLSA ${i} - P. Neto Bolsa (lbs)`, type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: `BOLSA ${i}` },
+    )
+  }
+
+  // Generar filas predefinidas (1-12) para la tabla de contenido por bolsa master
+  const contenidoBolsaRows = []
+  for (let r = 1; r <= 12; r++) {
+    const row = { "#": r.toString(), "PESO NETO CAJA": "", _rowSpan: {}, _hidden: {} }
+    for (let b = 1; b <= 12; b++) {
+      row[`BOLSA ${b} - Coef. Unid.`] = ""
+      row[`BOLSA ${b} - P. Bruto Bolsa (lbs)`] = ""
+      row[`BOLSA ${b} - P. Neto Bolsa (lbs)`] = ""
+    }
+    contenidoBolsaRows.push(row)
+  }
+
   const bodyElements = [
     // Datos Generales del Producto
     {
@@ -1949,9 +1999,8 @@ function getMonitoreoProductosTerminadosTemplate() {
       fields: [
         { label: "PRODUCTO / CLASIFICACIÓN", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "SUPERV. C. CALIDAD", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "TIPO EMPAQUE (Peso Neto declarado)", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "CAJA (LBS)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "FUNDA MASTER (LBS)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "TIPO EMPAQUE - CAJA (LBS)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "TIPO EMPAQUE - FUNDA MASTER (LBS)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "RANGO CLASIF. PORCIONES oz (Mín.)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "RANGO CLASIF. PORCIONES oz (Máx.)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "LOTE", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
@@ -1960,52 +2009,44 @@ function getMonitoreoProductosTerminadosTemplate() {
       ],
     },
 
-    // Peso Tara Caja
+    // Verificación del Producto / Contenido por Caja - Peso Tara
     {
       id: Date.now() + 1101,
       type: "section",
-      title: "Peso Tara Caja (lbs)",
+      title: "Verificación del Producto / Contenido por Caja - Peso Tara Caja (lbs)",
       fields: [
-        { label: "PESO BRUTO CAJA (Tapa + fondo)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Peso Caja", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "PESO BRUTO CAJA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso Caja (Tapa + fondo)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso Plástico", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Fundas VP - Peso Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Fundas VP - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Peso Plástico Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso total Fundas VP", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Bolsas Master - Peso Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Bolsas Master - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "GLASEO % (Requerido según cliente)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "PESO TOTAL TARA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Peso total Fundas VP", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Peso total Bolsas Master", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "GLASEO % - Mín. 4%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "GLASEO % - Máx. 8%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "GLASEO % - % (Cálculo en base a una bolsa master o 3 lbs de una caja)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "PESO TOTAL TARA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Peso Glaseo", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
       ],
     },
 
-    // Tabla de Contenido por Bolsa Master
+    // Tabla de Contenido por Bolsa Master - 12 bolsas x 12 filas
     {
       id: Date.now() + 1102,
       type: "table",
       title: "Contenido por Bolsa Master (Monitoreo de pesos netos de porciones)",
-      defaultRows: 15,
+      defaultRows: 0,
       columns: [
-        { label: "#", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "BOLSA 1 - Cant. Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 1" },
-        { label: "BOLSA 1 - P. Bruto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 1" },
-        { label: "BOLSA 1 - P. Neto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 1" },
-        { label: "BOLSA 2 - Cant. Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 2" },
-        { label: "BOLSA 2 - P. Bruto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 2" },
-        { label: "BOLSA 2 - P. Neto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 2" },
-        { label: "BOLSA 3 - Cant. Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 3" },
-        { label: "BOLSA 3 - P. Bruto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 3" },
-        { label: "BOLSA 3 - P. Neto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 3" },
-        { label: "BOLSA 4 - Cant. Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 4" },
-        { label: "BOLSA 4 - P. Bruto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 4" },
-        { label: "BOLSA 4 - P. Neto Bolsa (lbs)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "BOLSA 4" },
+        { label: "#", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        ...bolsaColumns,
         { label: "PESO NETO CAJA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
       ],
+      predefinedRows: contenidoBolsaRows,
     },
 
-    // Evaluación Física
+    // Evaluación Física - TABLA horizontal como el Excel
     {
       id: Date.now() + 1103,
       type: "table",
@@ -2020,14 +2061,14 @@ function getMonitoreoProductosTerminadosTemplate() {
         { label: "Restos de plástico", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Bordes irregulares", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Deshidratación", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Piezas con Peso fuera de especif.", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Piezas con Pesos fuera de especif.", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Piezas con medida fuera de especif.", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Color uniforme", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Material extraño", type: "checkbox", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
       ],
     },
 
-    // Evaluación Organoléptica
+    // Evaluación Organoléptica - TABLA horizontal como el Excel
     {
       id: Date.now() + 1104,
       type: "table",
@@ -2042,17 +2083,17 @@ function getMonitoreoProductosTerminadosTemplate() {
       ],
     },
 
-    // Análisis Químico
+    // Análisis Químico - TABLA horizontal como el Excel
     {
       id: Date.now() + 1105,
       type: "table",
       title: "Análisis Químico",
       defaultRows: 1,
       columns: [
-        { label: "HISTAMINA ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "MF1 ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "MF2 ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "MF3 ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "HISTAMINA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "M#1 ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "M#2 ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "M#3 ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
       ],
     },
 
@@ -2061,6 +2102,18 @@ function getMonitoreoProductosTerminadosTemplate() {
       id: Date.now() + 1106,
       type: "observaciones",
       title: "Observación",
+    },
+
+    // Evidencia Fotográfica (Anexo)
+    {
+      id: Date.now() + 1107,
+      type: "section",
+      title: "Evidencia Fotográfica (Anexo)",
+      fields: [
+        { label: "Evidencia Fotográfica 1", type: "image", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Evidencia Fotográfica 2", type: "image", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Evidencia Fotográfica 3", type: "image", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
     },
   ]
 
@@ -2074,7 +2127,7 @@ function getMonitoreoProductosTerminadosTemplate() {
       jefeAlerta: [],
     },
     {
-      puesto: "Jefe Aseg. de Calidad",
+      puesto: "Jefe Aseg. de Calidad - Revisión",
       nombreCompleto: "",
       capturaFecha: true,
       capturaHora: true,
