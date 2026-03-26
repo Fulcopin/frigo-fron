@@ -11,7 +11,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logoUrl from '../assets/logo-1.png';
-import { evaluarFormula, buildGroupedRowAlias } from '../utils/formulaEngine';
+import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
 
 /**
  * Limpia texto para que jsPDF pueda renderizarlo correctamente.
@@ -920,6 +920,8 @@ export const exportFormToPDF = async (form, template) => {
     // Construir filas para autoTable
 // Construir filas para autoTable con depuración de llaves
 const rows = tableData.map((row, rowIndex) => {
+  // Pre-calcular fórmulas de la fila para permitir encadenamiento
+  const computedRowPdf = buildComputedRow(mergeCrossTableRow(row, rowIndex, Array.isArray(bodyData) ? bodyData : []), section.columns || [], tableData, rowIndex);
   return columns.map((col, colIndex) => {
     const rowKeys = Object.keys(row);
     const colHeader = (col.header || col.label || "").trim().toUpperCase();
@@ -941,10 +943,10 @@ const rows = tableData.map((row, rowIndex) => {
       if (keyWithSuffix) value = row[keyWithSuffix];
     }
 
-    // 4. 🧮 Columna tipo "formula": recalcular con alias de grupo (etiquetas duplicadas)
+    // 4. 🧮 Columna tipo "formula": recalcular con computedRow (encadenamiento habilitado)
     const colType = (col.type || '').toLowerCase();
     if ((colType === 'formula' || colType === 'calculated') && col.formula) {
-      const rowAlias = buildGroupedRowAlias(row, section.columns, colIndex);
+      const rowAlias = buildGroupedRowAlias(computedRowPdf, section.columns, colIndex);
       const calculado = evaluarFormula(col.formula, rowAlias, tableData, rowIndex);
       if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
         value = calculado;

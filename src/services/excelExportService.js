@@ -12,7 +12,7 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import logoUrl from '../assets/logo-1.png';
-import { evaluarFormula, buildGroupedRowAlias } from '../utils/formulaEngine';
+import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
 
 /**
  * 🎨 PALETA DE COLORES CORPORATIVOS FRIGOLAB
@@ -754,6 +754,8 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     
     dataToRender.forEach((row, rowIndex) => {
       const isAlt = rowIndex % 2 === 1;
+      // Pre-calcular fórmulas de la fila para encadenamiento
+      const computedRowXl = buildComputedRow(mergeCrossTableRow(row, rowIndex, Array.isArray(bodyData) ? bodyData : []), columns, dataToRender, rowIndex);
       
       columns.forEach((col, colIndex) => {
         const dataCell = worksheet.getCell(currentRow, colIndex + 1);
@@ -774,10 +776,10 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
           }
         }
 
-        // 3. 🧮 Columna tipo "formula": recalcular con alias de grupo (etiquetas duplicadas)
+        // 3. 🧮 Columna tipo "formula": recalcular con computedRow (encadenamiento habilitado)
         const colType = (col.type || '').toLowerCase();
         if ((colType === 'formula' || colType === 'calculated') && col.formula) {
-          const rowAlias = buildGroupedRowAlias(row, columns, colIndex);
+          const rowAlias = buildGroupedRowAlias(computedRowXl, columns, colIndex);
           const calculado = evaluarFormula(col.formula, rowAlias, dataToRender, rowIndex);
           if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
             value = calculado;

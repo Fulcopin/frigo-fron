@@ -13,7 +13,7 @@ import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import "./ViewForms.css"
 import { API_BASE_URL } from "../apiConfig"; 
 import authService from "../services/authService";
-import { evaluarFormula, buildGroupedRowAlias } from "../utils/formulaEngine";
+import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
 //const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
 //const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -853,6 +853,8 @@ function ViewForms() {
                         {tableRows.map((row, rowIndex) => {
                           // Obtener la fila del template para mapear nombres de celdas
                           const templateRow = templateElement.rows ? templateElement.rows[rowIndex] : null;
+                          // Pre-calcular fórmulas para permitir encadenamiento entre columnas
+                          const computedRow = buildComputedRow(mergeCrossTableRow(row, rowIndex, selectedForm.bodyData), templateElement.columns || [], tableRows, rowIndex);
                           
                           return (
                             <tr key={`row-${rowIndex}`}>
@@ -864,33 +866,31 @@ function ViewForms() {
                               const colIdUpper = colId.toUpperCase();
                               const colLabelUpper = colLabel.toUpperCase();
 
-                              // 1. 🎯 INTENTO DE BÚSQUEDA DIRECTA (EXACTA)
-                              // Probamos todas las combinaciones posibles de nombres que vienen en el template
-                              let cellValue = row[colLabel] ?? row[col.header] ?? row[colId] ?? row[col.name];
+                              // 1. 🔑 PRIORIDAD MÁXIMA: clave exacta _colN (igual que hace el PDF)
+                              // Para tablas agrupadas con etiquetas duplicadas, FillForm guarda
+                              // "Termómetro_col2", "Termómetro_col6", etc. La búsqueda por sufijo
+                              // es la más precisa porque usa el índice exacto de la columna.
+                              const preciseKey = rowKeys.find(k => k.endsWith(`_col${colIndex}`));
+                              let cellValue = preciseKey !== undefined ? row[preciseKey] : undefined;
 
-                              // 2. 🔍 BÚSQUEDA INTELIGENTE (Si el primer intento falló)
+                              // 2. 🎯 BÚSQUEDA DIRECTA EXACTA (etiquetas únicas sin sufijo)
                               if (cellValue === undefined || cellValue === null || cellValue === "") {
-                                // Normalizamos el objetivo: "TEMP. °C" -> "TEMPC"
+                                cellValue = row[colLabel] ?? row[col.header] ?? row[colId] ?? row[col.name];
+                              }
+
+                              // 3. 🔍 BÚSQUEDA NORMALIZADA (caracteres especiales, acentos, espacios)
+                              if (cellValue === undefined || cellValue === null || cellValue === "") {
                                 const targetClean = colLabelUpper.replace(/[^A-Z0-9]/g, "");
-
                                 const foundKey = rowKeys.find(key => {
-                                  const keyUpper = key.toUpperCase();
-                                  const keyClean = keyUpper.replace(/[^A-Z0-9]/g, "");
-                                  
-                                  // Coincidencia exacta de texto limpio (ej: "TEMP. °C" con "TEMP C")
-                                  if (keyClean === targetClean && targetClean !== "") return true;
-                                  
-                                  // Coincidencia con sufijos (ej: "TOTAL CAJAS/TINAS_col7" contiene "TOTAL CAJAS/TINAS")
-                                  if (keyUpper.includes(colLabelUpper) && colLabelUpper !== "") return true;
-                                  
-                                  return false;
+                                  const keyClean = key.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                                  // Solo coincidencia limpia exacta: evita que "TERMÓMETRO" coincida
+                                  // con "TERMÓMETRO_COL2" (diferente grupo) via includes()
+                                  return keyClean === targetClean && targetClean !== "";
                                 });
-
                                 if (foundKey) cellValue = row[foundKey];
                               }
 
-                              // 3. ⚖️ LÓGICA ESPECÍFICA PARA PESOS/TINAS (Si el valor sigue vacío)
-                              // Esto mantiene la compatibilidad con el formato de 15 tinas
+                              // 4. ⚖️ LÓGICA ESPECÍFICA PARA PESOS/TINAS
                               if (cellValue === undefined || cellValue === null || cellValue === "") {
                                 const isPesoColumn = colIdUpper.includes('PESO') || colLabelUpper.includes('PESO');
                                 const isTotalColumn = colIdUpper.includes('TOTAL') || colLabelUpper.includes('TOTAL');
@@ -907,18 +907,9 @@ function ViewForms() {
                                 }
                               }
 
-                              // 4. 🔑 FALLBACK _colN para tablas con encabezados agrupados y etiquetas duplicadas
-                              // FillForm guarda columnas duplicadas como "Etiqueta_colN"
-                              if (cellValue === undefined || cellValue === null || cellValue === "") {
-                                const suffixKey = `${colLabel}_col${colIndex}`;
-                                if (row[suffixKey] !== undefined) {
-                                  cellValue = row[suffixKey];
-                                }
-                              }
-
-                              // 5. 🧮 Columnas de fórmula: recalcular en tiempo real con alias de grupo
+                              // 5. 🧮 Columnas de fórmula: recalcular con computedRow (encadenamiento habilitado)
                               if ((col.type === 'formula' || col.type === 'calculated') && col.formula) {
-                                const rowAlias = buildGroupedRowAlias(row, templateElement.columns, colIndex);
+                                const rowAlias = buildGroupedRowAlias(computedRow, templateElement.columns, colIndex);
                                 const calculado = evaluarFormula(col.formula, rowAlias, tableRows, rowIndex);
                                 if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
                                   cellValue = calculado;

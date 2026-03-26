@@ -14,7 +14,7 @@ import "./FillForm.css"
 import "./FillForm.tablet.css"  // 📱 Estilos optimizados para tablets
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import authService from "../services/authService";
-import { evaluarFormula as evaluarFormulaEngine, buildGroupedRowAlias } from "../utils/formulaEngine";
+import { evaluarFormula as evaluarFormulaEngine, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -3551,15 +3551,16 @@ useEffect(() => {
         updatedRows = updatedRows.map((row, rIndex) => {
           const updatedRow = { ...row };
           
-          // PASO 1a: Calcular columnas "calculated" con formula
-          if ((tableTemplate?.autoCalculate === true || selectedTemplate?.isMasterForm === true || selectedTemplate?.IsMasterForm === true) && tableTemplate?.columns) {
-            tableTemplate.columns.forEach(col => {
+          // PASO 1a: Calcular columnas "calculated" con formula (TODOS los templates)
+          if (tableTemplate?.columns) {
+            tableTemplate.columns.forEach((col, ci) => {
               if (col.type === 'calculated' && col.formula) {
                 const cellKey = col.label || col.id || col.name;
-                const result = calcularFormulaDinamica(col.formula, updatedRow, updatedRows, rIndex);
+                const rowAlias = buildGroupedRowAlias(updatedRow, tableTemplate.columns, ci);
+                const result = calcularFormulaDinamica(col.formula, rowAlias, updatedRows, rIndex);
                 if (result !== "") {
                   updatedRow[cellKey] = result;
-                  if (pass === 0 && rIndex === rowIndex) console.log(`      🧮 [formula] ${cellKey} = ${result}`);
+                  if (pass === 0 && rIndex === rowIndex) console.log(`      🧮 [calculated] ${cellKey} = ${result}`);
                 }
               }
             });
@@ -3567,10 +3568,11 @@ useEffect(() => {
 
           // PASO 1b: Calcular columnas tipo "formula" para TODOS los templates
           if (tableTemplate?.columns) {
-            tableTemplate.columns.forEach(col => {
+            tableTemplate.columns.forEach((col, ci) => {
               if (col.type === 'formula' && col.formula) {
                 const cellKey = col.label || col.id || col.name;
-                const result = evaluarFormula(col.formula, updatedRow, updatedRows, rIndex);
+                const rowAlias = buildGroupedRowAlias(updatedRow, tableTemplate.columns, ci);
+                const result = evaluarFormula(col.formula, rowAlias, updatedRows, rIndex);
                 if (result !== "") {
                   updatedRow[cellKey] = result;
                   if (pass === 0 && rIndex === rowIndex) console.log(`      🧮 [formula-col] ${cellKey} = ${result}`);
@@ -3579,13 +3581,13 @@ useEffect(() => {
             });
           }
 
-          // PASO 1c: 🆕 Calcular columnas tipo "percentage" (porcentaje)
+          // PASO 1c: Calcular columnas tipo "percentage" (porcentaje)
           if (tableTemplate?.columns) {
-            tableTemplate.columns.forEach(col => {
+            tableTemplate.columns.forEach((col, ci) => {
               if (col.type === 'percentage' && col.formula) {
                 const cellKey = col.label || col.id || col.name;
-                // Evaluar la fórmula de división y multiplicar por 100
-                const rawResult = evaluarFormula(col.formula, updatedRow, updatedRows, rIndex);
+                const rowAlias = buildGroupedRowAlias(updatedRow, tableTemplate.columns, ci);
+                const rawResult = evaluarFormula(col.formula, rowAlias, updatedRows, rIndex);
                 if (rawResult !== "" && rawResult !== "ERR" && rawResult !== "⚠️") {
                   const numVal = Number.parseFloat(rawResult);
                   const percentVal = Number.isNaN(numVal) ? "0.00" : (numVal * 100).toFixed(2);
@@ -3773,8 +3775,12 @@ useEffect(() => {
       // CASO A: Es un campo tipo 'select' nativo del template
       (isExplicitlySelect) || 
       
-      // CASO B: No es manual, tiene API configurada Y tiene opciones REALES cargadas
-      (!isManualMode && (field.apiMap || field.apiEndpoint) && realOptionsCount > 0 && !isNumericField && !isDateField)
+      // CASO B: Campo de CATÁLOGO (apiEndpoint) — siempre mostrar select si hay datos cargados
+      // Los catálogos (proveedores, especies, balanzas, etc.) deben mostrarse aunque no haya lote
+      (field.apiEndpoint && !field.apiMap && realOptionsCount > 0 && !isNumericField && !isDateField) ||
+
+      // CASO C: Campo de LOTE/MOVIMIENTO (apiMap) — solo si NO es manual y hay datos de lote
+      (!isManualMode && field.apiMap && !field.apiEndpoint && realOptionsCount > 0 && !isNumericField && !isDateField)
     );
 
     // 7. KEY ÚNICO (Para forzar re-render si cambian las opciones)
@@ -3975,7 +3981,36 @@ useEffect(() => {
           );
         
         // ✅ NUEVO: Radio buttons (casillas de selección única)
+        // Cuando está dentro de una tabla (rowIndex != null) → select compacto
         case "radio":
+          if (rowIndex !== null && rowIndex !== undefined) {
+            // Versión compacta para tablas: select dropdown
+            return (
+              <select
+                value={value || ''}
+                onChange={(e) => onChange(e.target.value)}
+                style={{
+                  padding: '4px 6px',
+                  border: value ? '2px solid #3b82f6' : '1px solid #d1d5db',
+                  borderRadius: '5px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  backgroundColor: value ? '#eff6ff' : 'white',
+                  color: value ? '#1d4ed8' : '#374151',
+                  fontWeight: value ? '600' : '400',
+                  minWidth: '70px',
+                  width: '100%',
+                  maxWidth: '110px',
+                }}
+              >
+                <option value="">--</option>
+                {options.map((option, index) => (
+                  <option key={index} value={option}>{option}</option>
+                ))}
+              </select>
+            );
+          }
+          // Versión completa para secciones (fuera de tabla)
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {options.map((option, index) => (
@@ -7401,6 +7436,10 @@ useEffect(() => {
     : (Array.isArray(currentElementData?.rows) ? currentElementData.rows : [])
   ).map((row, rowIndex) => {
     const templateRow = element.rows ? element.rows[rowIndex] : null;
+    // 🔗 Pre-calcular todas las fórmulas de la fila para permitir encadenamiento entre columnas
+    const allRowsForTable = currentElementData?.data || [];
+    const crossTableRow = mergeCrossTableRow(row, rowIndex, bodyData);
+    const computedRow = buildComputedRow(crossTableRow, element.columns || [], allRowsForTable, rowIndex);
 
     return (
       <tr key={`row-${elementIndex}-${rowIndex}`} style={{ background: rowIndex % 2 === 0 ? 'white' : '#f9fafb' }}>
@@ -7504,11 +7543,12 @@ useEffect(() => {
             );
           }
 
-          // 3b. 🧮 COLUMNA CALCULATED CON FORMULA (si la tabla tiene autoCalculate O el template es maestro)
-          if ((element.autoCalculate === true || selectedTemplate?.isMasterForm === true || selectedTemplate?.IsMasterForm === true) && col.type === 'calculated' && col.formula) {
-            // Recalcular en tiempo real directo desde los valores del row
-            const allTableRows = currentElementData.data || [];
-            const valorCalculado = calcularFormulaDinamica(col.formula, row, allTableRows, rowIndex);
+          // 3b. 🧮 COLUMNA CALCULATED CON FORMULA (aplica a TODOS los templates)
+          if (col.type === 'calculated' && col.formula) {
+            const allTableRows = allRowsForTable;
+            // Resolver alias usando computedRow (tiene resultados de fórmulas anteriores encadenadas)
+            const rowAlias = buildGroupedRowAlias(computedRow, element.columns, colIndex);
+            const valorCalculado = calcularFormulaDinamica(col.formula, rowAlias, allTableRows, rowIndex);
             return (
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
                   style={{backgroundColor: '#e6fffa', textAlign: 'right', fontWeight: 'bold', color: '#1f5c1f'}}>
@@ -7519,9 +7559,9 @@ useEffect(() => {
 
           // 3c. 🧮 COLUMNA TIPO "formula" (funciona en TODOS los templates)
           if (col.type === 'formula' && col.formula) {
-            const allTableRows = currentElementData.data || [];
+            const allTableRows = allRowsForTable;
             // Para tablas con grupos de columnas y etiquetas duplicadas, resolver alias
-            const rowAlias = buildGroupedRowAlias(row, element.columns, colIndex);
+            const rowAlias = buildGroupedRowAlias(computedRow, element.columns, colIndex);
             const valorCalculado = evaluarFormula(col.formula, rowAlias, allTableRows, rowIndex);
             return (
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
@@ -7533,9 +7573,9 @@ useEffect(() => {
 
           // 3d. 📊 COLUMNA TIPO "percentage" (porcentaje = fórmula * 100)
           if (col.type === 'percentage' && col.formula) {
-            const allTableRows = currentElementData.data || [];
+            const allTableRows = allRowsForTable;
             // Para tablas con grupos de columnas y etiquetas duplicadas, resolver alias
-            const rowAlias = buildGroupedRowAlias(row, element.columns, colIndex);
+            const rowAlias = buildGroupedRowAlias(computedRow, element.columns, colIndex);
             const rawResult = evaluarFormula(col.formula, rowAlias, allTableRows, rowIndex);
             let displayVal = '0.00';
             if (rawResult && rawResult !== 'ERR' && rawResult !== '⚠️') {

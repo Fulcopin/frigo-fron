@@ -136,20 +136,27 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
 };
 
 /**
- * Construye un rowAlias para fórmulas en tablas con encabezados agrupados.
+ * Construye un rowAlias para fórmulas en tablas con columnas de etiqueta duplicada.
  *
- * Cuando una tabla tiene columnas con etiquetas duplicadas (e.g., "Patrón" en cada grupo),
- * FillForm las guarda como "Patrón_col3", "Patrón_col9", etc.
- * Esta función crea un objeto donde las etiquetas PLANAS del mismo grupo apuntan a los
- * valores correctos del row, de modo que evaluarFormula pueda resolver la fórmula.
+ * FillForm guarda columnas duplicadas como "Patrón_col3", "Patrón_col7", etc.
+ * Esta función expone las etiquetas planas ("Patrón") apuntando al valor correcto
+ * dentro del mismo grupo que la columna de fórmula, de modo que evaluarFormula
+ * resuelva correctamente "Patrón - Termómetro" en cualquier tabla.
  *
- * @param {object} row          - Fila de datos (claves pueden ser "label_colN")
- * @param {Array}  templateCols - element.columns del template
- * @param {number} formulaColIndex - Índice de la columna de fórmula actual
- * @returns {object} rowAlias - row extendido con alias de etiquetas planas
+ * Funciona con:
+ *  - Tablas con grupos (usa el mismo grupo como prioridad)
+ *  - Tablas sin grupos (usa la columna más cercana por índice)
+ *  - Tablas con etiquetas únicas (no necesita alias, pasa el row directo)
  */
 export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
   if (!templateCols || !templateCols.length) return row;
+
+  // Normaliza un nombre de grupo para comparación resistente a acentos/mayúsculas
+  const normGroup = (g) =>
+    (g || '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .trim();
 
   // 1. Reconstruir columnNameMap igual que FillForm
   const seenLabels = new Map();
@@ -164,20 +171,127 @@ export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
     colNMap.set(ci, seenLabels.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl);
   });
 
-  // 2. Determinar el grupo de la columna de fórmula
+  // 2. Determinar el grupo de la columna de fórmula (normalizado)
   const formulaCol = templateCols[formulaColIndex];
-  const colGroup = formulaCol ? (formulaCol.group || null) : null;
+  const colGroupNorm = formulaCol ? normGroup(formulaCol.group) : '';
 
-  // 3. Construir rowAlias: añadir alias de etiqueta plana para columnas del mismo grupo
+  // 3. Para cada etiqueta duplicada, seleccionar la instancia más apropiada:
+  //    - misma grupo (prioridad máxima) + más cercana por índice
+  //    - distinto grupo: fallback con penalización por distancia
   const rowAlias = { ...row };
-  templateCols.forEach((col, ci) => {
-    if (colGroup && col.group !== colGroup) return; // solo mismo grupo
-    const storedKey = colNMap.get(ci) || col.label || col.name || '';
-    const plainLabel = col.label || col.header || col.name || '';
-    if (plainLabel && storedKey !== plainLabel && row[storedKey] !== undefined) {
-      rowAlias[plainLabel] = row[storedKey];
+
+  seenLabels.forEach((indices, plainLabel) => {
+    if (indices.length <= 1) return; // etiqueta única -> evaluarFormula la resuelve directo
+
+    let bestIndex = -1;
+    let bestScore = Infinity;
+
+    indices.forEach(ci => {
+      const col = templateCols[ci];
+      const ciGroupNorm = normGroup(col ? col.group : '');
+      const sameGroup = colGroupNorm !== '' && ciGroupNorm === colGroupNorm;
+      const distance = Math.abs(ci - formulaColIndex);
+      // Mismo grupo: score bajo (gana). Diferente grupo: penalización de 1000.
+      const score = (sameGroup ? 0 : 1000) + distance;
+      if (score < bestScore) {
+        bestScore = score;
+        bestIndex = ci;
+      }
+    });
+
+    if (bestIndex >= 0) {
+      const storedKey = colNMap.get(bestIndex);
+      if (storedKey && storedKey !== plainLabel && row[storedKey] !== undefined) {
+        rowAlias[plainLabel] = row[storedKey];
+      }
     }
   });
 
   return rowAlias;
+};
+
+/**
+ * Fusiona los datos de la misma fila (rowIndex) desde TODAS las tablas de bodyData.
+ * Permite que una fórmula en la Tabla B referencie columnas de la Tabla A.
+ *
+ * @param {Object} rawRow      - Fila actual de la tabla que contiene la fórmula
+ * @param {number} rowIndex    - Índice de fila
+ * @param {Array}  allBodyData - bodyData completo (array indexado por elementIndex)
+ * @returns {Object} Fila enriquecida con valores de otras tablas
+ */
+export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
+  if (!Array.isArray(allBodyData) || allBodyData.length === 0) return rawRow;
+  const merged = { ...rawRow };
+  allBodyData.forEach(elData => {
+    if (!elData) return;
+    const elRows = Array.isArray(elData.data) ? elData.data
+      : Array.isArray(elData.rows) ? elData.rows
+      : Array.isArray(elData) ? elData
+      : [];
+    if (rowIndex < elRows.length && elRows[rowIndex] && typeof elRows[rowIndex] === 'object') {
+      Object.assign(merged, elRows[rowIndex]);
+    }
+  });
+  return merged;
+};
+
+/**
+ * Pre-evalúa TODAS las columnas de fórmula de una fila en orden,
+ * permitiendo que una fórmula use el resultado de otra fórmula anterior (encadenamiento).
+ *
+ * Uso en render: const displayRow = buildComputedRow(row, element.columns, allRows, rowIndex);
+ * Luego pasa displayRow a evaluarFormula en vez de row.
+ *
+ * @param {Object} row          - Fila de datos (puede tener claves _colN)
+ * @param {Array}  templateCols - Columnas de la plantilla
+ * @param {Array}  allRows      - Todas las filas de la misma tabla (para [*] y [N])
+ * @param {number} rowIndex     - Índice actual (para [N])
+ * @returns {Object} Copia de row con los resultados de fórmulas calculados
+ */
+export const buildComputedRow = (row, templateCols, allRows = [], rowIndex = -1) => {
+  if (!templateCols || !templateCols.length) return row;
+
+  // Reconstruir colNMap igual que buildGroupedRowAlias
+  const seenLabels = new Map();
+  templateCols.forEach((col, ci) => {
+    const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+    if (!seenLabels.has(lbl)) seenLabels.set(lbl, []);
+    seenLabels.get(lbl).push(ci);
+  });
+  const colNMap = new Map();
+  templateCols.forEach((col, ci) => {
+    const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+    colNMap.set(ci, seenLabels.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl);
+  });
+
+  // Copia de trabajo: iremos escribiendo los resultados para que columnas posteriores los vean
+  let computedRow = { ...row };
+
+  // Evaluar columnas de fórmula EN ORDEN (el orden de columnas define la cadena de cálculo)
+  templateCols.forEach((col, ci) => {
+    const colType = (col.type || '').toLowerCase();
+    if ((colType === 'formula' || colType === 'calculated' || colType === 'percentage') && col.formula) {
+      const plainLabel = col.label || col.header || col.name || '';
+      const storedKey = colNMap.get(ci) || plainLabel;
+
+      // Resolver alias para grupos y etiquetas duplicadas, usando computedRow que ya tiene
+      // los resultados de las fórmulas anteriores calculados
+      const rowAlias = buildGroupedRowAlias(computedRow, templateCols, ci);
+      let result = evaluarFormula(col.formula, rowAlias, allRows, rowIndex);
+
+      if (colType === 'percentage' && result && result !== 'ERR' && result !== '⚠️') {
+        const numVal = parseFloat(result);
+        result = isNaN(numVal) ? '0.00' : (numVal * 100).toFixed(2);
+      }
+
+      if (result && result !== '⚠️' && result !== 'ERR') {
+        // Guardar bajo la etiqueta plana (para que otras fórmulas la encuentren por nombre)
+        if (plainLabel) computedRow[plainLabel] = result;
+        // También bajo la clave _colN si es distinta (para compatibilidad con el row almacenado)
+        if (storedKey && storedKey !== plainLabel) computedRow[storedKey] = result;
+      }
+    }
+  });
+
+  return computedRow;
 };

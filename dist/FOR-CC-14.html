@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FOR-CC-14 - Control de Glaseo Inicial de Productos Congelados</title>
+  <style>
+    @page { size: letter portrait; margin: 7mm; }
+    @media print { .print-btn { display: none !important; } body { background: #fff; } }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 7pt; color: #000; background: #f0f0f0; }
+
+    .print-btn {
+      position: fixed; top: 10px; right: 10px; background: #0055aa; color: #fff;
+      border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;
+      font-size: 10pt; z-index: 9999;
+    }
+
+    .page {
+      width: 750px; margin: 10px auto; background: #fff;
+      border: 1.5px solid #000;
+    }
+
+    /* === HEADER === */
+    .form-header { display: flex; border-bottom: 1px solid #000; min-height: 62px; }
+    .hdr-logo {
+      width: 168px; border-right: 1px solid #000; padding: 4px 5px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .hdr-logo img { width: 55px; height: auto; margin-bottom: 2px; }
+    .hdr-logo .co-name { font-weight: bold; font-size: 8pt; text-align: center; }
+    .hdr-logo .co-sub  { font-style: italic; font-size: 5.5pt; text-align: center; color: #333; }
+    .hdr-logo .co-addr { font-size: 5pt; text-align: center; margin-top: 2px; color: #444; line-height: 1.3; }
+    .hdr-title {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      padding: 6px 8px; text-align: center;
+    }
+    .hdr-title h1 { font-size: 10.5pt; font-weight: bold; text-transform: uppercase; line-height: 1.45; }
+    .hdr-title h1 em { display: block; font-style: italic; font-size: 9pt; }
+    .hdr-codes { width: 138px; border-left: 1px solid #000; font-size: 7pt; }
+    .code-row { padding: 3px 6px; border-bottom: 1px solid #000; }
+    .code-row:last-child { border-bottom: none; }
+
+    /* === INFO ROWS === */
+    .info-row { border-top: 1px solid #000; padding: 3px 6px; display: flex; gap: 12px; align-items: center; }
+    .f-label { font-weight: bold; white-space: nowrap; }
+    .f-line { display: inline-block; border-bottom: 1px solid #000; height: 10px; }
+
+    /* === 6-PANEL GRID: 3 columns × 2 rows === */
+    .panels-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      border-top: 1px solid #000;
+    }
+    .panel { border-right: 1px solid #000; }
+    .panel:nth-child(3n) { border-right: none; }
+    .panel-row-2 { border-top: 1px solid #000; }
+
+    .panel-hdr { border-bottom: 1px solid #000; padding: 2px 3px; }
+    .ph-row { display: flex; align-items: center; gap: 4px; margin-bottom: 1px; flex-wrap: wrap; }
+    .uline { display: inline-block; border-bottom: 1px solid #000; height: 10px; }
+
+    /* === TABLES === */
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      border: 1px solid #000; font-size: 5.5pt;
+      padding: 1px 1px; text-align: center; vertical-align: middle; line-height: 1.2;
+    }
+    th { background-color: #c0c0c0; font-weight: bold; }
+    .det-hdr th { background-color: #a0a0a0; font-size: 5.5pt; }
+    td.dr { height: 9px; }
+    .sec-hdr td { background-color: #b0b0b0; font-weight: bold; font-size: 6pt; text-align: center; }
+
+    /* === OBSERVACIONES / ACCIONES === */
+    .obs-block { border-top: 1px solid #000; padding: 2px 6px; }
+    .obs-label { font-weight: bold; font-size: 7pt; }
+    .obs-line { border-bottom: 1px solid #000; height: 13px; margin: 2px 0; }
+
+    /* === SIGNATURES === */
+    .signatures { border-top: 1px solid #000; display: flex; }
+    .sign-box { flex: 1; border-right: 1px solid #000; padding: 6px 10px; }
+    .sign-box:last-child { border-right: none; }
+    .sign-title { font-weight: bold; font-size: 7pt; text-align: center; margin-bottom: 4px; }
+    .sign-field { font-size: 6.5pt; margin-top: 3px; }
+    .sign-ln { border-bottom: 1px solid #000; height: 13px; margin: 1px 0 5px 0; }
+    .sign-role { font-weight: bold; font-size: 6.5pt; text-align: center; margin-top: 4px; }
+  </style>
+</head>
+<body>
+<button class="print-btn" onclick="window.print()">🖨️ Imprimir</button>
+
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="form-header">
+    <div class="hdr-logo">
+      <div class="co-name">Frigolab "San Mateo"</div>
+      <img src="/logo-frigolab-docs.png" alt="Frigolab">
+      <div class="co-sub">Exportadores de mariscos frescos y congelados</div>
+      <div class="co-addr">📍 Jaramijó, km 5½ vía Rocafuerte (Parque del atún)<br>📞 +593537011561&nbsp;&nbsp; ✉ frigolab@frigolab.com.ec</div>
+    </div>
+    <div class="hdr-title">
+      <h1>CONTROL DE GLASEO INICIAL DE PRODUCTOS CONGELADOS<br><em>(LIBERACIÓN DE TÚNELES)</em></h1>
+    </div>
+    <div class="hdr-codes">
+      <div class="code-row"><b>CÓDIGO:</b> FOR-CC-14</div>
+      <div class="code-row"><b>VERSIÓN:</b> 1</div>
+      <div class="code-row"><b>FECHA:</b> 10/2/2025</div>
+    </div>
+  </div>
+
+  <!-- INFO ROWS -->
+  <div class="info-row">
+    <span class="f-label">FECHA:</span><span class="f-line" style="width:180px"></span>
+  </div>
+
+  <!-- 6-PANEL GRID  (3 cols × 2 rows) -->
+  <div class="panels-grid">
+
+    <!-- ===== ROW 1, PANEL 1 ===== -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <div class="ph-row">
+          <span class="f-label">HORA:</span><span class="uline" style="width:50px"></span>
+          <span class="f-label" style="margin-left:6px">TÚNEL:</span><span class="uline" style="width:50px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">PRODUCTO/PRESENTACIÓN:</span><span class="uline" style="flex:1; min-width:30px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">LOTE:</span><span class="uline" style="width:35px"></span>
+          <span class="f-label" style="margin-left:3px">T°C PROM. PROD.:</span><span class="uline" style="width:28px"></span>
+          <span class="f-label" style="margin-left:3px">T°C AGUA:</span><span class="uline" style="width:28px"></span>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr class="det-hdr">
+            <th colspan="5" style="font-size:5.5pt">DETERMINACIÓN DEL % DE GLASEO (LIBERACIÓN TÚNEL)</th>
+          </tr>
+          <tr>
+            <th>CLASIF.</th>
+            <th>PESO lbs<br>S/GLASEO</th>
+            <th>PESO lbs<br>C/GLASEO</th>
+            <th>%</th>
+            <th>% PROM. POR<br>CLASIF.</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ===== ROW 1, PANEL 2 ===== -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <div class="ph-row">
+          <span class="f-label">HORA:</span><span class="uline" style="width:50px"></span>
+          <span class="f-label" style="margin-left:6px">TÚNEL:</span><span class="uline" style="width:50px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">PRODUCTO/PRESENTACIÓN:</span><span class="uline" style="flex:1; min-width:30px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">LOTE:</span><span class="uline" style="width:35px"></span>
+          <span class="f-label" style="margin-left:3px">T°C PROM. PROD.:</span><span class="uline" style="width:28px"></span>
+          <span class="f-label" style="margin-left:3px">T°C AGUA:</span><span class="uline" style="width:28px"></span>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr class="det-hdr">
+            <th colspan="5" style="font-size:5.5pt">DETERMINACIÓN DEL % DE GLASEO (LIBERACIÓN TÚNEL)</th>
+          </tr>
+          <tr>
+            <th>CLASIF.</th>
+            <th>PESO lbs<br>S/GLASEO</th>
+            <th>PESO lbs<br>C/GLASEO</th>
+            <th>%</th>
+            <th>% PROM. POR<br>CLASIF.</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ===== ROW 1, PANEL 3 ===== -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <div class="ph-row">
+          <span class="f-label">HORA:</span><span class="uline" style="width:50px"></span>
+          <span class="f-label" style="margin-left:6px">TÚNEL:</span><span class="uline" style="width:50px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">PRODUCTO/PRESENTACIÓN:</span><span class="uline" style="flex:1; min-width:30px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">LOTE:</span><span class="uline" style="width:35px"></span>
+          <span class="f-label" style="margin-left:3px">T°C PROM. PROD.:</span><span class="uline" style="width:28px"></span>
+          <span class="f-label" style="margin-left:3px">T°C AGUA:</span><span class="uline" style="width:28px"></span>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr class="det-hdr">
+            <th colspan="5" style="font-size:5.5pt">DETERMINACIÓN DEL % DE GLASEO (LIBERACIÓN TÚNEL)</th>
+          </tr>
+          <tr>
+            <th>CLASIF.</th>
+            <th>PESO lbs<br>S/GLASEO</th>
+            <th>PESO lbs<br>C/GLASEO</th>
+            <th>%</th>
+            <th>% PROM. POR<br>CLASIF.</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ===== ROW 2, PANEL 4 ===== -->
+    <div class="panel panel-row-2">
+      <div class="panel-hdr">
+        <div class="ph-row">
+          <span class="f-label">HORA:</span><span class="uline" style="width:50px"></span>
+          <span class="f-label" style="margin-left:6px">TÚNEL:</span><span class="uline" style="width:50px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">PRODUCTO/PRESENTACIÓN:</span><span class="uline" style="flex:1; min-width:30px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">LOTE:</span><span class="uline" style="width:35px"></span>
+          <span class="f-label" style="margin-left:3px">T°C PROM. PROD.:</span><span class="uline" style="width:28px"></span>
+          <span class="f-label" style="margin-left:3px">T°C AGUA:</span><span class="uline" style="width:28px"></span>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr class="det-hdr">
+            <th colspan="5" style="font-size:5.5pt">DETERMINACIÓN DEL % DE GLASEO (LIBERACIÓN TÚNEL)</th>
+          </tr>
+          <tr>
+            <th>CLASIF.</th>
+            <th>PESO lbs<br>S/GLASEO</th>
+            <th>PESO lbs<br>C/GLASEO</th>
+            <th>%</th>
+            <th>% PROM. POR<br>CLASIF.</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ===== ROW 2, PANEL 5 ===== -->
+    <div class="panel panel-row-2">
+      <div class="panel-hdr">
+        <div class="ph-row">
+          <span class="f-label">HORA:</span><span class="uline" style="width:50px"></span>
+          <span class="f-label" style="margin-left:6px">TÚNEL:</span><span class="uline" style="width:50px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">PRODUCTO/PRESENTACIÓN:</span><span class="uline" style="flex:1; min-width:30px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">LOTE:</span><span class="uline" style="width:35px"></span>
+          <span class="f-label" style="margin-left:3px">T°C PROM. PROD.:</span><span class="uline" style="width:28px"></span>
+          <span class="f-label" style="margin-left:3px">T°C AGUA:</span><span class="uline" style="width:28px"></span>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr class="det-hdr">
+            <th colspan="5" style="font-size:5.5pt">DETERMINACIÓN DEL % DE GLASEO (LIBERACIÓN TÚNEL)</th>
+          </tr>
+          <tr>
+            <th>CLASIF.</th>
+            <th>PESO lbs<br>S/GLASEO</th>
+            <th>PESO lbs<br>C/GLASEO</th>
+            <th>%</th>
+            <th>% PROM. POR<br>CLASIF.</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ===== ROW 2, PANEL 6 ===== -->
+    <div class="panel panel-row-2">
+      <div class="panel-hdr">
+        <div class="ph-row">
+          <span class="f-label">HORA:</span><span class="uline" style="width:50px"></span>
+          <span class="f-label" style="margin-left:6px">TÚNEL:</span><span class="uline" style="width:50px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">PRODUCTO/PRESENTACIÓN:</span><span class="uline" style="flex:1; min-width:30px"></span>
+        </div>
+        <div class="ph-row">
+          <span class="f-label">LOTE:</span><span class="uline" style="width:35px"></span>
+          <span class="f-label" style="margin-left:3px">T°C PROM. PROD.:</span><span class="uline" style="width:28px"></span>
+          <span class="f-label" style="margin-left:3px">T°C AGUA:</span><span class="uline" style="width:28px"></span>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr class="det-hdr">
+            <th colspan="5" style="font-size:5.5pt">DETERMINACIÓN DEL % DE GLASEO (LIBERACIÓN TÚNEL)</th>
+          </tr>
+          <tr>
+            <th>CLASIF.</th>
+            <th>PESO lbs<br>S/GLASEO</th>
+            <th>PESO lbs<br>C/GLASEO</th>
+            <th>%</th>
+            <th>% PROM. POR<br>CLASIF.</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td class="dr"></td><td></td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /panels-grid -->
+
+  <!-- OBSERVACIONES -->
+  <div class="obs-block">
+    <span class="obs-label">OBSERVACIONES:</span>
+    <div class="obs-line"></div>
+    <div class="obs-line"></div>
+  </div>
+
+  <!-- ACCIONES CORRECTIVAS -->
+  <div class="obs-block">
+    <span class="obs-label">ACCIONES CORRECTIVAS:</span>
+    <div class="obs-line"></div>
+    <div class="obs-line"></div>
+  </div>
+
+  <!-- SIGNATURES -->
+  <div class="signatures">
+    <div class="sign-box">
+      <div class="sign-title">Elaborado por:</div>
+      <div class="sign-field">Nombre:</div>
+      <div class="sign-ln"></div>
+      <div class="sign-field">Firma:</div>
+      <div class="sign-ln"></div>
+      <div class="sign-role">Analista de Aseg. De Calidad</div>
+    </div>
+    <div class="sign-box">
+      <div class="sign-title">Revisión</div>
+      <div class="sign-field">Nombre:</div>
+      <div class="sign-ln"></div>
+      <div class="sign-field">Firma:</div>
+      <div class="sign-ln"></div>
+      <div class="sign-role">Aseguramiento de Calidad</div>
+    </div>
+  </div>
+
+</div><!-- /page -->
+</body>
+</html>

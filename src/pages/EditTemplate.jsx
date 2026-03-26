@@ -832,8 +832,7 @@ function EditTemplate() {
                             <p style={{ margin: '0 0 6px 0' }}>📊 <strong>Números fijos:</strong> <code>Peso * 2.5</code></p>
                             <p style={{ margin: '0 0 6px 0' }}>🔢 <strong>Paréntesis:</strong> <code>(Precio * Cantidad) - Descuento</code></p>
                           </div>
-                          {(element.fields || []).filter(f => f.label && f.type !== 'formula').length > 0 && (
-                            <div style={{ 
+                          <div style={{ 
                               marginTop: '12px',
                               padding: '10px',
                               background: 'white',
@@ -842,29 +841,43 @@ function EditTemplate() {
                             }}>
                               <strong style={{ fontSize: '12px', color: '#854d0e' }}>🏷️ Campos disponibles para la fórmula:</strong>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                                {(element.fields || []).filter(f => f.label && f.type !== 'formula').map((f, fi) => (
+                                {(element.fields || []).filter((f, fi) => fi !== fieldIndex).map((f, fi) => {
+                                  const nombre = f.label || `Campo ${fi + 1}`;
+                                  return (
                                   <span key={fi} style={{
-                                    background: '#fef9c3',
-                                    border: '1px solid #eab308',
+                                    background: f.type === 'formula' || f.type === 'calculated' ? '#ecfdf5' : '#fef9c3',
+                                    border: `1px solid ${f.type === 'formula' || f.type === 'calculated' ? '#6ee7b7' : '#eab308'}`,
                                     borderRadius: '6px',
-                                    padding: '4px 10px',
-                                    fontSize: '13px',
+                                    padding: '3px 8px',
+                                    fontSize: '11px',
                                     fontFamily: 'monospace',
-                                    color: '#854d0e',
-                                    cursor: 'pointer'
+                                    color: f.type === 'formula' || f.type === 'calculated' ? '#065f46' : '#854d0e',
+                                    cursor: f.label ? 'pointer' : 'default',
+                                    opacity: f.label ? 1 : 0.5,
+                                    maxWidth: '160px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-block',
+                                    verticalAlign: 'middle',
+                                    lineHeight: '1.4'
                                   }}
                                   onClick={() => {
+                                    if (!f.label) return;
                                     const current = field.formula || '';
                                     updateFieldInSection(elementIndex, fieldIndex, "formula", current + (current ? ' + ' : '') + f.label);
                                   }}
-                                  title="Clic para agregar a la fórmula"
+                                  title={f.label ? (f.type === 'formula' || f.type === 'calculated' ? 'Campo de fórmula — clic para agregar' : 'Clic para agregar a la fórmula') : 'Sin nombre aún'}
                                   >
-                                    {f.label}
+                                    {f.type === 'formula' || f.type === 'calculated' ? '🧮 ' : ''}{nombre}
                                   </span>
-                                ))}
+                                  );
+                                })}
+                                {(element.fields || []).filter((f, fi) => fi !== fieldIndex).length === 0 && (
+                                  <span style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>Agrega más campos para usarlos aquí</span>
+                                )}
                               </div>
                             </div>
-                          )}
                         </div>
                       </div>
                     )}
@@ -1255,8 +1268,7 @@ function EditTemplate() {
                             <p style={{ margin: '0 0 6px 0' }}>🔢 <strong>Toda la columna:</strong> <code>Columna[*]</code>. Ej: <code>Peso Neto[*]</code> (suma todas las filas)</p>
                             <p style={{ margin: '0 0 6px 0' }}>📁 <strong>Paréntesis y números:</strong> <code>(Precio * 2.5) - Descuento</code></p>
                           </div>
-                          {(element.columns || []).filter(c => c.label && c.type !== 'formula').length > 0 && (
-                            <div style={{ 
+                          <div style={{ 
                               marginTop: '12px',
                               padding: '10px',
                               background: 'white',
@@ -1265,29 +1277,48 @@ function EditTemplate() {
                             }}>
                               <strong style={{ fontSize: '12px', color: '#854d0e' }}>🏷️ Columnas disponibles para usar en la fórmula:</strong>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                                {(element.columns || []).filter(c => c.label && c.type !== 'formula').map((c, ci) => (
-                                  <span key={ci} style={{
-                                    background: '#fef9c3',
-                                    border: '1px solid #eab308',
-                                    borderRadius: '6px',
-                                    padding: '4px 10px',
-                                    fontSize: '13px',
-                                    fontFamily: 'monospace',
-                                    color: '#854d0e',
-                                    cursor: 'pointer'
-                                  }}
-                                  onClick={() => {
-                                    const current = column.formula || '';
-                                    updateColumnInTable(elementIndex, colIndex, "formula", current + (current ? ' + ' : '') + c.label);
-                                  }}
-                                  title="Clic para agregar a la fórmula"
-                                  >
-                                    {c.label}
-                                  </span>
-                                ))}
+                                {(() => {
+                                  const allCols = template.bodyElements.flatMap((el, ei) =>
+                                    (el.columns || []).map((c, ci) => ({ c, ci, el, ei }))
+                                  ).filter(({ ei, ci }) => !(ei === elementIndex && ci === colIndex));
+                                  if (allCols.length === 0) return (
+                                    <span style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>Agrega columnas a cualquier tabla para usarlas aquí</span>
+                                  );
+                                  return allCols.map(({ c, ci, el, ei }) => {
+                                    const nombre = c.label || `Columna ${ci + 1}`;
+                                    return (
+                                      <span key={`${ei}-${ci}`} style={{
+                                        background: c.type === 'formula' || c.type === 'calculated' ? '#ecfdf5' : '#fef9c3',
+                                        border: `1px solid ${c.type === 'formula' || c.type === 'calculated' ? '#6ee7b7' : '#eab308'}`,
+                                        borderRadius: '6px',
+                                        padding: '3px 8px',
+                                        fontSize: '11px',
+                                        fontFamily: 'monospace',
+                                        color: c.type === 'formula' || c.type === 'calculated' ? '#065f46' : '#854d0e',
+                                        cursor: c.label ? 'pointer' : 'default',
+                                        opacity: c.label ? 1 : 0.5,
+                                        maxWidth: '160px',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        display: 'inline-block',
+                                        verticalAlign: 'middle',
+                                        lineHeight: '1.4'
+                                      }}
+                                      onClick={() => {
+                                        if (!c.label) return;
+                                        const current = column.formula || '';
+                                        updateColumnInTable(elementIndex, colIndex, "formula", current + (current ? ' + ' : '') + c.label);
+                                      }}
+                                      title={c.label ? (c.type === 'formula' || c.type === 'calculated' ? 'Columna de fórmula — clic para agregar' : 'Clic para agregar a la fórmula') : 'Sin nombre aún — ponle un nombre para usarla'}
+                                      >
+                                        {c.type === 'formula' || c.type === 'calculated' ? '🧮 ' : ''}{nombre}
+                                      </span>
+                                    );
+                                  });
+                                })()}
                               </div>
                             </div>
-                          )}
                         </div>
                       </div>
                     )}
