@@ -1245,7 +1245,10 @@ export default function SignatureManagement() {
                         {Object.entries(contractFormData.headerData).map(([key, value]) => (
                           <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
                             <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
-                            <span style={{ color: '#111827' }}>{value || '-'}</span>
+                            {value && typeof value === 'string' && (value.startsWith('https://res.cloudinary.com') || value.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(value))
+                              ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} />
+                              : <span style={{ color: '#111827' }}>{value || '-'}</span>
+                            }
                           </div>
                         ))}
                       </div>
@@ -1274,7 +1277,10 @@ export default function SignatureManagement() {
                             {Object.entries(sectionData).map(([key, value]) => (
                               <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
                                 <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
-                                <span style={{ color: '#111827' }}>{value || '-'}</span>
+                                {value && typeof value === 'string' && (value.startsWith('https://res.cloudinary.com') || value.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(value))
+                                  ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} />
+                                  : <span style={{ color: '#111827' }}>{value || '-'}</span>
+                                }
                               </div>
                             ))}
                           </div>
@@ -1340,9 +1346,13 @@ export default function SignatureManagement() {
                                         if (foundKey) cellValue = row[foundKey];
                                       }
 
+                                      const isImageValue = cellValue && typeof cellValue === 'string' && (cellValue.startsWith('https://res.cloudinary.com') || cellValue.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(cellValue));
                                       return (
                                         <td key={colIndex} style={{ padding: '6px', border: '1px solid #e5e7eb', textAlign: 'center' }}>
-                                          {cellValue !== undefined && cellValue !== null && cellValue !== '' ? String(cellValue) : '-'}
+                                          {isImageValue
+                                            ? <img src={cellValue} alt="img" style={{ maxWidth: '80px', maxHeight: '80px', objectFit: 'contain', borderRadius: '4px' }} />
+                                            : (cellValue !== undefined && cellValue !== null && cellValue !== '' ? String(cellValue) : '-')
+                                          }
                                         </td>
                                       );
                                     })}

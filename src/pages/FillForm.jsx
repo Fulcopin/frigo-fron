@@ -809,6 +809,9 @@ useEffect(() => {
       if (element.type === 'observaciones') {
         return { id: element.id, type: 'observaciones', data: { texto: "" } };
       }
+      if (element.type === 'nota_estatica') {
+        return { id: element.id, type: 'nota_estatica', data: {} };
+      }
       if (element.type === 'table') {
         // Si tiene filas predefinidas, usarlas como base
         if (element.predefinedRows && element.predefinedRows.length > 0) {
@@ -3876,8 +3879,49 @@ useEffect(() => {
     const shouldBeInteger = labelLower.includes('cajas') || labelLower.includes('unidades') || labelLower.includes('piezas') || labelLower.includes('cantidad') || labelLower.includes('número');
     
     switch (field.type) {
-        // ✅ Campo de imagen — sube a Cloudinary y guarda URL
+        // ✅ Nota estática — muestra el texto definido en la plantilla (no editable por el usuario)
+        case "nota":
+          return (
+            <div style={{
+              background: '#faf5ff',
+              border: '1px solid #c4b5fd',
+              borderLeft: '4px solid #7c3aed',
+              borderRadius: '6px',
+              padding: '12px 16px',
+              fontSize: '0.9rem',
+              color: '#3b1d72',
+              lineHeight: '1.7',
+            }}>
+              {(field.staticContent || '').split('\n').map((line, li, arr) => {
+                const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
+                return (
+                  <span key={li}>
+                    {parts.map((p, pi) =>
+                      p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
+                      p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> :
+                      <span key={pi}>{p}</span>
+                    )}
+                    {li < arr.length - 1 && <br />}
+                  </span>
+                );
+              })}
+            </div>
+          );
+
+        // ✅ Campo de imagen — si tiene imagen estática la muestra fija, si no sube a Cloudinary
         case "image":
+          // Imagen estática definida en la plantilla: solo mostrar
+          if (field.staticImage) {
+            return (
+              <div>
+                <img
+                  src={field.staticImage}
+                  alt={field.label || 'Imagen'}
+                  style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '6px', border: '1px solid #e5e7eb', display: 'block' }}
+                />
+              </div>
+            );
+          }
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <input 
@@ -6902,6 +6946,53 @@ useEffect(() => {
           const currentElementData = bodyData[elementIndex];
           if (!currentElementData) return null;
 
+          if (element.type === 'nota_estatica') {
+            const renderNotaText = (text) => {
+              if (!text) return null;
+              // Split by lines first, then parse inline bold/underline per line
+              return text.split('\n').map((line, lineIdx, arr) => {
+                const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
+                const rendered = parts.map((part, i) => {
+                  if (part.startsWith('**') && part.endsWith('**')) {
+                    return <strong key={i}>{part.slice(2, -2)}</strong>;
+                  }
+                  if (part.startsWith('__') && part.endsWith('__')) {
+                    return <u key={i}>{part.slice(2, -2)}</u>;
+                  }
+                  return <span key={i}>{part}</span>;
+                });
+                return (
+                  <span key={lineIdx}>
+                    {rendered}
+                    {lineIdx < arr.length - 1 && <br />}
+                  </span>
+                );
+              });
+            };
+            return (
+              <div key={element.id || elementIndex} style={{
+                margin: '12px 0',
+                border: '1.5px solid #92400e',
+                borderLeft: '5px solid #d97706',
+                borderRadius: '4px',
+                background: '#fffbeb',
+                padding: '12px 16px',
+                fontSize: '0.9rem',
+                color: '#1c1917',
+                lineHeight: '1.6'
+              }}>
+                {element.imagen && (
+                  <img
+                    src={element.imagen}
+                    alt="Imagen de la nota"
+                    style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', marginBottom: '10px', display: 'block' }}
+                  />
+                )}
+                {renderNotaText(element.contenido || '')}
+              </div>
+            );
+          }
+
           if (element.type === 'observaciones') {
             return (
               <AccordionSection
@@ -6987,16 +7078,16 @@ useEffect(() => {
                         </div>
                         
                         {/* 📋 TABLA PRINCIPAL - ESTILO EXCEL */}
-                        <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', marginBottom: '1rem' }}>
+                        <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh', marginBottom: '1rem', position: 'relative' }}>
                           <table className="data-table excel-table" style={{
                             width: '100%',
                             borderCollapse: 'collapse',
                             backgroundColor: 'white',
                             border: '1px solid #8ea9c1'
                           }}>
-                            <thead>
+                            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                               <tr style={{ background: 'linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%)', borderBottom: '1px solid #8ea9c1' }}>
-                                <th style={{ padding: '4px 6px', textAlign: 'center', width: '30px', fontWeight: 600, color: '#374151', fontSize: '0.75rem', borderRight: '1px solid #b0c4d8' }}>
+                                <th style={{ padding: '4px 6px', textAlign: 'center', width: '30px', fontWeight: 600, color: '#374151', fontSize: '0.75rem', borderRight: '1px solid #b0c4d8', background: 'linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%)', position: 'sticky', top: 0 }}>
                                   #
                                 </th>
                                 {groupedColumns.map((group, groupIndex) => (
@@ -7012,7 +7103,8 @@ useEffect(() => {
                                         fontSize: '0.72rem',
                                         minWidth: '85px',
                                         whiteSpace: 'normal',
-                                        wordBreak: 'break-word'
+                                        wordBreak: 'break-word',
+                                        background: 'linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%)'
                                       }}
                                     >
                                       {group.columns[0].label || group.columns[0].name}
@@ -7057,7 +7149,7 @@ useEffect(() => {
                                     </th>
                                   )
                                 ))}
-                                {field.allowDeleteRows && <th style={{ padding: '4px 6px', textAlign: 'center', width: '36px', fontWeight: 600, color: '#374151', fontSize: '0.75rem', borderLeft: '1px solid #b0c4d8' }}>Acción</th>}
+                                {field.allowDeleteRows && <th style={{ padding: '4px 6px', textAlign: 'center', width: '36px', fontWeight: 600, color: '#374151', fontSize: '0.75rem', borderLeft: '1px solid #b0c4d8', background: 'linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%)' }}>Acción</th>}
                               </tr>
                             </thead>
                             <tbody>
@@ -7076,6 +7168,7 @@ useEffect(() => {
                                         const cellValue = row?.[cellKey] || '';
                                         const isFormulaCol = col.type === 'formula' || col.type === 'calculated';
                                         const isPercentageCol = col.type === 'percentage';
+                                        const isNotaCol = col.type === 'nota';
                                         const isEditable = col.editable !== false && !isFormulaCol && !isPercentageCol;
 
                                         // Calcular valor de fórmula/porcentaje en tiempo real
@@ -7109,6 +7202,39 @@ useEffect(() => {
                                                 {displayValue}{isPercentageCol ? '%' : ''}
                                               </span>
                                             ) : isEditable ? (
+                                              isNotaCol ? (
+                                                <textarea
+                                                  value={cellValue}
+                                                  rows={2}
+                                                  onChange={(e) => {
+                                                    const newBodyData = [...bodyData];
+                                                    if (!Array.isArray(newBodyData[elementIndex].data[field.label])) {
+                                                      newBodyData[elementIndex].data[field.label] = [];
+                                                    }
+                                                    const updatedRow = {
+                                                      ...newBodyData[elementIndex].data[field.label][rowIndex],
+                                                      [cellKey]: e.target.value
+                                                    };
+                                                    newBodyData[elementIndex].data[field.label][rowIndex] = updatedRow;
+                                                    setBodyData(newBodyData);
+                                                    setHasUnsavedChanges(true);
+                                                  }}
+                                                  placeholder={col.label || col.name}
+                                                  style={{
+                                                    width: '100%',
+                                                    minWidth: '140px',
+                                                    padding: '4px 6px',
+                                                    border: '1px solid #c5d3e0',
+                                                    borderRadius: '3px',
+                                                    fontSize: '0.78rem',
+                                                    fontFamily: 'inherit',
+                                                    boxSizing: 'border-box',
+                                                    background: '#fffbeb',
+                                                    lineHeight: '1.4',
+                                                    resize: 'vertical'
+                                                  }}
+                                                />
+                                              ) : (
                                               <input
                                                 type={col.type === 'date' ? 'date' : col.type === 'number' ? 'number' : 'text'}
                                                 value={cellValue}
@@ -7157,6 +7283,7 @@ useEffect(() => {
                                                   lineHeight: '1.3'
                                                 }}
                                               />
+                                              )
                                             ) : (
                                               <span style={{ color: '#374151' }}>{cellValue}</span>
                                             )}
@@ -7391,16 +7518,16 @@ useEffect(() => {
                   </div>
                 )}
 
-                <div className="table-wrapper" style={{ overflowX: 'auto', maxWidth: '100%' }}>
+                <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh', maxWidth: '100%', position: 'relative' }}>
                   <table className="data-table complex-header">
-                    <thead>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                       <tr>
                         {groupingMode[elementIndex] && <th rowSpan="2" style={{ width: '40px', background: '#ede9fe' }}>☑️</th>}
-                        <th rowSpan="2">#</th>
+                        <th rowSpan="2" style={{ background: '#4b5563', color: 'white' }}>#</th>
                         {groupedColumns.map((group, index) => (
                           <th key={index} colSpan={group.columns.length}>{group.groupName}</th>
                         ))}
-                        <th rowSpan="2">Acciones</th>
+                        <th rowSpan="2" style={{ background: '#4b5563', color: 'white' }}>Acciones</th>
                       </tr>
                       <tr>
                         {(element.columns || []).map((col, colIndex) => {
@@ -7559,7 +7686,8 @@ useEffect(() => {
           }
 
           // 3. 🔥 CÁLCULO INTELIGENTE (SOLO 15 TINAS + COLUMNA TOTAL)
-          const esColumnaTotal = col.type === 'calculated' || colLabel.includes('TOTAL');
+          // Solo aplica a columnas sin fórmula propia (auto-suma de PESO) o cuyo label incluye TOTAL
+          const esColumnaTotal = colLabel.includes('TOTAL') || (col.type === 'calculated' && !col.formula);
 
           if (esFormulario15Tinas && esColumnaTotal) {
             
@@ -7797,9 +7925,9 @@ useEffect(() => {
                 isExpanded={expandedSections[`body_${elementIndex}`] !== false}
                 onToggle={() => toggleBodySection(elementIndex)}
               >
-                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: `${totalTinas * 200}px` }}>
-                    <thead>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                       {/* Group headers row */}
                       <tr>
                         {groups.map((g, gIdx) => (

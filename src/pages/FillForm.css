@@ -656,6 +656,29 @@ body {
   touch-action: pan-x pan-y pinch-zoom;
 }
 
+/* Tabla estilo Excel con encabezados pegajosos (sticky headers) */
+.excel-table-wrapper {
+  overflow-y: auto !important;
+  max-height: 60vh;
+}
+
+.excel-table-wrapper thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%) !important;
+  box-shadow: 0 2px 3px rgba(0,0,0,0.15);
+}
+
+/* Para tablas tipo data-table (azul) dentro del wrapper con scroll */
+.excel-table-wrapper .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #035b8d !important;
+  box-shadow: 0 3px 4px rgba(3, 91, 141, 0.4);
+}
+
 /* 2. La tabla se ajusta a su contenido — columnas basadas en su contenido */
 .data-table {
   width: auto;

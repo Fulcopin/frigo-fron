@@ -446,7 +446,28 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
   for (let index = 0; index < bodyElements.length; index++) {
     const section = bodyElements[index];
     console.log(`📋 Excel - Procesando seccion ${index + 1}:`, section.title);
-    
+
+    // ── NOTA ESTÁTICA ──────────────────────────────────────────────
+    if (section.type === 'nota_estatica') {
+      const texto = section.contenido || '';
+      const lines = texto.split('\n').filter(Boolean);
+      for (const line of lines) {
+        const clean = line.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1');
+        const isBold = /\*\*/.test(line);
+        safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
+        const noteCell = worksheet.getCell(currentRow, 1);
+        noteCell.value = `  ${clean}`;
+        noteCell.font = { name: 'Calibri', size: 10, bold: isBold, color: { argb: '1C1917' } };
+        noteCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBEB' } };
+        noteCell.border = { left: { style: 'medium', color: { argb: 'D97706' } } };
+        noteCell.alignment = { wrapText: true, vertical: 'middle' };
+        worksheet.getRow(currentRow).height = 18;
+        currentRow++;
+      }
+      currentRow++; // blank gap after note
+      continue;
+    }
+
     // Título de la sección
     const sectionTitle = section.title || section.sectionTitle || section.label || 'Seccion';
     safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);

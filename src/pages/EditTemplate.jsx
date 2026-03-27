@@ -58,6 +58,7 @@ function EditTemplate() {
     { value: "radio", label: "🔘 Casillas (Radio - Máx 3 opciones)" },
     { value: "checkbox", label: "☑️ Casillas Múltiples (Checkbox)" },
     { value: "textarea", label: "Área de texto" },
+    { value: "nota", label: "📝 Nota / Observación" },
     { value: "image", label: "📷 Imagen (Foto/Captura)" },
     { value: "formula", label: "🧮 Fórmula (Cálculo automático)" },
   ];
@@ -173,12 +174,14 @@ function EditTemplate() {
     let newElement = {
       id: Date.now(),
       type: type,
-      title: type === 'section' ? 'Nueva Sección de Campos' : type === 'observaciones' ? 'Observaciones' : type === 'tinas' ? 'Control de Tinas' : 'Nueva Tabla de Datos',
+      title: type === 'section' ? 'Nueva Sección de Campos' : type === 'observaciones' ? 'Observaciones' : type === 'tinas' ? 'Control de Tinas' : type === 'nota_estatica' ? 'NOTA' : 'Nueva Tabla de Datos',
     };
     if (type === 'section') {
       newElement.fields = [];
     } else if (type === 'observaciones') {
       // no extra data
+    } else if (type === 'nota_estatica') {
+      newElement.contenido = '';
     } else if (type === 'tinas') {
       newElement.config = {
         groups: [{ name: 'GRUPO 1', subtitle: '', count: 2, labels: ['TINA 1', 'TINA 2'] }],
@@ -596,52 +599,116 @@ function EditTemplate() {
         </div>
         {template.headerFields.map((field, index) => (
           <div key={index} className="field-item">
+
+            {/* ═══ NOTA EN ENCABEZADO ═══ */}
+            {field.type === "nota" ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '2', minWidth: '160px' }}>
+                    <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Etiqueta</label>
+                    <input type="text" value={field.label} onChange={(e) => updateHeaderField(index, "label", e.target.value)} placeholder="Ej: Aviso" style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: '1.5', minWidth: '140px' }}>
+                    <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Tipo</label>
+                    <select value={field.type} onChange={(e) => updateHeaderField(index, "type", e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem' }}>
+                      {fieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginTop: '20px' }}>
+                    <button onClick={() => moveHeaderField(index, -1)} className="btn-move-up" disabled={index === 0} title="Mover arriba">⬆️</button>
+                    <button onClick={() => moveHeaderField(index, 1)} className="btn-move-down" disabled={index === template.headerFields.length - 1} title="Mover abajo">⬇️</button>
+                    <button onClick={() => removeHeaderField(index)} className="btn-remove" title="Eliminar campo">🗑️</button>
+                  </div>
+                </div>
+                <div style={{ background: '#faf5ff', border: '2px solid #7c3aed', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <p style={{ margin: 0, fontWeight: 700, color: '#5b21b6', fontSize: '0.88rem' }}>📝 Escribe el texto de advertencia (aparece fijo en el formulario)</p>
+                  <div style={{ background: '#ede9fe', borderRadius: '6px', padding: '7px 10px', fontSize: '0.76rem', color: '#5b21b6' }}>
+                    💡 Usa <strong>**texto**</strong> para <strong>negrilla</strong> y <code>__texto__</code> para <u>subrayado</u>.
+                  </div>
+                  <textarea
+                    value={field.staticContent || ''}
+                    onChange={(e) => updateHeaderField(index, 'staticContent', e.target.value)}
+                    placeholder="Escribe la advertencia o nota que se verá al llenar el formulario..."
+                    rows={3}
+                    style={{ width: '100%', padding: '10px', fontSize: '0.88rem', border: '1.5px solid #a78bfa', borderRadius: '6px', background: 'white', fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical', lineHeight: '1.6' }}
+                  />
+                  {field.staticContent && (
+                    <div style={{ borderLeft: '4px solid #7c3aed', background: '#ede9fe', borderRadius: '4px', padding: '10px 14px', fontSize: '0.88rem', lineHeight: '1.7' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#5b21b6', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Vista previa:</span>
+                      {field.staticContent.split('\n').map((line, li, arr) => (
+                        <span key={li}>{line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g).map((p, pi) =>
+                          p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
+                          p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> : <span key={pi}>{p}</span>
+                        )}{li < arr.length - 1 && <br />}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            ) : field.type === "image" ? (
+            /* ═══ IMAGEN EN ENCABEZADO ═══ */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '2', minWidth: '160px' }}>
+                    <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Etiqueta</label>
+                    <input type="text" value={field.label} onChange={(e) => updateHeaderField(index, "label", e.target.value)} placeholder="Ej: Foto del producto" style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: '1.5', minWidth: '140px' }}>
+                    <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Tipo</label>
+                    <select value={field.type} onChange={(e) => updateHeaderField(index, "type", e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem' }}>
+                      {fieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '20px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={field.required || false} onChange={(e) => updateHeaderField(index, "required", e.target.checked)} />Requerido
+                    </label>
+                    <button onClick={() => moveHeaderField(index, -1)} className="btn-move-up" disabled={index === 0} title="Mover arriba">⬆️</button>
+                    <button onClick={() => moveHeaderField(index, 1)} className="btn-move-down" disabled={index === template.headerFields.length - 1} title="Mover abajo">⬇️</button>
+                    <button onClick={() => removeHeaderField(index)} className="btn-remove" title="Eliminar campo">🗑️</button>
+                  </div>
+                </div>
+                <div style={{ background: '#e0f2fe', border: '2px solid #0ea5e9', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <p style={{ margin: 0, fontWeight: 700, color: '#0369a1', fontSize: '0.88rem' }}>📷 Imagen estática (opcional)</p>
+                  <p style={{ margin: 0, fontSize: '0.76rem', color: '#0369a1' }}>Sube una imagen fija que se mostrará en el formulario. Si no subes ninguna, el usuario podrá subir la suya.</p>
+                  <input type="file" accept="image/*" onChange={(e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => updateHeaderField(index, 'staticImage', ev.target.result); reader.readAsDataURL(file); }} style={{ fontSize: '0.85rem' }} />
+                  {field.staticImage && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <img src={field.staticImage} alt="preview" style={{ maxHeight: '90px', borderRadius: '6px', border: '2px solid #0ea5e9' }} />
+                      <button type="button" onClick={() => updateHeaderField(index, 'staticImage', '')} style={{ fontSize: '0.8rem', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>🗑️ Quitar</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            ) : (
+            /* ═══ LAYOUT NORMAL ═══ */
             <div className="field-grid">
               <div className="form-group"><label>Etiqueta</label><input type="text" value={field.label} onChange={(e) => updateHeaderField(index, "label", e.target.value)} placeholder="Ej: Fecha, Lote, Turno"/></div>
               <div className="form-group"><label>Tipo</label><select value={field.type} onChange={(e) => updateHeaderField(index, "type", e.target.value)}>{fieldTypes.map((type) => (<option key={type.value} value={type.value}>{type.label}</option>))}</select></div>
-              
-              {/* API Lotes */}
               <div className="form-group">
                 <label>🔄 API Lotes (Autocompletar desde Movimientos)</label>
-                <select value={field.apiMap || ""} onChange={(e) => {
-                  updateHeaderField(index, "apiMap", e.target.value);
-                  if (e.target.value) updateHeaderField(index, "apiEndpoint", "");
-                }}>
-                  <optgroup label="📋 Datos de Cabecera (Lote Principal)">
-                    {MAPPABLE_API_FIELDS.header.map(apiField => (
-                      <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="📦 Datos de Detalles (Items del Lote)">
-                    {MAPPABLE_API_FIELDS.details.map(apiField => (
-                      <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
-                    ))}
-                  </optgroup>
+                <select value={field.apiMap || ""} onChange={(e) => { updateHeaderField(index, "apiMap", e.target.value); if (e.target.value) updateHeaderField(index, "apiEndpoint", ""); }}>
+                  <optgroup label="📋 Datos de Cabecera (Lote Principal)">{MAPPABLE_API_FIELDS.header.map(apiField => (<option key={apiField.value} value={apiField.value}>{apiField.label}</option>))}</optgroup>
+                  <optgroup label="📦 Datos de Detalles (Items del Lote)">{MAPPABLE_API_FIELDS.details.map(apiField => (<option key={apiField.value} value={apiField.value}>{apiField.label}</option>))}</optgroup>
                 </select>
               </div>
-
-              {/* API Catálogos */}
               <div className="form-group">
                 <label>📚 API Catálogos (Opciones desde API Externa)</label>
-                <select value={field.apiEndpoint || ""} onChange={(e) => {
-                  updateHeaderField(index, "apiEndpoint", e.target.value);
-                  if (e.target.value) updateHeaderField(index, "apiMap", "");
-                }}>
-                  {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
-                    <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
-                  ))}
+                <select value={field.apiEndpoint || ""} onChange={(e) => { updateHeaderField(index, "apiEndpoint", e.target.value); if (e.target.value) updateHeaderField(index, "apiMap", ""); }}>
+                  {MAPPABLE_API_FIELDS.catalogs.map(apiField => (<option key={apiField.value} value={apiField.value}>{apiField.label}</option>))}
                 </select>
               </div>
-
               <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required || false} onChange={(e) => updateHeaderField(index, "required", e.target.checked)}/>Requerido</label></div>
-              
               <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                 <button onClick={() => moveHeaderField(index, -1)} className="btn-move-up" disabled={index === 0} title="Mover arriba">⬆️</button>
                 <button onClick={() => moveHeaderField(index, 1)} className="btn-move-down" disabled={index === template.headerFields.length - 1} title="Mover abajo">⬇️</button>
                 <button onClick={() => removeHeaderField(index)} className="btn-remove" title="Eliminar campo">🗑️</button>
               </div>
             </div>
-            
+            )}
+
             {/* Opciones para select/radio/checkbox */}
             {renderOptionsEditor(field, (prop, val) => updateHeaderField(index, prop, val), `hf-opts-${index}`)}
           </div>
@@ -657,6 +724,7 @@ function EditTemplate() {
             <button onClick={() => addBodyElement('section')} className="btn-secondary">+ Añadir Sección de Campos</button>
             <button onClick={() => addBodyElement('table')} className="btn-secondary">+ Añadir Tabla de Datos</button>
             <button onClick={() => addBodyElement('observaciones')} className="btn-secondary" style={{ background: '#6366f1' }}>📝 Añadir Observaciones</button>
+            <button onClick={() => addBodyElement('nota_estatica')} className="btn-secondary" style={{ background: '#d97706' }}>📌 Añadir Nota/Aviso</button>
             <button onClick={() => addBodyElement('tinas')} className="btn-secondary" style={{ background: '#0891b2' }}>🧊 Añadir Control de Tinas</button>
           </div>
         </div>
@@ -689,12 +757,167 @@ function EditTemplate() {
               </div>
             )}
 
+            {/* NOTA ESTÁTICA */}
+            {element.type === 'nota_estatica' && (
+              <div className="body-element-content" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Hint */}
+                <div style={{ background: '#fef3c7', border: '2px solid #d97706', borderRadius: '6px', padding: '10px 14px', fontSize: '0.85rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '1.2rem' }}>📌</span>
+                  <span>Escribe o pega el texto. Usa <strong>**texto**</strong> para <strong>negrilla</strong> y <code>__texto__</code> para <u>subrayado</u>. El texto respeta saltos de línea.</span>
+                </div>
+                {/* Textarea de contenido */}
+                <textarea
+                  value={element.contenido || ''}
+                  onChange={(e) => updateBodyElement(elementIndex, 'contenido', e.target.value)}
+                  placeholder={'Escribe o pega el texto de la nota.\nEjemplo:\n**NOTA:** Cuando El inspector de Aseg. de Calidad evidencie cualquier peligro inminente que pueda ocasionar directa o indirectamente algún tipo de contaminación hacia el producto, deberá comunicar al dpto. de mantenimiento para que solucione.\n**No** podrán iniciar las labores y/o seguir procesando en el área afectada si el problema no se ha resuelto.'}
+                  rows={6}
+                  style={{ width: '100%', padding: '10px 12px', fontSize: '0.88rem', border: '2px solid #d97706', borderRadius: '6px', background: '#fffbeb', fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical', lineHeight: '1.6' }}
+                />
+                {/* Imagen opcional */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#78350f' }}>📷 Imagen opcional (se mostrará arriba del texto)</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (ev) => updateBodyElement(elementIndex, 'imagen', ev.target.result);
+                      reader.readAsDataURL(file);
+                    }}
+                    style={{ fontSize: '0.82rem' }}
+                  />
+                  {element.imagen && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <img src={element.imagen} alt="preview" style={{ maxHeight: '80px', borderRadius: '4px', border: '1px solid #d97706' }} />
+                      <button onClick={() => updateBodyElement(elementIndex, 'imagen', '')} style={{ fontSize: '0.75rem', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer' }}>🗑️ Quitar imagen</button>
+                    </div>
+                  )}
+                </div>
+                {/* Vista previa en vivo */}
+                {element.contenido && (
+                  <div>
+                    <p style={{ margin: '0 0 4px', fontSize: '0.75rem', fontWeight: 600, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Vista previa:</p>
+                    <div style={{ border: '1.5px solid #92400e', borderLeft: '5px solid #d97706', borderRadius: '4px', background: '#fffbeb', padding: '10px 14px', fontSize: '0.88rem', color: '#1c1917', lineHeight: '1.6' }}>
+                      {element.imagen && <img src={element.imagen} alt="img" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px', marginBottom: '8px', display: 'block' }} />}
+                      {(element.contenido || '').split('\n').map((line, li, arr) => {
+                        const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
+                        return (
+                          <span key={li}>
+                            {parts.map((p, pi) =>
+                              p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
+                              p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> :
+                              <span key={pi}>{p}</span>
+                            )}
+                            {li < arr.length - 1 && <br />}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* SECCIÓN DE CAMPOS */}
             {element.type === 'section' && (
               <div className="body-element-content">
                 <div className="section-header-inner"><h4>Campos de la Sección</h4><button onClick={() => addFieldToSection(elementIndex)} className="btn-add-small">+ Agregar Campo</button></div>
                 {(element.fields || []).map((field, fieldIndex) => (
                   <div key={fieldIndex} className="field-item">
+
+                    {/* ═══ LAYOUT NOTA ═══ */}
+                    {field.type === "nota" ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '2', minWidth: '160px' }}>
+                            <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Etiqueta</label>
+                            <input type="text" value={field.label} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "label", e.target.value)} placeholder="Ej: Observación" style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                          </div>
+                          <div style={{ flex: '1.5', minWidth: '140px' }}>
+                            <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Tipo</label>
+                            <select value={field.type} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "type", e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem' }}>
+                              {sectionFieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                            </select>
+                          </div>
+                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginTop: '20px' }}>
+                            <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, -1)} className="btn-move-up" disabled={fieldIndex === 0} title="Mover arriba">⬆️</button>
+                            <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, 1)} className="btn-move-down" disabled={fieldIndex === (element.fields || []).length - 1} title="Mover abajo">⬇️</button>
+                            <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
+                          </div>
+                        </div>
+                        <div style={{ background: '#faf5ff', border: '2px solid #7c3aed', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <p style={{ margin: 0, fontWeight: 700, color: '#5b21b6', fontSize: '0.88rem' }}>📝 Escribe el texto de la nota (aparecerá fijo en el formulario)</p>
+                          <div style={{ background: '#ede9fe', borderRadius: '6px', padding: '7px 10px', fontSize: '0.76rem', color: '#5b21b6' }}>
+                            💡 Usa <strong>**texto**</strong> para <strong>negrilla</strong> y <code>__texto__</code> para <u>subrayado</u>. Enter = nueva línea.
+                          </div>
+                          <textarea
+                            value={field.staticContent || ''}
+                            onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, 'staticContent', e.target.value)}
+                            placeholder="Escribe aquí el texto que se mostrará al llenar el formulario..."
+                            rows={4}
+                            style={{ width: '100%', padding: '10px', fontSize: '0.88rem', border: '1.5px solid #a78bfa', borderRadius: '6px', background: 'white', fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical', lineHeight: '1.6' }}
+                          />
+                          {field.staticContent && (
+                            <div style={{ borderLeft: '4px solid #7c3aed', background: '#ede9fe', borderRadius: '4px', padding: '10px 14px', fontSize: '0.88rem', lineHeight: '1.7' }}>
+                              <span style={{ fontSize: '0.73rem', fontWeight: 700, color: '#5b21b6', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Vista previa:</span>
+                              {field.staticContent.split('\n').map((line, li, arr) => {
+                                const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
+                                return (
+                                  <span key={li}>
+                                    {parts.map((p, pi) =>
+                                      p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
+                                      p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> :
+                                      <span key={pi}>{p}</span>
+                                    )}
+                                    {li < arr.length - 1 && <br />}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                    ) : field.type === "image" ? (
+                    /* ═══ LAYOUT IMAGEN ═══ */
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '2', minWidth: '160px' }}>
+                            <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Etiqueta</label>
+                            <input type="text" value={field.label} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "label", e.target.value)} placeholder="Ej: Foto del producto" style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                          </div>
+                          <div style={{ flex: '1.5', minWidth: '140px' }}>
+                            <label style={{ fontSize: '0.8rem', color: '#6b7280', display: 'block', marginBottom: '4px' }}>Tipo</label>
+                            <select value={field.type} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "type", e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '0.9rem' }}>
+                              {sectionFieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                            </select>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '20px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={field.required || false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)} />Requerido
+                            </label>
+                            <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, -1)} className="btn-move-up" disabled={fieldIndex === 0} title="Mover arriba">⬆️</button>
+                            <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, 1)} className="btn-move-down" disabled={fieldIndex === (element.fields || []).length - 1} title="Mover abajo">⬇️</button>
+                            <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
+                          </div>
+                        </div>
+                        <div style={{ background: '#e0f2fe', border: '2px solid #0ea5e9', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <p style={{ margin: 0, fontWeight: 700, color: '#0369a1', fontSize: '0.88rem' }}>📷 Imagen estática (opcional)</p>
+                          <p style={{ margin: 0, fontSize: '0.76rem', color: '#0369a1' }}>Sube una imagen fija que se mostrará en el formulario. Si no subes ninguna, el usuario podrá capturar o subir su propia foto al llenar.</p>
+                          <input type="file" accept="image/*" onChange={(e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => updateFieldInSection(elementIndex, fieldIndex, 'staticImage', ev.target.result); reader.readAsDataURL(file); }} style={{ fontSize: '0.85rem' }} />
+                          {field.staticImage && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <img src={field.staticImage} alt="preview" style={{ maxHeight: '90px', borderRadius: '6px', border: '2px solid #0ea5e9' }} />
+                              <button type="button" onClick={() => updateFieldInSection(elementIndex, fieldIndex, 'staticImage', '')} style={{ fontSize: '0.8rem', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>🗑️ Quitar imagen</button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                    ) : (
+                    /* ═══ LAYOUT NORMAL ═══ */
                     <div className="field-grid">
                       <div className="form-group"><label>Etiqueta</label><input type="text" value={field.label} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "label", e.target.value)} placeholder="Ej: Observación"/></div>
                       <div className="form-group">
@@ -703,61 +926,44 @@ function EditTemplate() {
                           {sectionFieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                         </select>
                       </div>
-                      
-                      {/* API para campos que no son imagen */}
-                      {field.type !== "image" && (
-                        <>
-                          <div className="form-group">
-                            <label>🔄 API Lotes (Autocompletar desde Movimientos)</label>
-                            <select value={field.apiMap || ""} onChange={(e) => {
-                              updateFieldInSection(elementIndex, fieldIndex, "apiMap", e.target.value);
-                              if (e.target.value) updateFieldInSection(elementIndex, fieldIndex, "apiEndpoint", "");
-                            }}>
-                              <option value="">-- Ninguno --</option>
-                              <optgroup label="📋 Datos de Cabecera (Info General del Lote)">
-                                {MAPPABLE_API_FIELDS.header.map(apiField => (
-                                  <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
-                                ))}
-                              </optgroup>
-                              <optgroup label="📦 Datos de Detalles (Items del Lote)">
-                                {MAPPABLE_API_FIELDS.details.map(apiField => (
-                                  <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
-                                ))}
-                              </optgroup>
-                            </select>
-                          </div>
-
-                          <div className="form-group">
-                            <label>📚 API Catálogos (Opciones desde API Externa)</label>
-                            <select value={field.apiEndpoint || ""} onChange={(e) => {
-                              updateFieldInSection(elementIndex, fieldIndex, "apiEndpoint", e.target.value);
-                              if (e.target.value) updateFieldInSection(elementIndex, fieldIndex, "apiMap", "");
-                            }}>
-                              {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
-                                <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </>
-                      )}
-
-                      {/* Info campo de imagen */}
-                      {field.type === "image" && (
-                        <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                          <div style={{ padding: '12px', background: '#e0f2fe', border: '1px solid #0ea5e9', borderRadius: '6px', fontSize: '14px' }}>
-                            📷 <strong>Campo de Imagen:</strong> El usuario podrá capturar o subir una foto en el formulario.
-                          </div>
-                        </div>
-                      )}
-
+                      <div className="form-group">
+                        <label>🔄 API Lotes (Autocompletar desde Movimientos)</label>
+                        <select value={field.apiMap || ""} onChange={(e) => {
+                          updateFieldInSection(elementIndex, fieldIndex, "apiMap", e.target.value);
+                          if (e.target.value) updateFieldInSection(elementIndex, fieldIndex, "apiEndpoint", "");
+                        }}>
+                          <option value="">-- Ninguno --</option>
+                          <optgroup label="📋 Datos de Cabecera (Info General del Lote)">
+                            {MAPPABLE_API_FIELDS.header.map(apiField => (
+                              <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="📦 Datos de Detalles (Items del Lote)">
+                            {MAPPABLE_API_FIELDS.details.map(apiField => (
+                              <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>📚 API Catálogos (Opciones desde API Externa)</label>
+                        <select value={field.apiEndpoint || ""} onChange={(e) => {
+                          updateFieldInSection(elementIndex, fieldIndex, "apiEndpoint", e.target.value);
+                          if (e.target.value) updateFieldInSection(elementIndex, fieldIndex, "apiMap", "");
+                        }}>
+                          {MAPPABLE_API_FIELDS.catalogs.map(apiField => (
+                            <option key={apiField.value} value={apiField.value}>{apiField.label}</option>
+                          ))}
+                        </select>
+                      </div>
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required || false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)}/>Requerido</label></div>
-                      
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                         <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, -1)} className="btn-move-up" disabled={fieldIndex === 0} title="Mover arriba">⬆️</button>
                         <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, 1)} className="btn-move-down" disabled={fieldIndex === (element.fields || []).length - 1} title="Mover abajo">⬇️</button>
                         <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
                       </div>
                     </div>
+                    )}
                     
                     {/* Opciones para select/radio/checkbox */}
                     {renderOptionsEditor(field, (prop, val) => updateFieldInSection(elementIndex, fieldIndex, prop, val), `sf-opts-${elementIndex}-${fieldIndex}`)}

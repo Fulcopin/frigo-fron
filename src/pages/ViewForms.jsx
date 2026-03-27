@@ -762,12 +762,57 @@ function ViewForms() {
                 <div key={templateElement.id} className="data-section">
                   <h3>{templateElement.title}</h3>
                   <div className="data-grid">
-                    {Object.entries(sectionData).map(([key, value]) => {
+                    {templateElement.fields?.map((fieldDef) => {
+                      // Nota estática: mostrar como advertencia, no como dato llenado
+                      if (fieldDef.type === 'nota') {
+                        const texto = fieldDef.staticContent || '';
+                        if (!texto) return null;
+                        return (
+                          <div key={fieldDef.label} style={{ gridColumn: '1 / -1', borderLeft: '5px solid #f59e0b', background: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '6px', padding: '10px 14px', fontSize: '0.88rem', lineHeight: '1.7', color: '#78350f', margin: '4px 0' }}>
+                            <span style={{ fontWeight: 700, marginRight: '6px' }}>⚠️ {fieldDef.label}:</span>
+                            {texto.split('\n').map((line, li, arr) => (
+                              <span key={li}>{line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g).map((p, pi) =>
+                                p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
+                                p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> : <span key={pi}>{p}</span>
+                              )}{li < arr.length - 1 && <br />}</span>
+                            ))}
+                          </div>
+                        );
+                      }
+                      // Imagen estática: mostrar la imagen fija
+                      if (fieldDef.type === 'image' && fieldDef.staticImage) {
+                        return (
+                          <div key={fieldDef.label} style={{ gridColumn: '1 / -1' }}>
+                            <span className="data-label">{fieldDef.label}:</span>
+                            <img src={fieldDef.staticImage} alt={fieldDef.label} style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '6px', display: 'block', marginTop: '6px' }} />
+                          </div>
+                        );
+                      }
+                      // Campo normal: buscar el valor llenado
+                      const key = fieldDef.label;
+                      const value = sectionData[key];
+                      // Imagen subida por usuario
+                      if (fieldDef.type === 'image' && value) {
+                        return (
+                          <div key={key} style={{ gridColumn: '1 / -1' }}>
+                            <span className="data-label">{key}:</span>
+                            <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '6px', display: 'block', marginTop: '6px', border: '1px solid #e5e7eb' }} />
+                          </div>
+                        );
+                      }
                       const isImg = typeof value === 'string' && isImageUrl(value);
                       return (
                         <div key={key} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
                           <span className="data-label">{key}:</span>
-                          <div className="data-value">{renderCellValue(value, templateElement.fields?.find(f => f.label === key || f.id === key || f.name === key)?.type)}</div>
+                          <div className="data-value">{renderCellValue(value, fieldDef.type)}</div>
+                        </div>
+                      );
+                    }) || Object.entries(sectionData).map(([key, value]) => {
+                      const isImg = typeof value === 'string' && isImageUrl(value);
+                      return (
+                        <div key={key} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
+                          <span className="data-label">{key}:</span>
+                          <div className="data-value">{renderCellValue(value, null)}</div>
                         </div>
                       );
                     })}
@@ -992,6 +1037,42 @@ function ViewForms() {
                       )}
                     </table>
                   </div>
+                </div>
+              );
+            }
+
+            // Renderizar NOTA ESTÁTICA
+            if (templateElement.type === 'nota_estatica') {
+              const texto = templateElement.contenido || '';
+              const renderNota = (text) => text.split('\n').map((line, li, arr) => {
+                const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
+                return (
+                  <span key={li}>
+                    {parts.map((p, pi) =>
+                      p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
+                      p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> :
+                      <span key={pi}>{p}</span>
+                    )}
+                    {li < arr.length - 1 && <br />}
+                  </span>
+                );
+              });
+              return (
+                <div key={templateElement.id || elementIndex} style={{
+                  margin: '10px 0',
+                  border: '1.5px solid #92400e',
+                  borderLeft: '5px solid #d97706',
+                  borderRadius: '4px',
+                  background: '#fffbeb',
+                  padding: '12px 16px',
+                  fontSize: '0.9rem',
+                  color: '#1c1917',
+                  lineHeight: '1.6'
+                }}>
+                  {templateElement.imagen && (
+                    <img src={templateElement.imagen} alt="Imagen de la nota" style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', marginBottom: '10px', display: 'block' }} />
+                  )}
+                  {renderNota(texto)}
                 </div>
               );
             }

@@ -854,7 +854,48 @@ export const exportFormToPDF = async (form, template) => {
         doc.addPage();
         currentY = 20;
       }
-      
+
+      // ── NOTA ESTÁTICA ──────────────────────────────────────────────
+      if (section.type === 'nota_estatica') {
+        const pageW = doc.internal.pageSize.getWidth();
+        const contentW = pageW - 16;
+        const texto = section.contenido || '';
+        // Parse bold: render plain text (PDF doesn't support inline bold easily, use full-bold for lines starting with **)
+        const lines = texto.split('\n').filter(l => l !== undefined);
+        const lineHeight = 5;
+        const totalH = lines.length * lineHeight + 8;
+        // Yellow background box
+        doc.setFillColor(255, 251, 235);
+        doc.setDrawColor(217, 119, 6);
+        doc.setLineWidth(0.4);
+        doc.rect(8, currentY, contentW, totalH, 'FD');
+        // Orange left bar
+        doc.setFillColor(217, 119, 6);
+        doc.rect(8, currentY, 2.5, totalH, 'F');
+        let textY = currentY + 5;
+        doc.setFontSize(8.5);
+        doc.setTextColor(28, 25, 23);
+        for (const line of lines) {
+          const clean = line.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1');
+          const isBold = /^\*\*/.test(line.trim()) || line.trim().startsWith('**');
+          doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+          const wrapped = doc.splitTextToSize(clean, contentW - 12);
+          doc.text(wrapped, 13, textY);
+          textY += wrapped.length * lineHeight;
+        }
+        // Image if present
+        if (section.imagen && section.imagen.startsWith('data:image/')) {
+          try {
+            const ext = section.imagen.includes('data:image/png') ? 'PNG' : 'JPEG';
+            doc.addImage(section.imagen, ext, 13, textY + 1, 80, 55);
+            textY += 58;
+          } catch (_) { /* skip */ }
+        }
+        doc.setFont('helvetica', 'normal');
+        currentY += totalH + 4;
+        continue;
+      }
+
       // Título de la sección - Estilo Excel
       const secPageW = doc.internal.pageSize.getWidth();
       const secContentW = secPageW - 16;

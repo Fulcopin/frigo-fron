@@ -20,6 +20,7 @@ function ManageTemplates() {
   const [manualHistoryEntries, setManualHistoryEntries] = useState([]);
   const [newHistoryFecha, setNewHistoryFecha] = useState('');
   const [newHistoryCambio, setNewHistoryCambio] = useState('');
+  const [newHistoryVersion, setNewHistoryVersion] = useState('');
 
   // 👁️ Pre-visualización
   const [showPreview, setShowPreview] = useState(false);
@@ -150,6 +151,7 @@ function ManageTemplates() {
     setManualHistoryEntries(loadManualHistory(template.templateID));
     setNewHistoryFecha('');
     setNewHistoryCambio('');
+    setNewHistoryVersion(template.version || '');
     setShowManualHistory(true);
   };
 
@@ -162,13 +164,14 @@ function ManageTemplates() {
       id: Date.now(),
       fecha: newHistoryFecha.trim(),
       cambioRealizado: newHistoryCambio.trim(),
-      version: manualHistoryTemplate.version || 'N/A'
+      version: newHistoryVersion.trim() || manualHistoryTemplate.version || 'N/A'
     };
     const updated = [newEntry, ...manualHistoryEntries];
     setManualHistoryEntries(updated);
     saveManualHistory(manualHistoryTemplate.templateID, updated);
     setNewHistoryFecha('');
     setNewHistoryCambio('');
+    setNewHistoryVersion(manualHistoryTemplate.version || '');
   };
 
   const handleDeleteManualEntry = (entryId) => {
@@ -423,9 +426,9 @@ function ManageTemplates() {
                   <label>Versión</label>
                   <input 
                     type="text" 
-                    value={manualHistoryTemplate?.version || 'N/A'} 
-                    readOnly
-                    style={{ backgroundColor: '#f0f0f0', cursor: 'not-allowed' }}
+                    value={newHistoryVersion !== undefined ? newHistoryVersion : (manualHistoryTemplate?.version || '')} 
+                    onChange={(e) => setNewHistoryVersion(e.target.value)}
+                    placeholder="Ej: 1, 2, 1.1"
                   />
                 </div>
               </div>

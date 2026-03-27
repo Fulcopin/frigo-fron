@@ -127,10 +127,13 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
     }
 
     const result = new Function(`"use strict"; return (${sanitized})`)();
-    if (typeof result !== 'number' || !isFinite(result)) return "0.00";
+    if (typeof result !== 'number' || !isFinite(result)) {
+      console.warn('⚠️ Fórmula no finita (posible /0). Fórmula:', formula, '| Expresión final:', sanitized, '| rowData:', JSON.stringify(rowData));
+      return "0.00";
+    }
     return result.toFixed(2);
   } catch (e) {
-    console.warn('⚠️ Error evaluando fórmula:', formula, e.message);
+    console.warn('⚠️ Error evaluando fórmula:', formula, e.message, '| Expresión:', expression);
     return "ERR";
   }
 };
