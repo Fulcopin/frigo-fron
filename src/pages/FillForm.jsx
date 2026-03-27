@@ -1063,14 +1063,18 @@ useEffect(() => {
   // --- LÓGICA DE FILTRADO DE PLANTILLAS (NUEVO) ---
   const uniqueProcesses = [...new Set(templates.map(t => t.proceso).filter(Boolean))];
 
-  const filteredTemplates = templates.filter(template => {
-    const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = 
-        (template.nombre || "").toLowerCase().includes(searchLower) || 
-        (template.codigo || "").toLowerCase().includes(searchLower);
-    const matchesProcess = filterProcess === "" || template.proceso === filterProcess;
-    return matchesSearch && matchesProcess;
-  });
+  const filteredTemplates = templates
+    .filter(template => {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch =
+          (template.nombre || "").toLowerCase().includes(searchLower) ||
+          (template.codigo || "").toLowerCase().includes(searchLower);
+      const matchesProcess = filterProcess === "" || template.proceso === filterProcess;
+      return matchesSearch && matchesProcess;
+    })
+    .sort((a, b) =>
+      (a.codigo || '').localeCompare(b.codigo || '', 'es', { numeric: true, sensitivity: 'base' })
+    );
 
   // --- SELECCIÓN DE PLANTILLA ---
   const handleTemplateSelect = (templateId) => {

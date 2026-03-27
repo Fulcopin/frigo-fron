@@ -48,8 +48,10 @@ function Home() {
         }));
 
         const sortedTemplates = templatesWithUsage
-          .sort((a, b) => b.usageCount - a.usageCount)
-          .slice(0, 6); // Top 6 más usadas
+          .sort((a, b) =>
+            (a.codigo || '').localeCompare(b.codigo || '', 'es', { numeric: true, sensitivity: 'base' })
+          )
+          .slice(0, 6); // Top 6 ordenadas por código
 
         setMostUsedTemplates(sortedTemplates);
 

@@ -291,7 +291,14 @@ const ERPDashboard = () => {
                     <input type="date" value={filters.fin} onChange={e => setFilters({...filters, fin: e.target.value})} />
                     <select value={filters.templateId} onChange={e => setFilters({...filters, templateId: e.target.value})}>
                         <option value="">-- Todas las plantillas --</option>
-                        {templates.map(t => <option key={t.templateID} value={t.templateID}>{t.nombre}</option>)}
+                        {[...templates]
+                            .sort((a, b) => (a.codigo || '').localeCompare(b.codigo || '', 'es', { numeric: true, sensitivity: 'base' }))
+                            .map((t) => (
+                                <option key={t.templateID} value={t.templateID}>
+                                    {t.codigo ? `[${t.codigo}] ` : ''}{t.nombre}
+                                </option>
+                            ))
+                        }
                     </select>
                     <button onClick={fetchERPData} className="btn-refresh">🔄 Cargar</button>
                     <button onClick={downloadExcel} className="btn-excel-erp" disabled={rows.length === 0}>📥 Excel</button>

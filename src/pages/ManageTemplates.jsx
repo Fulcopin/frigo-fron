@@ -52,15 +52,19 @@ function ManageTemplates() {
   }, []);
 
   // 🔍 Filtrar plantillas por búsqueda
-  const filteredTemplates = templates.filter(t => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      (t.nombre || '').toLowerCase().includes(term) ||
-      (t.codigo || '').toLowerCase().includes(term) ||
-      (t.proceso || '').toLowerCase().includes(term)
+  const filteredTemplates = templates
+    .filter(t => {
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        (t.nombre || '').toLowerCase().includes(term) ||
+        (t.codigo || '').toLowerCase().includes(term) ||
+        (t.proceso || '').toLowerCase().includes(term)
+      );
+    })
+    .sort((a, b) =>
+      (a.codigo || '').localeCompare(b.codigo || '', 'es', { numeric: true, sensitivity: 'base' })
     );
-  });
 
   const handleDeleteTemplate = async (templateId) => {
     if (!canDelete) {
