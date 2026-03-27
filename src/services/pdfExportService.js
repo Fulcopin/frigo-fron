@@ -1008,8 +1008,37 @@ const rows = tableData.map((row, rowIndex) => {
             const isTemp = col.type === 'temperature' || hdr.toUpperCase().includes('TEMPERATURA') || hdr.toUpperCase().includes('TEMP');
             return isTemp && !hdr.includes('°') ? `${hdr} (°C)` : hdr;
           });
+
+          // 🗂️ Grupos de columnas (ej: SALA PROCESADO, SALA EMPAQUE)
+          const hasGroups = columns.some(col => col.group);
+          let tableHead;
+          if (hasGroups) {
+            const groupRow = [];
+            let gi = 0;
+            while (gi < columns.length) {
+              const col = columns[gi];
+              if (!col.group) {
+                groupRow.push({ content: col.header, styles: { halign: 'center', fontStyle: 'bold', fillColor: [68, 114, 196], textColor: [255, 255, 255] } });
+                gi++;
+              } else {
+                let span = 1;
+                while (gi + span < columns.length && columns[gi + span].group === col.group) span++;
+                groupRow.push({ content: col.group, colSpan: span, styles: { halign: 'center', fontStyle: 'bold', fillColor: [238, 242, 255], textColor: [55, 48, 163] } });
+                gi += span;
+              }
+            }
+            // Fila de sub-encabezados: vacío para no-agrupadas, label para agrupadas
+            const subRow = columns.map(col => {
+              if (!col.group) return '';
+              const hdr = col.header;
+              const isTemp = col.type === 'temperature' || hdr.toUpperCase().includes('TEMPERATURA') || hdr.toUpperCase().includes('TEMP');
+              return isTemp && !hdr.includes('°') ? `${hdr} (°C)` : hdr;
+            });
+            tableHead = [groupRow, subRow];
+          } else {
+            tableHead = [headRow];
+          }
           
-          // 📏 Calcular anchos inteligentes basados en contenido real
           const smartColStyles = calculateSmartColumnWidths(
             columns.map((c, i) => ({ ...c, header: headRow[i] })),
             sanitizedRows,
@@ -1021,7 +1050,7 @@ const rows = tableData.map((row, rowIndex) => {
           // 🎨 Estilo Excel: bordes definidos, colores suaves, compacto
           autoTable(doc, {
             startY: currentY,
-            head: [headRow],
+            head: tableHead,
             body: sanitizedRows,
             foot: hasTotals ? [totalsRow] : [],
             theme: 'grid',

@@ -721,6 +721,42 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     }
     
     // Encabezados de columnas con estilo
+    const hasGroups = columns.some(col => col.group);
+    if (hasGroups) {
+      // 🗂️ Fila de grupos (ej: SALA PROCESADO, SALA EMPAQUE)
+      let gci = 0;
+      while (gci < columns.length) {
+        const col = columns[gci];
+        const colNum = gci + 1;
+        if (!col.group) {
+          // Columna sin grupo: mostrar su label directamente (ocupa solo esta fila)
+          const headerCell = worksheet.getCell(currentRow, colNum);
+          headerCell.value = col.label || col.name || 'Columna';
+          applyHeaderStyle(headerCell);
+          gci++;
+        } else {
+          // Calcular span del grupo
+          let span = 1;
+          while (gci + span < columns.length && columns[gci + span].group === col.group) span++;
+          if (span > 1) safeMergeCells(worksheet, currentRow, colNum, currentRow, colNum + span - 1);
+          const groupCell = worksheet.getCell(currentRow, colNum);
+          groupCell.value = col.group;
+          groupCell.font = { bold: true, size: 10, color: { argb: 'FF3730A3' }, name: 'Calibri' };
+          groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FF' } };
+          groupCell.alignment = { vertical: 'middle', horizontal: 'center' };
+          groupCell.border = {
+            top: { style: 'thin', color: { argb: EXCEL_COLORS.borderDark } },
+            left: { style: 'thin', color: { argb: EXCEL_COLORS.borderDark } },
+            bottom: { style: 'thin', color: { argb: EXCEL_COLORS.borderDark } },
+            right: { style: 'thin', color: { argb: EXCEL_COLORS.borderDark } }
+          };
+          gci += span;
+        }
+      }
+      worksheet.getRow(currentRow).height = 22;
+      currentRow++;
+    }
+
     columns.forEach((col, colIndex) => {
       const headerCell = worksheet.getCell(currentRow, colIndex + 1);
       headerCell.value = col.label || col.name || 'Columna';

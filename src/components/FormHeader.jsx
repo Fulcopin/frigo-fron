@@ -39,9 +39,6 @@ export default function FormHeader({ title, code, version, date, tipoProducto })
               className="logo-icon" 
               alt="Logo de Frigolab San Mateo" 
             />
-            <div className="logo-text" style={{ color: '#1565c0', fontWeight: 'bold', fontSize: '1.1rem', marginTop: '6px' }}>
-              Frigolab "San Mateo"
-            </div>
           </div>
         </div>
 

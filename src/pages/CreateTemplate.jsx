@@ -1825,8 +1825,8 @@ function CreateTemplate() {
                 )}
               </div>
 
-              {/* 👥 REEMPLAZOS - Solo para la primera firma (index 0) */}
-              {index === 0 && (
+              {/* 👥 REEMPLAZOS - Para cada firma */}
+              {true && (
                 <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                   <label style={{ fontWeight: '600', color: '#7c3aed', marginBottom: '8px', display: 'block' }}>
                     👥 Reemplazos (personas que pueden firmar en su ausencia)

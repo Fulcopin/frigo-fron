@@ -665,18 +665,11 @@ function ViewForms() {
         </div>
         <div className="form-viewer-document">
           {(() => {
-            // 📅 FECHA DE VERSIÓN: Usar fechaVersion del template, NO createdAt del formulario
-            let fechaFinal;
-            
-            if (correspondingTemplate?.fechaVersion) {
-              // Usar la fecha de versión de la plantilla
-              fechaFinal = new Date(correspondingTemplate.fechaVersion).toLocaleDateString("es-EC");
-              console.log('✅ ViewForms usando fechaVersion de la plantilla:', correspondingTemplate.fechaVersion);
-            } else {
-              // Fallback: usar fecha de creación del formulario
-              console.warn('⚠️ Template sin fechaVersion, usando createdAt del formulario como fallback');
-              fechaFinal = new Date(selectedForm.createdAt).toLocaleDateString("es-EC");
-            }
+            // 📅 FECHA: Prioridad → fechaVersion del template → createdAt del template → createdAt del formulario
+            const rawFecha = correspondingTemplate?.fechaVersion 
+              || correspondingTemplate?.createdAt
+              || selectedForm?.createdAt;
+            const fechaFinal = rawFecha ? new Date(rawFecha).toLocaleDateString("es-EC") : "Sin fecha";
             
             return (
               <FormHeader 

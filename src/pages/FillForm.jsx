@@ -94,6 +94,11 @@ function FillForm() {
   // Estado para verificar si el usuario revisó el documento antes de firmar
   const [hasReviewedDocument, setHasReviewedDocument] = useState(false);
   const documentReviewRef = useRef(null);
+
+  // 🔄 REEMPLAZOS: puestos donde el usuario actual firmará como reemplazo
+  const [reemplazosActivos, setReemplazosActivos] = useState({});
+  // 👤 REEMPLAZOS SELECCIONADOS por admin: { [puesto]: nombreDelReemplazo }
+  const [reemplazosSeleccionados, setReemplazosSeleccionados] = useState({});
   
   // 🛡️ Guards para prevenir doble ejecución de guardado
   const isSavingRef = useRef(false);
@@ -3088,6 +3093,23 @@ useEffect(() => {
 
   // 🆕 FUNCIÓN PARA ACTUALIZAR FIRMA COMPLETA (con imagen)
   const handleFirmaUpdate = (puesto, firmaData) => {
+
+  // 🔄 ACTIVAR MODO REEMPLAZO para un puesto de firma
+  const handleActivarReemplazo = (puesto, nombreOriginal) => {
+    const usuarioActual = authService.getCurrentUser();
+    const nombreReemplazo = usuarioActual?.nombre || usuarioActual?.username || '';
+    setFirmasData(prev => ({
+      ...prev,
+      [puesto]: {
+        ...prev[puesto],
+        nombre: nombreReemplazo,
+        esReemplazo: true,
+        reemplazandoA: nombreOriginal || prev[puesto]?.nombre || ''
+      }
+    }));
+    setReemplazosActivos(prev => ({ ...prev, [puesto]: true }));
+    setHasUnsavedChanges(true);
+  };
     console.log('🔍 handleFirmaUpdate llamado:', { puesto, tieneFirma: !!firmaData?.firma });
     
     let updatedFirmaData = { ...firmaData };
@@ -7909,18 +7931,46 @@ useEffect(() => {
                     const currentUser = authService.getCurrentUser();
                     
                     const nombreAsignado = firma.nombreCompleto || '';
+                    const currentUserName = (currentUser?.nombre || currentUser?.username || '').toLowerCase().trim();
+                    const isAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'supervisor';
                     // 🔐 VALIDACIÓN QUIRÚRGICA: ¿Este slot le corresponde al usuario logueado?
-                    const isCurrentUserSlot = nombreAsignado && currentUser?.nombre && 
-                      nombreAsignado.toLowerCase().trim() === currentUser.nombre.toLowerCase().trim();
+                    const isCurrentUserSlot = nombreAsignado && currentUserName &&
+                      nombreAsignado.toLowerCase().trim() === currentUserName;
+
+                    const reemplazosDefinidos = (firma.reemplazos || []).filter(Boolean);
+
+                    // 👤 Reemplazo seleccionado por admin para este slot
+                    const reemplazoAdminSeleccionado = reemplazosSeleccionados[firma.puesto] || '';
+
+                    // Si el admin seleccionó un reemplazo, solo esa persona puede firmar
+                    const esReemplazoHabilitado = !!reemplazoAdminSeleccionado;
+                    const esElReemplazoSeleccionado = esReemplazoHabilitado &&
+                      reemplazoAdminSeleccionado.toLowerCase().trim() === currentUserName;
+
+                    // Compatibilidad con flujo anterior (reemplazo manual)
+                    const esReemplazoActivo = !!reemplazosActivos[firma.puesto];
+
+                    // Puede firmar:
+                    // 1. Es el titular
+                    // 2. No hay titular asignado
+                    // 3. El admin lo seleccionó como reemplazo
+                    // 4. Habilitó reemplazo manualmente
+                    // 5. Admin puede siempre firmar
+                    const puedeFiremar = isCurrentUserSlot || !nombreAsignado || esElReemplazoSeleccionado || esReemplazoActivo || isAdmin;
+
+                    // Nombre a mostrar en el campo
+                    const nombreMostrado = esReemplazoHabilitado && reemplazoAdminSeleccionado
+                      ? reemplazoAdminSeleccionado
+                      : (firmasData[firma.puesto]?.nombre || '');
                     
                     return (
                       <div key={index} className="signature-box" style={{
-                        border: isCurrentUserSlot ? '2px solid #3b82f6' : '1px solid #e5e7eb',
-                        background: isCurrentUserSlot ? '#eff6ff' : (!nombreAsignado ? '#fff' : '#f9fafb'),
+                        border: isCurrentUserSlot ? '2px solid #3b82f6' : esReemplazoActivo ? '2px solid #f59e0b' : '1px solid #e5e7eb',
+                        background: isCurrentUserSlot ? '#eff6ff' : esReemplazoActivo ? '#fffbeb' : (!nombreAsignado ? '#fff' : '#f9fafb'),
                         position: 'relative'
                       }}>
                         {/* Badge indicador */}
-                        {isCurrentUserSlot && (
+                        {isCurrentUserSlot && !esReemplazoHabilitado && (
                           <div style={{ 
                             position: 'absolute', top: '-10px', right: '10px', 
                             background: '#3b82f6', color: '#fff', padding: '2px 10px', 
@@ -7929,7 +7979,25 @@ useEffect(() => {
                             👤 Tu firma
                           </div>
                         )}
-                        {nombreAsignado && !isCurrentUserSlot && (
+                        {esReemplazoHabilitado && (
+                          <div style={{ 
+                            position: 'absolute', top: '-10px', right: '10px', 
+                            background: '#f59e0b', color: '#fff', padding: '2px 10px', 
+                            borderRadius: '10px', fontSize: '11px', fontWeight: 'bold' 
+                          }}>
+                            🔄 Reemplazo: {reemplazoAdminSeleccionado}
+                          </div>
+                        )}
+                        {esReemplazoActivo && !esReemplazoHabilitado && (
+                          <div style={{ 
+                            position: 'absolute', top: '-10px', right: '10px', 
+                            background: '#f59e0b', color: '#fff', padding: '2px 10px', 
+                            borderRadius: '10px', fontSize: '11px', fontWeight: 'bold' 
+                          }}>
+                            🔄 Reemplazo
+                          </div>
+                        )}
+                        {nombreAsignado && !isCurrentUserSlot && !esReemplazoActivo && !esReemplazoHabilitado && (
                           <div style={{ 
                             position: 'absolute', top: '-10px', right: '10px', 
                             background: '#ef4444', color: '#fff', padding: '2px 10px', 
@@ -7946,26 +8014,31 @@ useEffect(() => {
                           <div className="form-field">
                             <label>
                               Nombre:
-                              <span className="lock-hint" style={{fontSize: '11px', color: '#4b5563', marginLeft: '5px'}}>🔒 Definido en plantilla</span>
+                              {esReemplazoActivo
+                                ? <span className="lock-hint" style={{fontSize: '11px', color: '#92400e', marginLeft: '5px'}}>🔄 Firmando como reemplazo</span>
+                                : <span className="lock-hint" style={{fontSize: '11px', color: '#4b5563', marginLeft: '5px'}}>🔒 Definido en plantilla</span>
+                              }
                             </label>
-                            
-                            {/* 🔒 Nombre bloqueado - cargado automáticamente desde la plantilla */}
                             <input
                               type="text"
-                              value={firmasData[firma.puesto]?.nombre || ""}
+                              value={nombreMostrado}
                               readOnly
                               disabled
                               style={{
-                                backgroundColor: '#f5f5f5',
-                                color: '#4b5563',
-                                borderColor: '#ccc',
-                                cursor: 'not-allowed'
+                                backgroundColor: esReemplazoActivo ? '#fef3c7' : '#f5f5f5',
+                                color: esReemplazoActivo ? '#92400e' : '#4b5563',
+                                borderColor: esReemplazoActivo ? '#f59e0b' : '#ccc',
+                                cursor: 'not-allowed',
+                                fontWeight: esReemplazoActivo ? 'bold' : 'normal'
                               }}
-                              title="El nombre del firmante está definido en la plantilla y no puede ser modificado aquí"
+                              title={esReemplazoActivo ? `Firmando como reemplazo de ${firmasData[firma.puesto]?.reemplazandoA || nombreAsignado}` : "El nombre del firmante está definido en la plantilla"}
                             />
+                            {esReemplazoActivo && firmasData[firma.puesto]?.reemplazandoA && (
+                              <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px', display: 'block' }}>
+                                Reemplazando a: {firmasData[firma.puesto].reemplazandoA}
+                              </span>
+                            )}
                           </div>
-                          {/* Fecha y hora se capturan automáticamente al firmar - ocultos al usuario */}
-                          {/* Solo se muestran como texto si ya hay valor capturado */}
                           {(firmasData[firma.puesto]?.fecha || firmasData[firma.puesto]?.hora) && (
                             <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#4b5563' }}>
                               {firmasData[firma.puesto]?.fecha && (
@@ -7978,10 +8051,73 @@ useEffect(() => {
                           )}
                         </div>
 
-                        {/* 🔐 Firma Digital - SOLO si es el usuario correcto o no hay nombre asignado */}
-                        {isCurrentUserSlot || !nombreAsignado ? (
+                        {/* � SELECTOR DE REEMPLAZO - solo admin/supervisor, cuando hay reemplazos definidos */}
+                        {isAdmin && nombreAsignado && reemplazosDefinidos.length > 0 && (
+                          <div style={{
+                            margin: '8px 0',
+                            padding: '10px 12px',
+                            background: esReemplazoHabilitado ? '#fffbeb' : '#f3f4f6',
+                            border: `1px solid ${esReemplazoHabilitado ? '#f59e0b' : '#d1d5db'}`,
+                            borderRadius: '8px',
+                            fontSize: '13px'
+                          }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: '600', color: '#7c3aed' }}>
+                              <input
+                                type="checkbox"
+                                checked={esReemplazoHabilitado}
+                                onChange={(e) => {
+                                  if (!e.target.checked) {
+                                    // Desactivar reemplazo: restaurar nombre original
+                                    setReemplazosSeleccionados(prev => { const n = {...prev}; delete n[firma.puesto]; return n; });
+                                    setFirmasData(prev => ({
+                                      ...prev,
+                                      [firma.puesto]: { ...prev[firma.puesto], nombre: nombreAsignado, esReemplazo: false, reemplazandoA: '' }
+                                    }));
+                                  }
+                                }}
+                                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                              />
+                              🔄 Habilitar Reemplazo
+                            </label>
+                            {esReemplazoHabilitado ? (
+                              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: '#92400e', fontSize: '12px' }}>Reemplazante:</span>
+                                <select
+                                  value={reemplazoAdminSeleccionado}
+                                  onChange={(e) => {
+                                    const nombre = e.target.value;
+                                    setReemplazosSeleccionados(prev => ({ ...prev, [firma.puesto]: nombre }));
+                                    setFirmasData(prev => ({
+                                      ...prev,
+                                      [firma.puesto]: {
+                                        ...prev[firma.puesto],
+                                        nombre,
+                                        esReemplazo: true,
+                                        reemplazandoA: nombreAsignado
+                                      }
+                                    }));
+                                    setHasUnsavedChanges(true);
+                                  }}
+                                  style={{ flex: 1, padding: '4px 8px', borderRadius: '6px', border: '1px solid #f59e0b', background: '#fff', fontSize: '13px' }}
+                                >
+                                  <option value="">-- Seleccionar reemplazo --</option>
+                                  {reemplazosDefinidos.map((r, ri) => (
+                                    <option key={ri} value={r}>{r}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : (
+                              <p style={{ margin: '4px 0 0 24px', color: '#6b7280', fontSize: '11px' }}>
+                                Activa para asignar quién firma en lugar de {nombreAsignado}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 🔐 Firma Digital */}
+                        {puedeFiremar ? (
                           <SignatureUploader
-                            key={`${firma.puesto}-${nombreAsignado}`}
+                            key={`${firma.puesto}-${nombreMostrado}`}
                             puesto={firma.puesto}
                             firmaData={firmasData[firma.puesto]}
                             onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
@@ -7990,6 +8126,23 @@ useEffect(() => {
                             currentUser={currentUser}
                             canSign={true}
                           />
+                        ) : esReemplazoHabilitado ? (
+                          <div style={{
+                            padding: '14px',
+                            textAlign: 'center',
+                            background: '#fffbeb',
+                            border: '2px dashed #f59e0b',
+                            borderRadius: '8px',
+                            marginTop: '10px'
+                          }}>
+                            <div style={{ fontSize: '28px', marginBottom: '6px' }}>⏳</div>
+                            <p style={{ color: '#92400e', fontWeight: 'bold', margin: '0 0 4px 0', fontSize: '13px' }}>
+                              Esperando a <strong>{reemplazoAdminSeleccionado || 'reemplazante'}</strong>
+                            </p>
+                            <p style={{ color: '#6b7280', fontSize: '11px', margin: 0 }}>
+                              Solo ese usuario puede firmar este espacio
+                            </p>
+                          </div>
                         ) : (
                           <div style={{
                             padding: '20px',
@@ -8003,9 +8156,28 @@ useEffect(() => {
                             <p style={{ color: '#dc2626', fontWeight: 'bold', margin: '0 0 4px 0' }}>
                               Firma bloqueada
                             </p>
-                            <p style={{ color: '#4b5563', fontSize: '12px', margin: 0 }}>
-                              Solo <strong>{nombreAsignado}</strong> puede firmar este espacio.
-                              <br/>Inicia sesión con esa cuenta para firmar.
+                            <p style={{ color: '#4b5563', fontSize: '12px', margin: '0 0 12px 0' }}>
+                              Asignado a <strong>{nombreAsignado}</strong>
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleActivarReemplazo(firma.puesto, nombreAsignado)}
+                              style={{
+                                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '8px 18px',
+                                fontSize: '13px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 6px rgba(245,158,11,0.4)'
+                              }}
+                            >
+                              🔄 Firmar como Reemplazo
+                            </button>
+                            <p style={{ color: '#6b7280', fontSize: '11px', marginTop: '8px', marginBottom: 0 }}>
+                              Tu nombre quedará registrado como firmante de reemplazo
                             </p>
                           </div>
                         )}
