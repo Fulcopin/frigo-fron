@@ -665,10 +665,9 @@ function ViewForms() {
         </div>
         <div className="form-viewer-document">
           {(() => {
-            // 📅 FECHA: Prioridad → fechaVersion del template → createdAt del template → createdAt del formulario
-            const rawFecha = correspondingTemplate?.fechaVersion 
-              || correspondingTemplate?.createdAt
-              || selectedForm?.createdAt;
+            // 📅 FECHA: Solo usar fechaVersion del template (fecha de la versión)
+            // NO usar createdAt para evitar mostrar la fecha de hoy
+            const rawFecha = correspondingTemplate?.fechaVersion || correspondingTemplate?.FechaVersion;
             const fechaFinal = rawFecha ? new Date(rawFecha).toLocaleDateString("es-EC") : "Sin fecha";
             
             return (

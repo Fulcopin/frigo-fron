@@ -405,6 +405,7 @@ export const loadFormWithVersionInfo = async (formId) => {
         codigo: tpl.codigo || tpl.Codigo || 'N/A',
         nombre: tpl.nombre || tpl.Nombre || 'Sin nombre',
         version: tpl.version || tpl.Version || '1',
+        fechaVersion: tpl.fechaVersion || tpl.FechaVersion || null,
         headerFields: typeof (tpl.headerFields || tpl.HeaderFields) === 'string'
           ? JSON.parse(tpl.headerFields || tpl.HeaderFields || '[]') 
           : (tpl.headerFields || tpl.HeaderFields || []),
