@@ -7006,7 +7006,7 @@ useEffect(() => {
                                         color: '#374151',
                                         borderRight: '1px solid #b0c4d8',
                                         fontSize: '0.72rem',
-                                        minWidth: '60px',
+                                        minWidth: '85px',
                                         whiteSpace: 'normal',
                                         wordBreak: 'break-word'
                                       }}
@@ -7021,7 +7021,10 @@ useEffect(() => {
                                       color: '#374151',
                                       borderRight: '1px solid #b0c4d8',
                                       fontSize: '0.75rem',
-                                      background: 'linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%)'
+                                      background: 'linear-gradient(180deg, #e8eef4 0%, #dce4ec 100%)',
+                                      whiteSpace: 'normal',
+                                      wordBreak: 'break-word',
+                                      overflowWrap: 'break-word'
                                     }}>
                                       {group.name}
                                       <tr>
@@ -7034,7 +7037,13 @@ useEffect(() => {
                                               fontWeight: 500,
                                               fontSize: '0.7rem',
                                               color: '#6b7280',
-                                              borderRight: colIndex < group.columns.length - 1 ? '1px solid #b0c4d8' : 'none'
+                                              borderRight: colIndex < group.columns.length - 1 ? '1px solid #b0c4d8' : 'none',
+                                              minWidth: '80px',
+                                              whiteSpace: 'normal',
+                                              wordBreak: 'break-word',
+                                              overflowWrap: 'break-word',
+                                              verticalAlign: 'middle',
+                                              lineHeight: '1.3'
                                             }}
                                           >
                                             {col.label || col.name}
@@ -7400,9 +7409,9 @@ useEffect(() => {
                             })));
                           }
                           return (
-                            <th key={colIndex} style={{ whiteSpace: 'pre-wrap', position: 'relative' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                                <span>{headerText}</span>
+                            <th key={colIndex} style={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'break-word', position: 'relative', minWidth: '85px', maxWidth: '200px', verticalAlign: 'middle', textAlign: 'center', lineHeight: '1.3' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                                <span style={{ fontSize: '0.68rem', wordBreak: 'break-word' }}>{headerText}</span>
                                 {/* 📥 Botón para importar columna de otro formulario */}
                                 <button
                                   onClick={(e) => {
@@ -7414,12 +7423,13 @@ useEffect(() => {
                                     background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
                                     color: 'white',
                                     border: 'none',
-                                    borderRadius: '4px',
-                                    padding: '2px 6px',
-                                    fontSize: '0.75rem',
+                                    borderRadius: '3px',
+                                    padding: '1px 4px',
+                                    fontSize: '0.65rem',
                                     cursor: 'pointer',
                                     opacity: 0.9,
-                                    transition: 'all 0.2s'
+                                    transition: 'all 0.2s',
+                                    lineHeight: '1.2'
                                   }}
                                   onMouseOver={(e) => e.currentTarget.style.opacity = 1}
                                   onMouseOut={(e) => e.currentTarget.style.opacity = 0.9}
