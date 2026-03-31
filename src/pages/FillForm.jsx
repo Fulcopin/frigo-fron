@@ -7006,12 +7006,16 @@ useEffect(() => {
                 <textarea
                   value={currentElementData?.data?.texto || ""}
                   onChange={(e) => {
-                    const newBodyData = [...bodyData];
-                    newBodyData[elementIndex] = {
-                      ...newBodyData[elementIndex],
-                      data: { texto: e.target.value }
-                    };
-                    setBodyData(newBodyData);
+                    const texto = e.target.value;
+                    setBodyData(prev => {
+                      const newBodyData = [...prev];
+                      newBodyData[elementIndex] = {
+                        ...newBodyData[elementIndex],
+                        data: { texto }
+                      };
+                      return newBodyData;
+                    });
+                    setHasUnsavedChanges(true);
                   }}
                   placeholder={`Escriba las ${element.title || 'observaciones'} aquí...`}
                   rows={4}
@@ -7207,16 +7211,25 @@ useEffect(() => {
                                                   value={cellValue}
                                                   rows={2}
                                                   onChange={(e) => {
-                                                    const newBodyData = [...bodyData];
-                                                    if (!Array.isArray(newBodyData[elementIndex].data[field.label])) {
-                                                      newBodyData[elementIndex].data[field.label] = [];
-                                                    }
-                                                    const updatedRow = {
-                                                      ...newBodyData[elementIndex].data[field.label][rowIndex],
-                                                      [cellKey]: e.target.value
-                                                    };
-                                                    newBodyData[elementIndex].data[field.label][rowIndex] = updatedRow;
-                                                    setBodyData(newBodyData);
+                                                    const capturedValue = e.target.value;
+                                                    const capturedCellKey = cellKey;
+                                                    const capturedFieldLabel = field.label;
+                                                    const capturedRowIndex = rowIndex;
+                                                    const capturedElementIndex = elementIndex;
+                                                    setBodyData(prev => {
+                                                      const newBodyData = [...prev];
+                                                      const elData = { ...newBodyData[capturedElementIndex] };
+                                                      const dataObj = { ...elData.data };
+                                                      if (!Array.isArray(dataObj[capturedFieldLabel])) {
+                                                        dataObj[capturedFieldLabel] = [];
+                                                      }
+                                                      const rows = [...dataObj[capturedFieldLabel]];
+                                                      rows[capturedRowIndex] = { ...rows[capturedRowIndex], [capturedCellKey]: capturedValue };
+                                                      dataObj[capturedFieldLabel] = rows;
+                                                      elData.data = dataObj;
+                                                      newBodyData[capturedElementIndex] = elData;
+                                                      return newBodyData;
+                                                    });
                                                     setHasUnsavedChanges(true);
                                                   }}
                                                   placeholder={col.label || col.name}
@@ -7239,35 +7252,44 @@ useEffect(() => {
                                                 type={col.type === 'date' ? 'date' : col.type === 'number' ? 'number' : 'text'}
                                                 value={cellValue}
                                                 onChange={(e) => {
-                                                  const newBodyData = [...bodyData];
-                                                  if (!Array.isArray(newBodyData[elementIndex].data[field.label])) {
-                                                    newBodyData[elementIndex].data[field.label] = [];
-                                                  }
-                                                  const updatedRow = {
-                                                    ...newBodyData[elementIndex].data[field.label][rowIndex],
-                                                    [cellKey]: e.target.value
-                                                  };
-                                                  // Recalcular fórmulas en esta fila
-                                                  const allCols = field.columns || [];
-                                                  const allRows = [...(newBodyData[elementIndex].data[field.label] || [])];
-                                                  allRows[rowIndex] = updatedRow;
-                                                  for (let pass = 0; pass < 3; pass++) {
-                                                    allCols.forEach(c => {
-                                                      const ck = c.label || c.name;
-                                                      if ((c.type === 'formula' || c.type === 'calculated') && c.formula) {
-                                                        const res = evaluarFormula(c.formula, updatedRow, allRows, rowIndex);
-                                                        if (res !== '') updatedRow[ck] = res;
-                                                      } else if (c.type === 'percentage' && c.formula) {
-                                                        const raw = evaluarFormula(c.formula, updatedRow, allRows, rowIndex);
-                                                        if (raw && raw !== 'ERR' && raw !== '⚠️') {
-                                                          const n = Number.parseFloat(raw);
-                                                          updatedRow[ck] = Number.isNaN(n) ? '0.00' : (n * 100).toFixed(2);
+                                                  const capturedValue = e.target.value;
+                                                  const capturedCellKey = cellKey;
+                                                  const capturedFieldLabel = field.label;
+                                                  const capturedRowIndex = rowIndex;
+                                                  const capturedElementIndex = elementIndex;
+                                                  const capturedAllCols = field.columns || [];
+                                                  setBodyData(prev => {
+                                                    const newBodyData = [...prev];
+                                                    const elData = { ...newBodyData[capturedElementIndex] };
+                                                    const dataObj = { ...elData.data };
+                                                    if (!Array.isArray(dataObj[capturedFieldLabel])) {
+                                                      dataObj[capturedFieldLabel] = [];
+                                                    }
+                                                    const allRows = [...dataObj[capturedFieldLabel]];
+                                                    const updatedRow = { ...allRows[capturedRowIndex], [capturedCellKey]: capturedValue };
+                                                    allRows[capturedRowIndex] = updatedRow;
+                                                    // Recalcular fórmulas en esta fila
+                                                    for (let pass = 0; pass < 3; pass++) {
+                                                      capturedAllCols.forEach(c => {
+                                                        const ck = c.label || c.name;
+                                                        if ((c.type === 'formula' || c.type === 'calculated') && c.formula) {
+                                                          const res = evaluarFormula(c.formula, updatedRow, allRows, capturedRowIndex);
+                                                          if (res !== '') updatedRow[ck] = res;
+                                                        } else if (c.type === 'percentage' && c.formula) {
+                                                          const raw = evaluarFormula(c.formula, updatedRow, allRows, capturedRowIndex);
+                                                          if (raw && raw !== 'ERR' && raw !== '⚠️') {
+                                                            const n = Number.parseFloat(raw);
+                                                            updatedRow[ck] = Number.isNaN(n) ? '0.00' : (n * 100).toFixed(2);
+                                                          }
                                                         }
-                                                      }
-                                                    });
-                                                  }
-                                                  newBodyData[elementIndex].data[field.label][rowIndex] = updatedRow;
-                                                  setBodyData(newBodyData);
+                                                      });
+                                                    }
+                                                    allRows[capturedRowIndex] = updatedRow;
+                                                    dataObj[capturedFieldLabel] = allRows;
+                                                    elData.data = dataObj;
+                                                    newBodyData[capturedElementIndex] = elData;
+                                                    return newBodyData;
+                                                  });
                                                   setHasUnsavedChanges(true);
                                                 }}
                                                 placeholder={col.label || col.name}
@@ -7295,10 +7317,18 @@ useEffect(() => {
                                       <td style={{ padding: '2px 4px', textAlign: 'center', borderLeft: '1px solid #c5d3e0' }}>
                                         <button
                                           onClick={() => {
-                                            const newBodyData = [...bodyData];
-                                            const updatedRows = newBodyData[elementIndex].data[field.label].filter((_, idx) => idx !== rowIndex);
-                                            newBodyData[elementIndex].data[field.label] = updatedRows;
-                                            setBodyData(newBodyData);
+                                            const capturedFieldLabel = field.label;
+                                            const capturedRowIndex = rowIndex;
+                                            const capturedElementIndex = elementIndex;
+                                            setBodyData(prev => {
+                                              const newBodyData = [...prev];
+                                              const elData = { ...newBodyData[capturedElementIndex] };
+                                              const dataObj = { ...elData.data };
+                                              dataObj[capturedFieldLabel] = (dataObj[capturedFieldLabel] || []).filter((_, idx) => idx !== capturedRowIndex);
+                                              elData.data = dataObj;
+                                              newBodyData[capturedElementIndex] = elData;
+                                              return newBodyData;
+                                            });
                                             setHasUnsavedChanges(true);
                                           }}
                                           className="btn-delete-row"
@@ -7902,17 +7932,19 @@ useEffect(() => {
             const totalTinas = allTinas.length;
 
             const handleTinaFieldChange = (tinaKey, cycleIdx, fieldLabel, value) => {
-              const newBodyData = [...bodyData];
-              const elData = { ...newBodyData[elementIndex] };
-              const newTinasData = { ...elData.data };
-              const newTinaData = { ...newTinasData[tinaKey] };
-              const newCycleData = { ...(newTinaData[cycleIdx] || {}) };
-              newCycleData[fieldLabel] = value;
-              newTinaData[cycleIdx] = newCycleData;
-              newTinasData[tinaKey] = newTinaData;
-              elData.data = newTinasData;
-              newBodyData[elementIndex] = elData;
-              setBodyData(newBodyData);
+              setBodyData(prev => {
+                const newBodyData = [...prev];
+                const elData = { ...newBodyData[elementIndex] };
+                const newTinasData = { ...elData.data };
+                const newTinaData = { ...newTinasData[tinaKey] };
+                const newCycleData = { ...(newTinaData[cycleIdx] || {}) };
+                newCycleData[fieldLabel] = value;
+                newTinaData[cycleIdx] = newCycleData;
+                newTinasData[tinaKey] = newTinaData;
+                elData.data = newTinasData;
+                newBodyData[elementIndex] = elData;
+                return newBodyData;
+              });
               setHasUnsavedChanges(true);
             };
 
