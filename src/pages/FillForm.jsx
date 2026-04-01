@@ -2586,9 +2586,9 @@ useEffect(() => {
 
   const removeTableRow = (elementIndex, rowIndex, fieldLabel) => {
     if (fieldLabel) {
-      // Tabla dentro de sección
+      // Tabla dentro de sección (sin filas predefinidas): borrado real
       setBodyData(prev => prev.map((element, index) => {
-        if (index === elementIndex && Array.isArray(element.data[fieldLabel]) && element.data[fieldLabel].length > 1) {
+        if (index === elementIndex && Array.isArray(element.data[fieldLabel])) {
           const updatedData = { ...element.data };
           updatedData[fieldLabel] = updatedData[fieldLabel].filter((_, rIndex) => rIndex !== rowIndex);
           return { ...element, data: updatedData };
@@ -2596,13 +2596,13 @@ useEffect(() => {
         return element;
       }));
     } else {
-      // Tabla como elemento directo
+      // Tabla como elemento directo: soft-delete para preservar índices de predefinedRows
       setBodyData(prev => prev.map((element, index) => {
-        if (index === elementIndex && element.data.length > 1) {
-          const filteredRows = element.data.filter((_, rIndex) => rIndex !== rowIndex);
-          return { ...element, data: filteredRows };
-        }
-        return element;
+        if (index !== elementIndex) return element;
+        const updatedData = element.data.map((row, rIndex) =>
+          rIndex === rowIndex ? { ...row, _deleted: true } : row
+        );
+        return { ...element, data: updatedData };
       }));
     }
     setHasUnsavedChanges(true);
@@ -7382,7 +7382,7 @@ useEffect(() => {
 
           if (element.type === 'table') {
             const groupedColumns = processColumnGroups(element.columns);
-            const rowCount = (currentElementData.data || []).length;
+            const rowCount = (currentElementData.data || []).filter(r => !r?._deleted).length;
             
             // 🐛 DEBUG: Ver qué está pasando
             console.log('📊 Renderizando tabla:', {
@@ -7626,10 +7626,15 @@ useEffect(() => {
   })()}
 
   {/* RENDERIZADO DE FILAS */}
-  {(Array.isArray(currentElementData?.data)
-    ? currentElementData.data
-    : (Array.isArray(currentElementData?.rows) ? currentElementData.rows : [])
-  ).map((row, rowIndex) => {
+  {(() => {
+    const allDataRows = Array.isArray(currentElementData?.data)
+      ? currentElementData.data
+      : (Array.isArray(currentElementData?.rows) ? currentElementData.rows : []);
+    let visibleNum = 0;
+    return allDataRows.map((row, rowIndex) => {
+      if (row?._deleted) return null;
+      visibleNum++;
+      const displayNum = visibleNum;
     const templateRow = element.rows ? element.rows[rowIndex] : null;
     // 🔗 Pre-calcular todas las fórmulas de la fila para permitir encadenamiento entre columnas
     const allRowsForTable = currentElementData?.data || [];
@@ -7637,8 +7642,8 @@ useEffect(() => {
     const computedRow = buildComputedRow(crossTableRow, element.columns || [], allRowsForTable, rowIndex);
 
     return (
-      <tr key={`row-${elementIndex}-${rowIndex}`} style={{ background: rowIndex % 2 === 0 ? 'white' : '#f9fafb' }}>
-        <td style={{ fontWeight: 'bold', color: '#6b7280', textAlign: 'center' }}>{rowIndex + 1}</td>
+      <tr key={`row-${elementIndex}-${rowIndex}`} style={{ background: (displayNum - 1) % 2 === 0 ? 'white' : '#f9fafb' }}>
+        <td style={{ fontWeight: 'bold', color: '#6b7280', textAlign: 'center' }}>{displayNum}</td>
         
         {/* RENDERIZADO DE CELDAS */}
         {(element.columns || []).map((col, colIndex) => {
@@ -7797,11 +7802,12 @@ useEffect(() => {
         })}
         
         <td style={{ textAlign: 'center' }}>
-          <button onClick={() => removeTableRow(elementIndex, rowIndex)} className="btn-remove-row" disabled={currentElementData.data.length <= 1}>🗑️</button>
+          <button onClick={() => removeTableRow(elementIndex, rowIndex)} className="btn-remove-row">🗑️</button>
         </td>
       </tr>
     );
-  })}
+  });
+  })()}
 </tbody>
 
 {/* 📊 FILA DE TOTALES POR COLUMNA */}
@@ -7810,7 +7816,7 @@ useEffect(() => {
   const autoSumCols = selectedTemplate?.autoSumColumns === true || selectedTemplate?.AutoSumColumns === true;
   if (!autoSumCols) return null;
 
-  const rows = currentElementData.data || [];
+  const rows = (currentElementData.data || []).filter(r => !r?._deleted);
   if (rows.length === 0) return null;
 
   // Obtener el mapeo de nombres de columnas
