@@ -951,7 +951,8 @@ export const exportFormToPDF = async (form, template) => {
             dataKey: col.label || col.name || col.id || `col_${colIndex}`,
             type: (col.type || '').toLowerCase(),
             formula: col.formula || '',
-            group: col.group || null
+            group: col.group || null,
+            unit: col.unit || ''
           }));
           
           console.log(`📋 Columnas de "${sectionTitle}":`, columns.map(c => c.header));
@@ -996,11 +997,15 @@ const rows = tableData.map((row, rowIndex) => {
 
     let strValue = String(value ?? "");
     
-    // Agregar °C a columnas de temperatura
-    const colHeaderUp = colHeader; // ya está en UPPERCASE
-    const isTemp = colType === 'temperature' || colHeaderUp.includes('TEMPERATURA') || colHeaderUp.includes('TEMP');
-    if (isTemp && strValue.trim() !== '' && !strValue.includes('°')) {
-      strValue = `${strValue} °C`;
+    // Agregar unidad personalizada o auto-detectar temperatura
+    if (col.unit && strValue.trim() !== '' && !strValue.endsWith(col.unit)) {
+      strValue = `${strValue} ${col.unit}`;
+    } else {
+      const colHeaderUp = colHeader; // ya está en UPPERCASE
+      const isTemp = colType === 'temperature' || colHeaderUp.includes('TEMPERATURA') || colHeaderUp.includes('TEMP');
+      if (isTemp && strValue.trim() !== '' && !strValue.includes('°')) {
+        strValue = `${strValue} °C`;
+      }
     }
     
     return strValue;
@@ -1043,9 +1048,10 @@ const rows = tableData.map((row, rowIndex) => {
           const tblMargins = { left: 8, right: 8 };
           const tblStyles = getTableStyles(columns.length, pageW, tblMargins);
           
-          // Headers para autoTable (con °C si aplica)
+          // Headers para autoTable (con unidad personalizada o °C si aplica)
           const headRow = columns.map(col => {
             const hdr = col.header;
+            if (col.unit) return `${hdr} (${col.unit})`;
             const isTemp = col.type === 'temperature' || hdr.toUpperCase().includes('TEMPERATURA') || hdr.toUpperCase().includes('TEMP');
             return isTemp && !hdr.includes('°') ? `${hdr} (°C)` : hdr;
           });
@@ -1072,6 +1078,7 @@ const rows = tableData.map((row, rowIndex) => {
             const subRow = columns.map(col => {
               if (!col.group) return '';
               const hdr = col.header;
+              if (col.unit) return `${hdr} (${col.unit})`;
               const isTemp = col.type === 'temperature' || hdr.toUpperCase().includes('TEMPERATURA') || hdr.toUpperCase().includes('TEMP');
               return isTemp && !hdr.includes('°') ? `${hdr} (°C)` : hdr;
             });

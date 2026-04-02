@@ -42,6 +42,8 @@
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
+  overflow: hidden !important;
+  max-height: 90px !important;
 }
 
 .logo-text {

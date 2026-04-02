@@ -665,9 +665,9 @@ function ViewForms() {
         </div>
         <div className="form-viewer-document">
           {(() => {
-            // 📅 FECHA: Solo usar fechaVersion del template (fecha de la versión)
-            // NO usar createdAt para evitar mostrar la fecha de hoy
-            const rawFecha = correspondingTemplate?.fechaVersion || correspondingTemplate?.FechaVersion;
+            // 📅 FECHA: Usar fechaVersion, si no existe usar createdAt del template
+            const rawFecha = correspondingTemplate?.fechaVersion || correspondingTemplate?.FechaVersion
+                          || correspondingTemplate?.createdAt || correspondingTemplate?.CreatedAt;
             const fechaFinal = rawFecha ? new Date(rawFecha).toLocaleDateString("es-EC") : "Sin fecha";
             
             return (
@@ -854,7 +854,7 @@ function ViewForms() {
                           templateElement.columns.forEach((col) => {
                             if (!col.group) {
                               // Non-grouped column: render individually with rowSpan=2
-                              headerItems.push({ type: 'single', label: col.label || col.header || col.name || col.id, span: 1 });
+                              headerItems.push({ type: 'single', label: col.label || col.header || col.name || col.id, unit: col.unit || '', span: 1 });
                             } else {
                               const last = headerItems[headerItems.length - 1];
                               if (last && last.type === 'group' && last.name === col.group) {
@@ -869,7 +869,7 @@ function ViewForms() {
                               <th rowSpan={2} style={{ verticalAlign: 'bottom' }}>#</th>
                               {headerItems.map((item, i) => (
                                 item.type === 'single'
-                                  ? <th key={`hdr-${i}`} rowSpan={2} style={{ verticalAlign: 'bottom', fontSize: '0.8rem' }}>{item.label}</th>
+                                  ? <th key={`hdr-${i}`} rowSpan={2} style={{ verticalAlign: 'bottom', fontSize: '0.8rem' }}>{item.label}{item.unit && <div style={{ fontSize: '0.68rem', color: '#6b7280', fontWeight: 400 }}>{item.unit}</div>}</th>
                                   : <th key={`hdr-${i}`} colSpan={item.span} style={{ textAlign: 'center', background: '#eef2ff', color: '#3730a3', fontWeight: '700', fontSize: '0.8rem', borderBottom: '2px solid #6366f1' }}>{item.name}</th>
                               ))}
                             </tr>
@@ -881,7 +881,7 @@ function ViewForms() {
                             // Skip non-grouped columns (they already have rowSpan=2 in the group row)
                             if (templateElement.columns.some(c => c.group) && !col.group) return null;
                             return (
-                              <th key={`subhdr-${colIndex}`} style={{ fontSize: '0.8rem' }}>{col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}</th>
+                              <th key={`subhdr-${colIndex}`} style={{ fontSize: '0.8rem' }}>{col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}{col.unit && <div style={{ fontSize: '0.68rem', color: '#6b7280', fontWeight: 400 }}>{col.unit}</div>}</th>
                             );
                           })}
                         </tr>
@@ -955,7 +955,7 @@ function ViewForms() {
 
                               return (
                                 <td key={`cell-${rowIndex}-${colIndex}`} style={{ textAlign: 'center', minWidth: templateElement.columns.length > 12 ? '60px' : templateElement.columns.length > 8 ? '75px' : '100px' }}>
-                                  {renderCellValue(cellValue, col.type)}
+                                  {renderCellValue(cellValue, col.type)}{col.unit && cellValue !== undefined && cellValue !== null && cellValue !== '' && cellValue !== '-' ? <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '2px' }}>{col.unit}</span> : null}
                                 </td>
                               );
                             })}
@@ -1440,6 +1440,13 @@ function ViewForms() {
                   const template = templates.find(t => t.templateID === form.templateID);
                   const proceso = form.proceso || template?.proceso;
                   return proceso ? <span>🏢 {proceso}</span> : null;
+                })()}
+                {(() => {
+                  const template = templates.find(t => t.templateID === form.templateID);
+                  const rawFecha = template?.fechaVersion || template?.FechaVersion;
+                  if (!rawFecha) return null;
+                  const fechaFinal = new Date(rawFecha).toLocaleDateString("es-EC");
+                  return <span>🗓️ v{template?.version || '1'} · {fechaFinal}</span>;
                 })()}
                 {form.updatedAt && form.updatedAt !== form.createdAt && (
                   <span className="updated-badge">🔄 Editado</span>

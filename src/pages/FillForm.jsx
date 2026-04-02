@@ -2507,78 +2507,81 @@ useEffect(() => {
     const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
     if (!tableElement) return;
     
-    // Obtener el bodyData actual para este elemento
     const currentElementData = bodyData[elementIndex];
-    const newRow = {};
     
     // 🆕 Si fieldLabel está especificado, la tabla está dentro de una sección
     let tableTemplate = tableElement;
     let targetData = null;
     
     if (fieldLabel) {
-      // Tabla dentro de una sección
       const sectionField = tableElement.fields?.find(f => f.label === fieldLabel);
       if (!sectionField) return;
       tableTemplate = sectionField;
       targetData = currentElementData.data[fieldLabel] || [];
     } else {
-      // Tabla como elemento directo
       targetData = currentElementData?.data || [];
     }
-    
-    // Si el template tiene filas pre-definidas, usar la última fila como referencia para nombres de columnas
-    if (tableTemplate.rows && tableTemplate.rows.length > 0) {
-      // Usar los nombres de las celdas de una fila existente si hay data
-      if (targetData && targetData.length > 0) {
-        const lastRow = targetData[targetData.length - 1];
-        const nextRowNumber = targetData.length + 1;
-        
-        Object.keys(lastRow).forEach(key => {
-          const suffixMatch = key.match(/^(.+)_T(\d+)$/);
-          if (suffixMatch) {
-            const baseName = suffixMatch[1];
-            const newKey = `${baseName}_T${nextRowNumber}`;
-            newRow[newKey] = "";
-          } else {
-            if (!key.startsWith('col-') && !key.startsWith('COL-')) {
-              newRow[key] = "";
-            }
-          }
-        });
-      } else {
-        const templateFirstRow = tableTemplate.rows[0];
-        (templateFirstRow.cells || []).forEach(cell => {
-          const cellName = cell.name || cell.columnId;
-          newRow[cellName] = "";
+
+    // 🔁 Si la tabla tiene un patrón predefinido (predefinedRows), agregar un GRUPO COMPLETO
+    // para que el nuevo bloque siga la misma estructura (rowSpan, combinaciones, valores fijos).
+    const predefinedPattern = tableTemplate.predefinedRows || [];
+
+    const buildNewRows = () => {
+      if (predefinedPattern.length > 0) {
+        // Agregar N filas que replican el patrón de predefinedRows (una por cada fila del patrón)
+        return predefinedPattern.map(pRow => {
+          const newRow = {};
+          (tableTemplate.columns || []).forEach(col => {
+            const colKey = col.label || col.header || col.name || col.id;
+            // Copiar valores fijos del patrón (texto estático que siempre aparece en esa fila del grupo)
+            newRow[colKey] = pRow[colKey] || '';
+          });
+          return newRow;
         });
       }
-    } else {
-      // Si no hay filas pre-definidas, usar los nombres de las columnas
-      (tableTemplate.columns || []).forEach(col => { 
-        const colName = col.label || col.header || col.name || col.id;
-        newRow[colName] = ""; 
-      });
-    }
-    
-    console.log('➕ Nueva fila creada con claves:', Object.keys(newRow));
+
+      // Sin patrón predefinido: agregar una sola fila vacía (comportamiento original)
+      const newRow = {};
+      if (tableTemplate.rows && tableTemplate.rows.length > 0) {
+        if (targetData && targetData.length > 0) {
+          const lastRow = targetData[targetData.length - 1];
+          const nextRowNumber = targetData.length + 1;
+          Object.keys(lastRow).forEach(key => {
+            const suffixMatch = key.match(/^(.+)_T(\d+)$/);
+            if (suffixMatch) {
+              newRow[`${suffixMatch[1]}_T${nextRowNumber}`] = "";
+            } else if (!key.startsWith('col-') && !key.startsWith('COL-')) {
+              newRow[key] = "";
+            }
+          });
+        } else {
+          const templateFirstRow = tableTemplate.rows[0];
+          (templateFirstRow.cells || []).forEach(cell => {
+            newRow[cell.name || cell.columnId] = "";
+          });
+        }
+      } else {
+        (tableTemplate.columns || []).forEach(col => {
+          newRow[col.label || col.header || col.name || col.id] = "";
+        });
+      }
+      return [newRow];
+    };
+
+    const rowsToAdd = buildNewRows();
+    console.log(`➕ Agregando ${rowsToAdd.length} fila(s) al elemento ${elementIndex}`, rowsToAdd.map(r => Object.keys(r)));
     
     if (fieldLabel) {
-      // Tabla dentro de sección
       setBodyData(prev => prev.map((element, index) => {
-        if (index === elementIndex) {
-          const updatedData = { ...element.data };
-          if (!Array.isArray(updatedData[fieldLabel])) {
-            updatedData[fieldLabel] = [];
-          }
-          updatedData[fieldLabel] = [...updatedData[fieldLabel], newRow];
-          return { ...element, data: updatedData };
-        }
-        return element;
+        if (index !== elementIndex) return element;
+        const updatedData = { ...element.data };
+        if (!Array.isArray(updatedData[fieldLabel])) updatedData[fieldLabel] = [];
+        updatedData[fieldLabel] = [...updatedData[fieldLabel], ...rowsToAdd];
+        return { ...element, data: updatedData };
       }));
     } else {
-      // Tabla como elemento directo
-      setBodyData(prev => prev.map((element, index) => 
-        index === elementIndex ? { ...element, data: [...element.data, newRow] } : element
+      setBodyData(prev => prev.map((element, index) =>
+        index === elementIndex ? { ...element, data: [...element.data, ...rowsToAdd] } : element
       ));
     }
     setHasUnsavedChanges(true);
@@ -2586,7 +2589,7 @@ useEffect(() => {
 
   const removeTableRow = (elementIndex, rowIndex, fieldLabel) => {
     if (fieldLabel) {
-      // Tabla dentro de sección (sin filas predefinidas): borrado real
+      // Tabla dentro de sección (sin predefined rows): borrado real
       setBodyData(prev => prev.map((element, index) => {
         if (index === elementIndex && Array.isArray(element.data[fieldLabel])) {
           const updatedData = { ...element.data };
@@ -2596,11 +2599,15 @@ useEffect(() => {
         return element;
       }));
     } else {
-      // Tabla como elemento directo: soft-delete para preservar índices de predefinedRows
+      // Tabla como elemento directo: soft-delete del GRUPO COMPLETO (si hay patrón predefinido)
       setBodyData(prev => prev.map((element, index) => {
         if (index !== elementIndex) return element;
+        const tableEl = selectedTemplate?.bodyElements?.[elementIndex];
+        const pLen = (tableEl?.predefinedRows || []).length;
+        // Soft-delete: marcar rowIndex y sus N-1 filas siguientes (todo el grupo)
+        const groupSize = pLen > 0 ? pLen : 1;
         const updatedData = element.data.map((row, rIndex) =>
-          rIndex === rowIndex ? { ...row, _deleted: true } : row
+          (rIndex >= rowIndex && rIndex < rowIndex + groupSize) ? { ...row, _deleted: true } : row
         );
         return { ...element, data: updatedData };
       }));
@@ -2610,7 +2617,10 @@ useEffect(() => {
 
   // ➕ Agregar múltiples filas de una vez
   const addMultipleRows = (elementIndex, fieldLabel) => {
-    const count = parseInt(prompt('¿Cuántas filas deseas agregar?', '5'));
+    const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
+    const pLen = (tableElement?.predefinedRows || []).length;
+    const unitLabel = pLen > 1 ? `grupos de ${pLen} filas` : 'filas';
+    const count = parseInt(prompt(`¿Cuántos ${unitLabel} deseas agregar?`, pLen > 1 ? '3' : '5'));
     if (!count || count < 1 || count > 100) return;
     for (let i = 0; i < count; i++) {
       addTableRow(elementIndex, fieldLabel);
@@ -4117,34 +4127,48 @@ useEffect(() => {
         
         // ✅ Checkbox (casillas de selección múltiple o toggle simple)
         case "checkbox":
-          // Si no hay opciones, renderizar como checkbox binario (SI/NO)
+          // Si no hay opciones, renderizar como select desplegable Sí / No / -
           if (!options || options.length === 0) {
-            const isCheckedBinary = value === 'SI' || value === 'true' || value === true;
+            const siNoOptions = ['Sí', 'No', '-'];
+            if (rowIndex !== null && rowIndex !== undefined) {
+              // Versión compacta para tablas
+              return (
+                <select
+                  value={value || ''}
+                  onChange={(e) => onChange(e.target.value)}
+                  style={{
+                    padding: '4px 6px',
+                    border: value && value !== '-' ? '2px solid #10b981' : '1px solid #d1d5db',
+                    borderRadius: '5px',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    backgroundColor: value === 'Sí' ? '#d1fae5' : value === 'No' ? '#fee2e2' : 'white',
+                    color: value === 'Sí' ? '#065f46' : value === 'No' ? '#991b1b' : '#374151',
+                    fontWeight: value && value !== '-' ? '600' : '400',
+                    minWidth: '70px',
+                    width: '100%',
+                    maxWidth: '110px',
+                  }}
+                >
+                  <option value="">--</option>
+                  {siNoOptions.map((opt, i) => (
+                    <option key={i} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              );
+            }
+            // Versión para secciones (fuera de tabla)
             return (
-              <label 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '10px',
-                  padding: '10px 14px',
-                  border: isCheckedBinary ? '2px solid #10b981' : '1px solid #e5e7eb',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  backgroundColor: isCheckedBinary ? '#d1fae5' : 'white',
-                  transition: 'all 0.2s',
-                  userSelect: 'none'
-                }}
+              <select
+                value={value || ''}
+                onChange={(e) => onChange(e.target.value)}
+                className="form-select"
               >
-                <input
-                  type="checkbox"
-                  checked={isCheckedBinary}
-                  onChange={(e) => onChange(e.target.checked ? 'SI' : '')}
-                  style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#10b981' }}
-                />
-                <span style={{ fontSize: '14px', fontWeight: isCheckedBinary ? '600' : '400', color: isCheckedBinary ? '#065f46' : '#374151' }}>
-                  {isCheckedBinary ? '✓ SI' : 'NO'}
-                </span>
-              </label>
+                <option value="">Seleccione...</option>
+                {siNoOptions.map((opt, i) => (
+                  <option key={i} value={opt}>{opt}</option>
+                ))}
+              </select>
             );
           }
           // Valor es un array de strings separadas por coma
@@ -5752,15 +5776,14 @@ useEffect(() => {
           
           let fechaFinal;
           
-          // Verificar si el template tiene fechaVersion
-          if (selectedTemplate.fechaVersion) {
-            // Usar la fecha de versión de la plantilla
-            fechaFinal = new Date(selectedTemplate.fechaVersion).toLocaleDateString("es-EC");
-            console.log('✅ Usando fechaVersion de la plantilla:', selectedTemplate.fechaVersion);
+          // Verificar si el template tiene fechaVersion, si no usar createdAt del template
+          const rawFechaTemplate = selectedTemplate.fechaVersion || selectedTemplate.CreatedAt || selectedTemplate.createdAt;
+          if (rawFechaTemplate) {
+            fechaFinal = new Date(rawFechaTemplate).toLocaleDateString("es-EC");
+            console.log('✅ Usando fecha de la plantilla:', rawFechaTemplate);
           } else {
-            // Fallback: usar fecha actual solo si no hay fechaVersion
-            console.warn('⚠️ Template sin fechaVersion, usando fecha actual como fallback');
-            fechaFinal = new Date().toLocaleDateString("es-EC");
+            console.warn('⚠️ Template sin fecha, mostrando Sin fecha');
+            fechaFinal = 'Sin fecha';
           }
           
           console.log('🗓️ Fecha que se mostrará en FormHeader:', {
@@ -7112,6 +7135,7 @@ useEffect(() => {
                                       }}
                                     >
                                       {group.columns[0].label || group.columns[0].name}
+                                      {group.columns[0].unit && <span style={{ fontSize: '0.62rem', color: '#6b7280', display: 'block', fontWeight: 400, lineHeight: 1.2 }}>{group.columns[0].unit}</span>}
                                     </th>
                                   ) : (
                                     <th key={`group-${groupIndex}`} colSpan={group.columns.length} style={{
@@ -7147,6 +7171,7 @@ useEffect(() => {
                                             }}
                                           >
                                             {col.label || col.name}
+                                            {col.unit && <span style={{ fontSize: '0.62rem', color: '#6b7280', display: 'block', fontWeight: 400, lineHeight: 1.2 }}>{col.unit}</span>}
                                           </th>
                                         ))}
                                       </tr>
@@ -7648,12 +7673,17 @@ useEffect(() => {
         {/* RENDERIZADO DE CELDAS */}
         {(element.columns || []).map((col, colIndex) => {
           
-          // 🔗 SOPORTE FILAS PREDEFINIDAS CON COMBINACIÓN (rowSpan)
+          // 🔗 SOPORTE FILAS PREDEFINIDAS CON COMBINACIÓN (rowSpan) — PATRÓN CÍCLICO
+          // Las predefinedRows definen un BLOQUE REPETIBLE: el patrón se aplica a TODOS los grupos
+          // usando índice modular (rowIndex % predefinedRows.length) para grupos adicionales.
           const predefinedRows = element.predefinedRows || [];
-          if (predefinedRows.length > 0 && rowIndex < predefinedRows.length) {
-            const pRow = predefinedRows[rowIndex];
+          // cellRowSpan: si esta celda es la primera de un grupo combinado, aplicar rowSpan a la <td> generada
+          let cellRowSpan = undefined;
+          if (predefinedRows.length > 0) {
+            const pRowIndex = rowIndex % predefinedRows.length;
+            const pRow = predefinedRows[pRowIndex];
             const colKey = col.label || col.header || col.name || col.id || `col_${colIndex}`;
-            // Si esta celda está oculta por un rowSpan de fila superior, no renderizar
+            // Si esta celda está oculta por un rowSpan de la fila líder del grupo, no renderizar
             if (pRow._hidden?.[colKey]) return null;
             const span = pRow._rowSpan?.[colKey] || 1;
             const predefinedValue = pRow[colKey] || '';
@@ -7670,6 +7700,8 @@ useEffect(() => {
                 </td>
               );
             }
+            // Sin valor predefinido pero con rowSpan: aplicar el span a la celda calculada/normal
+            if (span > 1) cellRowSpan = span;
           }
 
           // 1. IDENTIFICACIÓN DEL FORMULARIO (CANDADO)
@@ -7738,7 +7770,7 @@ useEffect(() => {
             });
 
             return (
-              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border" style={{backgroundColor: '#e6fffa', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1em'}}>
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border" style={{backgroundColor: '#e6fffa', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1em'}}>
                 {sumaFila > 0 ? sumaFila.toFixed(2) : '0.00'} <span style={{fontSize:'0.7em', color: '#6b7280'}}>kg</span>
               </td>
             );
@@ -7751,9 +7783,9 @@ useEffect(() => {
             const rowAlias = buildGroupedRowAlias(computedRow, element.columns, colIndex);
             const valorCalculado = calcularFormulaDinamica(col.formula, rowAlias, allTableRows, rowIndex);
             return (
-              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border"
                   style={{backgroundColor: '#e6fffa', textAlign: 'right', fontWeight: 'bold', color: '#1f5c1f'}}>
-                {valorCalculado || row[cellName] || '0.00'}
+                {valorCalculado || row[cellName] || '0.00'}{col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '3px' }}>{col.unit}</span>}
               </td>
             );
           }
@@ -7765,9 +7797,9 @@ useEffect(() => {
             const rowAlias = buildGroupedRowAlias(computedRow, element.columns, colIndex);
             const valorCalculado = evaluarFormula(col.formula, rowAlias, allTableRows, rowIndex);
             return (
-              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border"
                   style={{backgroundColor: '#f0fdf4', textAlign: 'right', fontWeight: 'bold', color: '#166534'}}>
-                {valorCalculado || row[cellName] || '0.00'}
+                {valorCalculado || row[cellName] || '0.00'}{col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '3px' }}>{col.unit}</span>}
               </td>
             );
           }
@@ -7784,26 +7816,42 @@ useEffect(() => {
               displayVal = Number.isNaN(numVal) ? '0.00' : (numVal * 100).toFixed(2);
             }
             return (
-              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border"
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border"
                   style={{backgroundColor: '#fef3c7', textAlign: 'right', fontWeight: 'bold', color: '#92400e'}}>
-                {displayVal}%
+                {displayVal}%{col.unit && col.unit !== '%' && <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '3px' }}>{col.unit}</span>}
               </td>
             );
           }
 
           // 4. CASO NORMAL (Resto de formularios o columnas normales)
           return (
-            <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} className="p-2 border">
-              <div style={{ flex: 1 }}>
-                {renderField(col, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
+            <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <div style={{ flex: 1 }}>
+                  {renderField(col, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
+                </div>
+                {col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', whiteSpace: 'nowrap', fontWeight: 500 }}>{col.unit}</span>}
               </div>
             </td>
           );
         })}
         
-        <td style={{ textAlign: 'center' }}>
-          <button onClick={() => removeTableRow(elementIndex, rowIndex)} className="btn-remove-row">🗑️</button>
-        </td>
+        {(() => {
+          const pLen = (element.predefinedRows || []).length;
+          // Con predefinedRows: mostrar 🗑️ solo en la fila líder de cada GRUPO AGREGADO por el usuario
+          // (rowIndex >= pLen → fuera del primer grupo fijo) Y (rowIndex % pLen === 0 → líder de grupo)
+          // Sin predefinedRows: mostrar en todas las filas.
+          const canDeleteRow = pLen === 0
+            ? true
+            : (rowIndex >= pLen && rowIndex % pLen === 0);
+          return canDeleteRow ? (
+            <td style={{ textAlign: 'center' }}>
+              <button onClick={() => removeTableRow(elementIndex, rowIndex)} className="btn-remove-row" title="Eliminar grupo">
+                🗑️
+              </button>
+            </td>
+          ) : <td />;
+        })()}
       </tr>
     );
   });

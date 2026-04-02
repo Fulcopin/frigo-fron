@@ -752,7 +752,7 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
         if (!col.group) {
           // Columna sin grupo: mostrar su label directamente (ocupa solo esta fila)
           const headerCell = worksheet.getCell(currentRow, colNum);
-          headerCell.value = col.label || col.name || 'Columna';
+          headerCell.value = (col.label || col.name || 'Columna') + (col.unit ? ` (${col.unit})` : '');
           applyHeaderStyle(headerCell);
           gci++;
         } else {
@@ -780,7 +780,7 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
 
     columns.forEach((col, colIndex) => {
       const headerCell = worksheet.getCell(currentRow, colIndex + 1);
-      headerCell.value = col.label || col.name || 'Columna';
+      headerCell.value = (col.label || col.name || 'Columna') + (col.unit ? ` (${col.unit})` : '');
       applyHeaderStyle(headerCell);
       
       // Ajustar ancho según el contenido
@@ -845,7 +845,8 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
 
         const cellValue = value ?? "";
         const isEmpty = String(cellValue).trim() === '';
-        dataCell.value = isEmpty ? '' : cellValue;
+        const unitSuffix = (!isEmpty && col.unit) ? ` ${col.unit}` : '';
+        dataCell.value = isEmpty ? '' : String(cellValue) + unitSuffix;
         
         // Estilo según si tiene datos o está vacío
         if (isEmpty && isEmptyTable) {

@@ -177,14 +177,35 @@ function CreateTemplate() {
 
   // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' por defecto ---
   const addColumnToTable = (elementIndex) => {
-    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" };
+    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", unit: "" };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: [...el.columns, newColumn] } : el)) }));
   };
   
   const updateFieldInSection = (elementIndex, fieldIndex, property, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.map((field, j) => (j === fieldIndex ? { ...field, [property]: value } : field)) } : el)) }));
   const updateColumnInTable = (elementIndex, colIndex, property, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.map((col, j) => (j === colIndex ? { ...col, [property]: value } : col)) } : el)) }));
   const removeFieldFromSection = (elementIndex, fieldIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.filter((_, j) => j !== fieldIndex) } : el)) }));
-  const removeColumnFromTable = (elementIndex, colIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.filter((_, j) => j !== colIndex) } : el)) }));
+  const removeColumnFromTable = (elementIndex, colIndex) => setTemplate(prev => ({
+    ...prev,
+    bodyElements: prev.bodyElements.map((el, i) => {
+      if (i !== elementIndex) return el;
+      const removedCol = el.columns[colIndex];
+      const removedKey = removedCol
+        ? (removedCol.label || removedCol.header || removedCol.name || removedCol.id || `col_${colIndex}`)
+        : null;
+      const newColumns = el.columns.filter((_, j) => j !== colIndex);
+      const newPredefinedRows = (el.predefinedRows || []).map(row => {
+        if (!removedKey) return row;
+        const newRow = { ...row };
+        delete newRow[removedKey];
+        newRow._rowSpan = { ...(row._rowSpan || {}) };
+        delete newRow._rowSpan[removedKey];
+        newRow._hidden = { ...(row._hidden || {}) };
+        delete newRow._hidden[removedKey];
+        return newRow;
+      });
+      return { ...el, columns: newColumns, predefinedRows: newPredefinedRows };
+    })
+  }));
 
   const addFirma = () => setTemplate((prev) => ({ ...prev, firmas: [...prev.firmas, { puesto: "", nombreCompleto: "", capturaFecha: true, capturaHora: true, reemplazos: [], jefeAlerta: [] }] }));
   const updateFirma = (index, field, value) => setTemplate((prev) => ({ ...prev, firmas: prev.firmas.map((item, i) => (i === index ? { ...item, [field]: value } : item)) }));
@@ -1464,6 +1485,7 @@ function CreateTemplate() {
                   <div key={colIndex} className="field-item">
                     <div className="field-grid">
                       <div className="form-group"><label>Nombre de Columna</label><input type="text" value={column.label} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "label", e.target.value)} placeholder="Ej: Hora, Temperatura"/></div>
+                      <div className="form-group"><label>📐 Unidad (opcional)</label><input type="text" value={column.unit || ""} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "unit", e.target.value)} placeholder="Ej: °C, kg, %, m³" style={{ maxWidth: '120px' }}/></div>
                       <div className="form-group">
                         <label>Tipo</label>
                         <select value={column.type} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "type", e.target.value)}>
@@ -1806,11 +1828,21 @@ function CreateTemplate() {
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button
                         onClick={() => {
+                          const existingRows = element.predefinedRows || [];
+                          const newRowIndex = existingRows.length;
                           const newRow = {};
                           (element.columns || []).forEach(col => { newRow[col.label || 'col'] = ''; });
                           newRow._rowSpan = {};
                           newRow._hidden = {};
-                          const rows = [...(element.predefinedRows || []), newRow];
+                          // Marcar como _hidden si alguna fila existente tiene rowSpan que cubre este índice
+                          existingRows.forEach((existingRow, existingIdx) => {
+                            Object.entries(existingRow._rowSpan || {}).forEach(([colKey, span]) => {
+                              if (existingIdx + span > newRowIndex) {
+                                newRow._hidden[colKey] = true;
+                              }
+                            });
+                          });
+                          const rows = [...existingRows, newRow];
                           updateBodyElement(elementIndex, 'predefinedRows', rows);
                         }}
                         style={{
