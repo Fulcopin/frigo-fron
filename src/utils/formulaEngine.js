@@ -30,7 +30,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
       .replace(/\s+/g, ' ')
       .trim();
 
-  const rowKeys = Object.keys(rowData).filter(k => k !== 'id' && k !== 'ID' && k !== 'undefined');
+  const rowKeys = Object.keys(rowData).filter(k => k !== 'id' && k !== 'ID' && k !== 'undefined' && k !== '__crossTableSums__');
   const normalizedKeyMap = {};
   rowKeys.forEach(k => { normalizedKeyMap[normalizeKey(k)] = k; });
 
@@ -67,7 +67,19 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
         const regexStar = new RegExp(escaped + '\\[\\*\\]', 'gi');
         expression = expression.replace(regexStar, () => {
           let suma = 0;
-          allRows.forEach(r => { const v = Number.parseFloat(r[colName]); if (!Number.isNaN(v)) suma += v; });
+          const colExistsInOwnRows = allRows.some(r => r[colName] !== undefined && !r._deleted);
+          if (colExistsInOwnRows) {
+            allRows.forEach(r => { if (r._deleted) return; const v = Number.parseFloat(r[colName]); if (!Number.isNaN(v)) suma += v; });
+          } else {
+            // Columna de otra tabla: usar sumas cross-table precalculadas
+            const crossSums = rowData.__crossTableSums__;
+            if (crossSums && crossSums[colName] !== undefined) {
+              suma = crossSums[colName];
+            } else {
+              const cv = Number.parseFloat(rowData[colName]);
+              if (!Number.isNaN(cv)) suma = cv;
+            }
+          }
           return String(suma);
         });
         const regexRow = new RegExp(escaped + '\\[(\\d+)\\]', 'gi');
@@ -105,7 +117,19 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
           const origKey = normalizedKeyMap[normKey];
           const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const rx = new RegExp(escaped + '\\[\\*\\]', 'gi');
-          expression2 = expression2.replace(rx, () => { let s = 0; allRows.forEach(r => { const v = parseFloat(r[origKey]); if (!isNaN(v)) s += v; }); return String(s); });
+          expression2 = expression2.replace(rx, () => {
+            const colExistsInOwnRows = allRows.some(r => r[origKey] !== undefined && !r._deleted);
+            if (colExistsInOwnRows) {
+              let s = 0;
+              allRows.forEach(r => { if (r._deleted) return; const v = parseFloat(r[origKey]); if (!isNaN(v)) s += v; });
+              return String(s);
+            }
+            // Columna de otra tabla: usar sumas cross-table precalculadas
+            const crossSums = rowData.__crossTableSums__;
+            if (crossSums && crossSums[origKey] !== undefined) return String(crossSums[origKey]);
+            const cv = parseFloat(rowData[origKey]);
+            return String(isNaN(cv) ? 0 : cv);
+          });
           const rx2 = new RegExp(escaped + '\\[(\\d+)\\]', 'gi');
           expression2 = expression2.replace(rx2, (m, n) => { const idx = parseInt(n) - 1; if (idx >= 0 && idx < allRows.length) { const v = parseFloat(allRows[idx][origKey]); return isNaN(v) ? '0' : String(v); } return '0'; });
         });
@@ -225,16 +249,30 @@ export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
 export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
   if (!Array.isArray(allBodyData) || allBodyData.length === 0) return rawRow;
   const merged = { ...rawRow };
+  // Acumulador de sumas de columna a través de TODAS las tablas (para soportar [*] cross-table)
+  const crossTableSums = {};
   allBodyData.forEach(elData => {
     if (!elData) return;
     const elRows = Array.isArray(elData.data) ? elData.data
       : Array.isArray(elData.rows) ? elData.rows
       : Array.isArray(elData) ? elData
       : [];
+    // Acumular sumas de TODAS las filas (no eliminadas) de cada tabla
+    elRows.forEach(r => {
+      if (!r || r._deleted) return;
+      Object.keys(r).forEach(k => {
+        if (typeof k !== 'string' || k.startsWith('_')) return;
+        const v = parseFloat(r[k]);
+        if (!isNaN(v)) crossTableSums[k] = (crossTableSums[k] || 0) + v;
+      });
+    });
+    // También mezclar los valores de la misma fila (para referencias directas sin [*])
     if (rowIndex < elRows.length && elRows[rowIndex] && typeof elRows[rowIndex] === 'object') {
       Object.assign(merged, elRows[rowIndex]);
     }
   });
+  // Guardar las sumas cross-table para que evaluarFormula las use en [*]
+  merged.__crossTableSums__ = crossTableSums;
   return merged;
 };
 
