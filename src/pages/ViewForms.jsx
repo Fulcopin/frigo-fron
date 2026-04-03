@@ -379,7 +379,9 @@ function ViewForms() {
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
-        createdAt: formData.createdAt,
+        createdAt: formData.createdAt || formData.CreatedAt || formData.created_at,
+        fechaVersion: formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null,
+        templateCreatedAt: formData.template?.CreatedAt || formData.template?.createdAt || null,
         tipoProducto: formData.tipoProducto, // 🦐🐟 NUEVO: Tipo de producto
         observaciones: formData.observaciones,
         templateCodigo: formData.template.codigo,
@@ -391,12 +393,13 @@ function ViewForms() {
       };
       
       const templateStructure = {
-        codigo: formData.template.codigo,
-        nombre: formData.template.nombre,
-        version: formData.template.version,
-        bodyElements: formData.template.structure.bodyElements,
-        headerFields: formData.template.structure.headerFields,
-        firmas: formData.template.structure.firmas
+        codigo: formData.template?.codigo,
+        nombre: formData.template?.nombre,
+        version: formData.template?.version,
+        fechaVersion: formData.template?.fechaVersion || formData.template?.FechaVersion || null,
+        bodyElements: formData.template?.structure?.bodyElements,
+        headerFields: formData.template?.structure?.headerFields,
+        firmas: formData.template?.structure?.firmas
       };
       
       console.log('🔄 Datos transformados:', { transformedData, templateStructure });
@@ -430,7 +433,9 @@ function ViewForms() {
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
-        createdAt: formData.createdAt,
+        createdAt: formData.createdAt || formData.CreatedAt || formData.created_at,
+        fechaVersion: formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null,
+        templateCreatedAt: formData.template?.CreatedAt || formData.template?.createdAt || null,
         tipoProducto: formData.tipoProducto, // 🦐🐟 NUEVO: Tipo de producto
         observaciones: formData.observaciones,
         templateCodigo: formData.template.codigo,
@@ -442,12 +447,13 @@ function ViewForms() {
       };
       
       const templateStructure = {
-        codigo: formData.template.codigo,
-        nombre: formData.template.nombre,
-        version: formData.template.version,
-        bodyElements: formData.template.structure.bodyElements,
-        headerFields: formData.template.structure.headerFields,
-        firmas: formData.template.structure.firmas
+        codigo: formData.template?.codigo,
+        nombre: formData.template?.nombre,
+        version: formData.template?.version,
+        fechaVersion: formData.template?.fechaVersion || formData.template?.FechaVersion || null,
+        bodyElements: formData.template?.structure?.bodyElements,
+        headerFields: formData.template?.structure?.headerFields,
+        firmas: formData.template?.structure?.firmas
       };
       
       console.log('🔄 Datos transformados:', { transformedData, templateStructure });

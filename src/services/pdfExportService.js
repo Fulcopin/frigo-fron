@@ -176,7 +176,7 @@ const calculateSmartColumnWidths = (columns, rows, availableWidth, doc, fontSize
  * 🖼️ Dibuja el encabezado de Frigolab (solo logo + metadatos con borde)
  */
 const drawFrigolabHeader = async (doc, templateData) => {
-  const { codigo, nombre, version, fechaVersion, headerData, createdAt } = templateData;
+  const { codigo, nombre, version, fechaVersion, templateCreatedAt, headerData, createdAt } = templateData;
   
   const headerH = 40;
   const pageW = doc.internal.pageSize.getWidth();
@@ -245,52 +245,28 @@ const drawFrigolabHeader = async (doc, templateData) => {
   const versionFinal = headerData?.version || headerData?.Versión || String(version || '1.0');
   doc.text(sanitizeText(versionFinal), metaValueX, 5 + metaRowH * 1.55 + 1);
   
-  // ✅ FECHA: Usar fechaVersion de la plantilla (NO la fecha de llenado)
-  console.log('🔍 DEBUG FECHA PDF:', {
-    'fechaVersion (de la plantilla)': fechaVersion,
-    'headerData.fecha (editable)': headerData?.fecha,
-    'createdAt (llenado del form)': createdAt
-  });
-  
-  let fechaFinal = headerData?.fecha || headerData?.Fecha;
-  
-  // Si no hay fecha editada manualmente, usar fechaVersion de la plantilla
-  if (!fechaFinal && fechaVersion) {
-    console.log('📅 Usando fechaVersion de la plantilla:', fechaVersion);
-    const versionDate = new Date(fechaVersion);
-    fechaFinal = versionDate.toLocaleDateString('es-EC', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-    console.log('📅 Fecha de versión formateada:', fechaFinal);
-  }
-  
-  // Fallback 1: Si no hay fechaVersion, usar createdAt (fecha de llenado)
-  if (!fechaFinal && createdAt) {
-    console.log('⚠️ No hay fechaVersion, usando createdAt como fallback');
-    const createdDate = new Date(createdAt);
-    fechaFinal = createdDate.toLocaleDateString('es-EC', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  }
-  
-  // Fallback 2: Si aún no hay fecha, usar la fecha actual
-  if (!fechaFinal) {
-    console.log('⚠️ ÚLTIMO FALLBACK: Usando fecha actual');
-    fechaFinal = new Date().toLocaleDateString('es-EC');
-  }
-  
+  // ✅ FECHA: Prioridad → 1) fechaVersion de la plantilla (BD), 2) templateCreatedAt (fecha creación plantilla), 3) createdAt del formulario
+  // Función helper para formatear fecha como DD/MM/YYYY de forma segura
+  const fmtDate = (val) => {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return null;
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  };
+
+  let fechaFinal = null;
+  // 1) fechaVersion de la plantilla
+  if (!fechaFinal && fechaVersion) fechaFinal = fmtDate(fechaVersion);
+  // 2) fecha de creación del template
+  if (!fechaFinal && templateCreatedAt) fechaFinal = fmtDate(templateCreatedAt);
+  // 3) Último recurso: fecha en que se lleno el formulario
+  if (!fechaFinal && createdAt) fechaFinal = fmtDate(createdAt);
+  // Fallback absoluto: hoy
+  if (!fechaFinal) fechaFinal = fmtDate(new Date());
   // Si la fecha viene en formato ISO (YYYY-MM-DD), convertir a DD/MM/YYYY
   if (fechaFinal && fechaFinal.includes('-') && fechaFinal.length === 10) {
     const [year, month, day] = fechaFinal.split('-');
     fechaFinal = `${day}/${month}/${year}`;
-    console.log('🔄 Convertido de ISO a DD/MM/YYYY:', fechaFinal);
   }
-  
-  console.log('✅ FECHA FINAL EN PDF:', fechaFinal);
   
   doc.text(sanitizeText(fechaFinal), metaValueX, 5 + metaRowH * 2.55 + 1);
   
@@ -819,9 +795,10 @@ export const exportFormToPDF = async (form, template) => {
       codigo: template?.codigo || form.templateCodigo || 'N/A',
       nombre: template?.nombre || form.templateNombre || 'Formulario',
       version: template?.version || form.version || 1,
-      fechaVersion: template?.fechaVersion || form.fechaVersion, // ✅ FECHA DE VERSIÓN DE LA PLANTILLA
+      fechaVersion: template?.fechaVersion ?? form.fechaVersion ?? null,
+      templateCreatedAt: form.templateCreatedAt || null,
       headerData: form.headerData || {},
-      createdAt: form.createdAt || new Date().toISOString() // Fecha de creación del formulario (para referencia)
+      createdAt: form.createdAt || form.CreatedAt || form.created_at
     };
     
     console.log('📋 Template Data:', templateData);
@@ -1481,7 +1458,8 @@ export const exportMultipleFormsToPDF = async (forms, templates) => {
         codigo: template?.codigo || form.templateCodigo,
         nombre: template?.nombre || 'Formulario',
         version: template?.version || 1,
-        headerData: form.headerData || {}
+        headerData: form.headerData || {},
+        createdAt: form.createdAt || form.CreatedAt || form.created_at
       };
       
       const bodyElements = template?.bodyElements || [];

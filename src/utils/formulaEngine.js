@@ -64,7 +64,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
     if (allRows && allRows.length > 0) {
       allColNames.forEach(colName => {
         const escaped = colName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regexStar = new RegExp(escaped + '\\[\\*\\]', 'gi');
+        const regexStar = new RegExp(escaped + '\\s*\\[\\*?\\]', 'gi');
         expression = expression.replace(regexStar, () => {
           let suma = 0;
           const colExistsInOwnRows = allRows.some(r => r[colName] !== undefined && !r._deleted);
@@ -82,7 +82,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
           }
           return String(suma);
         });
-        const regexRow = new RegExp(escaped + '\\[(\\d+)\\]', 'gi');
+        const regexRow = new RegExp(escaped + '\\s*\\[(\\d+)\\]', 'gi');
         expression = expression.replace(regexRow, (match, rowNum) => {
           const idx = parseInt(rowNum) - 1;
           if (idx >= 0 && idx < allRows.length) {
@@ -116,7 +116,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
         Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
           const origKey = normalizedKeyMap[normKey];
           const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const rx = new RegExp(escaped + '\\[\\*\\]', 'gi');
+          const rx = new RegExp(escaped + '\\s*\\[\\*?\\]', 'gi');
           expression2 = expression2.replace(rx, () => {
             const colExistsInOwnRows = allRows.some(r => r[origKey] !== undefined && !r._deleted);
             if (colExistsInOwnRows) {
@@ -130,7 +130,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
             const cv = parseFloat(rowData[origKey]);
             return String(isNaN(cv) ? 0 : cv);
           });
-          const rx2 = new RegExp(escaped + '\\[(\\d+)\\]', 'gi');
+          const rx2 = new RegExp(escaped + '\\s*\\[(\\d+)\\]', 'gi');
           expression2 = expression2.replace(rx2, (m, n) => { const idx = parseInt(n) - 1; if (idx >= 0 && idx < allRows.length) { const v = parseFloat(allRows[idx][origKey]); return isNaN(v) ? '0' : String(v); } return '0'; });
         });
       }

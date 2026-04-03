@@ -304,14 +304,18 @@ const createFrigolabHeader = async (worksheet, templateData, logoBase64, maxCols
   const codigoFinal = templateData.headerData?.codigo || templateData.headerData?.['Código'] || templateData.codigo || 'N/A';
   const versionFinal = templateData.headerData?.version || templateData.headerData?.['Versión'] || String(templateData.version || '1.0');
   
-  let fechaFinal = templateData.headerData?.fecha || templateData.headerData?.Fecha;
-  if (!fechaFinal && templateData.createdAt) {
-    const createdDate = new Date(templateData.createdAt);
-    fechaFinal = createdDate.toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  }
-  if (!fechaFinal) {
-    fechaFinal = new Date().toLocaleDateString('es-EC');
-  }
+  const fmtDate = (val) => {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return null;
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  };
+
+  // Prioridad: 1) fechaVersion (BD), 2) templateCreatedAt (creación del template, BD), 3) createdAt (cuando se lleno el form)
+  let fechaFinal = null;
+  if (!fechaFinal && templateData.fechaVersion) fechaFinal = fmtDate(templateData.fechaVersion);
+  if (!fechaFinal && templateData.templateCreatedAt) fechaFinal = fmtDate(templateData.templateCreatedAt);
+  if (!fechaFinal && templateData.createdAt) fechaFinal = fmtDate(templateData.createdAt);
+  if (!fechaFinal) fechaFinal = fmtDate(new Date());
   if (fechaFinal && fechaFinal.includes('-') && fechaFinal.length === 10) {
     const [year, month, day] = fechaFinal.split('-');
     fechaFinal = `${day}/${month}/${year}`;
@@ -1220,8 +1224,10 @@ export const exportFormToExcel = async (form, template) => {
       codigo: template?.codigo || form.templateCodigo || 'N/A',
       nombre: template?.nombre || form.templateNombre || 'Formulario',
       version: template?.version || form.version || 1,
+      fechaVersion: template?.fechaVersion || template?.FechaVersion || form.fechaVersion || null,
+      templateCreatedAt: form.templateCreatedAt || null,
       headerData: form.headerData || {},
-      createdAt: form.createdAt || new Date().toISOString()
+      createdAt: form.createdAt || form.CreatedAt || form.created_at
     };
     
     const bodyElements = Array.isArray(template?.bodyElements) ? template.bodyElements : [];
@@ -1341,8 +1347,9 @@ export const exportMultipleFormsToExcel = async (forms, templates) => {
         codigo: template?.codigo || form.templateCodigo,
         nombre: template?.nombre || 'Formulario',
         version: template?.version || 1,
+        fechaVersion: template?.fechaVersion || template?.FechaVersion || form.fechaVersion || null,
         headerData: form.headerData || {},
-        createdAt: form.createdAt || new Date().toISOString()
+        createdAt: form.createdAt || form.CreatedAt || form.created_at
       };
       
       const bodyData = form.bodyData || [];
