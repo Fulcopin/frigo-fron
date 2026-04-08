@@ -26,6 +26,7 @@ import SessionHistory from "./pages/SessionHistory";
 import MyDrafts from "./pages/MyDrafts";
 import DocumentRegistry from "./pages/DocumentRegistry";
 import SeedBPMTemplates from "./pages/SeedBPMTemplates";
+import FrigoVoice from "./components/FrigoVoice"
 import "./App.css"
 
 function Navigation() {
@@ -196,6 +197,7 @@ function App() {
       <Router>
         <div className="app">
           <Navigation />
+          <FrigoVoice />
           <main className="main-content">
             <Routes>
               <Route path="/login" element={<Login />} />

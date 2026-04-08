@@ -488,15 +488,17 @@ const drawBodyTable = (doc, bodyData, bodyElements, startY) => {
  */
 const drawSignaturesSection = async (doc, firmasData, startY, template) => {
   let currentY = startY;
+  const pageHeight = doc.internal.pageSize.getHeight();
   
   console.log('📝 === INICIO DEBUG FIRMAS PDF ===');
   console.log('firmasData recibido:', firmasData);
   console.log('template recibido:', template);
   console.log('Tipo de firmasData:', typeof firmasData);
   console.log('Es array?:', Array.isArray(firmasData));
+  console.log('startY:', startY, 'pageHeight:', pageHeight);
   
-  // Verificar si hay espacio suficiente
-  if (currentY > 220) {
+  // Verificar si hay espacio suficiente para header + al menos una firma (~60mm)
+  if (currentY + 60 > pageHeight) {
     doc.addPage();
     currentY = 20;
   }
@@ -524,9 +526,10 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
     console.log('🔍 Puestos válidos en template:', puestosValidos);
     console.log('🔍 Puestos en formulario guardado:', Object.keys(firmasData));
     
-    // Filtrar firmasData para solo incluir puestos que están en la plantilla
-    const firmasArray = Object.entries(firmasData)
-      .filter(([puesto]) => puestosValidos.includes(puesto));
+    // Si el template no define puestos de firmas, mostrar todas las firmas del formulario
+    const firmasArray = puestosValidos.length > 0
+      ? Object.entries(firmasData).filter(([puesto]) => puestosValidos.includes(puesto))
+      : Object.entries(firmasData);
     
     const totalFirmas = firmasArray.length;
     
@@ -566,7 +569,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
         currentY += 52; // Espacio entre filas (ajustado para firma más alta)
         
         // Verificar si hay espacio
-        if (currentY > 200) {
+        if (currentY + 52 > pageHeight - 15) {
           doc.addPage();
           currentY = 20;
         }
@@ -806,10 +809,16 @@ export const exportFormToPDF = async (form, template) => {
     // bodyElements contiene las SECCIONES dinámicas
     const bodyElements = Array.isArray(template?.bodyElements) ? template.bodyElements : [];
     const bodyData = form.bodyData || {};
-    const firmasData = form.firmasData || {};
+    let firmasData = form.firmasData || {};
+    
+    // Asegurar que firmasData esté parseado (puede venir como string JSON)
+    if (typeof firmasData === 'string') {
+      try { firmasData = JSON.parse(firmasData); } catch { firmasData = {}; }
+    }
     
     console.log('📊 Body Elements (Secciones):', bodyElements);
     console.log('📊 Body Data:', bodyData);
+    console.log('✍️ Firmas Data:', firmasData);
     
     // 1. Dibujar encabezado Frigolab
     console.log('🎨 Dibujando encabezado...');
@@ -827,7 +836,7 @@ export const exportFormToPDF = async (form, template) => {
       console.log(`📌 Sección ${index + 1}:`, section);
       
       // Verificar si hay espacio, si no, agregar nueva página
-      if (currentY > 240) {
+      if (currentY + 20 > doc.internal.pageSize.getHeight()) {
         doc.addPage();
         currentY = 20;
       }
@@ -1252,12 +1261,12 @@ const rows = tableData.map((row, rowIndex) => {
       } else if (section.type === 'text' || section.type === 'textarea') {
         // SECCIÓN TIPO TEXTO (como Observaciones)
         let textValue = '';
+        const fieldName = section.name || section.id || `field_${index}`;
         
         if (Array.isArray(bodyData)) {
           const sectionData = bodyData[index];
-          textValue = sectionData?.value || sectionData || '';
+          textValue = sectionData?.value || (typeof sectionData === 'string' ? sectionData : '') || form[fieldName] || '';
         } else {
-          const fieldName = section.name || section.id || `field_${index}`;
           textValue = form[fieldName] || bodyData[fieldName] || '';
         }
         
@@ -1388,11 +1397,11 @@ const rows = tableData.map((row, rowIndex) => {
       }
     }
     
-    // 4. Dibujar observaciones si existen (y no están en bodyElements)
-    if (form.observaciones && !bodyElements.some(s => s.name === 'observaciones')) {
+    // 4. Dibujar observaciones si existen (y no están ya renderizadas en bodyElements como texto con contenido)
+    if (form.observaciones && !bodyElements.some(s => (s.name === 'observaciones' || s.id === 'observaciones') && Array.isArray(bodyData) && bodyData[bodyElements.indexOf(s)]?.value)) {
       console.log('📝 Dibujando observaciones...');
       
-      if (currentY > 240) {
+      if (currentY + 30 > doc.internal.pageSize.getHeight()) {
         doc.addPage();
         currentY = 20;
       }

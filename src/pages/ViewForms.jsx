@@ -1178,22 +1178,39 @@ function ViewForms() {
                     // 🔐 Verificar si el usuario logueado es el asignado a este puesto
                     const nombreAsignado = (data.nombre || '').toLowerCase().trim();
                     const currentUserName = (currentUser?.nombre || currentUser?.username || '').toLowerCase().trim();
+                    const currentUserEmail = (currentUser?.email || '').toLowerCase().trim();
                     const isCurrentUserSlot = nombreAsignado && currentUserName && nombreAsignado === currentUserName;
                     const yaFirmado = !!(data.firma && (data.firma.url || data.firma.base64));
-                    // El usuario puede firmar si: es su slot Y aún no ha firmado
-                    const canSignHere = isCurrentUserSlot && !yaFirmado;
+
+                    // 🔄 Verificar si el usuario es REEMPLAZO/SUPLENTE para este puesto
+                    const templateFirmaConfig = templateFirmas.find(tf => tf.puesto === puesto);
+                    const reemplazosDefinidos = (templateFirmaConfig?.reemplazos || []).filter(Boolean);
+                    const esReemplazoDefinido = reemplazosDefinidos.some(
+                      r => r.toLowerCase().trim() === currentUserName
+                    );
+
+                    // El usuario puede firmar si: es su slot O es reemplazo, Y aún no ha firmado
+                    const canSignHere = (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado;
                     
                     console.log(`🔐 [${puesto}] Validación de firma:`, {
                       nombreAsignado,
                       currentUserName,
                       isCurrentUserSlot,
+                      esReemplazoDefinido,
                       yaFirmado,
                       canSignHere
                     });
+
+                    // Nombre que se debe usar al firmar
+                    const nombreParaFirmar = esReemplazoDefinido && !isCurrentUserSlot
+                      ? (currentUser?.nombre || currentUser?.username || '')
+                      : (data.nombre || '');
                     
                     return (
                       <div key={puesto} className="signature-box-view" style={{
-                        border: isCurrentUserSlot ? '2px solid #1976d2' : undefined,
+                        border: isCurrentUserSlot ? '2px solid #1976d2' 
+                             : esReemplazoDefinido && !yaFirmado ? '2px solid #f59e0b' 
+                             : undefined,
                         borderRadius: '8px',
                         position: 'relative'
                       }}>
@@ -1210,6 +1227,21 @@ function ViewForms() {
                             fontWeight: 'bold'
                           }}>
                             👤 Tu firma
+                          </div>
+                        )}
+                        {esReemplazoDefinido && !isCurrentUserSlot && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '-10px',
+                            right: '10px',
+                            backgroundColor: '#f59e0b',
+                            color: 'white',
+                            padding: '2px 10px',
+                            borderRadius: '10px',
+                            fontSize: '11px',
+                            fontWeight: 'bold'
+                          }}>
+                            🔄 Reemplazo autorizado
                           </div>
                         )}
                         <h4>{puesto}</h4>
@@ -1244,11 +1276,19 @@ function ViewForms() {
                               </div>
                             </div>
                           ) : canSignHere ? (
-                            /* 🔓 Si es el slot del usuario actual y no ha firmado → mostrar SignatureUploader */
+                            /* 🔓 Si es el slot del usuario actual o reemplazo y no ha firmado → mostrar SignatureUploader */
                             <SignatureUploader
                               puesto={puesto}
-                              firmaData={data}
-                              onFirmaChange={(updatedData) => handleViewFirmaUpdate(puesto, updatedData)}
+                              firmaData={{ ...data, nombre: nombreParaFirmar }}
+                              onFirmaChange={(updatedData) => handleViewFirmaUpdate(puesto, {
+                                ...updatedData,
+                                nombre: nombreParaFirmar,
+                                email: currentUser?.email || updatedData.email || '',
+                                ...(esReemplazoDefinido && !isCurrentUserSlot ? { 
+                                  esReemplazo: true, 
+                                  reemplazandoA: data.nombre || templateFirmaConfig?.nombreCompleto || '' 
+                                } : {})
+                              })}
                               cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
                               cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
                               currentUser={currentUser}
@@ -1260,6 +1300,9 @@ function ViewForms() {
                           
                           {/* Nombre bloqueado (readonly) */}
                           <p><strong>Nombre:</strong> {data.nombre || "-"}</p>
+                          {data.esReemplazo && data.reemplazandoA && (
+                            <p style={{ fontSize: '12px', color: '#92400e' }}>🔄 Reemplazo de: {data.reemplazandoA}</p>
+                          )}
                           {data.email && (
                             <p><strong>📧 Email:</strong> <a href={`mailto:${data.email}`} style={{ color: '#1976d2' }}>{data.email}</a></p>
                           )}

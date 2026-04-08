@@ -106,6 +106,15 @@ export default function SignatureManagement() {
           } catch { /* ignore */ }
         }
 
+        // Parsear Firmas del template (contiene reemplazos/suplentes)
+        let templateFirmasParsed = null;
+        if (template?.firmas) {
+          try {
+            templateFirmasParsed = typeof template.firmas === 'string' ? JSON.parse(template.firmas) : template.firmas;
+            if (!Array.isArray(templateFirmasParsed)) templateFirmasParsed = null;
+          } catch { /* ignore */ }
+        }
+
         return {
           id: form.id || form.formID,
           templateId: form.templateId || form.templateID,
@@ -124,6 +133,7 @@ export default function SignatureManagement() {
           status: form.isRejected ? 'rejected' : form.isSigned ? 'signed' : 'pending',
           signed: form.isSigned || false,
           firmasData: firmasDataParsed, // ✅ Agregar FirmasData parseado para filtrado
+          templateFirmas: templateFirmasParsed, // ✅ Firmas del template con reemplazos/suplentes
         };
       });
 
@@ -537,6 +547,21 @@ export default function SignatureManagement() {
       if (userEmail && nombreAsignado && nombreAsignado.includes('@') && nombreAsignado === userEmail) {
         return true;
       }
+
+      // ✅ Verificar si el usuario es SUPLENTE (reemplazo) para este puesto
+      if (form.templateFirmas && Array.isArray(form.templateFirmas)) {
+        const templateFirma = form.templateFirmas.find(tf => 
+          tf.puesto?.toLowerCase().trim() === puesto.toLowerCase().trim()
+        );
+        if (templateFirma?.reemplazos && Array.isArray(templateFirma.reemplazos)) {
+          for (const reemplazo of templateFirma.reemplazos) {
+            const reemplazoNombre = reemplazo?.toLowerCase().trim();
+            if (reemplazoNombre && userNombre && reemplazoNombre === userNombre) {
+              return true;
+            }
+          }
+        }
+      }
     }
 
     return false;
@@ -597,7 +622,7 @@ export default function SignatureManagement() {
           <div className="stat-card pending">
             <div className="stat-icon">📝</div>
             <div className="stat-content">
-              <h3>{stats.pendingCount || 0}</h3>
+              <h3>{filteredForms.length}</h3>
               <p>Pendientes de Firma</p>
             </div>
           </div>
