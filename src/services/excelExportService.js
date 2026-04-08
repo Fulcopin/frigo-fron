@@ -321,7 +321,7 @@ const createFrigolabHeader = async (worksheet, templateData, logoBase64, maxCols
     fechaFinal = `${day}/${month}/${year}`;
   }
   
-  const metaLabels = ['CODIGO:', 'VERSION:', 'FECHA:'];
+  const metaLabels = ['CODIGO:', 'VERSION:', 'FECHA VERSION:'];
   const metaValues = [codigoFinal, versionFinal, fechaFinal];
   
   // Metadatos en las últimas 2 columnas

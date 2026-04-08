@@ -376,13 +376,14 @@ function ViewForms() {
       console.log('📋 formData.template.structure.bodyElements:', JSON.stringify(formData.template.structure.bodyElements, null, 2));
       
       // Transformar estructura del endpoint al formato esperado por el servicio PDF
+      const fechaVersionPDF = formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null;
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
         createdAt: formData.createdAt || formData.CreatedAt || formData.created_at,
-        fechaVersion: formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null,
+        fechaVersion: fechaVersionPDF,
         templateCreatedAt: formData.template?.CreatedAt || formData.template?.createdAt || null,
-        tipoProducto: formData.tipoProducto, // 🦐🐟 NUEVO: Tipo de producto
+        tipoProducto: formData.tipoProducto,
         observaciones: formData.observaciones,
         templateCodigo: formData.template.codigo,
         templateNombre: formData.template.nombre,
@@ -396,7 +397,7 @@ function ViewForms() {
         codigo: formData.template?.codigo,
         nombre: formData.template?.nombre,
         version: formData.template?.version,
-        fechaVersion: formData.template?.fechaVersion || formData.template?.FechaVersion || null,
+        fechaVersion: fechaVersionPDF,
         bodyElements: formData.template?.structure?.bodyElements,
         headerFields: formData.template?.structure?.headerFields,
         firmas: formData.template?.structure?.firmas
@@ -430,13 +431,14 @@ function ViewForms() {
       console.log('📦 Datos completos recibidos:', formData);
       
       // Transformar estructura del endpoint al formato esperado por el servicio Excel
+      const fechaVersionExcel = formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null;
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
         createdAt: formData.createdAt || formData.CreatedAt || formData.created_at,
-        fechaVersion: formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null,
+        fechaVersion: fechaVersionExcel,
         templateCreatedAt: formData.template?.CreatedAt || formData.template?.createdAt || null,
-        tipoProducto: formData.tipoProducto, // 🦐🐟 NUEVO: Tipo de producto
+        tipoProducto: formData.tipoProducto,
         observaciones: formData.observaciones,
         templateCodigo: formData.template.codigo,
         templateNombre: formData.template.nombre,
@@ -450,7 +452,7 @@ function ViewForms() {
         codigo: formData.template?.codigo,
         nombre: formData.template?.nombre,
         version: formData.template?.version,
-        fechaVersion: formData.template?.fechaVersion || formData.template?.FechaVersion || null,
+        fechaVersion: fechaVersionExcel,
         bodyElements: formData.template?.structure?.bodyElements,
         headerFields: formData.template?.structure?.headerFields,
         firmas: formData.template?.structure?.firmas
@@ -671,7 +673,7 @@ function ViewForms() {
         </div>
         <div className="form-viewer-document">
           {(() => {
-            // 📅 FECHA: Usar fechaVersion, si no existe usar createdAt del template
+            // 📅 FECHA: Usar fechaVersion del template (fecha de versión de la plantilla)
             const rawFecha = correspondingTemplate?.fechaVersion || correspondingTemplate?.FechaVersion
                           || correspondingTemplate?.createdAt || correspondingTemplate?.CreatedAt;
             const fechaFinal = rawFecha ? new Date(rawFecha).toLocaleDateString("es-EC") : "Sin fecha";

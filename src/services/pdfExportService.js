@@ -232,13 +232,14 @@ const drawFrigolabHeader = async (doc, templateData) => {
   doc.setTextColor(...COLORS.text);
   doc.text('CODIGO:', metaContentX, 5 + metaRowH * 0.55 + 1);
   doc.text('VERSION:', metaContentX, 5 + metaRowH * 1.55 + 1);
-  doc.text('FECHA:', metaContentX, 5 + metaRowH * 2.55 + 1);
+  doc.text('FECHA VERSION:', metaContentX, 5 + metaRowH * 2.55 + 1);
   
   doc.setFont('helvetica', 'normal');
   
   // ✅ CÓDIGO: Usar headerData.codigo (editable) o código del template
   const codigoFinal = headerData?.codigo || headerData?.Código || codigo || 'N/A';
   const metaValueX = metaContentX + 22;
+  const metaValueXFecha = metaContentX + 32; // Más espacio para "FECHA VERSION:"
   doc.text(sanitizeText(codigoFinal), metaValueX, 5 + metaRowH * 0.55 + 1);
   
   // VERSION: Usar headerData.version (editable) o versión del template
@@ -268,7 +269,7 @@ const drawFrigolabHeader = async (doc, templateData) => {
     fechaFinal = `${day}/${month}/${year}`;
   }
   
-  doc.text(sanitizeText(fechaFinal), metaValueX, 5 + metaRowH * 2.55 + 1);
+  doc.text(sanitizeText(fechaFinal), metaValueXFecha, 5 + metaRowH * 2.55 + 1);
   
   // Resetear color de texto
   doc.setTextColor(...COLORS.text);

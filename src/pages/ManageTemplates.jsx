@@ -22,7 +22,8 @@ function ManageTemplates() {
   const [newHistoryCambio, setNewHistoryCambio] = useState('');
   const [newHistoryVersion, setNewHistoryVersion] = useState('');
 
-  // 👁️ Pre-visualización
+
+  // �👁️ Pre-visualización
   const [showPreview, setShowPreview] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState(null);
 
@@ -124,61 +125,74 @@ function ManageTemplates() {
     }
   };
 
-  // ========== 📝 HISTORIAL MANUAL ==========
-  const MANUAL_HISTORY_KEY = 'fishcort_manual_template_history';
+  // ========== 📝 HISTORIAL MANUAL (API) ==========
 
-  const loadManualHistory = (templateId) => {
+  const loadManualHistory = async (templateId) => {
     try {
-      const all = JSON.parse(localStorage.getItem(MANUAL_HISTORY_KEY) || '{}');
-      return all[templateId] || [];
+      const response = await fetch(`${API_URL_TEMPLATES}/${templateId}/changelog`);
+      if (!response.ok) return [];
+      const data = await response.json();
+      console.log('📋 Changelog raw data:', data);
+      const arr = Array.isArray(data) ? data : data.$values || [];
+      console.log('📋 Changelog parsed array:', arr);
+      return arr.map(e => ({
+        id: e.id,
+        fecha: e.fecha ? e.fecha.split('T')[0] : '',
+        cambioRealizado: e.cambioRealizado,
+        version: e.version
+      }));
     } catch {
       return [];
     }
   };
 
-  const saveManualHistory = (templateId, entries) => {
-    try {
-      const all = JSON.parse(localStorage.getItem(MANUAL_HISTORY_KEY) || '{}');
-      all[templateId] = entries;
-      localStorage.setItem(MANUAL_HISTORY_KEY, JSON.stringify(all));
-    } catch (e) {
-      console.error('Error guardando historial manual:', e);
-    }
-  };
-
-  const handleOpenManualHistory = (template) => {
+  const handleOpenManualHistory = async (template) => {
     setManualHistoryTemplate(template);
-    setManualHistoryEntries(loadManualHistory(template.templateID));
+    setManualHistoryEntries(await loadManualHistory(template.templateID));
     setNewHistoryFecha('');
     setNewHistoryCambio('');
     setNewHistoryVersion(template.version || '');
     setShowManualHistory(true);
   };
 
-  const handleAddManualEntry = () => {
+  const handleAddManualEntry = async () => {
     if (!newHistoryFecha.trim() || !newHistoryCambio.trim()) {
       alert('Por favor completa la fecha y el cambio realizado.');
       return;
     }
-    const newEntry = {
-      id: Date.now(),
-      fecha: newHistoryFecha.trim(),
-      cambioRealizado: newHistoryCambio.trim(),
-      version: newHistoryVersion.trim() || manualHistoryTemplate.version || 'N/A'
-    };
-    const updated = [newEntry, ...manualHistoryEntries];
-    setManualHistoryEntries(updated);
-    saveManualHistory(manualHistoryTemplate.templateID, updated);
-    setNewHistoryFecha('');
-    setNewHistoryCambio('');
-    setNewHistoryVersion(manualHistoryTemplate.version || '');
+    try {
+      const response = await fetch(`${API_URL_TEMPLATES}/${manualHistoryTemplate.templateID}/changelog`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fecha: newHistoryFecha.trim(),
+          version: newHistoryVersion.trim() || manualHistoryTemplate.version || 'N/A',
+          cambioRealizado: newHistoryCambio.trim()
+        })
+      });
+      if (!response.ok) throw new Error('Error al guardar');
+      const saved = await response.json();
+      console.log('✅ Registro guardado:', saved);
+      // Recargar todos los registros del servidor para asegurar sincronización
+      const updatedEntries = await loadManualHistory(manualHistoryTemplate.templateID);
+      setManualHistoryEntries(updatedEntries);
+      setNewHistoryFecha('');
+      setNewHistoryCambio('');
+      setNewHistoryVersion(manualHistoryTemplate.version || '');
+    } catch (err) {
+      alert('Error guardando el registro: ' + err.message);
+    }
   };
 
-  const handleDeleteManualEntry = (entryId) => {
+  const handleDeleteManualEntry = async (entryId) => {
     if (!globalThis.confirm('¿Eliminar este registro del historial?')) return;
-    const updated = manualHistoryEntries.filter(e => e.id !== entryId);
-    setManualHistoryEntries(updated);
-    saveManualHistory(manualHistoryTemplate.templateID, updated);
+    try {
+      const response = await fetch(`${API_URL_TEMPLATES}/changelog/${entryId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Error al eliminar');
+      setManualHistoryEntries(prev => prev.filter(e => e.id !== entryId));
+    } catch (err) {
+      alert('Error eliminando el registro: ' + err.message);
+    }
   };
 
   // ========== 👁️ PRE-VISUALIZACIÓN ==========
@@ -615,8 +629,4 @@ function ManageTemplates() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-export default ManageTemplates;
+      {/* ========== MODAL: REGISTRO DE CAMBIOS ========== */}

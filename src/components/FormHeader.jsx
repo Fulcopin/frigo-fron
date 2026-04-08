@@ -57,7 +57,7 @@ export default function FormHeader({ title, code, version, date, tipoProducto })
               <span className="metadata-value">{version}</span>
             </div>
             <div className="metadata-row">
-              <span className="metadata-label">Fecha:</span>
+              <span className="metadata-label">Fecha de Versión:</span>
               <span className="metadata-value">{date}</span>
             </div>
             {/* 🦐🐟 NUEVO: Mostrar tipo de producto si existe */}
