@@ -629,4 +629,8 @@ function ManageTemplates() {
           </div>
         </div>
       )}
-      {/* ========== MODAL: REGISTRO DE CAMBIOS ========== */}
+    </div>  
+  );      
+}           
+
+export default ManageTemplates; 
