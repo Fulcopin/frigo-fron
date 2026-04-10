@@ -13,6 +13,20 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
   if (!formula || typeof formula !== 'string' || !formula.trim()) return "";
   if (!rowData) return "";
 
+  // 🔍 DEBUG GLASEO: Log temporal para diagnosticar
+  if (formula.includes('GLASEO') && currentRowIndex === 0) {
+    const pesoC = rowData['PESO lbs C/GLASEO'];
+    const pesoS = rowData['PESO lbs S/GLASEO'];
+    const keys = Object.keys(rowData).filter(k => k.includes('PESO') || k.includes('GLASEO'));
+    console.log(`🔬 GLASEO DEBUG [row ${currentRowIndex}]:`, {
+      formula,
+      'PESO lbs C/GLASEO': pesoC,
+      'PESO lbs S/GLASEO': pesoS,
+      'keys con PESO/GLASEO': keys,
+      'todas las keys': Object.keys(rowData).join(', ')
+    });
+  }
+
   // Porcentaje: porcentaje(expr) o percent(expr)
   const percentMatch = formula.trim().match(/^(?:porcentaje|percent|pct)\((.+)\)$/i);
   if (percentMatch) {
@@ -105,13 +119,15 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
 
     const sanitize = (expr) =>
       expr.replace(/\s/g, '')
+        .replace(/([0-9)])x([0-9(])/gi, '$1*$2') // "x" como multiplicación (convención española)
         .replace(/\+\+/g, '+').replace(/--/g, '+')
         .replace(/\+-/g, '-').replace(/-\+/g, '-')
         .replace(/\*\+/g, '*').replace(/\/\+/g, '/');
 
     const sanitized = sanitize(expression);
     if (!/^[0-9.+\-*/()]+$/.test(sanitized)) {
-      let expression2 = formula;
+      // Fallback: normalizar la fórmula (quitar acentos, minúsculas) para resolver diferencias de acentuación
+      let expression2 = normalizeKey(formula);
       if (allRows && allRows.length > 0) {
         Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
           const origKey = normalizedKeyMap[normKey];
@@ -142,7 +158,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
       });
       const sanitized2 = sanitize(expression2);
       if (!/^[0-9.+\-*/()]+$/.test(sanitized2)) {
-        console.warn('⚠️ Fórmula sin coincidencia. Fórmula:', formula, '| Expresión:', expression2, '| Claves:', rowKeys);
+        console.warn('⚠️ Fórmula sin coincidencia. Fórmula:', formula, '| Expresión normalizada:', expression2, '| Claves:', rowKeys, '| rowData:', JSON.stringify(rowData).slice(0, 500));
         return "⚠️";
       }
       const result2 = new Function(`"use strict"; return (${sanitized2})`)();
@@ -152,7 +168,6 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
 
     const result = new Function(`"use strict"; return (${sanitized})`)();
     if (typeof result !== 'number' || !isFinite(result)) {
-      console.warn('⚠️ Fórmula no finita (posible /0). Fórmula:', formula, '| Expresión final:', sanitized, '| rowData:', JSON.stringify(rowData));
       return "0.00";
     }
     return result.toFixed(2);
@@ -210,27 +225,36 @@ export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
   seenLabels.forEach((indices, plainLabel) => {
     if (indices.length <= 1) return; // etiqueta única -> evaluarFormula la resuelve directo
 
-    let bestIndex = -1;
-    let bestScore = Infinity;
-
-    indices.forEach(ci => {
+    // Ordenar candidatos por prioridad: mismo grupo + cercanía al formulaColIndex
+    const candidates = indices.map(ci => {
       const col = templateCols[ci];
       const ciGroupNorm = normGroup(col ? col.group : '');
       const sameGroup = colGroupNorm !== '' && ciGroupNorm === colGroupNorm;
       const distance = Math.abs(ci - formulaColIndex);
-      // Mismo grupo: score bajo (gana). Diferente grupo: penalización de 1000.
       const score = (sameGroup ? 0 : 1000) + distance;
-      if (score < bestScore) {
-        bestScore = score;
-        bestIndex = ci;
-      }
-    });
+      return { ci, score, storedKey: colNMap.get(ci) };
+    }).sort((a, b) => a.score - b.score);
 
-    if (bestIndex >= 0) {
-      const storedKey = colNMap.get(bestIndex);
-      if (storedKey && storedKey !== plainLabel && row[storedKey] !== undefined) {
-        rowAlias[plainLabel] = row[storedKey];
+    // Buscar el mejor candidato que tenga un valor real en el row
+    let resolved = false;
+    for (const cand of candidates) {
+      const { storedKey } = cand;
+      if (storedKey && row[storedKey] !== undefined) {
+        // Tiene la clave _colN → usar ese valor
+        if (storedKey !== plainLabel) {
+          rowAlias[plainLabel] = row[storedKey];
+        }
+        resolved = true;
+        break;
       }
+    }
+
+    // Si ningún _colN existe en el row, el valor puede estar bajo la clave plana
+    // (filas inicializadas con labels planos). El plainLabel ya está en rowAlias (del spread).
+    // No necesitamos hacer nada extra — el valor plano se usará tal cual.
+    if (!resolved && row[plainLabel] !== undefined) {
+      // Ya está en rowAlias por el spread, pero aseguramos que esté
+      rowAlias[plainLabel] = row[plainLabel];
     }
   });
 
@@ -248,7 +272,7 @@ export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
  */
 export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
   if (!Array.isArray(allBodyData) || allBodyData.length === 0) return rawRow;
-  const merged = { ...rawRow };
+  const merged = {};
   // Acumulador de sumas de columna a través de TODAS las tablas (para soportar [*] cross-table)
   const crossTableSums = {};
   allBodyData.forEach(elData => {
@@ -266,11 +290,18 @@ export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
         if (!isNaN(v)) crossTableSums[k] = (crossTableSums[k] || 0) + v;
       });
     });
-    // También mezclar los valores de la misma fila (para referencias directas sin [*])
+    // Solo mezclar claves que NO existan ya en rawRow (para no sobrescribir valores de la tabla actual)
     if (rowIndex < elRows.length && elRows[rowIndex] && typeof elRows[rowIndex] === 'object') {
-      Object.assign(merged, elRows[rowIndex]);
+      const otherRow = elRows[rowIndex];
+      Object.keys(otherRow).forEach(k => {
+        if (rawRow[k] === undefined) {
+          merged[k] = otherRow[k];
+        }
+      });
     }
   });
+  // rawRow tiene prioridad absoluta: sus valores nunca se sobrescriben
+  Object.assign(merged, rawRow);
   // Guardar las sumas cross-table para que evaluarFormula las use en [*]
   merged.__crossTableSums__ = crossTableSums;
   return merged;

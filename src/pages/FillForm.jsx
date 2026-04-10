@@ -813,14 +813,27 @@ useEffect(() => {
         return { id: element.id, type: 'nota_estatica', data: {} };
       }
       if (element.type === 'table') {
+        // Construir mapa de claves deduplicadas (igual que _columnNameMap)
+        const seenLabels = new Map();
+        (element.columns || []).forEach((col, ci) => {
+          const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+          if (!seenLabels.has(lbl)) seenLabels.set(lbl, []);
+          seenLabels.get(lbl).push(ci);
+        });
+        const getColKey = (col, ci) => {
+          const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+          return seenLabels.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl;
+        };
+
         // Si tiene filas predefinidas, usarlas como base
         if (element.predefinedRows && element.predefinedRows.length > 0) {
           const initialRows = element.predefinedRows.map(pRow => {
             const newRow = {};
-            (element.columns || []).forEach((col) => {
-              const colKey = col.label || col.header || col.name || col.id;
+            (element.columns || []).forEach((col, ci) => {
+              const plainKey = col.label || col.header || col.name || col.id;
+              const colKey = getColKey(col, ci);
               // Usar valor predefinido si existe, sino vacío
-              newRow[colKey] = pRow[colKey] || '';
+              newRow[colKey] = pRow[plainKey] || pRow[colKey] || '';
             });
             return newRow;
           });
@@ -829,8 +842,8 @@ useEffect(() => {
         const numRows = element.defaultRows || 3;
         const initialRows = Array.from({ length: numRows }, () => {
           const newRow = {};
-          (element.columns || []).forEach((col) => { 
-            newRow[col.label || col.header || col.name || col.id] = ""; 
+          (element.columns || []).forEach((col, ci) => { 
+            newRow[getColKey(col, ci)] = ""; 
           });
           return newRow;
         });
@@ -2527,14 +2540,28 @@ useEffect(() => {
     const predefinedPattern = tableTemplate.predefinedRows || [];
 
     const buildNewRows = () => {
+      // Construir mapa de claves deduplicadas
+      const cols = tableTemplate.columns || [];
+      const seenLbls = new Map();
+      cols.forEach((col, ci) => {
+        const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+        if (!seenLbls.has(lbl)) seenLbls.set(lbl, []);
+        seenLbls.get(lbl).push(ci);
+      });
+      const dedupKey = (col, ci) => {
+        const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+        return seenLbls.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl;
+      };
+
       if (predefinedPattern.length > 0) {
         // Agregar N filas que replican el patrón de predefinedRows (una por cada fila del patrón)
         return predefinedPattern.map(pRow => {
           const newRow = {};
-          (tableTemplate.columns || []).forEach(col => {
-            const colKey = col.label || col.header || col.name || col.id;
+          cols.forEach((col, ci) => {
+            const plainKey = col.label || col.header || col.name || col.id;
+            const colKey = dedupKey(col, ci);
             // Copiar valores fijos del patrón (texto estático que siempre aparece en esa fila del grupo)
-            newRow[colKey] = pRow[colKey] || '';
+            newRow[colKey] = pRow[plainKey] || pRow[colKey] || '';
           });
           return newRow;
         });
@@ -2561,8 +2588,8 @@ useEffect(() => {
           });
         }
       } else {
-        (tableTemplate.columns || []).forEach(col => {
-          newRow[col.label || col.header || col.name || col.id] = "";
+        cols.forEach((col, ci) => {
+          newRow[dedupKey(col, ci)] = "";
         });
       }
       return [newRow];
@@ -2589,7 +2616,7 @@ useEffect(() => {
 
   const removeTableRow = (elementIndex, rowIndex, fieldLabel) => {
     if (fieldLabel) {
-      // Tabla dentro de sección (sin predefined rows): borrado real
+      // Tabla dentro de sección: borrado real
       setBodyData(prev => prev.map((element, index) => {
         if (index === elementIndex && Array.isArray(element.data[fieldLabel])) {
           const updatedData = { ...element.data };
@@ -2599,15 +2626,17 @@ useEffect(() => {
         return element;
       }));
     } else {
-      // Tabla como elemento directo: soft-delete del GRUPO COMPLETO (si hay patrón predefinido)
+      // Tabla como elemento directo: borrado REAL (no soft-delete)
       setBodyData(prev => prev.map((element, index) => {
         if (index !== elementIndex) return element;
         const tableEl = selectedTemplate?.bodyElements?.[elementIndex];
         const pLen = (tableEl?.predefinedRows || []).length;
-        // Soft-delete: marcar rowIndex y sus N-1 filas siguientes (todo el grupo)
-        const groupSize = pLen > 0 ? pLen : 1;
-        const updatedData = element.data.map((row, rIndex) =>
-          (rIndex >= rowIndex && rIndex < rowIndex + groupSize) ? { ...row, _deleted: true } : row
+        const groupSize = pLen > 1 ? pLen : 1;
+        // Calcular el inicio del grupo al que pertenece esta fila
+        const groupStart = pLen > 1 ? Math.floor(rowIndex / groupSize) * groupSize : rowIndex;
+        // Filtrar: eliminar todo el grupo (groupSize filas desde groupStart)
+        const updatedData = element.data.filter((_, rIndex) =>
+          rIndex < groupStart || rIndex >= groupStart + groupSize
         );
         return { ...element, data: updatedData };
       }));
@@ -3562,20 +3591,157 @@ useEffect(() => {
     }));
     setHasUnsavedChanges(true);
   }, [selectedTemplate]);
+
+  // 🎯 APLICAR VALOR A TODAS LAS FILAS de una columna (para selects, checkboxes, etc.)
+  const applyValueToAllRows = useCallback((elementIndex, columnLabel, value, fieldLabel = null) => {
+    if (!columnLabel) return;
+    // Sentinel "__VACIAR__" → limpiar la columna (poner vacío)
+    const realValue = value === '__VACIAR__' ? '' : value;
+    setBodyData(prev => prev.map((element, index) => {
+      if (index !== elementIndex) return element;
+      
+      if (fieldLabel) {
+        // Tabla dentro de sección
+        const updatedData = { ...element.data };
+        if (!Array.isArray(updatedData[fieldLabel])) return element;
+        updatedData[fieldLabel] = updatedData[fieldLabel].map(row => 
+          row?._deleted ? row : { ...row, [columnLabel]: realValue }
+        );
+        return { ...element, data: updatedData };
+      } else {
+        // Tabla standalone
+        const updatedRows = (element.data || []).map(row =>
+          row?._deleted ? row : { ...row, [columnLabel]: realValue }
+        );
+        // Recalcular fórmulas en todas las filas
+        const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+        if (tableTemplate?.columns) {
+          updatedRows.forEach((row, rIndex) => {
+            if (row?._deleted) return;
+            for (let pass = 0; pass < 2; pass++) {
+              tableTemplate.columns.forEach((col, ci) => {
+                const ck = col.label || col.id || col.name;
+                if ((col.type === 'formula' || col.type === 'calculated') && col.formula) {
+                  const rowAlias = buildGroupedRowAlias(row, tableTemplate.columns, ci);
+                  const result = evaluarFormula(col.formula, rowAlias, updatedRows, rIndex);
+                  if (result !== '') row[ck] = result;
+                } else if (col.type === 'percentage' && col.formula) {
+                  const rowAlias = buildGroupedRowAlias(row, tableTemplate.columns, ci);
+                  const raw = evaluarFormula(col.formula, rowAlias, updatedRows, rIndex);
+                  if (raw && raw !== 'ERR' && raw !== '⚠️') {
+                    const n = Number.parseFloat(raw);
+                    row[ck] = Number.isNaN(n) ? '0.00' : (n * 100).toFixed(2);
+                  }
+                }
+              });
+            }
+          });
+        }
+        return { ...element, data: updatedRows };
+      }
+    }));
+    setHasUnsavedChanges(true);
+  }, [selectedTemplate]);
+
+  // 🔄 RESTAURAR FILAS PREDEFINIDAS de una tabla (cuando se eliminaron todas)
+  const restoreTableRows = (elementIndex) => {
+    const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+    if (!tableTemplate) return;
+    const predefined = tableTemplate.predefinedRows || [];
+    const columns = tableTemplate.columns || [];
+
+    // Construir mapa de claves deduplicadas
+    const seenLbls = new Map();
+    columns.forEach((col, ci) => {
+      const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+      if (!seenLbls.has(lbl)) seenLbls.set(lbl, []);
+      seenLbls.get(lbl).push(ci);
+    });
+    const dedupKey = (col, ci) => {
+      const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+      return seenLbls.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl;
+    };
+
+    let newRows;
+    if (predefined.length > 0) {
+      newRows = predefined.map(pRow => {
+        const newRow = {};
+        columns.forEach((col, ci) => {
+          const plainKey = col.label || col.header || col.name || col.id;
+          const colKey = dedupKey(col, ci);
+          newRow[colKey] = pRow[plainKey] || pRow[colKey] || '';
+        });
+        return newRow;
+      });
+    } else {
+      const numRows = tableTemplate.defaultRows || 3;
+      newRows = Array.from({ length: numRows }, () => {
+        const newRow = {};
+        columns.forEach((col, ci) => {
+          newRow[dedupKey(col, ci)] = '';
+        });
+        return newRow;
+      });
+    }
+    setBodyData(prev => prev.map((element, index) => {
+      if (index !== elementIndex) return element;
+      return { ...element, data: newRows };
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  // 🧹 LIMPIAR CONTENIDO DE UNA FILA sin eliminarla (preserva predefinedRows y orden)
+  const clearRowContent = useCallback((elementIndex, rowIndex) => {
+    setBodyData(prev => prev.map((element, index) => {
+      if (index !== elementIndex) return element;
+      const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+      const predefined = tableTemplate?.predefinedRows || [];
+      const pLen = predefined.length;
+      const pRowIndex = pLen > 0 ? rowIndex % pLen : -1;
+      const pRow = pLen > 0 ? predefined[pRowIndex] : null;
+
+      const updatedData = [...(element.data || [])];
+      const row = { ...updatedData[rowIndex] };
+      // Limpiar solo las celdas editables (no predefinidas, no _deleted, no fórmulas)
+      (tableTemplate?.columns || []).forEach(col => {
+        const colKey = col.label || col.header || col.name || col.id;
+        const colType = (col.type || '').toLowerCase();
+        const isFormula = colType === 'formula' || colType === 'calculated' || colType === 'percentage';
+        // Si es una celda predefinida (tiene valor fijo en el patrón), no limpiar
+        const isPredefined = pRow && pRow[colKey];
+        if (!isFormula && !isPredefined) {
+          row[colKey] = '';
+        }
+      });
+      updatedData[rowIndex] = row;
+      return { ...element, data: updatedData };
+    }));
+    setHasUnsavedChanges(true);
+  }, [selectedTemplate]);
   
   const handleTableFieldChangeWithAutoSave = useCallback((elementIndex, rowIndex, columnLabel, value) => {
     // Validar que columnLabel no sea undefined o null
     if (!columnLabel) {
-      console.warn('⚠️ columnLabel es undefined/null', { elementIndex, rowIndex, columnLabel, value });
       return;
     }
-    
-    console.log(`📝 Usuario escribió en: [Fila ${rowIndex + 1}][${columnLabel}] = "${value}"`);
-    console.log(`   🔑 cellName exacto: "${columnLabel}"`);
     
     setBodyData(prev => prev.map((element, index) => {
       if (index === elementIndex) {
         const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+        
+        // � Construir mapa de claves deduplicadas (igual que _columnNameMap)
+        const cols = tableTemplate?.columns || [];
+        const seenLbls = new Map();
+        cols.forEach((col, ci) => {
+          const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+          if (!seenLbls.has(lbl)) seenLbls.set(lbl, []);
+          seenLbls.get(lbl).push(ci);
+        });
+        const colKeyMap = new Map();
+        cols.forEach((col, ci) => {
+          const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+          colKeyMap.set(ci, seenLbls.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl);
+        });
         
         // 🔥 PRIMERO: Construir las filas con el valor editado
         let updatedRows = element.data.map((row, rIndex) => {
@@ -3595,13 +3761,15 @@ useEffect(() => {
           // PASO 1a: Calcular columnas "calculated" con formula (TODOS los templates)
           if (tableTemplate?.columns) {
             tableTemplate.columns.forEach((col, ci) => {
-              if (col.type === 'calculated' && col.formula) {
-                const cellKey = col.label || col.id || col.name;
+              const ct = (col.type || '').toLowerCase();
+              if (ct === 'calculated' && col.formula) {
+                const cellKey = colKeyMap.get(ci) || col.label || col.id || col.name;
+                const plainLabel = col.label || col.header || col.name || '';
                 const rowAlias = buildGroupedRowAlias(updatedRow, tableTemplate.columns, ci);
                 const result = calcularFormulaDinamica(col.formula, rowAlias, updatedRows, rIndex);
                 if (result !== "") {
                   updatedRow[cellKey] = result;
-                  if (pass === 0 && rIndex === rowIndex) console.log(`      🧮 [calculated] ${cellKey} = ${result}`);
+                  if (plainLabel && plainLabel !== cellKey) updatedRow[plainLabel] = result;
                 }
               }
             });
@@ -3610,13 +3778,15 @@ useEffect(() => {
           // PASO 1b: Calcular columnas tipo "formula" para TODOS los templates
           if (tableTemplate?.columns) {
             tableTemplate.columns.forEach((col, ci) => {
-              if (col.type === 'formula' && col.formula) {
-                const cellKey = col.label || col.id || col.name;
+              const ct = (col.type || '').toLowerCase();
+              if (ct === 'formula' && col.formula) {
+                const cellKey = colKeyMap.get(ci) || col.label || col.id || col.name;
+                const plainLabel = col.label || col.header || col.name || '';
                 const rowAlias = buildGroupedRowAlias(updatedRow, tableTemplate.columns, ci);
                 const result = evaluarFormula(col.formula, rowAlias, updatedRows, rIndex);
                 if (result !== "") {
                   updatedRow[cellKey] = result;
-                  if (pass === 0 && rIndex === rowIndex) console.log(`      🧮 [formula-col] ${cellKey} = ${result}`);
+                  if (plainLabel && plainLabel !== cellKey) updatedRow[plainLabel] = result;
                 }
               }
             });
@@ -3625,15 +3795,17 @@ useEffect(() => {
           // PASO 1c: Calcular columnas tipo "percentage" (porcentaje)
           if (tableTemplate?.columns) {
             tableTemplate.columns.forEach((col, ci) => {
-              if (col.type === 'percentage' && col.formula) {
-                const cellKey = col.label || col.id || col.name;
+              const ct = (col.type || '').toLowerCase();
+              if (ct === 'percentage' && col.formula) {
+                const cellKey = colKeyMap.get(ci) || col.label || col.id || col.name;
+                const plainLabel = col.label || col.header || col.name || '';
                 const rowAlias = buildGroupedRowAlias(updatedRow, tableTemplate.columns, ci);
                 const rawResult = evaluarFormula(col.formula, rowAlias, updatedRows, rIndex);
                 if (rawResult !== "" && rawResult !== "ERR" && rawResult !== "⚠️") {
                   const numVal = Number.parseFloat(rawResult);
                   const percentVal = Number.isNaN(numVal) ? "0.00" : (numVal * 100).toFixed(2);
                   updatedRow[cellKey] = percentVal;
-                  if (pass === 0 && rIndex === rowIndex) console.log(`      📊 [percentage] ${cellKey} = ${percentVal}%`);
+                  if (plainLabel && plainLabel !== cellKey) updatedRow[plainLabel] = percentVal;
                 }
               }
             });
@@ -3649,11 +3821,11 @@ useEffect(() => {
         // 🎯 PASO 2: Auto-suma por nombre PESO/TOTAL (solo para formularios 15 tinas u otros marcados)
         const isAutoSumEnabled = shouldEnableAutoSum();
             
-        console.log(`   🔍 ¿Auto-suma habilitado? ${isAutoSumEnabled ? '✅ SÍ' : '⛔ NO'}`);
+
             
         // ⛔ SI AUTO-SUMA ESTÁ DESACTIVADO, RETORNAR
         if (!isAutoSumEnabled) {
-          console.log(`   ⏭️ Auto-suma por nombre DESACTIVADO`);
+
           return { ...element, data: updatedRows };
         }
             
@@ -7136,6 +7308,34 @@ useEffect(() => {
                                     >
                                       {group.columns[0].label || group.columns[0].name}
                                       {group.columns[0].unit && <span style={{ fontSize: '0.62rem', color: '#6b7280', display: 'block', fontWeight: 400, lineHeight: 1.2 }}>{group.columns[0].unit}</span>}
+                                      {/* 🎯 Aplicar a todas - columna simple en sección */}
+                                      {(() => {
+                                        const sCol = group.columns[0];
+                                        const sColType = (sCol.type || '').toLowerCase();
+                                        const sIsFormula = sColType === 'formula' || sColType === 'calculated' || sColType === 'percentage';
+                                        const sHasOpts = Array.isArray(sCol.options) && sCol.options.length > 0;
+                                        const sIsSelect = sColType === 'select' || sCol.apiEndpoint || sHasOpts;
+                                        const sCellKey = sCol.label || sCol.name;
+                                        if (sIsFormula) return null;
+                                        if (sIsSelect) return (
+                                          <select
+                                            onChange={(e) => { if (e.target.value) { applyValueToAllRows(elementIndex, sCellKey, e.target.value, field.label); e.target.value = ''; }}}
+                                            style={{ background: '#eef2ff', border: '1px solid #818cf8', borderRadius: '3px', padding: '1px 2px', fontSize: '0.55rem', cursor: 'pointer', color: '#4338ca', maxWidth: '75px', width: '100%', display: 'block', margin: '2px auto 0' }}
+                                            title={`Aplicar a todas las filas`}
+                                          >
+                                            <option value="">⬇ Todas</option>
+                                            <option value="__VACIAR__">🚫 Vacío</option>
+                                            {(sCol.options || []).map((o, oi) => <option key={oi} value={o}>{o}</option>)}
+                                          </select>
+                                        );
+                                        return (
+                                          <button
+                                            onClick={() => { const v = prompt(`Valor para TODAS las filas de "${sCellKey}":`); if (v !== null) applyValueToAllRows(elementIndex, sCellKey, v, field.label); }}
+                                            style={{ background: 'linear-gradient(135deg, #6366f1, #818cf8)', color: 'white', border: 'none', borderRadius: '3px', padding: '1px 4px', fontSize: '0.55rem', cursor: 'pointer', opacity: 0.85, display: 'block', margin: '2px auto 0' }}
+                                            title={`Aplicar a todas las filas`}
+                                          >⬇ Todas</button>
+                                        );
+                                      })()}
                                     </th>
                                   ) : (
                                     <th key={`group-${groupIndex}`} colSpan={group.columns.length} style={{
@@ -7172,6 +7372,31 @@ useEffect(() => {
                                           >
                                             {col.label || col.name}
                                             {col.unit && <span style={{ fontSize: '0.62rem', color: '#6b7280', display: 'block', fontWeight: 400, lineHeight: 1.2 }}>{col.unit}</span>}
+                                            {/* 🎯 Aplicar a todas - sub-columna en sección */}
+                                            {(() => {
+                                              const sColType = (col.type || '').toLowerCase();
+                                              const sIsFormula = sColType === 'formula' || sColType === 'calculated' || sColType === 'percentage';
+                                              const sHasOpts = Array.isArray(col.options) && col.options.length > 0;
+                                              const sIsSelect = sColType === 'select' || col.apiEndpoint || sHasOpts;
+                                              const sCellKey = col.label || col.name;
+                                              if (sIsFormula) return null;
+                                              if (sIsSelect) return (
+                                                <select
+                                                  onChange={(e) => { if (e.target.value) { applyValueToAllRows(elementIndex, sCellKey, e.target.value, field.label); e.target.value = ''; }}}
+                                                  style={{ background: '#eef2ff', border: '1px solid #818cf8', borderRadius: '3px', padding: '1px 2px', fontSize: '0.55rem', cursor: 'pointer', color: '#4338ca', maxWidth: '70px', width: '100%', display: 'block', margin: '2px auto 0' }}
+                                                >
+                                                  <option value="">⬇ Todas</option>
+                                                  <option value="__VACIAR__">🚫 Vacío</option>
+                                                  {(col.options || []).map((o, oi) => <option key={oi} value={o}>{o}</option>)}
+                                                </select>
+                                              );
+                                              return (
+                                                <button
+                                                  onClick={() => { const v = prompt(`Valor para TODAS las filas de "${sCellKey}":`); if (v !== null) applyValueToAllRows(elementIndex, sCellKey, v, field.label); }}
+                                                  style={{ background: 'linear-gradient(135deg, #6366f1, #818cf8)', color: 'white', border: 'none', borderRadius: '3px', padding: '1px 3px', fontSize: '0.55rem', cursor: 'pointer', opacity: 0.85, display: 'block', margin: '2px auto 0' }}
+                                                >⬇ Todas</button>
+                                              );
+                                            })()}
                                           </th>
                                         ))}
                                       </tr>
@@ -7183,7 +7408,12 @@ useEffect(() => {
                             </thead>
                             <tbody>
                               {Array.isArray(tableData) && tableData.length > 0 ? (
-                                tableData.map((row, rowIndex) => (
+                                tableData.map((row, rowIndex) => {
+                                  // 🔗 Pre-calcular fórmulas encadenadas para tablas en secciones
+                                  const allTableRows = tableData || [];
+                                  const crossTableRow = mergeCrossTableRow(row, rowIndex, bodyData);
+                                  const computedRow = buildComputedRow(crossTableRow, field.columns || [], allTableRows, rowIndex);
+                                  return (
                                   <tr 
                                     key={`row-${elementIndex}-${fieldIndex}-${rowIndex}`}
                                     style={{ borderBottom: '1px solid #c5d3e0', background: rowIndex % 2 === 0 ? '#ffffff' : '#f5f8fb' }}
@@ -7193,6 +7423,7 @@ useEffect(() => {
                                     </td>
                                     {groupedColumns.map((group, groupIndex) =>
                                       group.columns.map((col, colIndex) => {
+                                        const globalColIndex = (field.columns || []).indexOf(col);
                                         const cellKey = col.label || col.name;
                                         const cellValue = row?.[cellKey] || '';
                                         const isFormulaCol = col.type === 'formula' || col.type === 'calculated';
@@ -7203,11 +7434,11 @@ useEffect(() => {
                                         // Calcular valor de fórmula/porcentaje en tiempo real
                                         let displayValue = cellValue;
                                         if (isFormulaCol && col.formula) {
-                                          const allTableRows = tableData || [];
-                                          displayValue = evaluarFormula(col.formula, row, allTableRows, rowIndex) || '0.00';
+                                          const rowAlias = buildGroupedRowAlias(computedRow, field.columns || [], globalColIndex >= 0 ? globalColIndex : 0);
+                                          displayValue = evaluarFormula(col.formula, rowAlias, allTableRows, rowIndex) || '0.00';
                                         } else if (isPercentageCol && col.formula) {
-                                          const allTableRows = tableData || [];
-                                          const rawResult = evaluarFormula(col.formula, row, allTableRows, rowIndex);
+                                          const rowAlias = buildGroupedRowAlias(computedRow, field.columns || [], globalColIndex >= 0 ? globalColIndex : 0);
+                                          const rawResult = evaluarFormula(col.formula, rowAlias, allTableRows, rowIndex);
                                           if (rawResult && rawResult !== 'ERR' && rawResult !== '⚠️') {
                                             const numVal = Number.parseFloat(rawResult);
                                             displayValue = Number.isNaN(numVal) ? '0.00' : (numVal * 100).toFixed(2);
@@ -7293,15 +7524,17 @@ useEffect(() => {
                                                     const allRows = [...dataObj[capturedFieldLabel]];
                                                     const updatedRow = { ...allRows[capturedRowIndex], [capturedCellKey]: capturedValue };
                                                     allRows[capturedRowIndex] = updatedRow;
-                                                    // Recalcular fórmulas en esta fila
+                                                    // Recalcular fórmulas en esta fila con alias para grupos
                                                     for (let pass = 0; pass < 3; pass++) {
-                                                      capturedAllCols.forEach(c => {
+                                                      capturedAllCols.forEach((c, ci) => {
                                                         const ck = c.label || c.name;
                                                         if ((c.type === 'formula' || c.type === 'calculated') && c.formula) {
-                                                          const res = evaluarFormula(c.formula, updatedRow, allRows, capturedRowIndex);
+                                                          const rowAlias = buildGroupedRowAlias(updatedRow, capturedAllCols, ci);
+                                                          const res = evaluarFormula(c.formula, rowAlias, allRows, capturedRowIndex);
                                                           if (res !== '') updatedRow[ck] = res;
                                                         } else if (c.type === 'percentage' && c.formula) {
-                                                          const raw = evaluarFormula(c.formula, updatedRow, allRows, capturedRowIndex);
+                                                          const rowAlias = buildGroupedRowAlias(updatedRow, capturedAllCols, ci);
+                                                          const raw = evaluarFormula(c.formula, rowAlias, allRows, capturedRowIndex);
                                                           if (raw && raw !== 'ERR' && raw !== '⚠️') {
                                                             const n = Number.parseFloat(raw);
                                                             updatedRow[ck] = Number.isNaN(n) ? '0.00' : (n * 100).toFixed(2);
@@ -7372,7 +7605,7 @@ useEffect(() => {
                                       </td>
                                     )}
                                   </tr>
-                                ))
+                                );})
                               ) : (
                                 <tr>
                                   <td colSpan={groupedColumns.reduce((sum, g) => sum + g.columns.length, 0) + (field.allowDeleteRows ? 2 : 1)} style={{
@@ -7409,16 +7642,6 @@ useEffect(() => {
             const groupedColumns = processColumnGroups(element.columns);
             const rowCount = (currentElementData.data || []).filter(r => !r?._deleted).length;
             
-            // 🐛 DEBUG: Ver qué está pasando
-            console.log('📊 Renderizando tabla:', {
-              elementIndex,
-              columns: element.columns?.length,
-              groupedColumns: groupedColumns.length,
-              rowCount,
-              firstRow: currentElementData.data?.[0],
-              firstRowKeys: Object.keys(currentElementData.data?.[0] || {})
-            });
-            
             return (
               <AccordionSection
                 key={element.id}
@@ -7438,6 +7661,9 @@ useEffect(() => {
                     </button>
                     <button onClick={() => removeEmptyRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }} title="Eliminar filas que están completamente vacías">
                       🧹 Limpiar Vacías
+                    </button>
+                    <button onClick={() => restoreTableRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }} title="Restaurar las filas predefinidas de la plantilla">
+                      🔄 Restaurar Filas
                     </button>
                     {/* 📦 Botón de Agrupar / Crear Grupo */}
                     {!groupingMode[elementIndex] ? (
@@ -7582,22 +7808,77 @@ useEffect(() => {
                         {groupedColumns.map((group, index) => (
                           <th key={index} colSpan={group.columns.length}>{group.groupName}</th>
                         ))}
-                        <th rowSpan="2" style={{ background: '#4b5563', color: 'white' }}>Acciones</th>
+                        <th rowSpan="2" style={{ background: '#4b5563', color: 'white', position: 'sticky', right: 0, zIndex: 12, minWidth: '80px' }}>Acciones</th>
                       </tr>
                       <tr>
                         {(element.columns || []).map((col, colIndex) => {
                           const headerText = col.label || col.header || `Col ${colIndex + 1}`;
-                          if (colIndex === 0) {
-                            console.log('🏷️ Renderizando cabeceras:', element.columns.map(c => ({
-                              label: c.label,
-                              header: c.header,
-                              resultado: c.label || c.header || 'Sin nombre'
-                            })));
-                          }
+                          const colType = (col.type || '').toLowerCase();
+                          const isFormulaCol = colType === 'formula' || colType === 'calculated' || colType === 'percentage';
+                          const hasOptions = Array.isArray(col.options) && col.options.length > 0;
+                          const isSelectCol = colType === 'select' || col.apiEndpoint || hasOptions;
+                          const cellName = (element._columnNameMap instanceof Map ? element._columnNameMap.get(colIndex) : null) || col.label || col.header || col.id;
                           return (
                             <th key={colIndex} style={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'break-word', position: 'relative', minWidth: '85px', maxWidth: '200px', verticalAlign: 'middle', textAlign: 'center', lineHeight: '1.3' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
                                 <span style={{ fontSize: '0.68rem', wordBreak: 'break-word' }}>{headerText}</span>
+                                {/* 🎯 Aplicar valor a todas las filas */}
+                                {!isFormulaCol && (
+                                  isSelectCol ? (
+                                    <select
+                                      onChange={(e) => {
+                                        if (e.target.value) {
+                                          applyValueToAllRows(elementIndex, cellName, e.target.value);
+                                          e.target.value = '';
+                                        }
+                                      }}
+                                      title={`Aplicar a todas las filas de "${headerText}"`}
+                                      style={{
+                                        background: '#eef2ff',
+                                        border: '1px solid #818cf8',
+                                        borderRadius: '3px',
+                                        padding: '1px 2px',
+                                        fontSize: '0.58rem',
+                                        cursor: 'pointer',
+                                        color: '#4338ca',
+                                        maxWidth: '80px',
+                                        width: '100%'
+                                      }}
+                                    >
+                                      <option value="">⬇ Todas</option>
+                                      <option value="__VACIAR__">🚫 Vacío</option>
+                                      {(col.options || []).map((opt, oi) => (
+                                        <option key={oi} value={opt}>{opt}</option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        const firstRow = (currentElementData?.data || [])[0];
+                                        const currentVal = firstRow?.[cellName] || '';
+                                        const val = prompt(`Valor para aplicar a TODAS las filas de "${headerText}":`, currentVal);
+                                        if (val !== null) applyValueToAllRows(elementIndex, cellName, val);
+                                      }}
+                                      title={`Aplicar un valor a todas las filas de "${headerText}"`}
+                                      style={{
+                                        background: 'linear-gradient(135deg, #6366f1, #818cf8)',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '3px',
+                                        padding: '1px 4px',
+                                        fontSize: '0.58rem',
+                                        cursor: 'pointer',
+                                        opacity: 0.85,
+                                        transition: 'all 0.2s',
+                                        lineHeight: '1.2'
+                                      }}
+                                      onMouseOver={(e) => e.currentTarget.style.opacity = 1}
+                                      onMouseOut={(e) => e.currentTarget.style.opacity = 0.85}
+                                    >
+                                      ⬇ Todas
+                                    </button>
+                                  )
+                                )}
                                 {/* 📥 Botón para importar columna de otro formulario */}
                                 <button
                                   onClick={(e) => {
@@ -7711,7 +7992,7 @@ useEffect(() => {
           const esFormulario15Tinas = tId === 38 || tName.includes('15 TINAS');
 
           // 2. Recuperar nombre de celda
-          let cellName = element._columnNameMap?.get(colIndex) || col.label || col.header || col.id;
+          let cellName = (element._columnNameMap instanceof Map ? element._columnNameMap.get(colIndex) : null) || col.label || col.header || col.id;
           const colLabel = (col.label || col.header || '').toUpperCase();
           
           // Lógica de recuperación de nombres específicos
@@ -7838,19 +8119,34 @@ useEffect(() => {
         
         {(() => {
           const pLen = (element.predefinedRows || []).length;
-          // Con predefinedRows: mostrar 🗑️ solo en la fila líder de cada GRUPO AGREGADO por el usuario
-          // (rowIndex >= pLen → fuera del primer grupo fijo) Y (rowIndex % pLen === 0 → líder de grupo)
-          // Sin predefinedRows: mostrar en todas las filas.
-          const canDeleteRow = pLen === 0
-            ? true
-            : (rowIndex >= pLen && rowIndex % pLen === 0);
-          return canDeleteRow ? (
-            <td style={{ textAlign: 'center' }}>
-              <button onClick={() => removeTableRow(elementIndex, rowIndex)} className="btn-remove-row" title="Eliminar grupo">
+          const groupSize = pLen > 1 ? pLen : 1;
+          const isGroupLeader = pLen > 1 ? (rowIndex % groupSize === 0) : true;
+          // Si hay rowSpan y esta fila NO es líder → la celda de acciones ya fue renderizada
+          // por la fila líder con rowSpan, así que no renderizar nada aquí
+          if (pLen > 1 && !isGroupLeader) return null;
+          return (
+            <td rowSpan={groupSize > 1 ? groupSize : undefined} style={{ textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'middle', position: 'sticky', right: 0, background: (rowIndex % 2 === 0) ? 'white' : '#f9fafb', zIndex: 2, boxShadow: '-2px 0 4px rgba(0,0,0,0.1)' }}>
+              <button onClick={() => clearRowContent(elementIndex, rowIndex)} className="btn-remove-row" title="Limpiar contenido de esta fila (sin eliminar)"
+                style={{ background: '#f59e0b', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '2px 5px', fontSize: '0.75rem', marginRight: '2px' }}>
+                🧹
+              </button>
+              <button onClick={() => {
+                const totalRows = (currentElementData.data || []).filter(r => !r?._deleted).length;
+                const remaining = totalRows - groupSize;
+                let msg = groupSize > 1
+                  ? `¿Eliminar este grupo de ${groupSize} filas?`
+                  : '¿Eliminar esta fila?';
+                if (remaining <= 0) {
+                  msg += '\n\n⚠️ ¡ATENCIÓN! Esto eliminará TODAS las filas. Puedes restaurarlas con el botón "🔄 Restaurar Filas".';
+                }
+                if (window.confirm(msg)) {
+                  removeTableRow(elementIndex, rowIndex);
+                }
+              }} className="btn-remove-row" title={groupSize > 1 ? `Eliminar grupo de ${groupSize} filas` : 'Eliminar fila'}>
                 🗑️
               </button>
             </td>
-          ) : <td />;
+          );
         })()}
       </tr>
     );
