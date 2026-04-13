@@ -1001,7 +1001,7 @@ const rows = tableData.map((row, rowIndex) => {
           
           console.log(`Filas procesadas para "${sectionTitle}":`, rows);
           
-          // Filtrar filas completamente vacías
+          // Filtrar filas completamente vacías (ignorar propiedades internas _prefixed)
           const filteredRows = rows.filter(row => row.some(cell => cell && cell.trim() !== ''));
           
           // Sanitizar todas las celdas de las filas

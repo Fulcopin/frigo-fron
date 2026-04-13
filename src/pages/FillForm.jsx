@@ -605,6 +605,23 @@ useEffect(() => {
       templateToUse.headerFields = safeParse(templateToUse.headerFields, []);
       templateToUse.bodyElements = safeParse(templateToUse.bodyElements, []);
       templateToUse.firmas = safeParse(templateToUse.firmas, []);
+
+      // ── Parche de fórmulas para plantillas existentes en BD ──
+      const formulaPatches = {
+        "TARA CAJA": { type: "formula", formula: "[CARTÓN MASTER] + [BOLSAS MASTER] + [FUNDAS DEL VACÍO] + [GLASEO] + [PLÁSTICO] + [FOAM]" },
+        "PESO BRUTO DE CAJAS / FUNDA (LBS)": { type: "formula", formula: "[PESO NETO CAJAS (LBS)] + [TARA CAJA]" },
+      };
+      (templateToUse.bodyElements || []).forEach(el => {
+        if (el.type === 'table' && Array.isArray(el.columns)) {
+          el.columns.forEach(col => {
+            const patch = formulaPatches[col.label];
+            if (patch && (!col.formula || col.formula === '')) {
+              col.type = patch.type;
+              col.formula = patch.formula;
+            }
+          });
+        }
+      });
       
       // Preparar datos del borrador
       const draftHeader = resumeDraft.headerData && typeof resumeDraft.headerData === 'object' && Object.keys(resumeDraft.headerData).length > 0
@@ -728,6 +745,23 @@ useEffect(() => {
             firmas: typeof templateRaw.firmas === 'string' ? JSON.parse(templateRaw.firmas || '[]') : templateRaw.firmas,
         };
 
+        // ── Parche de fórmulas para plantillas existentes en BD ──
+        const formulaPatchesEdit = {
+          "TARA CAJA": { type: "formula", formula: "[CARTÓN MASTER] + [BOLSAS MASTER] + [FUNDAS DEL VACÍO] + [GLASEO] + [PLÁSTICO] + [FOAM]" },
+          "PESO BRUTO DE CAJAS / FUNDA (LBS)": { type: "formula", formula: "[PESO NETO CAJAS (LBS)] + [TARA CAJA]" },
+        };
+        (processedTemplate.bodyElements || []).forEach(el => {
+          if (el.type === 'table' && Array.isArray(el.columns)) {
+            el.columns.forEach(col => {
+              const patch = formulaPatchesEdit[col.label];
+              if (patch && (!col.formula || col.formula === '')) {
+                col.type = patch.type;
+                col.formula = patch.formula;
+              }
+            });
+          }
+        });
+
         setSelectedTemplate(processedTemplate);
         setHeaderData(typeof data.headerData === 'string' ? JSON.parse(data.headerData) : data.headerData);
         
@@ -779,6 +813,23 @@ useEffect(() => {
    */
   const createNewTab = (template) => {
     console.log('➕ Creando nueva pestaña de formulario...');
+
+    // ── Parche de fórmulas para plantillas existentes en BD ──
+    const formulaPatchesNew = {
+      "TARA CAJA": { type: "formula", formula: "[CARTÓN MASTER] + [BOLSAS MASTER] + [FUNDAS DEL VACÍO] + [GLASEO] + [PLÁSTICO] + [FOAM]" },
+      "PESO BRUTO DE CAJAS / FUNDA (LBS)": { type: "formula", formula: "[PESO NETO CAJAS (LBS)] + [TARA CAJA]" },
+    };
+    (template.bodyElements || []).forEach(el => {
+      if (el.type === 'table' && Array.isArray(el.columns)) {
+        el.columns.forEach(col => {
+          const patch = formulaPatchesNew[col.label];
+          if (patch && (!col.formula || col.formula === '')) {
+            col.type = patch.type;
+            col.formula = patch.formula;
+          }
+        });
+      }
+    });
     
     const newTab = {
       id: nextTabId,
@@ -827,7 +878,7 @@ useEffect(() => {
 
         // Si tiene filas predefinidas, usarlas como base
         if (element.predefinedRows && element.predefinedRows.length > 0) {
-          const initialRows = element.predefinedRows.map(pRow => {
+          const initialRows = element.predefinedRows.map((pRow, pIdx) => {
             const newRow = {};
             (element.columns || []).forEach((col, ci) => {
               const plainKey = col.label || col.header || col.name || col.id;
@@ -835,6 +886,7 @@ useEffect(() => {
               // Usar valor predefinido si existe, sino vacío
               newRow[colKey] = pRow[plainKey] || pRow[colKey] || '';
             });
+            newRow._predefinedIndex = pIdx;
             return newRow;
           });
           return { id: element.id, type: 'table', data: initialRows };
@@ -2555,7 +2607,7 @@ useEffect(() => {
 
       if (predefinedPattern.length > 0) {
         // Agregar N filas que replican el patrón de predefinedRows (una por cada fila del patrón)
-        return predefinedPattern.map(pRow => {
+        return predefinedPattern.map((pRow, pIdx) => {
           const newRow = {};
           cols.forEach((col, ci) => {
             const plainKey = col.label || col.header || col.name || col.id;
@@ -2563,6 +2615,7 @@ useEffect(() => {
             // Copiar valores fijos del patrón (texto estático que siempre aparece en esa fila del grupo)
             newRow[colKey] = pRow[plainKey] || pRow[colKey] || '';
           });
+          newRow._predefinedIndex = pIdx;
           return newRow;
         });
       }
@@ -2615,6 +2668,7 @@ useEffect(() => {
   };
 
   const removeTableRow = (elementIndex, rowIndex, fieldLabel) => {
+    console.log('🗑️ removeTableRow called:', { elementIndex, rowIndex, fieldLabel });
     if (fieldLabel) {
       // Tabla dentro de sección: borrado real
       setBodyData(prev => prev.map((element, index) => {
@@ -2626,20 +2680,21 @@ useEffect(() => {
         return element;
       }));
     } else {
-      // Tabla como elemento directo: borrado REAL (no soft-delete)
-      setBodyData(prev => prev.map((element, index) => {
-        if (index !== elementIndex) return element;
-        const tableEl = selectedTemplate?.bodyElements?.[elementIndex];
-        const pLen = (tableEl?.predefinedRows || []).length;
-        const groupSize = pLen > 1 ? pLen : 1;
-        // Calcular el inicio del grupo al que pertenece esta fila
-        const groupStart = pLen > 1 ? Math.floor(rowIndex / groupSize) * groupSize : rowIndex;
-        // Filtrar: eliminar todo el grupo (groupSize filas desde groupStart)
-        const updatedData = element.data.filter((_, rIndex) =>
-          rIndex < groupStart || rIndex >= groupStart + groupSize
-        );
-        return { ...element, data: updatedData };
-      }));
+      // Tabla como elemento directo: borrado REAL de UNA fila
+      setBodyData(prev => {
+        const currentData = prev[elementIndex]?.data || [];
+        console.log('🗑️ Antes de eliminar:', { 
+          totalFilas: currentData.length, 
+          eliminandoIndice: rowIndex,
+          filaAEliminar: currentData[rowIndex] ? Object.entries(currentData[rowIndex]).filter(([k,v]) => v && !k.startsWith('_')).slice(0,3) : 'N/A'
+        });
+        return prev.map((element, index) => {
+          if (index !== elementIndex) return element;
+          const updatedData = element.data.filter((_, rIndex) => rIndex !== rowIndex);
+          console.log('🗑️ Después de eliminar:', { totalFilas: updatedData.length });
+          return { ...element, data: updatedData };
+        });
+      });
     }
     setHasUnsavedChanges(true);
   };
@@ -3754,6 +3809,12 @@ useEffect(() => {
         // 🔥 PASO 1: Calcular fórmulas en TODAS las filas (por si referencian otras filas)
         // Hacer MÚLTIPLES PASADAS para resolver dependencias en cascada (ej: d=a+b, luego e=c*d)
         const MAX_FORMULA_PASSES = 3;
+        // 🔍 DEBUG: Ver columnas y fórmulas del template
+        if (tableTemplate?.columns) {
+          console.log('🔍 DEBUG COLUMNAS:', tableTemplate.columns.map((c, i) => ({
+            i, label: c.label, type: c.type, formula: c.formula || '(none)'
+          })));
+        }
         for (let pass = 0; pass < MAX_FORMULA_PASSES; pass++) {
         updatedRows = updatedRows.map((row, rIndex) => {
           const updatedRow = { ...row };
@@ -4768,9 +4829,16 @@ useEffect(() => {
     const cleanedBodyData = bodyData.map(element => {
       if (element.type === 'table' && Array.isArray(element.data)) {
         const nonEmptyRows = element.data.filter(row => 
-          Object.values(row).some(val => val !== null && val !== undefined && String(val).trim() !== '')
+          Object.entries(row)
+            .filter(([key]) => !key.startsWith('_')) // Ignorar _predefinedIndex, _rowSpan, _hidden, _deleted
+            .some(([, val]) => val !== null && val !== undefined && String(val).trim() !== '')
         );
-        return { ...element, data: nonEmptyRows.length > 0 ? nonEmptyRows : [] };
+        // Limpiar propiedades internas antes de guardar
+        const cleanRows = (nonEmptyRows.length > 0 ? nonEmptyRows : []).map(row => {
+          const { _predefinedIndex, _rowSpan, _hidden, _deleted, ...cleanRow } = row;
+          return cleanRow;
+        });
+        return { ...element, data: cleanRows };
       }
       return element;
     });
@@ -7941,48 +8009,84 @@ useEffect(() => {
       if (row?._deleted) return null;
       visibleNum++;
       const displayNum = visibleNum;
+      const capturedRowIndex = rowIndex; // Capturar índice para closures
     const templateRow = element.rows ? element.rows[rowIndex] : null;
     // 🔗 Pre-calcular todas las fórmulas de la fila para permitir encadenamiento entre columnas
     const allRowsForTable = currentElementData?.data || [];
     const crossTableRow = mergeCrossTableRow(row, rowIndex, bodyData);
     const computedRow = buildComputedRow(crossTableRow, element.columns || [], allRowsForTable, rowIndex);
 
+    // Generar una key estable basada en contenido para evitar problemas de React
+    const rowUniqueKey = row._predefinedIndex !== undefined
+      ? `row-${elementIndex}-pi${row._predefinedIndex}-${rowIndex}`
+      : `row-${elementIndex}-${rowIndex}-${allDataRows.length}`;
+
     return (
-      <tr key={`row-${elementIndex}-${rowIndex}`} style={{ background: (displayNum - 1) % 2 === 0 ? 'white' : '#f9fafb' }}>
+      <tr key={rowUniqueKey} style={{ background: (displayNum - 1) % 2 === 0 ? 'white' : '#f9fafb' }}>
         <td style={{ fontWeight: 'bold', color: '#6b7280', textAlign: 'center' }}>{displayNum}</td>
         
         {/* RENDERIZADO DE CELDAS */}
         {(element.columns || []).map((col, colIndex) => {
           
-          // 🔗 SOPORTE FILAS PREDEFINIDAS CON COMBINACIÓN (rowSpan) — PATRÓN CÍCLICO
-          // Las predefinedRows definen un BLOQUE REPETIBLE: el patrón se aplica a TODOS los grupos
-          // usando índice modular (rowIndex % predefinedRows.length) para grupos adicionales.
+          // 🔗 SOPORTE FILAS PREDEFINIDAS CON COMBINACIÓN (rowSpan) — DINÁMICO
+          // Calcula rowSpan basándose en los DATOS REALES de las filas, no en posición del template.
           const predefinedRows = element.predefinedRows || [];
-          // cellRowSpan: si esta celda es la primera de un grupo combinado, aplicar rowSpan a la <td> generada
           let cellRowSpan = undefined;
           if (predefinedRows.length > 0) {
-            const pRowIndex = rowIndex % predefinedRows.length;
-            const pRow = predefinedRows[pRowIndex];
             const colKey = col.label || col.header || col.name || col.id || `col_${colIndex}`;
-            // Si esta celda está oculta por un rowSpan de la fila líder del grupo, no renderizar
-            if (pRow._hidden?.[colKey]) return null;
-            const span = pRow._rowSpan?.[colKey] || 1;
-            const predefinedValue = pRow[colKey] || '';
-            // Si tiene valor predefinido, mostrar como solo lectura con estilo
-            if (predefinedValue) {
-              return (
-                <td key={`${elementIndex}-${rowIndex}-${colIndex}`} rowSpan={span > 1 ? span : undefined}
-                  style={{
-                    fontWeight: 600, color: '#1f2937', background: '#f0f9ff',
-                    verticalAlign: 'middle', textAlign: 'center', padding: '8px',
-                    borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb'
-                  }}>
-                  {predefinedValue}
-                </td>
-              );
+            const cellDataValue = row[colKey] || '';
+            
+            // Determinar si esta columna tiene combinaciones (rowSpan) definidas en alguna predefinedRow
+            const hasRowSpanInColumn = predefinedRows.some(pr => (pr._rowSpan?.[colKey] || 0) > 1);
+            const hasHiddenInColumn = predefinedRows.some(pr => pr._hidden?.[colKey]);
+            
+            if (hasRowSpanInColumn || hasHiddenInColumn) {
+              // CALCULAR rowSpan DINÁMICAMENTE: comparar valores reales de filas consecutivas
+              // Buscar hacia atrás si una fila anterior tiene el mismo valor → esta celda está oculta
+              let coveredByPrevious = false;
+              for (let ri = rowIndex - 1; ri >= 0; ri--) {
+                const prevRow = allDataRows[ri];
+                if (prevRow?._deleted) continue;
+                const prevVal = prevRow[colKey] || '';
+                if (prevVal === cellDataValue && cellDataValue !== '') {
+                  coveredByPrevious = true;
+                }
+                break; // Solo comparar con la fila visible inmediatamente anterior
+              }
+              if (coveredByPrevious) return null; // Cubierta por rowSpan de arriba
+              
+              // Contar cuántas filas siguientes tienen el mismo valor → rowSpan
+              let span = 1;
+              for (let ri = rowIndex + 1; ri < allDataRows.length; ri++) {
+                const nextRow = allDataRows[ri];
+                if (nextRow?._deleted) continue;
+                const nextVal = nextRow[colKey] || '';
+                if (nextVal === cellDataValue && cellDataValue !== '') {
+                  span++;
+                } else {
+                  break;
+                }
+              }
+              if (span > 1) cellRowSpan = span;
             }
-            // Sin valor predefinido pero con rowSpan: aplicar el span a la celda calculada/normal
-            if (span > 1) cellRowSpan = span;
+            
+            // Si tiene valor de datos para columna predefinida, mostrar como solo lectura
+            if (cellDataValue) {
+              // Verificar si este valor viene de una columna predefinida en el template
+              const isPredefinedCol = predefinedRows.some(pr => pr[colKey]);
+              if (isPredefinedCol) {
+                return (
+                  <td key={`${elementIndex}-${rowIndex}-${colIndex}`} rowSpan={cellRowSpan || undefined}
+                    style={{
+                      fontWeight: 600, color: '#1f2937', background: '#f0f9ff',
+                      verticalAlign: 'middle', textAlign: 'center', padding: '8px',
+                      borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb'
+                    }}>
+                    {cellDataValue}
+                  </td>
+                );
+              }
+            }
           }
 
           // 1. IDENTIFICACIÓN DEL FORMULARIO (CANDADO)
@@ -8118,31 +8222,25 @@ useEffect(() => {
         })}
         
         {(() => {
-          const pLen = (element.predefinedRows || []).length;
-          const groupSize = pLen > 1 ? pLen : 1;
-          const isGroupLeader = pLen > 1 ? (rowIndex % groupSize === 0) : true;
-          // Si hay rowSpan y esta fila NO es líder → la celda de acciones ya fue renderizada
-          // por la fila líder con rowSpan, así que no renderizar nada aquí
-          if (pLen > 1 && !isGroupLeader) return null;
+          const delRowIndex = capturedRowIndex;
           return (
-            <td rowSpan={groupSize > 1 ? groupSize : undefined} style={{ textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'middle', position: 'sticky', right: 0, background: (rowIndex % 2 === 0) ? 'white' : '#f9fafb', zIndex: 2, boxShadow: '-2px 0 4px rgba(0,0,0,0.1)' }}>
-              <button onClick={() => clearRowContent(elementIndex, rowIndex)} className="btn-remove-row" title="Limpiar contenido de esta fila (sin eliminar)"
+            <td style={{ textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'middle', position: 'sticky', right: 0, background: (rowIndex % 2 === 0) ? 'white' : '#f9fafb', zIndex: 2, boxShadow: '-2px 0 4px rgba(0,0,0,0.1)' }}>
+              <button onClick={() => clearRowContent(elementIndex, delRowIndex)} className="btn-remove-row" title="Limpiar contenido de esta fila (sin eliminar)"
                 style={{ background: '#f59e0b', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '2px 5px', fontSize: '0.75rem', marginRight: '2px' }}>
                 🧹
               </button>
               <button onClick={() => {
+                console.log('🗑️ Click en botón eliminar:', { elementIndex, delRowIndex, displayNum, puntoMuestreo: row['Punto de Muestreo'] || row['MARCA DE BALANZA'] || Object.values(row).find(v => v && typeof v === 'string' && v.length > 2) });
                 const totalRows = (currentElementData.data || []).filter(r => !r?._deleted).length;
-                const remaining = totalRows - groupSize;
-                let msg = groupSize > 1
-                  ? `¿Eliminar este grupo de ${groupSize} filas?`
-                  : '¿Eliminar esta fila?';
+                const remaining = totalRows - 1;
+                let msg = `¿Eliminar la fila ${displayNum}?`;
                 if (remaining <= 0) {
                   msg += '\n\n⚠️ ¡ATENCIÓN! Esto eliminará TODAS las filas. Puedes restaurarlas con el botón "🔄 Restaurar Filas".';
                 }
                 if (window.confirm(msg)) {
-                  removeTableRow(elementIndex, rowIndex);
+                  removeTableRow(elementIndex, delRowIndex);
                 }
-              }} className="btn-remove-row" title={groupSize > 1 ? `Eliminar grupo de ${groupSize} filas` : 'Eliminar fila'}>
+              }} className="btn-remove-row" title="Eliminar fila">
                 🗑️
               </button>
             </td>

@@ -718,7 +718,7 @@ function getGlaseoInicialTemplate() {
     { label: "CLASIF.", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Determinación % Glaseo" },
     { label: "PESO lbs S/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Determinación % Glaseo" },
     { label: "PESO lbs C/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Determinación % Glaseo" },
-    { label: "%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Determinación % Glaseo" },
+    { label: "%", type: "formula", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "(([PESO lbs C/GLASEO] - [PESO lbs S/GLASEO]) / [PESO lbs C/GLASEO]) * 100", group: "Determinación % Glaseo" },
     { label: "% PROM. POR CLASIF.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Determinación % Glaseo" },
   ]
 
@@ -829,7 +829,7 @@ function getGlaseoFinalTemplate() {
         { label: "GLASEO EN TIRAS", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo" },
         { label: "PESO lbs C/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "% Glaseo Maq. Clasif." },
         { label: "PESO lbs S/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "% Glaseo Maq. Clasif." },
-        { label: "%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "% Glaseo Maq. Clasif." },
+        { label: "%", type: "formula", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "(([PESO lbs C/GLASEO] - [PESO lbs S/GLASEO]) / [PESO lbs C/GLASEO]) * 100", group: "% Glaseo Maq. Clasif." },
       ],
     },
 
@@ -855,7 +855,7 @@ function getGlaseoFinalTemplate() {
         { label: "CLASIF.", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
         { label: "PESO lbs C/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
         { label: "PESO lbs S/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
-        { label: "%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
+        { label: "%", type: "formula", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "(([PESO lbs C/GLASEO] - [PESO lbs S/GLASEO]) / [PESO lbs C/GLASEO]) * 100", group: "Glaseo Final" },
         { label: "% PROM. X CLASIF.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
       ],
     },
@@ -882,7 +882,7 @@ function getGlaseoFinalTemplate() {
         { label: "CLASIF.", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
         { label: "PESO lbs C/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
         { label: "PESO lbs S/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
-        { label: "%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
+        { label: "%", type: "formula", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "(([PESO lbs C/GLASEO] - [PESO lbs S/GLASEO]) / [PESO lbs C/GLASEO]) * 100", group: "Glaseo Final" },
         { label: "% PROM. X CLASIF.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "Glaseo Final" },
       ],
     },
@@ -1957,6 +1957,81 @@ function getVerificacionBalanzasTemplate() {
 }
 
 // ============================================================
+// PLANTILLA: FOR-CC-06 - CONTROL DE EMPAQUE FINAL
+// Versión: 1 | Fecha: 14/04/2025
+// ============================================================
+function getEmpaqueFinaTemplate() {
+  const headerFields = [
+    { label: "Fecha", type: "date", required: true, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Hora", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Producto", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Lote", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+    { label: "Cliente", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
+  ]
+
+  const bodyElements = [
+    {
+      id: Date.now() + 600,
+      type: "table",
+      title: "Control de Empaque Final",
+      defaultRows: 3,
+      autoSumColumns: true,
+      columns: [
+        { label: "ESPECIFICACIÓN MATERIAL EXTRAÑO", type: "select", required: false, options: ["Conforme", "No Conforme"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "PIEZAS FUERA DE ESPECIFICACIÓN", type: "select", required: false, options: ["Conforme", "No Conforme"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "COLOR UNIFORME", type: "select", required: false, options: ["Conforme", "No Conforme"], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "CARTÓN MASTER", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "PESO TARA / CAJA (LBS)" },
+        { label: "BOLSAS MASTER", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "PESO TARA / CAJA (LBS)" },
+        { label: "FUNDAS DEL VACÍO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "PESO TARA / CAJA (LBS)" },
+        { label: "GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "PESO TARA / CAJA (LBS)" },
+        { label: "PLÁSTICO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "PESO TARA / CAJA (LBS)" },
+        { label: "FOAM", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "PESO TARA / CAJA (LBS)" },
+        { label: "TARA CAJA", type: "formula", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[CARTÓN MASTER] + [BOLSAS MASTER] + [FUNDAS DEL VACÍO] + [GLASEO] + [PLÁSTICO] + [FOAM]" },
+        { label: "PESO NETO CAJAS (LBS)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: "CONTENIDO CAJA" },
+        { label: "PESO BRUTO DE CAJAS / FUNDA (LBS)", type: "formula", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[PESO NETO CAJAS (LBS)] + [TARA CAJA]", group: "CONTENIDO CAJA" },
+        { label: "# DE BOLSAS MASTER / FUNDAS VACÍO X CAJA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+      predefinedRows: [],
+    },
+  ]
+
+  const firmas = [
+    {
+      rol: "Supervisor de Calidad",
+      nombre: "",
+      puestoId: null,
+      fecha: "",
+      hora: "",
+      nombreCompleto: "",
+      capturaFecha: true,
+      capturaHora: true,
+      reemplazos: [],
+      jefeAlerta: [],
+    },
+  ]
+
+  return {
+    codigo: "FOR-CC-06",
+    nombre: "Control de Empaque Final",
+    version: "1",
+    fechaVersion: "2025-04-14T00:00:00Z",
+    supervisa: "Jefe de Aseguramiento de Calidad",
+    proceso: "Control de Calidad - Empaque Final",
+    cuandoSeUsa: "Durante el empaque final de producto congelado",
+    quienLoLlena: "Supervisor de Calidad",
+    frecuencia: "Por lote",
+    isMasterForm: false,
+    autoSumColumns: true,
+    usaApi: false,
+    isDraft: false,
+    isObsolete: false,
+    headerFields: JSON.stringify(headerFields),
+    bodyElements: JSON.stringify(bodyElements),
+    firmas: JSON.stringify(firmas),
+  }
+}
+
+// ============================================================
 // PLANTILLA: FOR-CC-40 - MONITOREO-VERIFICACIÓN DE
 // ESPECIFICACIONES DE PRODUCTOS TERMINADOS
 // Versión: 1 | Fecha: 14/04/2025
@@ -2020,14 +2095,14 @@ function getMonitoreoProductosTerminadosTemplate() {
         { label: "Peso Plástico", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Fundas VP - Peso Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Fundas VP - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Peso total Fundas VP", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso total Fundas VP", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Fundas VP - Peso Unid.] * [Fundas VP - Cant.]" },
         { label: "Bolsas Master - Peso Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Bolsas Master - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Peso total Bolsas Master", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso total Bolsas Master", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Bolsas Master - Peso Unid.] * [Bolsas Master - Cant.]" },
         { label: "GLASEO % - Mín. 4%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "GLASEO % - Máx. 8%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "GLASEO % - % (Cálculo en base a una bolsa master o 3 lbs de una caja)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "PESO TOTAL TARA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "PESO TOTAL TARA", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Peso Caja (Tapa + fondo)] + [Peso Plástico] + [Peso total Fundas VP] + [Peso total Bolsas Master]" },
         { label: "Peso Glaseo", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
       ],
     },
@@ -2755,6 +2830,13 @@ function SeedBPMTemplates() {
       code: "FOR-CC-38",
       getData: getVerificacionBalanzasTemplate,
       icon: "⚖️",
+    },
+    {
+      key: "empaque-final",
+      label: "Control de Empaque Final",
+      code: "FOR-CC-06",
+      getData: getEmpaqueFinaTemplate,
+      icon: "📦",
     },
     {
       key: "monitoreo-productos-terminados",
