@@ -128,49 +128,54 @@ function ViewForms() {
   const [viewFirmasData, setViewFirmasData] = useState({})
   const [savingSignature, setSavingSignature] = useState(false)
 
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [formsResponse, templatesResponse] = await Promise.all([
+        fetch(API_URL_FILLED_FORMS),
+        fetch(API_URL_TEMPLATES)
+      ]);
+      if (!formsResponse.ok || !templatesResponse.ok) throw new Error('No se pudieron cargar los datos.');
+
+      let formsDataResponse = await formsResponse.json();
+      let templatesDataResponse = await templatesResponse.json();
+
+      const formsArray = Array.isArray(formsDataResponse) ? formsDataResponse : formsDataResponse.$values || [];
+      const templatesArray = Array.isArray(templatesDataResponse) ? templatesDataResponse : templatesDataResponse.$values || [];
+
+      // CORREGIDO: Parsear bodyElements, headerFields y firmas en las plantillas
+      const parsedTemplates = templatesArray.map(t => ({
+        ...t,
+        bodyElements: safeParse(t.bodyElements, []),
+        headerFields: safeParse(t.headerFields, []),
+        firmas: safeParse(t.firmas, []),
+      }));
+      
+      // CORREGIDO: Parsear bodyData en los formularios llenados
+      const parsedForms = formsArray.map(form => ({
+        ...form,
+        templateNombre: parsedTemplates.find(t => t.templateID === form.templateID)?.nombre || 'Plantilla Desconocida',
+        templateCodigo: parsedTemplates.find(t => t.templateID === form.templateID)?.codigo || 'N/A',
+        headerData: safeParse(form.headerData, {}),
+        bodyData: safeParse(form.bodyData, []),
+        firmasData: safeParse(form.firmasData, {}),
+      }));
+
+      setForms(parsedForms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      setTemplates(parsedTemplates); 
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Recargar datos cada vez que el usuario navega a esta página
   useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        const [formsResponse, templatesResponse] = await Promise.all([
-          fetch(API_URL_FILLED_FORMS),
-          fetch(API_URL_TEMPLATES)
-        ]);
-        if (!formsResponse.ok || !templatesResponse.ok) throw new Error('No se pudieron cargar los datos.');
-
-        let formsDataResponse = await formsResponse.json();
-        let templatesDataResponse = await templatesResponse.json();
-
-        const formsArray = Array.isArray(formsDataResponse) ? formsDataResponse : formsDataResponse.$values || [];
-        const templatesArray = Array.isArray(templatesDataResponse) ? templatesDataResponse : templatesDataResponse.$values || [];
-
-        // CORREGIDO: Parsear bodyElements, headerFields y firmas en las plantillas
-        const parsedTemplates = templatesArray.map(t => ({
-          ...t,
-          bodyElements: safeParse(t.bodyElements, []),
-          headerFields: safeParse(t.headerFields, []),
-          firmas: safeParse(t.firmas, []),
-        }));
-        
-        // CORREGIDO: Parsear bodyData en los formularios llenados
-        const parsedForms = formsArray.map(form => ({
-          ...form,
-          templateNombre: parsedTemplates.find(t => t.templateID === form.templateID)?.nombre || 'Plantilla Desconocida',
-          templateCodigo: parsedTemplates.find(t => t.templateID === form.templateID)?.codigo || 'N/A',
-          headerData: safeParse(form.headerData, {}),
-          bodyData: safeParse(form.bodyData, []),
-          firmasData: safeParse(form.firmasData, {}),
-        }));
-
-        setForms(parsedForms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-        setTemplates(parsedTemplates); 
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadInitialData();
-  }, []);
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
 
   // 🎯 NUEVO: Auto-abrir formulario si viene desde Home
   useEffect(() => {
@@ -237,9 +242,8 @@ function ViewForms() {
       if (!createResponse.ok) throw new Error('No se pudo duplicar el formulario');
       const newForm = await createResponse.json();
       alert('✅ Formulario duplicado exitosamente');
-      // Recargar lista
-      const allForms = await fetch(API_URL_FILLED_FORMS).then(r => r.json());
-      setForms(allForms.$values || allForms || []);
+      // Recargar lista con parseo correcto
+      await loadData();
       // Abrir el nuevo formulario para editar
       navigate(`/edit-filled-form/${newForm.formID || newForm.FormID}`);
     } catch (err) {
@@ -376,7 +380,7 @@ function ViewForms() {
       console.log('📋 formData.template.structure.bodyElements:', JSON.stringify(formData.template.structure.bodyElements, null, 2));
       
       // Transformar estructura del endpoint al formato esperado por el servicio PDF
-      const fechaVersionPDF = formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null;
+      const fechaVersionPDF = formData.fechaVersion ?? formData.FechaVersion ?? formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null;
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
@@ -431,7 +435,7 @@ function ViewForms() {
       console.log('📦 Datos completos recibidos:', formData);
       
       // Transformar estructura del endpoint al formato esperado por el servicio Excel
-      const fechaVersionExcel = formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null;
+      const fechaVersionExcel = formData.fechaVersion ?? formData.FechaVersion ?? formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null;
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
@@ -702,60 +706,75 @@ function ViewForms() {
             <div className="data-section">
               <h3>Información General</h3>
               <div className="data-grid">
-                {correspondingTemplate.headerFields.map((field, index) => {
-                  // Buscar el valor usando múltiples estrategias
-                  let value = selectedForm.headerData[field.label] 
-                           || selectedForm.headerData[field.name] 
-                           || selectedForm.headerData[field.id];
-                  
-                  // Si no encontró el valor, buscar por label normalizado (sin acentos)
-                  if (!value) {
-                    const normalizeString = (str) => str?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-                    const normalizedFieldLabel = normalizeString(field.label);
+                {(() => {
+                  const normalizeString = (str) => str?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+                  // Render all template-defined fields
+                  const renderedKeys = new Set();
+                  const items = correspondingTemplate.headerFields.map((field, index) => {
+                    let value = selectedForm.headerData[field.label] 
+                             || selectedForm.headerData[field.name] 
+                             || selectedForm.headerData[field.id];
                     
-                    const matchingKey = Object.keys(selectedForm.headerData).find(key => 
-                      normalizeString(key) === normalizedFieldLabel
-                    );
-                    
-                    if (matchingKey) {
-                      value = selectedForm.headerData[matchingKey];
+                    if (!value) {
+                      const normalizedFieldLabel = normalizeString(field.label);
+                      const matchingKey = Object.keys(selectedForm.headerData || {}).find(key => 
+                        normalizeString(key) === normalizedFieldLabel
+                      );
+                      if (matchingKey) {
+                        value = selectedForm.headerData[matchingKey];
+                        renderedKeys.add(matchingKey);
+                      }
+                    } else {
+                      renderedKeys.add(field.label);
+                      renderedKeys.add(field.name);
+                      renderedKeys.add(field.id);
                     }
-                  }
-                  
-                  // Renderizar valor (detectar imágenes)
-                  const displayValue = renderCellValue(value, field.type);
-                  const isImg = typeof value === 'string' && isImageUrl(value);
-                  
-                  return (
-                    <div key={index} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
-                      <span className="data-label">{field.label || field.name || field.id}:</span>
-                      <div className="data-value">{displayValue}</div>
-                    </div>
-                  );
-                })}
+                    
+                    const displayValue = renderCellValue(value, field.type);
+                    const isImg = typeof value === 'string' && isImageUrl(value);
+                    return (
+                      <div key={index} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
+                        <span className="data-label">{field.label || field.name || field.id}:</span>
+                        <div className="data-value">{displayValue}</div>
+                      </div>
+                    );
+                  });
+                  // Also render any extra fields stored in headerData but not in template definition
+                  const extraItems = Object.entries(selectedForm.headerData || {})
+                    .filter(([key, val]) => val && !renderedKeys.has(key))
+                    .map(([key, val], i) => {
+                      const displayValue = renderCellValue(val, 'text');
+                      const isImg = typeof val === 'string' && isImageUrl(val);
+                      return (
+                        <div key={`extra-${i}`} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
+                          <span className="data-label">{key}:</span>
+                          <div className="data-value">{displayValue}</div>
+                        </div>
+                      );
+                    });
+                  return [...items, ...extraItems];
+                })()}
               </div>
             </div>
-          ) : (
+          ) : selectedForm.headerData && Object.keys(selectedForm.headerData).some(k => selectedForm.headerData[k]) ? (
             <div className="data-section">
-              <h3>⚠️ No hay campos de header definidos en el template</h3>
+              <h3>Información General</h3>
               <div className="data-grid">
-                <div className="data-item">
-                  <span className="data-label">Template ID:</span>
-                  <span className="data-value">{selectedForm.templateID}</span>
-                </div>
-                <div className="data-item">
-                  <span className="data-label">Template tiene headerFields:</span>
-                  <span className="data-value">{correspondingTemplate?.headerFields ? 'Sí' : 'No'}</span>
-                </div>
-                {correspondingTemplate?.headerFields && (
-                  <div className="data-item">
-                    <span className="data-label">Cantidad de campos:</span>
-                    <span className="data-value">{correspondingTemplate.headerFields.length}</span>
-                  </div>
-                )}
+                {Object.entries(selectedForm.headerData)
+                  .filter(([, val]) => val)
+                  .map(([key, val], i) => {
+                    const displayValue = renderCellValue(val, 'text');
+                    const isImg = typeof val === 'string' && isImageUrl(val);
+                    return (
+                      <div key={i} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
+                        <span className="data-label">{key}:</span>
+                        <div className="data-value">{displayValue}</div>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* --- NUEVO: RENDERIZADO DEL CUERPO DINÁMICO --- */}
           {correspondingTemplate && selectedForm.bodyData && Array.isArray(selectedForm.bodyData) && selectedForm.bodyData.map((elementData, elementIndex) => {
@@ -1383,6 +1402,14 @@ function ViewForms() {
               title="Limpiar todos los filtros"
             >
               🔄 Limpiar
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => loadData()}
+              title="Recargar formularios desde el servidor"
+              style={{ marginLeft: '8px' }}
+            >
+              ↻ Recargar
             </button>
           </div>
           

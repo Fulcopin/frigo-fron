@@ -78,13 +78,28 @@ const PAGE_CONFIG = {
  * 📊 Calcula tamaños dinámicos para tablas según número de columnas
  * Estilo Excel: compacto, legible, con bordes definidos
  */
-const getTableStyles = (columnCount, pageWidth, margins) => {
+const getTableStyles = (columnCount, pageWidth, margins, compact = false) => {
   const availableWidth = pageWidth - margins.left - margins.right;
   const avgColWidth = availableWidth / columnCount;
   
   let headerFontSize, bodyFontSize, cellPadding;
   
-  if (columnCount <= 5) {
+  if (compact) {
+    // Modo compacto: fuentes y padding reducidos para caber más filas por página
+    if (columnCount <= 5) {
+      headerFontSize = 6.5;
+      bodyFontSize = 5.5;
+      cellPadding = { top: 0.8, right: 1.5, bottom: 0.8, left: 1.5 };
+    } else if (columnCount <= 10) {
+      headerFontSize = 5.5;
+      bodyFontSize = 5;
+      cellPadding = { top: 0.6, right: 1, bottom: 0.6, left: 1 };
+    } else {
+      headerFontSize = 4.5;
+      bodyFontSize = 4;
+      cellPadding = { top: 0.4, right: 0.6, bottom: 0.4, left: 0.6 };
+    }
+  } else if (columnCount <= 5) {
     headerFontSize = 8;
     bodyFontSize = 7;
     cellPadding = { top: 2, right: 3, bottom: 2, left: 3 };
@@ -249,6 +264,19 @@ const drawFrigolabHeader = async (doc, templateData) => {
   // ✅ FECHA: Prioridad → 1) fechaVersion de la plantilla (BD), 2) templateCreatedAt (fecha creación plantilla), 3) createdAt del formulario
   // Función helper para formatear fecha como DD/MM/YYYY de forma segura
   const fmtDate = (val) => {
+    if (!val) return null;
+
+    // Soporta fechas en formato DD/MM/YYYY guardadas como texto.
+    if (typeof val === 'string') {
+      const ddmmyyyyMatch = val.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (ddmmyyyyMatch) {
+        const day = String(ddmmyyyyMatch[1]).padStart(2, '0');
+        const month = String(ddmmyyyyMatch[2]).padStart(2, '0');
+        const year = ddmmyyyyMatch[3];
+        return `${day}/${month}/${year}`;
+      }
+    }
+
     const d = new Date(val);
     if (isNaN(d.getTime())) return null;
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
@@ -300,36 +328,12 @@ const drawHeaderSection = (doc, headerData, startY) => {
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   
-  // Construir lista de campos dinámicamente
+  // Construir lista de campos: mostrar TODOS los campos del headerData
   const headerFields = [];
   
-  // Campos comunes que buscamos en headerData
-  const commonFields = [
-    { key: 'fecha', label: 'FECHA DEL EMBARQUE:' },
-    { key: 'horaInicio', label: 'HORA INICIO:' },
-    { key: 'horaFinal', label: 'HORA FINAL:' },
-    { key: 'lote', label: 'LOTE:' },
-    { key: 'cliente', label: 'CLIENTE:' },
-    { key: 'destino', label: 'DESTINO:' },
-    { key: 'calificador', label: 'CALIFICADOR:' },
-    { key: 'tipoDeControl', label: 'TIPO DE CONTROL:' },
-    { key: 'elaboradoPor', label: 'ELABORADO POR:' }
-  ];
-  
-  // Agregar campos que existan en headerData
-  commonFields.forEach(field => {
-    if (headerData && headerData[field.key]) {
-      headerFields.push({
-        label: field.label,
-        value: String(headerData[field.key])
-      });
-    }
-  });
-  
-  // Si no hay campos específicos, mostrar todos los campos disponibles
-  if (headerFields.length === 0 && headerData && typeof headerData === 'object') {
+  if (headerData && typeof headerData === 'object') {
     Object.entries(headerData).forEach(([key, value]) => {
-      if (value) {
+      if (value !== undefined && value !== null && value !== '') {
         headerFields.push({
           label: `${key.toUpperCase()}:`,
           value: String(value)
@@ -821,6 +825,13 @@ export const exportFormToPDF = async (form, template) => {
     console.log('📊 Body Data:', bodyData);
     console.log('✍️ Firmas Data:', firmasData);
     
+    // Modo compacto: activa cuando hay muchas secciones para reducir páginas generadas
+    const tableSectionCount = bodyElements.filter(s => s.type === 'table').length;
+    const isCompactMode = tableSectionCount >= 5;
+    if (isCompactMode) {
+      console.log(`🗜️ Modo compacto activado (${tableSectionCount} tablas)`);
+    }
+    
     // 1. Dibujar encabezado Frigolab
     console.log('🎨 Dibujando encabezado...');
     await drawFrigolabHeader(doc, templateData);
@@ -886,18 +897,19 @@ export const exportFormToPDF = async (form, template) => {
       // Título de la sección - Estilo Excel
       const secPageW = doc.internal.pageSize.getWidth();
       const secContentW = secPageW - 16;
-      doc.setFontSize(9);
+      const secTitleH = isCompactMode ? 5 : 7;
+      doc.setFontSize(isCompactMode ? 7 : 9);
       doc.setFont('helvetica', 'bold');
       doc.setFillColor(...COLORS.secondary);
-      doc.rect(8, currentY, secContentW, 7, 'F');
+      doc.rect(8, currentY, secContentW, secTitleH, 'F');
       doc.setDrawColor(68, 114, 196);
       doc.setLineWidth(0.5);
-      doc.line(8, currentY + 7, 8 + secContentW, currentY + 7);
+      doc.line(8, currentY + secTitleH, 8 + secContentW, currentY + secTitleH);
       doc.setTextColor(...COLORS.sectionTitle);
       
       const sectionTitle = section.title || section.sectionTitle || section.label || 'Seccion';
-      doc.text(sanitizeText(sectionTitle.toUpperCase()), 10, currentY + 5);
-      currentY += 10;
+      doc.text(sanitizeText(sectionTitle.toUpperCase()), 10, currentY + secTitleH - 1.5);
+      currentY += isCompactMode ? 6 : 10;
       
       // Tipo de sección: tabla
       if (section.type === 'table' && section.columns) {
@@ -1033,7 +1045,7 @@ const rows = tableData.map((row, rowIndex) => {
           // 📊 Calcular estilos dinámicos según número de columnas
           const pageW = doc.internal.pageSize.getWidth();
           const tblMargins = { left: 8, right: 8 };
-          const tblStyles = getTableStyles(columns.length, pageW, tblMargins);
+          const tblStyles = getTableStyles(columns.length, pageW, tblMargins, isCompactMode);
           
           // Headers para autoTable (con unidad personalizada o °C si aplica)
           const headRow = columns.map(col => {
@@ -1159,15 +1171,17 @@ const rows = tableData.map((row, rowIndex) => {
             }
           });
           
-          currentY = doc.lastAutoTable.finalY + 10;
+          currentY = doc.lastAutoTable.finalY + (isCompactMode ? 4 : 10);
         } else {
-          doc.setFontSize(9);
-          doc.setTextColor(150, 150, 150);
-          doc.setFont('helvetica', 'italic');
-          doc.text('(No hay datos en esta sección)', 12, currentY);
-          doc.setTextColor(...COLORS.text);
-          doc.setFont('helvetica', 'normal');
-          currentY += 10;
+          if (!isCompactMode) {
+            doc.setFontSize(9);
+            doc.setTextColor(150, 150, 150);
+            doc.setFont('helvetica', 'italic');
+            doc.text('(No hay datos en esta sección)', 12, currentY);
+            doc.setTextColor(...COLORS.text);
+            doc.setFont('helvetica', 'normal');
+          }
+          currentY += isCompactMode ? 4 : 10;
         }
       } else if (section.type === 'section' && section.fields) {
         // 🖼️ SECCIÓN DE CAMPOS (key-value, puede incluir imágenes)

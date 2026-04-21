@@ -305,6 +305,19 @@ const createFrigolabHeader = async (worksheet, templateData, logoBase64, maxCols
   const versionFinal = templateData.headerData?.version || templateData.headerData?.['Versión'] || String(templateData.version || '1.0');
   
   const fmtDate = (val) => {
+    if (!val) return null;
+
+    // Soporta fechas en formato DD/MM/YYYY guardadas como texto.
+    if (typeof val === 'string') {
+      const ddmmyyyyMatch = val.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (ddmmyyyyMatch) {
+        const day = String(ddmmyyyyMatch[1]).padStart(2, '0');
+        const month = String(ddmmyyyyMatch[2]).padStart(2, '0');
+        const year = ddmmyyyyMatch[3];
+        return `${day}/${month}/${year}`;
+      }
+    }
+
     const d = new Date(val);
     if (isNaN(d.getTime())) return null;
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
