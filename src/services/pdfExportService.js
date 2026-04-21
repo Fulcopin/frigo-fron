@@ -354,27 +354,66 @@ const drawHeaderSection = (doc, headerData, startY) => {
   
   // Dibujar campos en grid (aprovechar ancho landscape)
   const hdrFieldPageW = doc.internal.pageSize.getWidth();
+  // Separar campos cortos (fecha, texto breve) de campos largos (textarea)
+  const shortFields = headerFields.filter(f => f.value.length <= 60);
+  const longFields  = headerFields.filter(f => f.value.length > 60);
+
+  // --- Campos cortos en grid de 3 columnas ---
   const fieldsPerRow = hdrFieldPageW > 250 ? 3 : 2;
   const fieldColWidth = (hdrFieldPageW - 20) / fieldsPerRow;
-  
   doc.setFontSize(8);
-  for (let i = 0; i < headerFields.length; i++) {
+  for (let i = 0; i < shortFields.length; i++) {
     const col = i % fieldsPerRow;
     if (col === 0 && i > 0) currentY += 6;
-    
     const xBase = 12 + col * fieldColWidth;
-    const field = headerFields[i];
-    
+    const field = shortFields[i];
     doc.setFont('helvetica', 'bold');
     doc.text(sanitizeText(field.label), xBase, currentY);
     const labelW = doc.getTextWidth(sanitizeText(field.label));
     doc.setFont('helvetica', 'normal');
-    
     const maxValW = fieldColWidth - labelW - 6;
     const textValue = doc.splitTextToSize(sanitizeText(field.value), maxValW > 20 ? maxValW : 50);
     doc.text(textValue, xBase + labelW + 2, currentY);
   }
-  currentY += 6;
+  if (shortFields.length > 0) currentY += 8;
+
+  // --- Campos largos (textarea) en cuadros de 3 columnas ---
+  if (longFields.length > 0) {
+    const boxCols = Math.min(longFields.length, 3);
+    const boxW = (hdrFieldPageW - 20) / boxCols;
+    const padding = 2;
+    // Calcular altura máxima de la fila de cuadros
+    let maxBoxH = 0;
+    const wrappedTexts = longFields.map(f => {
+      const lines = doc.splitTextToSize(sanitizeText(f.value), boxW - padding * 2 - 2);
+      const h = lines.length * 4.5 + 10; // label + padding
+      if (h > maxBoxH) maxBoxH = h;
+      return lines;
+    });
+
+    longFields.forEach((field, i) => {
+      const col = i % boxCols;
+      const xBase = 10 + col * boxW;
+      // Cuadro con borde
+      doc.setDrawColor(124, 58, 237); // purple
+      doc.setFillColor(250, 245, 255); // light purple bg
+      doc.setLineWidth(0.4);
+      doc.roundedRect(xBase, currentY, boxW - 2, maxBoxH, 2, 2, 'FD');
+      // Label en negrita
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(76, 29, 149); // dark purple
+      doc.text(sanitizeText(field.label), xBase + padding, currentY + 5);
+      // Valor
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...COLORS.text);
+      doc.text(wrappedTexts[i], xBase + padding, currentY + 10);
+    });
+    doc.setDrawColor(0);
+    doc.setFillColor(255, 255, 255);
+    currentY += maxBoxH + 3;
+  }
   
   return currentY + 5;
 };
@@ -798,14 +837,23 @@ export const exportFormToPDF = async (form, template) => {
     // Crear documento PDF
     const doc = new jsPDF(PAGE_CONFIG);
     
-    // Preparar datos
+    // Preparar datos — mezclar valores guardados con defaults del template para campos faltantes
+    const _rawHD = form.headerData || {};
+    const _hFields = Array.isArray(template?.headerFields) ? template.headerFields : [];
+    const _mergedHD = { ..._rawHD };
+    _hFields.forEach(f => {
+      if (f.label && (!_mergedHD[f.label] || _mergedHD[f.label] === '') && f.defaultValue) {
+        _mergedHD[f.label] = f.defaultValue;
+      }
+      if (f.label && _mergedHD[f.label] === undefined) _mergedHD[f.label] = '';
+    });
     const templateData = {
       codigo: template?.codigo || form.templateCodigo || 'N/A',
       nombre: template?.nombre || form.templateNombre || 'Formulario',
       version: template?.version || form.version || 1,
       fechaVersion: template?.fechaVersion ?? form.fechaVersion ?? null,
       templateCreatedAt: form.templateCreatedAt || null,
-      headerData: form.headerData || {},
+      headerData: _mergedHD,
       createdAt: form.createdAt || form.CreatedAt || form.created_at
     };
     
@@ -1478,11 +1526,19 @@ export const exportMultipleFormsToPDF = async (forms, templates) => {
         doc.addPage();
       }
       
+      const _mHFields = Array.isArray(template?.headerFields) ? template.headerFields : [];
+      const _mRawHD = form.headerData || {};
+      const _mMergedHD = { ..._mRawHD };
+      _mHFields.forEach(f => {
+        if (f.label && (_mMergedHD[f.label] === undefined || _mMergedHD[f.label] === '' ) && f.defaultValue) {
+          _mMergedHD[f.label] = f.defaultValue;
+        }
+      });
       const templateData = {
         codigo: template?.codigo || form.templateCodigo,
         nombre: template?.nombre || 'Formulario',
         version: template?.version || 1,
-        headerData: form.headerData || {},
+        headerData: _mMergedHD,
         createdAt: form.createdAt || form.CreatedAt || form.created_at
       };
       

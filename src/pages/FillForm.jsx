@@ -627,7 +627,7 @@ useEffect(() => {
       const draftHeader = resumeDraft.headerData && typeof resumeDraft.headerData === 'object' && Object.keys(resumeDraft.headerData).length > 0
         ? resumeDraft.headerData : (() => {
           const h = {};
-          (templateToUse.headerFields || []).forEach(f => { h[f.label] = ""; });
+          (templateToUse.headerFields || []).forEach(f => { h[f.label] = f.defaultValue || ""; });
           return h;
         })();
 
@@ -845,9 +845,9 @@ useEffect(() => {
       createdAt: new Date().toISOString()
     };
     
-    // Inicializar header vacío
+    // Inicializar header vacío (usando defaultValue si existe)
     (template.headerFields || []).forEach((field) => {
-      newTab.headerData[field.label] = "";
+      newTab.headerData[field.label] = field.defaultValue || "";
     });
     
     // Inicializar body vacío
@@ -8070,11 +8070,15 @@ useEffect(() => {
               if (span > 1) cellRowSpan = span;
             }
             
-            // Si tiene valor de datos para columna predefinida, mostrar como solo lectura
+            // Si tiene valor de datos para columna predefinida, mostrar como solo lectura.
+            // Solo se bloquea si la fila predefinida en este índice tiene un valor no vacío para
+            // esta columna (ej: "N/A"). Si el predefinido es vacío, la celda siempre es editable.
             if (cellDataValue) {
-              // Verificar si este valor viene de una columna predefinida en el template
-              const isPredefinedCol = predefinedRows.some(pr => pr[colKey]);
-              if (isPredefinedCol) {
+              const thisPredefinedValue = rowIndex < predefinedRows.length
+                ? (predefinedRows[rowIndex]?.[colKey] ?? '')
+                : '';
+              const isPredefinedCell = thisPredefinedValue !== '' && thisPredefinedValue !== null;
+              if (isPredefinedCell) {
                 return (
                   <td key={`${elementIndex}-${rowIndex}-${colIndex}`} rowSpan={cellRowSpan || undefined}
                     style={{

@@ -1232,14 +1232,26 @@ export const exportFormToExcel = async (form, template) => {
       }
     });
     
-    // Preparar datos
+    // Preparar datos — mezclar valores guardados con defaults del template para campos faltantes
+    const rawHeaderData = form.headerData || {};
+    const headerFields = Array.isArray(template?.headerFields) ? template.headerFields : [];
+    const mergedHeaderData = { ...rawHeaderData };
+    headerFields.forEach(f => {
+      if (f.label && (!mergedHeaderData[f.label] || mergedHeaderData[f.label] === '')) {
+        if (f.defaultValue) mergedHeaderData[f.label] = f.defaultValue;
+      }
+    });
+    // También asegurar que todos los campos del template aparecen (aunque tengan valor vacío)
+    headerFields.forEach(f => {
+      if (f.label && mergedHeaderData[f.label] === undefined) mergedHeaderData[f.label] = '';
+    });
     const templateData = {
       codigo: template?.codigo || form.templateCodigo || 'N/A',
       nombre: template?.nombre || form.templateNombre || 'Formulario',
       version: template?.version || form.version || 1,
       fechaVersion: template?.fechaVersion || template?.FechaVersion || form.fechaVersion || null,
       templateCreatedAt: form.templateCreatedAt || null,
-      headerData: form.headerData || {},
+      headerData: mergedHeaderData,
       createdAt: form.createdAt || form.CreatedAt || form.created_at
     };
     

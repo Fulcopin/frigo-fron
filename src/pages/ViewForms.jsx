@@ -643,15 +643,25 @@ function ViewForms() {
     // Usar el snapshot del template si está disponible (versión histórica)
     // Si no, buscar el template actual de la lista
     let correspondingTemplate;
-    
+    // El template actual (con defaultValues actualizados)
+    const currentTemplate = templates.find(t => String(t.templateID) === String(selectedForm.templateID));
+
     if (selectedFormVersionInfo && selectedFormVersionInfo.templateSnapshot) {
-      // Usar el snapshot guardado con el formulario (versión histórica)
+      // Usar el snapshot para bodyElements (estructura del formulario cuando fue llenado)
+      // pero fusionar con los headerFields actuales para mostrar los campos con defaultValue correctamente
       console.log('📸 Usando snapshot de template (versión histórica)');
-      correspondingTemplate = selectedFormVersionInfo.templateSnapshot;
+      const snapshot = selectedFormVersionInfo.templateSnapshot;
+      correspondingTemplate = {
+        ...snapshot,
+        // Usar headerFields del template actual si tiene más campos (p.ej. campos con defaultValue añadidos después)
+        headerFields: (currentTemplate?.headerFields?.length ?? 0) >= (snapshot?.headerFields?.length ?? 0)
+          ? (currentTemplate?.headerFields ?? snapshot?.headerFields ?? [])
+          : (snapshot?.headerFields ?? []),
+      };
     } else {
       // Buscar el template actual en la lista (comparar como string para evitar Number vs String mismatch)
       console.log('📋 Usando template actual de la lista');
-      correspondingTemplate = templates.find(t => String(t.templateID) === String(selectedForm.templateID));
+      correspondingTemplate = currentTemplate;
     }
 
     return (
@@ -720,9 +730,13 @@ function ViewForms() {
                       const matchingKey = Object.keys(selectedForm.headerData || {}).find(key => 
                         normalizeString(key) === normalizedFieldLabel
                       );
-                      if (matchingKey) {
-                        value = selectedForm.headerData[matchingKey];
-                        renderedKeys.add(matchingKey);
+                      if (matchingKey) renderedKeys.add(matchingKey);
+                      // Usar el valor guardado solo si no está vacío; si está vacío usar defaultValue
+                      const savedVal = matchingKey ? selectedForm.headerData[matchingKey] : undefined;
+                      if (savedVal) {
+                        value = savedVal;
+                      } else if (field.defaultValue) {
+                        value = field.defaultValue;
                       }
                     } else {
                       renderedKeys.add(field.label);
@@ -730,12 +744,21 @@ function ViewForms() {
                       renderedKeys.add(field.id);
                     }
                     
-                    const displayValue = renderCellValue(value, field.type);
                     const isImg = typeof value === 'string' && isImageUrl(value);
+                    const isTextarea = field.type === 'textarea' || (typeof value === 'string' && value.length > 60);
+                    const displayValue = isImg ? renderCellValue(value, field.type) : (value || '-');
                     return (
                       <div key={index} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
                         <span className="data-label">{field.label || field.name || field.id}:</span>
-                        <div className="data-value">{displayValue}</div>
+                        {isTextarea && !isImg ? (
+                          <div style={{
+                            border: '1.5px solid #7c3aed', borderRadius: '6px', padding: '8px 10px',
+                            background: '#faf5ff', color: '#4c1d95', fontSize: '0.875rem',
+                            lineHeight: '1.5', whiteSpace: 'pre-wrap', minHeight: '36px'
+                          }}>{displayValue}</div>
+                        ) : (
+                          <div className="data-value">{displayValue}</div>
+                        )}
                       </div>
                     );
                   });
