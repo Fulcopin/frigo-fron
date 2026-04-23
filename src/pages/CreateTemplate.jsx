@@ -1496,17 +1496,30 @@ function CreateTemplate() {
                       {/* 📦 GRUPO DE COLUMNA */}
                       <div className="form-group">
                         <label>📦 Grupo de Columna</label>
-                        <input 
-                          type="text" 
-                          value={column.group || ""} 
-                          onChange={(e) => updateColumnInTable(elementIndex, colIndex, "group", e.target.value)} 
-                          placeholder="Ej: Temperatura, Presión"
-                          list={`group-suggestions-${elementIndex}`}
-                          style={{
-                            borderColor: column.group ? '#22c55e' : undefined,
-                            background: column.group ? '#f0fdf4' : undefined
-                          }}
-                        />
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <input 
+                            type="text" 
+                            value={column.group || ""} 
+                            onChange={(e) => updateColumnInTable(elementIndex, colIndex, "group", e.target.value)} 
+                            placeholder="Ej: Temperatura, Presión"
+                            list={`group-suggestions-${elementIndex}`}
+                            style={{
+                              flex: 1,
+                              borderColor: column.group ? '#22c55e' : undefined,
+                              background: column.group ? '#f0fdf4' : undefined
+                            }}
+                          />
+                          {column.group && (
+                            <button
+                              type="button"
+                              onClick={() => updateColumnInTable(elementIndex, colIndex, "group", "")}
+                              title="Quitar del grupo (desunir columna)"
+                              style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: '#dc2626', fontSize: '12px', whiteSpace: 'nowrap' }}
+                            >
+                              ✕ Desunir
+                            </button>
+                          )}
+                        </div>
                         <datalist id={`group-suggestions-${elementIndex}`}>
                           {[...new Set(element.columns.map(c => c.group).filter(Boolean))].map(g => (
                             <option key={g} value={g} />
@@ -1912,17 +1925,15 @@ function CreateTemplate() {
                                         borderRadius: '4px', fontSize: '0.85rem', boxSizing: 'border-box'
                                       }}
                                     />
-                                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                                    <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
                                       <button
                                         onClick={() => {
                                           const maxSpan = (element.predefinedRows || []).length - ri;
                                           const currentSpan = pRow._rowSpan?.[colKey] || 1;
                                           const newSpan = currentSpan < maxSpan ? currentSpan + 1 : 1;
                                           const rows = [...(element.predefinedRows || [])].map((r, idx) => ({...r, _rowSpan: {...(r._rowSpan || {})}, _hidden: {...(r._hidden || {})}}));
-                                          // Reset hidden for this column
                                           rows.forEach((r, idx) => { if (idx > ri) r._hidden[colKey] = false; });
                                           rows[ri]._rowSpan[colKey] = newSpan;
-                                          // Hide cells covered by span
                                           for (let s = 1; s < newSpan; s++) {
                                             if (rows[ri + s]) rows[ri + s]._hidden[colKey] = true;
                                           }
@@ -1934,10 +1945,31 @@ function CreateTemplate() {
                                           color: (pRow._rowSpan?.[colKey] || 1) > 1 ? 'white' : '#6d28d9',
                                           cursor: 'pointer', fontSize: '0.75rem', fontWeight: 500
                                         }}
-                                        title={`Combinar filas hacia abajo (actual: ${pRow._rowSpan?.[colKey] || 1})`}
+                                        title={`Combinar filas hacia abajo (actual: ${pRow._rowSpan?.[colKey] || 1} filas)`}
                                       >
                                         🔗 {pRow._rowSpan?.[colKey] || 1}
                                       </button>
+                                      {(pRow._rowSpan?.[colKey] || 1) > 1 && (
+                                        <button
+                                          onClick={() => {
+                                            const currentSpan = pRow._rowSpan?.[colKey] || 1;
+                                            const rows = [...(element.predefinedRows || [])].map((r) => ({...r, _rowSpan: {...(r._rowSpan || {})}, _hidden: {...(r._hidden || {})}}));
+                                            for (let s = 1; s < currentSpan; s++) {
+                                              if (rows[ri + s]) rows[ri + s]._hidden[colKey] = false;
+                                            }
+                                            rows[ri]._rowSpan[colKey] = 1;
+                                            updateBodyElement(elementIndex, 'predefinedRows', rows);
+                                          }}
+                                          style={{
+                                            padding: '2px 6px', borderRadius: '4px', border: '1px solid #dc2626',
+                                            background: '#fee2e2', color: '#dc2626',
+                                            cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600
+                                          }}
+                                          title="Desunir / separar filas fusionadas"
+                                        >
+                                          ✕ Desunir
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 );
@@ -1974,7 +2006,7 @@ function CreateTemplate() {
                         </tbody>
                       </table>
                       <p style={{ color: '#6b7280', fontSize: '0.78rem', marginTop: '8px', margin: '8px 0 0' }}>
-                        💡 Escribe texto fijo en cada celda. Usa el botón <strong>🔗</strong> para combinar celdas hacia abajo (como CATEGORÍA en tu imagen). El número indica cuántas filas cubre esa celda.
+                        💡 Escribe texto fijo en cada celda. Usa <strong>🔗</strong> para fusionar celdas hacia abajo; el número indica cuántas filas cubre. Usa <strong>✕ Desunir</strong> para separar celdas ya fusionadas.
                       </p>
                     </div>
                   )}

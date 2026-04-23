@@ -18,6 +18,9 @@ function ManageTemplates() {
   const [showManualHistory, setShowManualHistory] = useState(false);
   const [manualHistoryTemplate, setManualHistoryTemplate] = useState(null);
   const [manualHistoryEntries, setManualHistoryEntries] = useState([]);
+  const [historyLoadError, setHistoryLoadError] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [showAutoHistory, setShowAutoHistory] = useState(false);
   const [newHistoryFecha, setNewHistoryFecha] = useState('');
   const [newHistoryCambio, setNewHistoryCambio] = useState('');
   const [newHistoryVersion, setNewHistoryVersion] = useState('');
@@ -128,31 +131,42 @@ function ManageTemplates() {
   // ========== 📝 HISTORIAL MANUAL (API) ==========
 
   const loadManualHistory = async (templateId) => {
+    setHistoryLoadError(false);
+    setHistoryLoading(true);
     try {
       const response = await fetch(`${API_URL_TEMPLATES}/${templateId}/changelog`);
-      if (!response.ok) return [];
+      if (!response.ok) {
+        setHistoryLoadError(true);
+        setHistoryLoading(false);
+        return null; // null = error, no borrar entradas existentes
+      }
       const data = await response.json();
-      console.log('📋 Changelog raw data:', data);
       const arr = Array.isArray(data) ? data : data.$values || [];
-      console.log('📋 Changelog parsed array:', arr);
-      return arr.map(e => ({
-        id: e.id,
-        fecha: e.fecha ? e.fecha.split('T')[0] : '',
-        cambioRealizado: e.cambioRealizado,
-        version: e.version
+      const entries = arr.map(e => ({
+        id: e.id || e.Id,
+        fecha: (e.fecha || e.Fecha) ? (e.fecha || e.Fecha).split('T')[0] : '',
+        cambioRealizado: e.cambioRealizado || e.CambioRealizado || '',
+        version: e.version || e.Version || ''
       }));
+      setHistoryLoading(false);
+      return entries;
     } catch {
-      return [];
+      setHistoryLoadError(true);
+      setHistoryLoading(false);
+      return null; // null = error, no borrar entradas existentes
     }
   };
 
   const handleOpenManualHistory = async (template) => {
     setManualHistoryTemplate(template);
-    setManualHistoryEntries(await loadManualHistory(template.templateID));
+    setManualHistoryEntries([]);
+    setShowAutoHistory(false);
+    setShowManualHistory(true);
     setNewHistoryFecha('');
     setNewHistoryCambio('');
     setNewHistoryVersion(template.version || '');
-    setShowManualHistory(true);
+    const entries = await loadManualHistory(template.templateID);
+    if (entries !== null) setManualHistoryEntries(entries);
   };
 
   const handleAddManualEntry = async () => {
@@ -160,25 +174,33 @@ function ManageTemplates() {
       alert('Por favor completa la fecha y el cambio realizado.');
       return;
     }
+    const optimisticEntry = {
+      id: Date.now(), // temporal hasta recargar
+      fecha: newHistoryFecha.trim(),
+      version: newHistoryVersion.trim() || manualHistoryTemplate.version || 'N/A',
+      cambioRealizado: newHistoryCambio.trim()
+    };
     try {
       const response = await fetch(`${API_URL_TEMPLATES}/${manualHistoryTemplate.templateID}/changelog`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fecha: newHistoryFecha.trim(),
-          version: newHistoryVersion.trim() || manualHistoryTemplate.version || 'N/A',
+          version: optimisticEntry.version,
           cambioRealizado: newHistoryCambio.trim()
         })
       });
-      if (!response.ok) throw new Error('Error al guardar');
-      const saved = await response.json();
-      console.log('✅ Registro guardado:', saved);
-      // Recargar todos los registros del servidor para asegurar sincronización
-      const updatedEntries = await loadManualHistory(manualHistoryTemplate.templateID);
-      setManualHistoryEntries(updatedEntries);
+      if (!response.ok) throw new Error(`Error ${response.status} al guardar`);
       setNewHistoryFecha('');
       setNewHistoryCambio('');
       setNewHistoryVersion(manualHistoryTemplate.version || '');
+      // Recargar desde servidor; si falla, mantener entrada optimista
+      const updatedEntries = await loadManualHistory(manualHistoryTemplate.templateID);
+      if (updatedEntries !== null) {
+        setManualHistoryEntries(updatedEntries);
+      } else {
+        setManualHistoryEntries(prev => [optimisticEntry, ...prev]);
+      }
     } catch (err) {
       alert('Error guardando el registro: ' + err.message);
     }
@@ -453,52 +475,88 @@ function ManageTemplates() {
 
             {/* Tabla de registros */}
             <div className="mh-entries">
-              <h3>📋 HISTORIAL DE CAMBIOS Y/O MODIFICACIONES</h3>
-              {manualHistoryEntries.length === 0 ? (
-                <p className="mh-empty">No hay registros aún. Agrega el primero arriba.</p>
-              ) : (
-                <div className="mh-table-wrapper">
-                  <table className="mh-table">
-                    <thead>
-                      <tr>
-                        <th>FECHA</th>
-                        <th>VERSIÓN</th>
-                        <th>MODIFICACIÓN</th>
-                        <th style={{ width: '42px' }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {manualHistoryEntries.map((entry) => (
-                        <tr key={entry.id}>
-                          <td className="mh-td-fecha">
-                            {entry.fecha && entry.fecha.includes('T')
-                              ? new Date(entry.fecha).toLocaleDateString('es-EC', {
-                                  day: '2-digit', month: '2-digit', year: 'numeric'
-                                })
-                              : entry.fecha
-                                ? (() => { const [y, m, d] = entry.fecha.split('-'); return `${d}/${m}/${y}`; })()
-                                : 'N/A'
-                            }
-                          </td>
-                          <td className="mh-td-version">{entry.version}</td>
-                          <td className="mh-td-modificacion">
-                            {entry.cambioRealizado}
-                          </td>
-                          <td>
-                            <button 
-                              className="mh-entry-delete" 
-                              onClick={() => handleDeleteManualEntry(entry.id)}
-                              title="Eliminar registro"
-                            >
-                              🗑️
-                            </button>
-                          </td>
+              <h3 style={{marginTop:0}}>📋 HISTORIAL DE CAMBIOS Y/O MODIFICACIONES</h3>
+              {historyLoading ? (
+                <p className="mh-empty">⏳ Cargando historial...</p>
+              ) : historyLoadError ? (
+                <p className="mh-empty" style={{color:'#ef4444'}}>
+                  ⚠️ No se pudo cargar el historial. Verifica que el servidor esté activo.
+                  <button onClick={() => loadManualHistory(manualHistoryTemplate?.templateID).then(e => { if(e!==null) setManualHistoryEntries(e); })}
+                    style={{marginLeft:'10px', fontSize:'12px', background:'#ef4444', color:'white', border:'none', borderRadius:'4px', padding:'2px 8px', cursor:'pointer'}}>
+                    🔄 Reintentar
+                  </button>
+                </p>
+              ) : (() => {
+                const manualEntries = manualHistoryEntries.filter(e => !e.cambioRealizado.startsWith('[Auto]'));
+                const autoEntries = manualHistoryEntries.filter(e => e.cambioRealizado.startsWith('[Auto]'));
+                const renderTable = (entries, isDeletable) => (
+                  <div className="mh-table-wrapper">
+                    <table className="mh-table">
+                      <thead>
+                        <tr>
+                          <th>FECHA</th>
+                          <th>VERSIÓN</th>
+                          <th>MODIFICACIÓN</th>
+                          {isDeletable && <th style={{ width: '42px' }}></th>}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody>
+                        {entries.map((entry) => (
+                          <tr key={entry.id}>
+                            <td className="mh-td-fecha">
+                              {entry.fecha && entry.fecha.includes('T')
+                                ? new Date(entry.fecha).toLocaleDateString('es-EC', {
+                                    day: '2-digit', month: '2-digit', year: 'numeric'
+                                  })
+                                : entry.fecha
+                                  ? (() => { const [y, m, d] = entry.fecha.split('-'); return `${d}/${m}/${y}`; })()
+                                  : 'N/A'
+                              }
+                            </td>
+                            <td className="mh-td-version">{entry.version}</td>
+                            <td className="mh-td-modificacion">
+                              {isDeletable ? entry.cambioRealizado : entry.cambioRealizado.replace('[Auto] ', '')}
+                            </td>
+                            {isDeletable && (
+                              <td>
+                                <button
+                                  className="mh-entry-delete"
+                                  onClick={() => handleDeleteManualEntry(entry.id)}
+                                  title="Eliminar registro"
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+                return (
+                  <>
+                    {manualEntries.length === 0 ? (
+                      <p className="mh-empty">No hay registros manuales aún. Agrega el primero usando el formulario de arriba.</p>
+                    ) : renderTable(manualEntries, true)}
+                    {autoEntries.length > 0 && (
+                      <div style={{marginTop:'16px'}}>
+                        <button
+                          onClick={() => setShowAutoHistory(v => !v)}
+                          style={{fontSize:'12px', background:'none', border:'1px solid #d1d5db', borderRadius:'6px', padding:'4px 12px', cursor:'pointer', color:'#6b7280'}}
+                        >
+                          {showAutoHistory ? '▲ Ocultar' : '▼ Ver'} cambios del sistema ({autoEntries.length})
+                        </button>
+                        {showAutoHistory && (
+                          <div style={{marginTop:'8px', opacity:0.7}}>
+                            {renderTable(autoEntries, false)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>

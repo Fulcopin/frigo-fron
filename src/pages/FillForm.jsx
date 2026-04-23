@@ -26,18 +26,22 @@ const AUTOSAVE_KEY_PREFIX = 'autosave_form_';
 // Función auxiliar para agrupar columnas en tablas
 const processColumnGroups = (columns = []) => {
   if (!columns.length) return [];
-  const groupsMap = columns.reduce((acc, col) => {
-    const groupName = col.group || 'Datos'; 
-    if (!acc[groupName]) {
-      acc[groupName] = [];
+  const result = [];
+  const namedGroups = {}; // preserva orden de inserción
+  columns.forEach((col) => {
+    const groupName = col.group || '';
+    if (!groupName) {
+      // Sin grupo: cada columna tiene su propia celda de encabezado (sin fusión)
+      result.push({ groupName: '', columns: [col] });
+    } else {
+      if (!namedGroups[groupName]) {
+        namedGroups[groupName] = { groupName, columns: [] };
+        result.push(namedGroups[groupName]);
+      }
+      namedGroups[groupName].columns.push(col);
     }
-    acc[groupName].push(col);
-    return acc;
-  }, {});
-  return Object.keys(groupsMap).map(groupName => ({
-    groupName,
-    columns: groupsMap[groupName]
-  }));
+  });
+  return result;
 };
 // Motor de fórmulas: importado desde src/utils/formulaEngine.js
 const evaluarFormula = evaluarFormulaEngine;
@@ -3657,19 +3661,36 @@ useEffect(() => {
       
       if (fieldLabel) {
         // Tabla dentro de sección
+        const sectionTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+        const sectionField = sectionTemplate?.fields?.find(f => f.label === fieldLabel);
+        const secPredRows = sectionField?.predefinedRows || [];
+        const secPLen = secPredRows.length;
         const updatedData = { ...element.data };
         if (!Array.isArray(updatedData[fieldLabel])) return element;
-        updatedData[fieldLabel] = updatedData[fieldLabel].map(row => 
-          row?._deleted ? row : { ...row, [columnLabel]: realValue }
-        );
+        updatedData[fieldLabel] = updatedData[fieldLabel].map((row, rowIdx) => {
+          if (row?._deleted) return row;
+          if (secPLen > 0) {
+            const predVal = secPredRows[rowIdx % secPLen]?.[columnLabel];
+            if (predVal !== undefined && predVal !== '' && predVal !== null) return row;
+          }
+          return { ...row, [columnLabel]: realValue };
+        });
         return { ...element, data: updatedData };
       } else {
         // Tabla standalone
-        const updatedRows = (element.data || []).map(row =>
-          row?._deleted ? row : { ...row, [columnLabel]: realValue }
-        );
-        // Recalcular fórmulas en todas las filas
         const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
+        const predRows = tableTemplate?.predefinedRows || [];
+        const pLen = predRows.length;
+        const updatedRows = (element.data || []).map((row, rowIdx) => {
+          if (row?._deleted) return row;
+          if (pLen > 0) {
+            const predVal = predRows[rowIdx % pLen]?.[columnLabel];
+            if (predVal !== undefined && predVal !== '' && predVal !== null) return row;
+          }
+          return { ...row, [columnLabel]: realValue };
+        });
+        // Recalcular fórmulas en todas las filas
+        // tableTemplate already computed above
         if (tableTemplate?.columns) {
           updatedRows.forEach((row, rIndex) => {
             if (row?._deleted) return;

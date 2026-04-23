@@ -48,6 +48,7 @@ const signatureService = {
           signedBy: signatureData.signedBy,
           signedDate: signatureData.signedDate || toLocalISOString(),
           comments: signatureData.comments || '',
+          signerNombre: signatureData.signerNombre || '',
         }),
       });
       
@@ -79,6 +80,7 @@ const signatureService = {
           signedBy: signatureData.signedBy,
           signedDate: signatureData.signedDate || toLocalISOString(),
           comments: signatureData.comments || '',
+          signerNombre: signatureData.signerNombre || '',
         }),
       });
       

@@ -374,6 +374,7 @@ export default function SignatureManagement() {
       const signatureData = {
         signatureImage,
         signedBy: currentUser.email,
+        signerNombre: currentUser.nombre,
         signedDate: toLocalISOString(),
         comments,
       };
@@ -1163,24 +1164,26 @@ export default function SignatureManagement() {
       {showContractPreview && (
         <div className="modal-overlay" onClick={() => setShowContractPreview(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{
-            maxWidth: '900px',
-            width: '95%',
-            maxHeight: '90vh',
-            borderRadius: '16px',
+            width: '100vw',
+            height: '100dvh',
+            maxWidth: '100vw',
+            maxHeight: '100dvh',
+            borderRadius: 0,
             overflow: 'hidden',
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            margin: 0
           }}>
             <div className="modal-header" style={{
               background: 'linear-gradient(135deg, #1e40af, #3b82f6)',
               color: 'white',
-              padding: '1.2rem 1.5rem',
+              padding: '1rem 1.5rem',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               flexShrink: 0
             }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>📋 Revisión del Formulario</h2>
+              <h2 style={{ margin: 0, fontSize: '1.3rem' }}>📋 Revisión del Formulario</h2>
               <button
                 onClick={() => setShowContractPreview(false)}
                 style={{ color: 'white', fontSize: '1.5rem', background: 'none', border: 'none', cursor: 'pointer' }}
@@ -1217,7 +1220,7 @@ export default function SignatureManagement() {
                   style={{
                     flex: 1,
                     overflow: 'auto',
-                    padding: '1.5rem',
+                    padding: '1.5rem 2rem',
                     background: '#f8fafc'
                   }}
                 >
@@ -1230,25 +1233,25 @@ export default function SignatureManagement() {
                     border: '1px solid #e5e7eb',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
                   }}>
-                    <h3 style={{ margin: '0 0 12px 0', color: '#1e40af', fontSize: '1.1rem' }}>
+                    <h3 style={{ margin: '0 0 12px 0', color: '#1e40af', fontSize: '1.3rem' }}>
                       📄 {contractTemplate.nombre || 'Formulario'}
                     </h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
                       {contractTemplate.codigo && (
-                        <div style={{ fontSize: '0.9rem' }}>
+                        <div style={{ fontSize: '1rem' }}>
                           <strong>Código:</strong> {contractTemplate.codigo}
                         </div>
                       )}
-                      <div style={{ fontSize: '0.9rem' }}>
+                      <div style={{ fontSize: '1rem' }}>
                         <strong>Fecha:</strong> {new Date(contractFormData.createdAt || contractFormData.createdDate).toLocaleDateString('es-ES')}
                       </div>
                       {contractFormData.filledBy && (
-                        <div style={{ fontSize: '0.9rem' }}>
+                        <div style={{ fontSize: '1rem' }}>
                           <strong>Llenado por:</strong> {contractFormData.filledBy}
                         </div>
                       )}
                       {contractFormData.area && (
-                        <div style={{ fontSize: '0.9rem' }}>
+                        <div style={{ fontSize: '1rem' }}>
                           <strong>Área:</strong> {contractFormData.area}
                         </div>
                       )}
@@ -1339,13 +1342,13 @@ export default function SignatureManagement() {
                             <table style={{
                               width: '100%',
                               borderCollapse: 'collapse',
-                              fontSize: '0.85rem'
+                              fontSize: '0.95rem'
                             }}>
                               <thead>
-                                <tr style={{ background: '#f1f5f9' }}>
-                                  <th style={{ padding: '8px 6px', border: '1px solid #e5e7eb', fontWeight: 600, color: '#374151' }}>#</th>
+                                <tr style={{ background: '#dbeafe' }}>
+                                  <th style={{ padding: '10px 8px', border: '1px solid #bfdbfe', fontWeight: 700, color: '#1e3a8a' }}>#</th>
                                   {templateElement.columns?.map((col, colIndex) => (
-                                    <th key={colIndex} style={{ padding: '8px 6px', border: '1px solid #e5e7eb', fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>
+                                    <th key={colIndex} style={{ padding: '10px 8px', border: '1px solid #bfdbfe', fontWeight: 700, color: '#1e3a8a', whiteSpace: 'nowrap' }}>
                                       {col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}
                                     </th>
                                   ))}
@@ -1353,8 +1356,8 @@ export default function SignatureManagement() {
                               </thead>
                               <tbody>
                                 {tableRows.map((row, rowIndex) => (
-                                  <tr key={rowIndex} style={{ background: rowIndex % 2 === 0 ? '#fff' : '#f9fafb' }}>
-                                    <td style={{ padding: '6px', border: '1px solid #e5e7eb', textAlign: 'center', fontWeight: 500 }}>{rowIndex + 1}</td>
+                                  <tr key={rowIndex} style={{ background: rowIndex % 2 === 0 ? '#fff' : '#f0f7ff' }}>
+                                    <td style={{ padding: '8px', border: '1px solid #e5e7eb', textAlign: 'center', fontWeight: 600 }}>{rowIndex + 1}</td>
                                     {templateElement.columns?.map((col, colIndex) => {
                                       const colLabel = (col.label || col.header || '').trim();
                                       const colId = (col.id || col.name || '').trim();
@@ -1373,7 +1376,7 @@ export default function SignatureManagement() {
 
                                       const isImageValue = cellValue && typeof cellValue === 'string' && (cellValue.startsWith('https://res.cloudinary.com') || cellValue.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(cellValue));
                                       return (
-                                        <td key={colIndex} style={{ padding: '6px', border: '1px solid #e5e7eb', textAlign: 'center' }}>
+                                        <td key={colIndex} style={{ padding: '8px', border: '1px solid #e5e7eb', textAlign: 'center' }}>
                                           {isImageValue
                                             ? <img src={cellValue} alt="img" style={{ maxWidth: '80px', maxHeight: '80px', objectFit: 'contain', borderRadius: '4px' }} />
                                             : (cellValue !== undefined && cellValue !== null && cellValue !== '' ? String(cellValue) : '-')

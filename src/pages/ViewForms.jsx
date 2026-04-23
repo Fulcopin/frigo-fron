@@ -61,10 +61,16 @@ const renderCellValue = (value, fieldType) => {
   
   // Checkbox visual rendering
   if (fieldType === 'checkbox') {
-    if (strVal === 'SI' || strVal === 'true') {
+    const upper = strVal.toUpperCase().trim()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // remove accents for comparison
+    if (upper === 'SI' || upper === 'YES' || upper === 'TRUE' || upper === '1') {
       return <span style={{ color: '#059669', fontWeight: '700', fontSize: '1.1em' }}>✓</span>;
     }
-    return <span style={{ color: '#9ca3af' }}>—</span>;
+    if (upper === 'NO' || upper === 'FALSE' || upper === '0' || upper === '-') {
+      return <span style={{ color: '#9ca3af' }}>—</span>;
+    }
+    // Non-boolean value (e.g. "Cambio de producto"): show as text
+    return strVal;
   }
   
   if (isImageUrl(strVal)) {
@@ -380,7 +386,7 @@ function ViewForms() {
       console.log('📋 formData.template.structure.bodyElements:', JSON.stringify(formData.template.structure.bodyElements, null, 2));
       
       // Transformar estructura del endpoint al formato esperado por el servicio PDF
-      const fechaVersionPDF = formData.fechaVersion ?? formData.FechaVersion ?? formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null;
+      const fechaVersionPDF = formData.fechaVersion || formData.FechaVersion || formData.template?.fechaVersion || formData.template?.FechaVersion || null;
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
@@ -435,7 +441,7 @@ function ViewForms() {
       console.log('📦 Datos completos recibidos:', formData);
       
       // Transformar estructura del endpoint al formato esperado por el servicio Excel
-      const fechaVersionExcel = formData.fechaVersion ?? formData.FechaVersion ?? formData.template?.fechaVersion ?? formData.template?.FechaVersion ?? null;
+      const fechaVersionExcel = formData.fechaVersion || formData.FechaVersion || formData.template?.fechaVersion || formData.template?.FechaVersion || null;
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
@@ -657,6 +663,8 @@ function ViewForms() {
         headerFields: (currentTemplate?.headerFields?.length ?? 0) >= (snapshot?.headerFields?.length ?? 0)
           ? (currentTemplate?.headerFields ?? snapshot?.headerFields ?? [])
           : (snapshot?.headerFields ?? []),
+        // Siempre usar fechaVersion del template actual (es la fecha de versión registrada en la plantilla)
+        fechaVersion: currentTemplate?.fechaVersion || snapshot?.fechaVersion || null,
       };
     } else {
       // Buscar el template actual en la lista (comparar como string para evitar Number vs String mismatch)

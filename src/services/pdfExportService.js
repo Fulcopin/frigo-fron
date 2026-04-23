@@ -377,42 +377,60 @@ const drawHeaderSection = (doc, headerData, startY) => {
   }
   if (shortFields.length > 0) currentY += 8;
 
-  // --- Campos largos (textarea) en cuadros de 3 columnas ---
+  // --- Campos largos (textarea) en cuadros con soporte multi-fila ---
   if (longFields.length > 0) {
     const boxCols = Math.min(longFields.length, 3);
     const boxW = (hdrFieldPageW - 20) / boxCols;
     const padding = 2;
-    // Calcular altura máxima de la fila de cuadros
-    let maxBoxH = 0;
-    const wrappedTexts = longFields.map(f => {
-      const lines = doc.splitTextToSize(sanitizeText(f.value), boxW - padding * 2 - 2);
-      const h = lines.length * 4.5 + 10; // label + padding
-      if (h > maxBoxH) maxBoxH = h;
-      return lines;
+    const rowCount = Math.ceil(longFields.length / boxCols);
+
+    // Calcular texto envuelto por campo
+    const wrappedTexts = longFields.map(f =>
+      doc.splitTextToSize(sanitizeText(f.value), boxW - padding * 2 - 2)
+    );
+
+    // Calcular altura máxima por fila (no global), para evitar desperdicio
+    const rowHeights = Array.from({ length: rowCount }, (_, rowIdx) => {
+      let maxH = 0;
+      for (let c = 0; c < boxCols; c++) {
+        const idx = rowIdx * boxCols + c;
+        if (idx >= longFields.length) break;
+        const h = wrappedTexts[idx].length * 4.5 + 10;
+        if (h > maxH) maxH = h;
+      }
+      return Math.max(maxH, 15);
     });
 
-    longFields.forEach((field, i) => {
+    let rowY = currentY;
+    for (let i = 0; i < longFields.length; i++) {
       const col = i % boxCols;
+      const row = Math.floor(i / boxCols);
+      // Avanzar Y cuando empieza una fila nueva (excepto la primera)
+      if (col === 0 && row > 0) {
+        rowY += rowHeights[row - 1] + 3;
+      }
       const xBase = 10 + col * boxW;
+      const rowH = rowHeights[row];
       // Cuadro con borde
       doc.setDrawColor(124, 58, 237); // purple
       doc.setFillColor(250, 245, 255); // light purple bg
       doc.setLineWidth(0.4);
-      doc.roundedRect(xBase, currentY, boxW - 2, maxBoxH, 2, 2, 'FD');
+      doc.roundedRect(xBase, rowY, boxW - 2, rowH, 2, 2, 'FD');
       // Label en negrita
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7);
       doc.setTextColor(76, 29, 149); // dark purple
-      doc.text(sanitizeText(field.label), xBase + padding, currentY + 5);
+      doc.text(sanitizeText(longFields[i].label), xBase + padding, rowY + 5);
       // Valor
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6.5);
       doc.setTextColor(...COLORS.text);
-      doc.text(wrappedTexts[i], xBase + padding, currentY + 10);
-    });
+      doc.text(wrappedTexts[i], xBase + padding, rowY + 10);
+    }
     doc.setDrawColor(0);
     doc.setFillColor(255, 255, 255);
-    currentY += maxBoxH + 3;
+    // Avanzar currentY más allá de todas las filas
+    currentY = rowY + rowHeights[rowCount - 1] + 3;
   }
   
   return currentY + 5;
@@ -906,10 +924,15 @@ export const exportFormToPDF = async (form, template) => {
         const pageW = doc.internal.pageSize.getWidth();
         const contentW = pageW - 16;
         const texto = section.contenido || '';
-        // Parse bold: render plain text (PDF doesn't support inline bold easily, use full-bold for lines starting with **)
-        const lines = texto.split('\n').filter(l => l !== undefined);
+        // Pre-calcular líneas envueltas para conocer altura real del cuadro
+        const rawLines = texto.split('\n').filter(l => l !== undefined);
         const lineHeight = 5;
-        const totalH = lines.length * lineHeight + 8;
+        const allWrappedLines = rawLines.map(line => {
+          const clean = line.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1');
+          return doc.splitTextToSize(clean, contentW - 12);
+        });
+        const totalWrapped = allWrappedLines.reduce((sum, w) => sum + w.length, 0);
+        const totalH = Math.max(totalWrapped * lineHeight + 10, 16);
         // Yellow background box
         doc.setFillColor(255, 251, 235);
         doc.setDrawColor(217, 119, 6);
@@ -921,13 +944,12 @@ export const exportFormToPDF = async (form, template) => {
         let textY = currentY + 5;
         doc.setFontSize(8.5);
         doc.setTextColor(28, 25, 23);
-        for (const line of lines) {
-          const clean = line.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1');
+        for (let li = 0; li < rawLines.length; li++) {
+          const line = rawLines[li];
           const isBold = /^\*\*/.test(line.trim()) || line.trim().startsWith('**');
           doc.setFont('helvetica', isBold ? 'bold' : 'normal');
-          const wrapped = doc.splitTextToSize(clean, contentW - 12);
-          doc.text(wrapped, 13, textY);
-          textY += wrapped.length * lineHeight;
+          doc.text(allWrappedLines[li], 13, textY);
+          textY += allWrappedLines[li].length * lineHeight;
         }
         // Image if present
         if (section.imagen && section.imagen.startsWith('data:image/')) {
@@ -942,10 +964,13 @@ export const exportFormToPDF = async (form, template) => {
         continue;
       }
 
+      // Espacio antes del título de sección
+      currentY += isCompactMode ? 3 : 5;
+
       // Título de la sección - Estilo Excel
       const secPageW = doc.internal.pageSize.getWidth();
       const secContentW = secPageW - 16;
-      const secTitleH = isCompactMode ? 5 : 7;
+      const secTitleH = isCompactMode ? 5 : 8;
       doc.setFontSize(isCompactMode ? 7 : 9);
       doc.setFont('helvetica', 'bold');
       doc.setFillColor(...COLORS.secondary);
@@ -956,8 +981,8 @@ export const exportFormToPDF = async (form, template) => {
       doc.setTextColor(...COLORS.sectionTitle);
       
       const sectionTitle = section.title || section.sectionTitle || section.label || 'Seccion';
-      doc.text(sanitizeText(sectionTitle.toUpperCase()), 10, currentY + secTitleH - 1.5);
-      currentY += isCompactMode ? 6 : 10;
+      doc.text(sanitizeText(sectionTitle.toUpperCase()), 10, currentY + secTitleH - 2);
+      currentY += isCompactMode ? 8 : 14;
       
       // Tipo de sección: tabla
       if (section.type === 'table' && section.columns) {
@@ -1292,31 +1317,79 @@ const rows = tableData.map((row, rowIndex) => {
                 currentY += 6;
               }
             } else {
-              // Texto normal
-              doc.setFontSize(9);
-              doc.setFont('helvetica', 'bold');
-              doc.text(sanitizeText(`${key}: `), 12, currentY);
-              const labelWidth = doc.getTextWidth(sanitizeText(`${key}: `));
-              doc.setFont('helvetica', 'normal');
-              if (strVal && strVal.trim()) {
-                const secPgW2 = doc.internal.pageSize.getWidth();
-                const textLines = doc.splitTextToSize(sanitizeText(strVal), (secPgW2 - 20) - labelWidth);
-                doc.text(textLines, 12 + labelWidth, currentY);
-                currentY += (textLines.length * 5) + 3;
+              // Texto normal — label envuelto + valor en línea siguiente si es necesario
+              const secPgW2 = doc.internal.pageSize.getWidth();
+              const maxW = secPgW2 - 22;
+              // Buscar el tipo de campo en la definición de la sección para distinguir label vs select
+              const fieldDef = section.fields?.find(f => f.label === key);
+              const fieldType = fieldDef?.type || 'text';
+
+              if (fieldType === 'label') {
+                // Campo tipo etiqueta: solo texto descriptivo (no tiene valor de usuario)
+                doc.setFontSize(8.5);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(30, 30, 30);
+                const labelLines = doc.splitTextToSize(sanitizeText(key), maxW);
+                doc.text(labelLines, 12, currentY);
+                currentY += labelLines.length * 6 + 4;
               } else {
-                doc.setTextColor(150, 150, 150);
-                doc.text('-', 17 + labelWidth, currentY);
-                doc.setTextColor(...COLORS.text);
-                currentY += 7;
+                // Campo con valor — label en negrita (envuelto si es largo), valor debajo
+                doc.setFontSize(8.5);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...COLORS.sectionTitle);
+                const labelLines = doc.splitTextToSize(sanitizeText(`${key}:`), maxW);
+                doc.text(labelLines, 12, currentY);
+                currentY += labelLines.length * 6 + 2;
+                if (strVal && strVal.trim()) {
+                  doc.setFont('helvetica', 'normal');
+                  doc.setTextColor(...COLORS.text);
+                  const valLines = doc.splitTextToSize(sanitizeText(strVal), maxW - 6);
+                  doc.text(valLines, 16, currentY);
+                  currentY += valLines.length * 6 + 5;
+                } else {
+                  doc.setFont('helvetica', 'italic');
+                  doc.setTextColor(150, 150, 150);
+                  doc.text('-', 16, currentY);
+                  doc.setTextColor(...COLORS.text);
+                  doc.setFont('helvetica', 'normal');
+                  currentY += 8;
+                }
               }
             }
           }
-          currentY += 5;
+          currentY += 8;
         } else {
           doc.setFontSize(9);
           doc.setTextColor(150, 150, 150);
           doc.setFont('helvetica', 'italic');
           doc.text('(Sin datos en esta sección)', 12, currentY);
+          doc.setTextColor(...COLORS.text);
+          doc.setFont('helvetica', 'normal');
+          currentY += 12;
+        }
+      } else if (section.type === 'observaciones') {
+        // ── SECCIÓN TIPO OBSERVACIONES (texto libre del usuario) ──
+        let obsText = '';
+        if (Array.isArray(bodyData)) {
+          const elementData = bodyData[index];
+          if (elementData && typeof elementData === 'object') {
+            obsText = elementData.data?.texto || elementData.texto || elementData.value || '';
+          }
+        }
+        if (obsText && obsText.trim()) {
+          const obsPageW = doc.internal.pageSize.getWidth();
+          const obsContentW = obsPageW - 20;
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(...COLORS.text);
+          const obsLines = doc.splitTextToSize(sanitizeText(String(obsText)), obsContentW);
+          doc.text(obsLines, 12, currentY);
+          currentY += obsLines.length * 6 + 8;
+        } else {
+          doc.setFontSize(9);
+          doc.setTextColor(150, 150, 150);
+          doc.setFont('helvetica', 'italic');
+          doc.text('(Sin observaciones)', 12, currentY);
           doc.setTextColor(...COLORS.text);
           doc.setFont('helvetica', 'normal');
           currentY += 10;

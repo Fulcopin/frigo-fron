@@ -491,7 +491,11 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     const titleCell = worksheet.getCell(currentRow, 1);
     titleCell.value = `  ${sectionTitle.toUpperCase()}`;
     applySectionTitleStyle(titleCell);
-    worksheet.getRow(currentRow).height = 26;
+    worksheet.getRow(currentRow).height = 28;
+    currentRow++;
+
+    // Fila blanca de separación entre título y contenido
+    worksheet.getRow(currentRow).height = 5;
     currentRow++;
     
     // Obtener datos de esta sección
@@ -589,7 +593,7 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
             valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white } };
             applyBorder(valueCell);
             
-            worksheet.getRow(currentRow).height = 22;
+            worksheet.getRow(currentRow).height = 28;
             currentRow++;
           }
           fieldIdx++;
@@ -630,11 +634,44 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
       }
       
       // Espacio entre secciones
-      worksheet.getRow(currentRow).height = 6;
+      worksheet.getRow(currentRow).height = 10;
       currentRow++;
       continue; // Skip the table rendering below
     }
     
+    // ── SECCIÓN TIPO OBSERVACIONES (texto libre del usuario) ──
+    if (section.type === 'observaciones') {
+      let obsText = '';
+      if (Array.isArray(bodyData)) {
+        const elementData = bodyData[index];
+        if (elementData && typeof elementData === 'object') {
+          obsText = elementData.data?.texto || elementData.texto || elementData.value || '';
+        }
+      }
+      if (obsText && obsText.trim()) {
+        safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
+        const obsCell = worksheet.getCell(currentRow, 1);
+        obsCell.value = String(obsText);
+        obsCell.font = { size: 10, name: 'Calibri' };
+        obsCell.alignment = { vertical: 'top', wrapText: true, indent: 1 };
+        obsCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.warmBg } };
+        applyBorder(obsCell);
+        worksheet.getRow(currentRow).height = Math.max(25, String(obsText).length / 60 * 15);
+        currentRow++;
+      } else {
+        safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
+        const emptyCell = worksheet.getCell(currentRow, 1);
+        emptyCell.value = '(Sin observaciones)';
+        emptyCell.font = { italic: true, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+        emptyCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getRow(currentRow).height = 20;
+        currentRow++;
+      }
+      worksheet.getRow(currentRow).height = 6;
+      currentRow++;
+      continue;
+    }
+
     // 🧊 SECCIÓN TIPO TINAS (Control de Tinas)
     if (section.type === 'tinas') {
       const config = section.config || {};
