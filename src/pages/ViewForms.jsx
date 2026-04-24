@@ -386,7 +386,7 @@ function ViewForms() {
       console.log('📋 formData.template.structure.bodyElements:', JSON.stringify(formData.template.structure.bodyElements, null, 2));
       
       // Transformar estructura del endpoint al formato esperado por el servicio PDF
-      const fechaVersionPDF = formData.fechaVersion || formData.FechaVersion || formData.template?.fechaVersion || formData.template?.FechaVersion || null;
+      const fechaVersionPDF = formData.template?.fechaVersion || formData.template?.FechaVersion || formData.fechaVersion || formData.FechaVersion || null;
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
@@ -441,7 +441,7 @@ function ViewForms() {
       console.log('📦 Datos completos recibidos:', formData);
       
       // Transformar estructura del endpoint al formato esperado por el servicio Excel
-      const fechaVersionExcel = formData.fechaVersion || formData.FechaVersion || formData.template?.fechaVersion || formData.template?.FechaVersion || null;
+      const fechaVersionExcel = formData.template?.fechaVersion || formData.template?.FechaVersion || formData.fechaVersion || formData.FechaVersion || null;
       const transformedData = {
         formID: formData.formID,
         templateID: formData.templateID,
@@ -754,7 +754,8 @@ function ViewForms() {
                     
                     const isImg = typeof value === 'string' && isImageUrl(value);
                     const isTextarea = field.type === 'textarea' || (typeof value === 'string' && value.length > 60);
-                    const displayValue = isImg ? renderCellValue(value, field.type) : (value || '-');
+                    // Siempre pasar por renderCellValue para formatear fechas ISO (quita la T)
+                    const displayValue = renderCellValue(value, field.type);
                     return (
                       <div key={index} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
                         <span className="data-label">{field.label || field.name || field.id}:</span>
@@ -956,6 +957,16 @@ function ViewForms() {
                               <td>{rowIndex + 1}</td>
                              {templateElement.columns.map((col, colIndex) => {
                               const rowKeys = Object.keys(row);
+                              // 🔗 Rowspan desde filas predefinidas del template
+                              let vfRowSpan = undefined;
+                              const vfPredRows = templateElement.predefinedRows || [];
+                              if (vfPredRows.length > 0 && rowIndex < vfPredRows.length) {
+                                const vfColKey = (col.label || col.header || col.name || col.id || `col_${colIndex}`).trim();
+                                const vfPredRow = vfPredRows[rowIndex];
+                                if (vfPredRow._hidden?.[vfColKey]) return null;
+                                const vfSpan = vfPredRow._rowSpan?.[vfColKey] || 1;
+                                if (vfSpan > 1) vfRowSpan = vfSpan;
+                              }
                               const colLabel = (col.label || col.header || "").trim();
                               const colId = (col.id || col.name || "").trim();
                               const colIdUpper = colId.toUpperCase();
@@ -1012,7 +1023,7 @@ function ViewForms() {
                               }
 
                               return (
-                                <td key={`cell-${rowIndex}-${colIndex}`} style={{ textAlign: 'center', minWidth: templateElement.columns.length > 12 ? '60px' : templateElement.columns.length > 8 ? '75px' : '100px' }}>
+                                <td key={`cell-${rowIndex}-${colIndex}`} rowSpan={vfRowSpan || undefined} style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: templateElement.columns.length > 12 ? '60px' : templateElement.columns.length > 8 ? '75px' : '100px' }}>
                                   {renderCellValue(cellValue, col.type)}{col.unit && cellValue !== undefined && cellValue !== null && cellValue !== '' && cellValue !== '-' ? <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '2px' }}>{col.unit}</span> : null}
                                 </td>
                               );

@@ -1313,6 +1313,65 @@ function EditTemplate() {
                   <h4>Columnas de la Tabla</h4>
                   <button onClick={() => addColumnToTable(elementIndex)} className="btn-add-small">+ Agregar Columna</button>
                 </div>
+
+                {/* ─────────── PANEL Σ AUTO-SUMA: selector rápido de columnas ─────────── */}
+                {(template.autoSumColumns) && (element.columns || []).length > 0 && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)',
+                    border: '2px solid #6366f1',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    marginBottom: '16px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <strong style={{ color: '#3730a3', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        Σ Columnas que se suman en la fila de totales:
+                      </strong>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button type="button"
+                          onClick={() => (element.columns || []).forEach((_, ci) => updateColumnInTable(elementIndex, ci, 'includeInSum', true))}
+                          style={{ fontSize: '11px', padding: '3px 10px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                        >✔ Todas</button>
+                        <button type="button"
+                          onClick={() => (element.columns || []).forEach((_, ci) => updateColumnInTable(elementIndex, ci, 'includeInSum', false))}
+                          style={{ fontSize: '11px', padding: '3px 10px', background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                        >✖ Ninguna</button>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {(element.columns || []).map((col, ci) => {
+                        const included = col.includeInSum !== false;
+                        return (
+                          <button
+                            key={ci}
+                            type="button"
+                            onClick={() => updateColumnInTable(elementIndex, ci, 'includeInSum', !included)}
+                            title={included ? 'Clic para excluir de la suma' : 'Clic para incluir en la suma'}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '5px',
+                              padding: '5px 11px',
+                              borderRadius: '20px',
+                              border: included ? '2px solid #4f46e5' : '2px solid #d1d5db',
+                              background: included ? '#4f46e5' : '#f9fafb',
+                              color: included ? 'white' : '#6b7280',
+                              fontWeight: included ? 700 : 400,
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            <span style={{ fontSize: '13px' }}>{included ? 'Σ' : '—'}</span>
+                            {col.label || `Col ${ci + 1}`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#6366f1' }}>
+                      💡 Columnas en <strong>azul Σ</strong> aparecen sumadas. Clic para activar/desactivar.
+                    </p>
+                  </div>
+                )}
+
                 {/* 📦 VISTA PREVIA DE GRUPOS DE COLUMNAS */}
                 {(element.columns || []).some(col => col.group) && (
                   <div style={{
@@ -1427,6 +1486,20 @@ function EditTemplate() {
                       </div>
 
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={column.required || false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "required", e.target.checked)}/>Requerido</label></div>
+
+                      {/* 📊 INCLUIR EN AUTO-SUMA */}
+                      <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: column.includeInSum === false ? '#fff7ed' : '#f0fdf4', border: `1px solid ${column.includeInSum === false ? '#fb923c' : '#86efac'}`, borderRadius: '6px' }}>
+                        <input
+                          type="checkbox"
+                          id={`includeInSum-${elementIndex}-${colIndex}`}
+                          checked={column.includeInSum !== false}
+                          onChange={(e) => updateColumnInTable(elementIndex, colIndex, "includeInSum", e.target.checked)}
+                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                        />
+                        <label htmlFor={`includeInSum-${elementIndex}-${colIndex}`} style={{ cursor: 'pointer', margin: 0, fontSize: '0.85rem', fontWeight: 600, color: column.includeInSum === false ? '#c2410c' : '#15803d' }}>
+                          📊 {column.includeInSum === false ? 'No incluir en Σ totales' : 'Incluir en Σ totales'}
+                        </label>
+                      </div>
                       
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                         <button onClick={() => moveColumn(elementIndex, colIndex, -1)} className="btn-move-up" disabled={colIndex === 0} title="Mover izquierda">⬆️</button>

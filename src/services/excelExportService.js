@@ -418,10 +418,16 @@ const createHeaderSection = (worksheet, headerData, startRow, maxCols = 8) => {
     labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white } };
     applyBorder(labelCell);
     
-    // Value (columna 3-maxCols)
+    // Value (columna 3-maxCols) — formatear fechas ISO (quitar la T)
+    const fmtXlVal = (() => {
+      const s = String(value || '');
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return s.replace('T', ' ');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; }
+      return value || '';
+    })();
     safeMergeCells(worksheet, currentRow, 3, currentRow, maxCols);
     const valueCell = worksheet.getCell(currentRow, 3);
-    valueCell.value = value || '';
+    valueCell.value = fmtXlVal;
     valueCell.font = { size: 10, name: 'Calibri' };
     valueCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
     valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isAlt ? EXCEL_COLORS.lightGray : EXCEL_COLORS.white } };
@@ -869,6 +875,19 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
       const computedRowXl = buildComputedRow(mergeCrossTableRow(row, rowIndex, Array.isArray(bodyData) ? bodyData : []), columns, dataToRender, rowIndex);
       
       columns.forEach((col, colIndex) => {
+        // 🔗 Rowspan desde filas predefinidas del template
+        if (!isEmptyTable) {
+          const xlPredRows = section.predefinedRows || [];
+          if (xlPredRows.length > 0 && rowIndex < xlPredRows.length) {
+            const xlColKey = (col.label || col.name || '').trim();
+            const xlPredRow = xlPredRows[rowIndex];
+            if (xlPredRow._hidden?.[xlColKey]) return; // celda cubierta por rowspan → no escribir
+            const xlSpan = xlPredRow._rowSpan?.[xlColKey] || 1;
+            if (xlSpan > 1) {
+              safeMergeCells(worksheet, currentRow, colIndex + 1, currentRow + xlSpan - 1, colIndex + 1);
+            }
+          }
+        }
         const dataCell = worksheet.getCell(currentRow, colIndex + 1);
         const rowKeys = Object.keys(row);
         

@@ -331,12 +331,25 @@ const drawHeaderSection = (doc, headerData, startY) => {
   // Construir lista de campos: mostrar TODOS los campos del headerData
   const headerFields = [];
   
+  // Helper: formatea fechas ISO eliminando la T (ej: 2026-04-22T10:25 → 22/04/2026 10:25)
+  const fmtDateTime = (v) => {
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
+      return s.replace('T', ' ');
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      const [y, m, d] = s.split('-');
+      return `${d}/${m}/${y}`;
+    }
+    return s;
+  };
+
   if (headerData && typeof headerData === 'object') {
     Object.entries(headerData).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
         headerFields.push({
           label: `${key.toUpperCase()}:`,
-          value: String(value)
+          value: fmtDateTime(value)
         });
       }
     });
@@ -1166,12 +1179,37 @@ const rows = tableData.map((row, rowIndex) => {
             doc,
             tblStyles.bodyFontSize
           );
-          
+
+          // 🔗 Rowspan: construir body con soporte de celdas combinadas (predefinedRows._rowSpan)
+          const predRowsPdf = section.predefinedRows || [];
+          const coveredPdfCells = {};
+          const bodyWithSpan = sanitizedRows.map((rowCells, rowIndex) => {
+            return rowCells.reduce((acc, cellStr, colIndex) => {
+              if (coveredPdfCells[`${rowIndex}_${colIndex}`]) return acc; // skip covered
+              let rowSpanPdf = 1;
+              if (predRowsPdf.length > 0 && rowIndex < predRowsPdf.length) {
+                const pdfColKey = columns[colIndex]?.dataKey || '';
+                const pdfPredRow = predRowsPdf[rowIndex];
+                if (pdfPredRow._hidden?.[pdfColKey]) return acc;
+                rowSpanPdf = pdfPredRow._rowSpan?.[pdfColKey] || 1;
+                if (rowSpanPdf > 1) {
+                  for (let r = rowIndex + 1; r < rowIndex + rowSpanPdf; r++) {
+                    coveredPdfCells[`${r}_${colIndex}`] = true;
+                  }
+                }
+              }
+              acc.push(rowSpanPdf > 1
+                ? { content: cellStr, rowSpan: rowSpanPdf, styles: { valign: 'middle' } }
+                : cellStr);
+              return acc;
+            }, []);
+          });
+
           // 🎨 Estilo Excel: bordes definidos, colores suaves, compacto
           autoTable(doc, {
             startY: currentY,
             head: tableHead,
-            body: sanitizedRows,
+            body: bodyWithSpan,
             foot: hasTotals ? [totalsRow] : [],
             theme: 'grid',
             tableWidth: tblStyles.availableWidth,
@@ -1272,100 +1310,190 @@ const rows = tableData.map((row, rowIndex) => {
           const lower = val.toLowerCase();
           return lower.includes('cloudinary.com') || lower.includes('res.cloudinary') || lower.startsWith('data:image/') || /\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i.test(val);
         };
-        
-        const entries = Object.entries(sectionData).filter(([k]) => k !== 'id' && k !== 'type');
-        
-        if (entries.length > 0) {
-          for (const [key, value] of entries) {
-            if (currentY > 250) {
-              doc.addPage();
-              currentY = 20;
-            }
-            
-            const strVal = String(value ?? '');
-            
-            if (isImageUrl(strVal)) {
-              // 🖼️ Renderizar imagen
-              doc.setFontSize(9);
-              doc.setFont('helvetica', 'bold');
-              doc.text(sanitizeText(`${key}:`), 12, currentY);
-              currentY += 5;
-              
-              try {
-                // ✅ Usar getBase64Image (canvas) para convertir cualquier formato (WebP/JPG/PNG) a PNG base64
-                let imageData = strVal;
-                if (strVal.startsWith('http') || strVal.startsWith('data:image')) {
-                  imageData = await getBase64Image(strVal);
-                }
-                
-                const imgWidth = 60;
-                const imgHeight = 45;
-                if (currentY + imgHeight > 270) {
-                  doc.addPage();
-                  currentY = 20;
-                }
-                doc.addImage(imageData, 'PNG', 12, currentY, imgWidth, imgHeight);
-                currentY += imgHeight + 5;
-                console.log(`   ✅ Imagen "${key}" agregada al PDF`);
-              } catch (imgError) {
-                console.error(`   ❌ Error imagen "${key}":`, imgError);
-                doc.setFontSize(8);
-                doc.setFont('helvetica', 'italic');
-                doc.setTextColor(150, 150, 150);
-                doc.text(`[Imagen no disponible: ${strVal.substring(0, 60)}...]`, 12, currentY);
-                doc.setTextColor(...COLORS.text);
-                currentY += 6;
-              }
-            } else {
-              // Texto normal — label envuelto + valor en línea siguiente si es necesario
-              const secPgW2 = doc.internal.pageSize.getWidth();
-              const maxW = secPgW2 - 22;
-              // Buscar el tipo de campo en la definición de la sección para distinguir label vs select
-              const fieldDef = section.fields?.find(f => f.label === key);
-              const fieldType = fieldDef?.type || 'text';
 
-              if (fieldType === 'label') {
-                // Campo tipo etiqueta: solo texto descriptivo (no tiene valor de usuario)
-                doc.setFontSize(8.5);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(30, 30, 30);
-                const labelLines = doc.splitTextToSize(sanitizeText(key), maxW);
-                doc.text(labelLines, 12, currentY);
-                currentY += labelLines.length * 6 + 4;
-              } else {
-                // Campo con valor — label en negrita (envuelto si es largo), valor debajo
-                doc.setFontSize(8.5);
-                doc.setFont('helvetica', 'bold');
-                doc.setTextColor(...COLORS.sectionTitle);
-                const labelLines = doc.splitTextToSize(sanitizeText(`${key}:`), maxW);
-                doc.text(labelLines, 12, currentY);
-                currentY += labelLines.length * 6 + 2;
-                if (strVal && strVal.trim()) {
-                  doc.setFont('helvetica', 'normal');
-                  doc.setTextColor(...COLORS.text);
-                  const valLines = doc.splitTextToSize(sanitizeText(strVal), maxW - 6);
-                  doc.text(valLines, 16, currentY);
-                  currentY += valLines.length * 6 + 5;
-                } else {
-                  doc.setFont('helvetica', 'italic');
-                  doc.setTextColor(150, 150, 150);
-                  doc.text('-', 16, currentY);
-                  doc.setTextColor(...COLORS.text);
-                  doc.setFont('helvetica', 'normal');
-                  currentY += 8;
-                }
+        const secPgW2 = doc.internal.pageSize.getWidth();
+        const maxW = secPgW2 - 22;
+
+        // Iterar por los campos del TEMPLATE (no sólo los datos guardados)
+        // para respetar tipo, orden y staticContent
+        const templateFields = section.fields || [];
+
+        // Separar campos por tipo de renderizado para agrupar los de caja (longos)
+        const boxFields = []; // label largo → caja morada (valor > 60 chars o textarea sin valor)
+        let hasRendered = false;
+
+        for (const fieldDef of templateFields) {
+          const fieldType = (fieldDef.type || 'text').toLowerCase();
+          const fieldLabel = fieldDef.label || '';
+
+          if (currentY > 250) {
+            doc.addPage();
+            currentY = 20;
+          }
+
+          // ── TIPO: nota (contenido estático fijo del template) ──
+          if (fieldType === 'nota' || fieldType === 'label' || fieldType === 'staticcontent') {
+            // 'nota' en secciones → renderiza fieldDef.staticContent (el texto fijo del template)
+            // 'label' (legacy) → usa el propio label como texto descriptivo
+            const contentText = fieldDef.staticContent || fieldDef.content || (fieldType === 'label' ? fieldLabel : '');
+            if (!contentText.trim()) continue;
+            // Bloque visual estilo advertencia/nota
+            doc.setFontSize(8.5);
+            doc.setFont('helvetica', 'italic');
+            doc.setTextColor(91, 33, 182); // morado
+            const contentLines = doc.splitTextToSize(sanitizeText(contentText), maxW - 4);
+            if (currentY + contentLines.length * 5.5 + 6 > 270) { doc.addPage(); currentY = 20; }
+            doc.setDrawColor(167, 139, 250);
+            doc.setFillColor(245, 243, 255);
+            doc.setLineWidth(0.3);
+            doc.roundedRect(10, currentY - 4, secPgW2 - 20, contentLines.length * 5.5 + 6, 2, 2, 'FD');
+            doc.text(contentLines, 13, currentY);
+            doc.setDrawColor(0); doc.setFillColor(255, 255, 255);
+            doc.setTextColor(...COLORS.text); doc.setFont('helvetica', 'normal');
+            currentY += contentLines.length * 5.5 + 10;
+            hasRendered = true;
+            continue;
+          }
+
+          // ── CAMPOS CON VALOR GUARDADO ────────────────────────
+          // Buscar el valor en los datos guardados (por label o variantes)
+          const strVal = String(
+            sectionData[fieldLabel] ??
+            sectionData[fieldLabel.toLowerCase()] ??
+            sectionData[fieldLabel.toUpperCase()] ??
+            ''
+          ).trim();
+
+          if (isImageUrl(strVal)) {
+            // 🖼️ Imagen
+            doc.setFontSize(8.5);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...COLORS.sectionTitle);
+            doc.text(sanitizeText(`${fieldLabel}:`), 12, currentY);
+            currentY += 5;
+            try {
+              let imageData = strVal;
+              if (strVal.startsWith('http') || strVal.startsWith('data:image')) {
+                imageData = await getBase64Image(strVal);
               }
+              const imgWidth = 60;
+              const imgHeight = 45;
+              if (currentY + imgHeight > 270) { doc.addPage(); currentY = 20; }
+              doc.addImage(imageData, 'PNG', 12, currentY, imgWidth, imgHeight);
+              currentY += imgHeight + 5;
+            } catch (imgError) {
+              doc.setFontSize(8);
+              doc.setFont('helvetica', 'italic');
+              doc.setTextColor(150, 150, 150);
+              doc.text(`[Imagen no disponible]`, 12, currentY);
+              doc.setTextColor(...COLORS.text);
+              currentY += 6;
+            }
+            hasRendered = true;
+            continue;
+          }
+
+          // Campos tipo textarea o con valor largo → agrupar en cajas
+          if (fieldType === 'textarea' || (strVal && strVal.length > 60)) {
+            boxFields.push({ label: fieldLabel, value: strVal });
+            continue;
+          }
+
+          // Campo normal: label + valor en línea
+          if (strVal) {
+            doc.setFontSize(8.5);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...COLORS.sectionTitle);
+            const keyLines = doc.splitTextToSize(sanitizeText(`${fieldLabel}:`), maxW);
+            doc.text(keyLines, 12, currentY);
+            currentY += keyLines.length * 5.5 + 1;
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(...COLORS.text);
+            const valLines = doc.splitTextToSize(sanitizeText(strVal), maxW - 6);
+            doc.text(valLines, 16, currentY);
+            currentY += valLines.length * 5.5 + 4;
+            hasRendered = true;
+          } else {
+            // Campo vacío: mostrar label + línea subrayada compacta
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...COLORS.sectionTitle);
+            const keyW = doc.getTextWidth(sanitizeText(`${fieldLabel}: `));
+            doc.text(sanitizeText(`${fieldLabel}: `), 12, currentY);
+            const lineX = 12 + keyW;
+            const lineEndX = Math.min(lineX + 60, secPgW2 - 14);
+            doc.setDrawColor(180, 180, 180);
+            doc.setLineWidth(0.3);
+            doc.line(lineX, currentY, lineEndX, currentY);
+            doc.setTextColor(...COLORS.text);
+            currentY += 6;
+            hasRendered = true;
+          }
+        }
+
+        // Renderizar cajas de campos largos/textarea en grid (hasta 3 por fila)
+        if (boxFields.length > 0) {
+          if (currentY > 220) { doc.addPage(); currentY = 20; }
+          const boxCols = Math.min(boxFields.length, 3);
+          const boxW = (secPgW2 - 20) / boxCols;
+          const wrappedBoxTexts = boxFields.map(f =>
+            doc.splitTextToSize(sanitizeText(f.value || ''), boxW - 6)
+          );
+          const rowCount = Math.ceil(boxFields.length / boxCols);
+          const rowHeights = Array.from({ length: rowCount }, (_, rowIdx) => {
+            let maxH = 0;
+            for (let c = 0; c < boxCols; c++) {
+              const idx = rowIdx * boxCols + c;
+              if (idx >= boxFields.length) break;
+              const h = wrappedBoxTexts[idx].length * 4.5 + 10;
+              if (h > maxH) maxH = h;
+            }
+            return Math.max(maxH, 14);
+          });
+
+          let rowY = currentY;
+          for (let i = 0; i < boxFields.length; i++) {
+            const col = i % boxCols;
+            const row = Math.floor(i / boxCols);
+            if (col === 0 && row > 0) rowY += rowHeights[row - 1] + 3;
+            const xBase = 10 + col * boxW;
+            const rowH = rowHeights[row];
+            doc.setDrawColor(124, 58, 237);
+            doc.setFillColor(250, 245, 255);
+            doc.setLineWidth(0.4);
+            doc.roundedRect(xBase, rowY, boxW - 2, rowH, 2, 2, 'FD');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7);
+            doc.setTextColor(76, 29, 149);
+            doc.text(sanitizeText(boxFields[i].label + ':'), xBase + 2, rowY + 5);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(6.5);
+            doc.setTextColor(...COLORS.text);
+            if (boxFields[i].value) {
+              doc.text(wrappedBoxTexts[i], xBase + 2, rowY + 10);
+            } else {
+              doc.setTextColor(160, 160, 160);
+              doc.setFont('helvetica', 'italic');
+              doc.text('—', xBase + 2, rowY + 10);
             }
           }
-          currentY += 8;
-        } else {
-          doc.setFontSize(9);
+          doc.setDrawColor(0);
+          doc.setFillColor(255, 255, 255);
+          currentY = rowY + rowHeights[rowCount - 1] + 5;
+          hasRendered = true;
+        }
+
+        if (!hasRendered) {
+          // Sección completamente vacía → línea compacta
+          doc.setFontSize(8);
           doc.setTextColor(150, 150, 150);
           doc.setFont('helvetica', 'italic');
-          doc.text('(Sin datos en esta sección)', 12, currentY);
+          doc.text('(Sin datos registrados)', 12, currentY);
           doc.setTextColor(...COLORS.text);
           doc.setFont('helvetica', 'normal');
-          currentY += 12;
+          currentY += 8;
+        } else {
+          currentY += 4;
         }
       } else if (section.type === 'observaciones') {
         // ── SECCIÓN TIPO OBSERVACIONES (texto libre del usuario) ──

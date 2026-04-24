@@ -695,16 +695,24 @@ useEffect(() => {
         draftId: resumeDraft.draftId
       };
 
-      // Capturar el índice correcto DENTRO del updater funcional (evita problema de closure con openTabs)
-      // Los updaters funcionales se aplican en orden sobre el estado más reciente,
-      // por eso prev.length aquí refleja las pestañas restauradas de localStorage + las ya existentes.
+      // 🔧 FIX DUPLICADOS: Si ya existe una pestaña con el mismo draftId, solo activarla
+      // (ocurre cuando el usuario navega varias veces desde MyDrafts con el mismo borrador)
       setOpenTabs(prev => {
+        const existingIdx = resumeDraft.draftId
+          ? prev.findIndex(t => t.draftId === resumeDraft.draftId)
+          : -1;
+        if (existingIdx >= 0) {
+          // Ya existe → solo activarla, no duplicar
+          pendingDraftTabIndexRef.current = existingIdx;
+          return prev;
+        }
         pendingDraftTabIndexRef.current = prev.length; // índice que tendrá la nueva pestaña
         return [...prev, newTab];
       });
-      // Activar la nueva pestaña del borrador usando el índice capturado
+      // Activar la pestaña (existente o nueva) usando el índice capturado
       setActiveTabIndex(prev => pendingDraftTabIndexRef.current ?? prev);
-      setNextTabId(prev => prev + 1);
+      // Solo incrementar nextTabId si se agregó una pestaña nueva
+      setNextTabId(prev => (pendingDraftTabIndexRef.current === (prev - 1) ? prev : prev + 1));
       
       // Sincronizar estados del formulario con el borrador
       setSelectedTemplate(templateToUse);
@@ -8049,51 +8057,24 @@ useEffect(() => {
         {/* RENDERIZADO DE CELDAS */}
         {(element.columns || []).map((col, colIndex) => {
           
-          // 🔗 SOPORTE FILAS PREDEFINIDAS CON COMBINACIÓN (rowSpan) — DINÁMICO
-          // Calcula rowSpan basándose en los DATOS REALES de las filas, no en posición del template.
+          // 🔗 SOPORTE FILAS PREDEFINIDAS CON COMBINACIÓN (rowSpan) — DIRECTO DESDE TEMPLATE
           const predefinedRows = element.predefinedRows || [];
           let cellRowSpan = undefined;
           if (predefinedRows.length > 0) {
             const colKey = col.label || col.header || col.name || col.id || `col_${colIndex}`;
-            const cellDataValue = row[colKey] || '';
-            
-            // Determinar si esta columna tiene combinaciones (rowSpan) definidas en alguna predefinedRow
-            const hasRowSpanInColumn = predefinedRows.some(pr => (pr._rowSpan?.[colKey] || 0) > 1);
-            const hasHiddenInColumn = predefinedRows.some(pr => pr._hidden?.[colKey]);
-            
-            if (hasRowSpanInColumn || hasHiddenInColumn) {
-              // CALCULAR rowSpan DINÁMICAMENTE: comparar valores reales de filas consecutivas
-              // Buscar hacia atrás si una fila anterior tiene el mismo valor → esta celda está oculta
-              let coveredByPrevious = false;
-              for (let ri = rowIndex - 1; ri >= 0; ri--) {
-                const prevRow = allDataRows[ri];
-                if (prevRow?._deleted) continue;
-                const prevVal = prevRow[colKey] || '';
-                if (prevVal === cellDataValue && cellDataValue !== '') {
-                  coveredByPrevious = true;
-                }
-                break; // Solo comparar con la fila visible inmediatamente anterior
-              }
-              if (coveredByPrevious) return null; // Cubierta por rowSpan de arriba
-              
-              // Contar cuántas filas siguientes tienen el mismo valor → rowSpan
-              let span = 1;
-              for (let ri = rowIndex + 1; ri < allDataRows.length; ri++) {
-                const nextRow = allDataRows[ri];
-                if (nextRow?._deleted) continue;
-                const nextVal = nextRow[colKey] || '';
-                if (nextVal === cellDataValue && cellDataValue !== '') {
-                  span++;
-                } else {
-                  break;
-                }
-              }
+
+            // Para filas dentro del rango predefinido: leer _rowSpan/_hidden directamente del template
+            if (rowIndex < predefinedRows.length) {
+              const predRow = predefinedRows[rowIndex];
+              // Si esta celda está marcada como oculta (cubierta por rowSpan de fila anterior) → skip
+              if (predRow._hidden?.[colKey]) return null;
+              // Leer rowSpan directamente del template (sin heurística de valores)
+              const span = predRow._rowSpan?.[colKey] || 1;
               if (span > 1) cellRowSpan = span;
             }
-            
-            // Si tiene valor de datos para columna predefinida, mostrar como solo lectura.
-            // Solo se bloquea si la fila predefinida en este índice tiene un valor no vacío para
-            // esta columna (ej: "N/A"). Si el predefinido es vacío, la celda siempre es editable.
+
+            // Si la celda tiene un valor predefinido fijo → mostrar como solo lectura
+            const cellDataValue = row[colKey] || '';
             if (cellDataValue) {
               const thisPredefinedValue = rowIndex < predefinedRows.length
                 ? (predefinedRows[rowIndex]?.[colKey] ?? '')
@@ -8297,23 +8278,37 @@ useEffect(() => {
           const cellName = colNameMap.get(colIndex) || col.label || col.header || col.id || `col_${colIndex}`;
           const colLabel = (col.label || col.header || '').toUpperCase();
           const colType = (col.type || '').toLowerCase();
+
+          // Si el usuario marcó explícitamente "No incluir en Σ totales" → siempre mostrar —
+          if (col.includeInSum === false) {
+            return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
+          }
+
+          // Tipos de columna que NUNCA se suman automáticamente (texto, fecha, selector, firma…)
+          // a menos que el usuario los haya activado explícitamente con includeInSum === true
+          const tiposNoNumericos = ['text', 'textarea', 'select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
+          if (tiposNoNumericos.includes(colType) && col.includeInSum !== true) {
+            return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
+          }
           
-          // Determinar si esta columna es numérica
-          const isNumericCol = colType === 'number' || colType === 'temperature' || colType === 'percentage' || colType === 'calculated' || colType === 'formula' || col.formula ||
+          // Determinar si esta columna es numérica (solo si no fue explícitamente incluida)
+          const isNumericCol = col.includeInSum === true ||
+            colType === 'number' || colType === 'temperature' || colType === 'percentage' || colType === 'calculated' || colType === 'formula' || col.formula ||
             colLabel.includes('PESO') || colLabel.includes('TOTAL') || colLabel.includes('CANTIDAD') ||
             colLabel.includes('VOLUMEN') || colLabel.includes('TEMPERATURA') || colLabel.includes('TEMP');
 
           if (!isNumericCol) {
-            // Verificar si los datos de esta columna son numéricos de todos modos
+            // Para columnas sin tipo definido: solo sumar si TODOS los valores son numéricos != 0
             let hasAnyNumber = false;
+            let allNumeric = true;
             for (const row of rows) {
-              const val = parseFloat(row[cellName]);
-              if (!isNaN(val) && val !== 0) {
-                hasAnyNumber = true;
-                break;
-              }
+              const rawVal = row[cellName];
+              if (rawVal === '' || rawVal === null || rawVal === undefined) continue;
+              const val = parseFloat(rawVal);
+              if (isNaN(val) || val === 0) { allNumeric = false; break; }
+              hasAnyNumber = true;
             }
-            if (!hasAnyNumber) {
+            if (!hasAnyNumber || !allNumeric) {
               return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
             }
           }

@@ -1440,6 +1440,65 @@ function CreateTemplate() {
                   <h4>Columnas de la Tabla</h4>
                   <button onClick={() => addColumnToTable(elementIndex)} className="btn-add-small">+ Agregar Columna</button>
                 </div>
+
+                {/* ─────────── PANEL Σ AUTO-SUMA: selector rápido de columnas ─────────── */}
+                {(template.autoSumColumns) && element.columns.length > 0 && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)',
+                    border: '2px solid #6366f1',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    marginBottom: '16px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <strong style={{ color: '#3730a3', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        Σ Columnas que se suman en la fila de totales:
+                      </strong>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button type="button"
+                          onClick={() => element.columns.forEach((_, ci) => updateColumnInTable(elementIndex, ci, 'includeInSum', true))}
+                          style={{ fontSize: '11px', padding: '3px 10px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                        >✔ Todas</button>
+                        <button type="button"
+                          onClick={() => element.columns.forEach((_, ci) => updateColumnInTable(elementIndex, ci, 'includeInSum', false))}
+                          style={{ fontSize: '11px', padding: '3px 10px', background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                        >✖ Ninguna</button>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {element.columns.map((col, ci) => {
+                        const included = col.includeInSum !== false;
+                        return (
+                          <button
+                            key={ci}
+                            type="button"
+                            onClick={() => updateColumnInTable(elementIndex, ci, 'includeInSum', !included)}
+                            title={included ? 'Clic para excluir de la suma' : 'Clic para incluir en la suma'}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '5px',
+                              padding: '5px 11px',
+                              borderRadius: '20px',
+                              border: included ? '2px solid #4f46e5' : '2px solid #d1d5db',
+                              background: included ? '#4f46e5' : '#f9fafb',
+                              color: included ? 'white' : '#6b7280',
+                              fontWeight: included ? 700 : 400,
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            <span style={{ fontSize: '13px' }}>{included ? 'Σ' : '—'}</span>
+                            {col.label || `Col ${ci + 1}`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#6366f1' }}>
+                      💡 Columnas en <strong>azul Σ</strong> aparecen sumadas. Clic para activar/desactivar.
+                    </p>
+                  </div>
+                )}
+
                 {/* 📦 VISTA PREVIA DE GRUPOS DE COLUMNAS */}
                 {element.columns.some(col => col.group) && (
                   <div style={{
