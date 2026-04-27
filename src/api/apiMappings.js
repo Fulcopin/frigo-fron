@@ -29,6 +29,7 @@ export const MAPPABLE_API_FIELDS = {
     { value: "ESPECIES", label: "🐟 Especies (Catálogo)" },
     { value: "PESQUEROS", label: "🚢 Pesqueros (Catálogo)" },
     { value: "PRODUCTOS", label: "📦 Productos (Catálogo)" },
+    { value: "PRODUCTOS_POR_ESPECIE", label: "🐟📦 Especie → Productos (selector en cascada)" },
     { value: "PROVEEDORES", label: "🏢 Proveedores (Catálogo)" },
     { value: "CONFIGURACIONES", label: "⚙️ Configuraciones (Catálogo)" },
     { value: "CONFIGURACIONES_FRIGO", label: "❄️ Configuraciones FRIGO (Catálogo)" },

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { API_BASE_URL } from '../apiConfig';
+import { deleteFromCloudinary } from '../config/cloudinary.config';
 import './SignatureUploader.css';
 
 /**
@@ -42,6 +43,14 @@ const SignatureUploader = ({
   const useCloudinary = cloudinaryCloudName && cloudinaryUploadPreset;
   const firmaUrl = firmaData?.firma?.url || firmaData?.firma?.base64;
   const hasFirma = !!firmaUrl;
+
+  // Hay datos residuales (nombre, email, reemplazandoA, etc.) pero sin imagen
+  const hasResidualData = !hasFirma && !!(
+    firmaData?.nombre ||
+    firmaData?.email ||
+    firmaData?.reemplazandoA ||
+    firmaData?.esReemplazo
+  );
 
   // 🔐 VALIDACIÓN: ¿El usuario actual puede firmar?
   const selectedName = firmaData?.nombre || '';
@@ -270,17 +279,27 @@ const SignatureUploader = ({
   };
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingFirma, setDeletingFirma] = useState(false);
   
   const handleRemoveFirma = () => {
     setShowDeleteConfirm(true);
   };
 
-  const confirmRemoveFirma = () => {
-    const updatedFirma = { ...firmaData };
-    delete updatedFirma.firma;
-    onFirmaChange(updatedFirma);
+  const confirmRemoveFirma = async () => {
+    setDeletingFirma(true);
+
+    // Si la imagen fue subida a Cloudinary, eliminarla también del servidor
+    const publicId = firmaData?.firma?.public_id;
+    if (publicId && firmaData?.firma?.provider === 'cloudinary') {
+      await deleteFromCloudinary(publicId);
+    }
+
+    // Limpiar TODOS los datos de la firma: imagen, nombre, fecha, hora,
+    // reemplazo, email y cualquier metadato adicional
+    onFirmaChange({});
+    setDeletingFirma(false);
     setShowDeleteConfirm(false);
-    console.log('🗑️ Firma eliminada:', puesto);
+    console.log('🗑️ Firma completamente eliminada:', puesto);
   };
 
   const cancelRemoveFirma = () => {
@@ -573,6 +592,7 @@ const SignatureUploader = ({
           {/* Ocultar tabs en tablets/móviles - solo mostrar "Subir Imagen" */}
           <div className="signature-tabs signature-tabs-desktop">
             <button
+              type="button"
               className={`signature-tab ${activeTab === 'upload' ? 'active' : ''}`}
               onClick={() => setActiveTab('upload')}
             >
@@ -585,8 +605,47 @@ const SignatureUploader = ({
             <div className="signature-upload-content">
               <div className="signature-empty-icon">📷</div>
               <p className="signature-empty-text">Sin firma cargada</p>
+
+              {/* Botón para limpiar datos residuales (nombre, email, reemplazandoA) sin imagen */}
+              {hasResidualData && (
+                <div style={{
+                  marginBottom: '12px',
+                  padding: '10px 12px',
+                  backgroundColor: '#fef3c7',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  color: '#92400e'
+                }}>
+                  <div style={{ marginBottom: '6px', fontWeight: '600' }}>
+                    ⚠️ Hay datos de una firma anterior pendientes de limpiar:
+                  </div>
+                  {firmaData?.nombre && <div>• Nombre: <strong>{firmaData.nombre}</strong></div>}
+                  {firmaData?.reemplazandoA && <div>• Reemplazo de: <strong>{firmaData.reemplazandoA}</strong></div>}
+                  {firmaData?.email && <div>• Email: <strong>{firmaData.email}</strong></div>}
+                  <button
+                    type="button"
+                    onClick={() => onFirmaChange({})}
+                    style={{
+                      marginTop: '8px',
+                      width: '100%',
+                      padding: '7px',
+                      backgroundColor: '#ef5350',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🗑️ Limpiar todos los datos
+                  </button>
+                </div>
+              )}
               
               <button
+                type="button"
                 onClick={handleLoadSavedSignature}
                 className="btn-load-saved"
                 disabled={uploading || !canUploadSignature}
@@ -705,6 +764,7 @@ const SignatureUploader = ({
 
               <div className="canvas-actions">
                 <button
+                  type="button"
                   onClick={clearCanvas}
                   className="btn-canvas-action btn-clear"
                   disabled={uploading}
@@ -712,6 +772,7 @@ const SignatureUploader = ({
                   🧹 Limpiar
                 </button>
                 <button
+                  type="button"
                   onClick={saveDrawnSignature}
                   className="btn-canvas-action btn-save"
                   disabled={uploading}
@@ -778,6 +839,7 @@ const SignatureUploader = ({
             />
             
             <button 
+              type="button"
               onClick={handleDownloadFirma}
               className="btn-action btn-download"
               title="Descargar firma"
@@ -786,6 +848,7 @@ const SignatureUploader = ({
             </button>
             
             <button 
+              type="button"
               onClick={handleRemoveFirma}
               className="btn-action btn-remove"
               title="Eliminar firma"
@@ -799,7 +862,7 @@ const SignatureUploader = ({
       {error && (
         <div className="signature-error">
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="btn-error-close">✕</button>
+          <button type="button" onClick={() => setError(null)} className="btn-error-close">✕</button>
         </div>
       )}
 
@@ -807,6 +870,7 @@ const SignatureUploader = ({
         <div className="signature-modal" onClick={() => setShowPreview(false)}>
           <div className="signature-modal-content" onClick={(e) => e.stopPropagation()}>
             <button 
+              type="button"
               className="signature-modal-close"
               onClick={() => setShowPreview(false)}
             >
@@ -823,22 +887,31 @@ const SignatureUploader = ({
       )}
 
       {showDeleteConfirm && (
-        <div className="signature-modal" onClick={cancelRemoveFirma}>
+        <div className="signature-modal" onClick={deletingFirma ? undefined : cancelRemoveFirma}>
           <div className="signature-modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '350px', textAlign: 'center' }}>
             <h3 style={{ marginBottom: '12px' }}>🗑️ Eliminar Firma</h3>
             <p style={{ marginBottom: '16px', color: '#374151' }}>¿Estás seguro de eliminar la firma de <strong>{puesto}</strong>?</p>
+            {deletingFirma && (
+              <p style={{ marginBottom: '12px', color: '#6b7280', fontSize: '13px' }}>
+                ⏳ Eliminando imagen...
+              </p>
+            )}
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
               <button 
+                type="button"
                 onClick={cancelRemoveFirma}
-                style={{ padding: '8px 20px', border: '1px solid #ddd', borderRadius: '6px', background: '#f5f5f5', cursor: 'pointer', fontSize: '13px' }}
+                disabled={deletingFirma}
+                style={{ padding: '8px 20px', border: '1px solid #ddd', borderRadius: '6px', background: '#f5f5f5', cursor: deletingFirma ? 'not-allowed' : 'pointer', fontSize: '13px', opacity: deletingFirma ? 0.5 : 1 }}
               >
                 Cancelar
               </button>
               <button 
+                type="button"
                 onClick={confirmRemoveFirma}
-                style={{ padding: '8px 20px', border: 'none', borderRadius: '6px', background: '#ef5350', color: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}
+                disabled={deletingFirma}
+                style={{ padding: '8px 20px', border: 'none', borderRadius: '6px', background: '#ef5350', color: '#fff', cursor: deletingFirma ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 'bold', opacity: deletingFirma ? 0.7 : 1 }}
               >
-                🗑️ Eliminar
+                {deletingFirma ? '⏳ Eliminando...' : '🗑️ Eliminar'}
               </button>
             </div>
           </div>

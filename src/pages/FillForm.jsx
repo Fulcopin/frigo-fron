@@ -8,6 +8,7 @@ import LoteSelectorAPI from "../components/LoteSelectorAPI"
 import SignatureUploader from "../components/SignatureUploader"
 import UserSelector from "../components/UserSelector"
 import ScrollButton from "../components/ScrollButton"
+import EspecieProductoSelector from "../components/EspecieProductoSelector"
 import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import { fetchUsers, filterUsersByPuesto, canUserSignForPuesto } from "../services/userService"
 import "./FillForm.css"
@@ -180,6 +181,11 @@ function FillForm() {
     branquiasColor: [],
     branquiasOlor: []
   });
+
+  // 🆕 Especies unificadas (ProductosUnion/Especies) para selector en cascada
+  const [especiesUnionData, setEspeciesUnionData] = useState([]);
+  // Panel de rango activo: { elementIndex, cellName } | null
+  const [activeRangePanel, setActiveRangePanel] = useState(null);
 
   // 🆕 NUEVO: Estados para cargar datos de otros formularios guardados
   const [availableSourceForms, setAvailableSourceForms] = useState([]); // Formularios disponibles para cargar
@@ -1359,6 +1365,16 @@ useEffect(() => {
     }
   };
 
+  // Carga las especies desde el endpoint unificado ProductosUnion
+  const loadEspeciesUnion = async () => {
+    // Usa loadApiCatalog que ya maneja autenticación automáticamente (401 → token → reintento)
+    const list = await loadApiCatalog('ProductosUnion/Especies', 'especiesUnion', 'Especies Union');
+    if (list && list.length > 0) {
+      setEspeciesUnionData(list);
+      console.log(`✅ ${list.length} especies unificadas cargadas`);
+    }
+  };
+
   const loadAllApiCatalogs = async () => {
     console.log('🔄 Cargando catálogos de la API externa...');
     
@@ -1370,7 +1386,8 @@ useEffect(() => {
       loadApiCatalog('Pesqueros', 'pesqueros', 'Pesqueros'),
       loadApiCatalog('Productos', 'productos', 'Productos'),
       loadApiCatalog('Proveedores', 'proveedores', 'Proveedores'),
-      loadApiCatalog('Configuraciones', 'configuraciones', 'Configuraciones')
+      loadApiCatalog('Configuraciones', 'configuraciones', 'Configuraciones'),
+      loadEspeciesUnion(),
     ]);
     
     // Cargar configuraciones FRIGO (filtradas)
@@ -3727,6 +3744,21 @@ useEffect(() => {
     setHasUnsavedChanges(true);
   }, [selectedTemplate]);
 
+  // 🐟📦 Aplica un valor a un rango de filas (fromRow..toRow, ambos inclusive, 0-based)
+  const applyValueToRowRange = useCallback((elementIndex, columnLabel, value, fromRow, toRow) => {
+    if (!columnLabel || value === undefined) return;
+    setBodyData(prev => prev.map((element, index) => {
+      if (index !== elementIndex) return element;
+      const updatedRows = (element.data || []).map((row, rowIdx) => {
+        if (row?._deleted) return row;
+        if (rowIdx < fromRow || rowIdx > toRow) return row;
+        return { ...row, [columnLabel]: value };
+      });
+      return { ...element, data: updatedRows };
+    }));
+    setHasUnsavedChanges(true);
+  }, []);
+
   // 🔄 RESTAURAR FILAS PREDEFINIDAS de una tabla (cuando se eliminaron todas)
   const restoreTableRows = (elementIndex) => {
     const tableTemplate = selectedTemplate?.bodyElements?.[elementIndex];
@@ -3989,6 +4021,27 @@ useEffect(() => {
     // 2. INICIALIZAR OPCIONES (Siempre cargar locales primero)
     // Usamos spread [...] para crear una copia y no mutar el objeto original
     let options = Array.isArray(field.options) ? [...field.options] : [];
+
+    // 3a. SELECTOR ESPECIE → PRODUCTO (tipo especial en cascada)
+    // Se activa para columnas con apiEndpoint PRODUCTOS_POR_ESPECIE o PRODUCTOS
+    if (
+      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_ESPECIE' ||
+      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS'
+    ) {
+      return (
+        <EspecieProductoSelector
+          value={value || ''}
+          onChange={onChange}
+          especiesData={
+            especiesUnionData.length > 0
+              ? especiesUnionData
+              : apiCatalogData.especies || []
+          }
+          productosData={apiCatalogData.productos || []}
+          getToken={ensureApiToken}
+        />
+      );
+    }
 
     // 3. CARGAR CATÁLOGOS EXTERNOS (apiEndpoint)
     // Esto debe funcionar SIEMPRE, incluso en modo manual (ej: lista de choferes)
@@ -7912,15 +7965,62 @@ useEffect(() => {
                           const headerText = col.label || col.header || `Col ${colIndex + 1}`;
                           const colType = (col.type || '').toLowerCase();
                           const isFormulaCol = colType === 'formula' || colType === 'calculated' || colType === 'percentage';
+                          const isColEditable = col.editable !== false && !isFormulaCol;
                           const hasOptions = Array.isArray(col.options) && col.options.length > 0;
-                          const isSelectCol = colType === 'select' || col.apiEndpoint || hasOptions;
+                          const isEspecieProductoCol =
+                            col.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_ESPECIE' ||
+                            col.apiEndpoint?.toUpperCase() === 'PRODUCTOS';
+                          const isSelectCol = colType === 'select' || (col.apiEndpoint && !isEspecieProductoCol) || hasOptions;
                           const cellName = (element._columnNameMap instanceof Map ? element._columnNameMap.get(colIndex) : null) || col.label || col.header || col.id;
+                          const rangePanelKey = `${elementIndex}-${colIndex}`;
+                          const totalRowsCount = (element.data || []).filter(r => !r?._deleted).length;
                           return (
                             <th key={colIndex} style={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'break-word', position: 'relative', minWidth: '85px', maxWidth: '200px', verticalAlign: 'middle', textAlign: 'center', lineHeight: '1.3' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
                                 <span style={{ fontSize: '0.68rem', wordBreak: 'break-word' }}>{headerText}</span>
+
+                                {/* 🐟📦 Botón de rango para columnas PRODUCTOS_POR_ESPECIE (solo si es editable) */}
+                                {isEspecieProductoCol && isColEditable && (
+                                  <div style={{ position: 'relative', width: '100%' }}>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        if (activeRangePanel?.key === rangePanelKey) {
+                                          setActiveRangePanel(null);
+                                        } else {
+                                          const rect = e.currentTarget.getBoundingClientRect();
+                                          setActiveRangePanel({
+                                            key: rangePanelKey,
+                                            elementIndex,
+                                            cellName,
+                                            totalRows: totalRowsCount,
+                                            x: rect.left,
+                                            y: rect.bottom + 4,
+                                          });
+                                        }
+                                      }}
+                                      title={`Completar rango de filas con Especie → Producto`}
+                                      style={{
+                                        background: activeRangePanel?.key === rangePanelKey
+                                          ? 'linear-gradient(135deg, #0369a1, #1e40af)'
+                                          : 'linear-gradient(135deg, #0ea5e9, #0369a1)',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: 3,
+                                        padding: '2px 5px',
+                                        fontSize: '0.6rem',
+                                        cursor: 'pointer',
+                                        width: '100%',
+                                        fontWeight: 700,
+                                      }}
+                                    >
+                                      🐟 Completar rango
+                                    </button>
+                                  </div>
+                                )}
+
                                 {/* 🎯 Aplicar valor a todas las filas */}
-                                {!isFormulaCol && (
+                                {!isFormulaCol && !isEspecieProductoCol && (
                                   isSelectCol ? (
                                     <select
                                       onChange={(e) => {
@@ -8760,6 +8860,39 @@ useEffect(() => {
 
       {/* 🔼🔽 Botones de scroll */}
       <ScrollButton />
+
+      {/* 🐟 Panel Especie→Producto: renderizado fuera de la tabla para no sobreponerse */}
+      {activeRangePanel && (
+        <>
+          {/* Capa oscura para cerrar al hacer clic fuera */}
+          <div
+            onClick={() => setActiveRangePanel(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 19999 }}
+          />
+          <div style={{
+            position: 'fixed',
+            top: Math.min(activeRangePanel.y, window.innerHeight - 500),
+            left: Math.min(activeRangePanel.x, window.innerWidth - 360),
+            zIndex: 20000,
+          }}>
+            <EspecieProductoSelector
+              rangeMode
+              especiesData={
+                especiesUnionData.length > 0
+                  ? especiesUnionData
+                  : apiCatalogData.especies || []
+              }
+              productosData={apiCatalogData.productos || []}
+              getToken={ensureApiToken}
+              totalRows={activeRangePanel.totalRows || 0}
+              onRangeApply={(product, from, to) =>
+                applyValueToRowRange(activeRangePanel.elementIndex, activeRangePanel.cellName, product, from, to)
+              }
+              onClose={() => setActiveRangePanel(null)}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }

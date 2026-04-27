@@ -2,6 +2,8 @@
 // ☁️ Configuración de Cloudinary para Carga de Firmas PNG
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { API_BASE_URL } from '../apiConfig';
+
 /**
  * 📝 INSTRUCCIONES DE CONFIGURACIÓN:
  * 
@@ -157,29 +159,56 @@ export const validateFile = (file) => {
 };
 
 /**
- * 🗑️ Eliminar imagen de Cloudinary (requiere backend)
- * 
- * NOTA: Esta función requiere un endpoint en el backend porque
- * la eliminación de imágenes necesita el API Secret de Cloudinary,
- * que NO debe estar expuesto en el frontend.
- * 
- * @param {string} publicId - ID público de la imagen a eliminar
+ * 🗑️ Eliminar imagen de Cloudinary (a través del backend)
+ *
+ * La eliminación de imágenes requiere el API Secret de Cloudinary
+ * que NO debe estar expuesto en el frontend, por eso se delega al backend.
+ *
+ * Endpoint requerido en el backend:
+ *   POST /cloudinary/delete
+ *   Body: { "public_id": "frigo-firmas/firma_jefe_123" }
+ *   Response: { "success": true } | { "success": false, "error": "..." }
+ *
+ * Implementación backend (ASP.NET ejemplo):
+ *   var result = await _cloudinary.DestroyAsync(new DeletionParams(publicId));
+ *   return Ok(new { success = result.Result == "ok" });
+ *
+ * @param {string} publicId - ID público de la imagen (ej: "frigo-firmas/firma_jefe_123")
  * @returns {Promise<boolean>} true si se eliminó correctamente
  */
 export const deleteFromCloudinary = async (publicId) => {
-  console.warn('⚠️ La eliminación de imágenes debe hacerse desde el backend');
-  console.warn('   Public ID a eliminar:', publicId);
-  console.warn('   Implementar endpoint: POST /api/cloudinary/delete');
-  
-  // TODO: Implementar llamada al backend
-  // const response = await fetch('/api/cloudinary/delete', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ public_id: publicId })
-  // });
-  // return response.ok;
-  
-  return false;
+  if (!publicId) {
+    console.warn('⚠️ deleteFromCloudinary: public_id vacío, omitiendo');
+    return false;
+  }
+
+  try {
+    console.log('🗑️ Eliminando imagen de Cloudinary:', publicId);
+
+    const response = await fetch(`${API_BASE_URL}/cloudinary/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ public_id: publicId }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn(`⚠️ Backend respondió ${response.status} al eliminar imagen:`, errorText);
+      return false;
+    }
+
+    const data = await response.json();
+    if (data.success) {
+      console.log('✅ Imagen eliminada de Cloudinary:', publicId);
+      return true;
+    } else {
+      console.warn('⚠️ Cloudinary no eliminó la imagen:', data.error || 'razón desconocida');
+      return false;
+    }
+  } catch (err) {
+    console.warn('⚠️ No se pudo conectar al endpoint de eliminación:', err.message);
+    return false;
+  }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

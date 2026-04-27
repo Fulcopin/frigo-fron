@@ -594,7 +594,8 @@ function EditFilledForm() {
   return (
     <div className="fill-form">
       {/* 🔧 BOTÓN TEMPORAL DE DEBUG */}
-      <button 
+      <button
+        type="button"
         onClick={() => {
           console.log('=== DEBUG COMPLETO ===');
           console.log('FormData:', formData);
