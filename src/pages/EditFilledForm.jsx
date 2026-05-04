@@ -323,8 +323,13 @@ function EditFilledForm() {
   const updateSectionField = (elementIndex, fieldLabel, value) => {
     setFormData(prev => {
       const newBodyData = [...prev.bodyData];
-      if (!newBodyData[elementIndex]) newBodyData[elementIndex] = {};
-      newBodyData[elementIndex][fieldLabel] = value;
+      if (!newBodyData[elementIndex]) newBodyData[elementIndex] = { type: 'section', data: {} };
+      // Section data is stored under .data (same format as FillForm)
+      if (!newBodyData[elementIndex].data) newBodyData[elementIndex] = { ...newBodyData[elementIndex], data: {} };
+      newBodyData[elementIndex] = {
+        ...newBodyData[elementIndex],
+        data: { ...newBodyData[elementIndex].data, [fieldLabel]: value }
+      };
       return { ...prev, bodyData: newBodyData };
     });
     setHasUnsavedChanges(true);
@@ -744,16 +749,27 @@ Template: ${template?.nombre}
 
               {element.type === "section" && (
                 <div className="section-fields">
-                  {element.fields?.map((field, fieldIndex) => (
-                    <div key={fieldIndex} className="field-group">
-                      <label>{field.label}{field.required && " *"}</label>
-                      {renderField(
-                        field,
-                        formData.bodyData[elementIndex]?.[field.label],
-                        (value) => updateSectionField(elementIndex, field.label, value)
-                      )}
-                    </div>
-                  ))}
+                  {element.fields?.map((field, fieldIndex) => {
+                    // nota fields are static display-only — skip input rendering
+                    if (field.type === 'nota') {
+                      return (
+                        <div key={fieldIndex} style={{ gridColumn: '1 / -1', borderLeft: '4px solid #7c3aed', background: '#faf5ff', border: '1px solid #c4b5fd', borderRadius: '6px', padding: '10px 14px', fontSize: '0.88rem', color: '#3b1d72', margin: '4px 0' }}>
+                          <strong>{field.label}:</strong> {field.staticContent || ''}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={fieldIndex} className="field-group">
+                        <label>{field.label}{field.required && " *"}</label>
+                        {renderField(
+                          field,
+                          // Section data stored under .data (same format as FillForm)
+                          formData.bodyData[elementIndex]?.data?.[field.label] ?? formData.bodyData[elementIndex]?.[field.label],
+                          (value) => updateSectionField(elementIndex, field.label, value)
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -891,7 +907,13 @@ Template: ${template?.nombre}
                   
                   return (
                     <div key={index} className="signature-box">
-                      <h4>{firma.puesto}</h4>
+                      {/* Mostrar cargoFirmante si está disponible (reemplazo), sino mostrar puesto */}
+                      <h4>{firmaObj?.esReemplazo && firmaObj?.cargoFirmante ? firmaObj.cargoFirmante : firma.puesto}</h4>
+                      {firmaObj?.esReemplazo && firmaObj?.cargoFirmante && (
+                        <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '-8px', marginBottom: '6px', fontStyle: 'italic' }}>
+                          En representación de: {firma.puesto}
+                        </p>
+                      )}
                       
                       {/* Campos de texto: Nombre y Fecha */}
                       <div className="signature-fields">
@@ -940,6 +962,36 @@ Template: ${template?.nombre}
                                 value={firmaObj?.hora || ""} 
                                 onChange={(e) => updateFirma(firma.puesto, "hora", e.target.value)} 
                               />
+                            </div>
+                            {/* 🔄 Cargo del firmante (para reemplazos) */}
+                            <div className="form-field">
+                              <label>
+                                Cargo del firmante:
+                                <span style={{fontSize:'11px',color:'#7c3aed',marginLeft:'5px'}}>🔄 Reemplazo</span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder={`Ej: Asistente de Calidad (deja vacío para usar "${firma.puesto}")`}
+                                value={firmaObj?.cargoFirmante || ""}
+                                onChange={(e) => {
+                                  const cargo = e.target.value;
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    firmasData: {
+                                      ...prev.firmasData,
+                                      [firma.puesto]: {
+                                        ...(typeof prev.firmasData[firma.puesto] === 'object' ? prev.firmasData[firma.puesto] : {}),
+                                        cargoFirmante: cargo,
+                                        esReemplazo: cargo ? true : (firmaObj?.esReemplazo || false)
+                                      }
+                                    }
+                                  }));
+                                  setHasUnsavedChanges(true);
+                                }}
+                              />
+                              <small style={{ color: '#6b7280', display: 'block', marginTop: '2px' }}>
+                                Si este firmante es un reemplazo, ingresa su cargo real aquí para que aparezca en la firma.
+                              </small>
                             </div>
                           </>
                         )}

@@ -685,12 +685,26 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       }
       
       // Puesto (en negrita y mayúsculas)
+      // Si el firmante es reemplazo y tiene cargoFirmante, usar ese título en lugar del puesto original
+      const esReemplazo = typeof data === 'object' && data !== null && data.esReemplazo;
+      const cargoFirmante = typeof data === 'object' && data !== null ? (data.cargoFirmante || '') : '';
+      const tituloFirma = (esReemplazo && cargoFirmante) ? cargoFirmante : puesto;
       doc.setFontSize(9);
       doc.setFont('helvetica', 'bold');
-      const puestoTexto = puesto.toUpperCase() + ':';
+      const puestoTexto = tituloFirma.toUpperCase() + ':';
       const puestoLines = doc.splitTextToSize(sanitizeText(puestoTexto), anchoColumna - 6);
       doc.text(puestoLines, xPos, localY);
       localY += puestoLines.length * 4.5;
+      // Si es reemplazo con cargo propio, mostrar "En repr. de: {puesto original}" en gris pequeño
+      if (esReemplazo && cargoFirmante) {
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(130, 130, 130);
+        const reprLines = doc.splitTextToSize(sanitizeText(`En repr. de: ${puesto}`), anchoColumna - 6);
+        doc.text(reprLines, xPos, localY);
+        doc.setTextColor(...COLORS.text);
+        localY += reprLines.length * 4 + 1;
+      }
       
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
@@ -921,6 +935,21 @@ export const exportFormToPDF = async (form, template) => {
     
     // 3. Dibujar TODAS las secciones dinámicas del bodyElements
     console.log('📊 Dibujando secciones dinámicas del cuerpo...');
+
+    // Helper: busca el dato correspondiente a una sección en bodyData.
+    // Primero intenta por id (robusto frente a re-ordenamientos de secciones),
+    // luego cae al índice posicional como fallback.
+    const getSectionBodyData = (sectionDef, idx) => {
+      if (!Array.isArray(bodyData)) return null;
+      if (sectionDef.id !== undefined && sectionDef.id !== null) {
+        const byId = bodyData.find(bd =>
+          bd !== null && bd !== undefined &&
+          (bd.id === sectionDef.id || String(bd.id) === String(sectionDef.id))
+        );
+        if (byId !== undefined) return byId;
+      }
+      return bodyData[idx] ?? null;
+    };
     
     for (let index = 0; index < bodyElements.length; index++) {
       const section = bodyElements[index];
@@ -1004,10 +1033,10 @@ export const exportFormToPDF = async (form, template) => {
         let tableData = [];
         
         if (Array.isArray(bodyData)) {
-          // bodyData es array: bodyData[index] = { rows: [...] } o { data: [...] }
-          const sectionData = bodyData[index];
+          // bodyData es array: buscar por id primero, luego por índice
+          const sectionData = getSectionBodyData(section, index);
           
-          console.log(`🔍 sectionData[${index}]:`, sectionData);
+          console.log(`🔍 sectionData[${index}] (id=${section.id}):`, sectionData);
           
           if (sectionData && Array.isArray(sectionData.rows)) {
             tableData = sectionData.rows;
@@ -1294,14 +1323,13 @@ const rows = tableData.map((row, rowIndex) => {
           }
           currentY += isCompactMode ? 4 : 10;
         }
-      } else if (section.type === 'section' && section.fields) {
+      } else if (section.type === 'section') {
         // 🖼️ SECCIÓN DE CAMPOS (key-value, puede incluir imágenes)
+        // Buscar datos por id primero, luego por índice (robusto ante re-ordenamientos)
         let sectionData = {};
-        if (Array.isArray(bodyData)) {
-          const elementData = bodyData[index];
-          if (elementData && typeof elementData === 'object') {
-            sectionData = elementData.data || elementData.rows || elementData;
-          }
+        const _elementData = getSectionBodyData(section, index);
+        if (_elementData && typeof _elementData === 'object') {
+          sectionData = _elementData.data || _elementData.rows || _elementData;
         }
         console.log(`📋 Sección campos "${sectionTitle}":`, sectionData);
         
@@ -1484,6 +1512,52 @@ const rows = tableData.map((row, rowIndex) => {
         }
 
         if (!hasRendered) {
+          // Fallback: si section.fields estaba vacío o sin definir, renderizar desde sectionData directamente
+          // (igual que hace ViewForms → Object.entries(sectionData).map(...))
+          const fallbackEntries = Object.entries(sectionData).filter(([k]) => !k.startsWith('_'));
+          if (fallbackEntries.length > 0) {
+            for (const [key, value] of fallbackEntries) {
+              if (currentY > 250) { doc.addPage(); currentY = 20; }
+              const displayVal = String(value ?? '').trim();
+              if (displayVal && displayVal.length > 60) {
+                boxFields.push({ label: key, value: displayVal });
+              } else if (displayVal) {
+                doc.setFontSize(8.5);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...COLORS.sectionTitle);
+                const kLines = doc.splitTextToSize(sanitizeText(`${key}:`), maxW);
+                doc.text(kLines, 12, currentY);
+                currentY += kLines.length * 5.5 + 1;
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(...COLORS.text);
+                const vLines = doc.splitTextToSize(sanitizeText(displayVal), maxW - 6);
+                doc.text(vLines, 16, currentY);
+                currentY += vLines.length * 5.5 + 4;
+                hasRendered = true;
+              } else {
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...COLORS.sectionTitle);
+                const kW = doc.getTextWidth(sanitizeText(`${key}: `));
+                doc.text(sanitizeText(`${key}: `), 12, currentY);
+                const lX = 12 + kW;
+                const lEndX = Math.min(lX + 60, secPgW2 - 14);
+                doc.setDrawColor(180, 180, 180);
+                doc.setLineWidth(0.3);
+                doc.line(lX, currentY, lEndX, currentY);
+                doc.setTextColor(...COLORS.text);
+                currentY += 6;
+                hasRendered = true;
+              }
+            }
+            // Render any boxFields accumulated in fallback
+            if (boxFields.length > 0 && !hasRendered) {
+              hasRendered = true; // will be rendered below in box section
+            }
+          }
+        }
+
+        if (!hasRendered) {
           // Sección completamente vacía → línea compacta
           doc.setFontSize(8);
           doc.setTextColor(150, 150, 150);
@@ -1498,11 +1572,9 @@ const rows = tableData.map((row, rowIndex) => {
       } else if (section.type === 'observaciones') {
         // ── SECCIÓN TIPO OBSERVACIONES (texto libre del usuario) ──
         let obsText = '';
-        if (Array.isArray(bodyData)) {
-          const elementData = bodyData[index];
-          if (elementData && typeof elementData === 'object') {
-            obsText = elementData.data?.texto || elementData.texto || elementData.value || '';
-          }
+        const _obsElementData = getSectionBodyData(section, index);
+        if (_obsElementData && typeof _obsElementData === 'object') {
+          obsText = _obsElementData.data?.texto || _obsElementData.texto || _obsElementData.value || '';
         }
         if (obsText && obsText.trim()) {
           const obsPageW = doc.internal.pageSize.getWidth();
@@ -1526,13 +1598,11 @@ const rows = tableData.map((row, rowIndex) => {
         // SECCIÓN TIPO TEXTO (como Observaciones)
         let textValue = '';
         const fieldName = section.name || section.id || `field_${index}`;
-        
-        if (Array.isArray(bodyData)) {
-          const sectionData = bodyData[index];
-          textValue = sectionData?.value || (typeof sectionData === 'string' ? sectionData : '') || form[fieldName] || '';
-        } else {
-          textValue = form[fieldName] || bodyData[fieldName] || '';
+        const _txtElementData = getSectionBodyData(section, index);
+        if (_txtElementData !== null && _txtElementData !== undefined) {
+          textValue = _txtElementData?.value || (typeof _txtElementData === 'string' ? _txtElementData : '') || '';
         }
+        if (!textValue) textValue = form[fieldName] || (typeof bodyData === 'object' && !Array.isArray(bodyData) ? bodyData[fieldName] : '') || '';
         
         if (textValue) {
           doc.setFontSize(9);
@@ -1558,11 +1628,9 @@ const rows = tableData.map((row, rowIndex) => {
         const cycles = config.cycles || 3;
 
         let tinasData = {};
-        if (Array.isArray(bodyData)) {
-          const elementData = bodyData[index];
-          if (elementData && typeof elementData === 'object') {
-            tinasData = elementData.data || {};
-          }
+        const _tinasElementData = getSectionBodyData(section, index);
+        if (_tinasElementData && typeof _tinasElementData === 'object') {
+          tinasData = _tinasElementData.data || {};
         }
 
         // Build flat list of all tinas

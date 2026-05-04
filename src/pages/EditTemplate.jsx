@@ -1923,8 +1923,9 @@ function EditTemplate() {
                     {[0, 1, 2].map((rIdx) => {
                       const reemplazos = firma.reemplazos || [];
                       return (
-                        <div key={`reemplazo-${index}-${rIdx}`} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '90px' }}>Reemplazo {rIdx + 1}:</span>
+                        <div key={`reemplazo-${index}-${rIdx}`} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                          <span style={{ fontSize: '13px', color: '#6b7280', minWidth: '90px', paddingTop: '6px' }}>Reemplazo {rIdx + 1}:</span>
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           {(() => {
                             const firmasCat = catalogoFirmas.map(f => ({
                               id: `cat-${f.id || f.catalogoFirmaId}`,
@@ -1958,6 +1959,23 @@ function EditTemplate() {
                               </div>
                             );
                           })()}
+                          {/* Cargo del reemplazo */}
+                          {reemplazos[rIdx] && (
+                            <input
+                              type="text"
+                              placeholder={`Cargo de ${reemplazos[rIdx].split(' ')[0]}... (opcional)`}
+                              value={(firma.cargoReemplazos || {})[reemplazos[rIdx].toLowerCase().trim()] || ''}
+                              onChange={(e) => {
+                                const newCargos = { ...(firma.cargoReemplazos || {}) };
+                                const key = reemplazos[rIdx].toLowerCase().trim();
+                                if (e.target.value) newCargos[key] = e.target.value;
+                                else delete newCargos[key];
+                                updateFirma(index, 'cargoReemplazos', newCargos);
+                              }}
+                              style={{ fontSize: '12px', padding: '3px 7px', border: '1px solid #c4b5fd', borderRadius: '4px', color: '#6b21a8', background: '#faf5ff' }}
+                            />
+                          )}
+                          </div>
                           {reemplazos[rIdx] && (
                             <button
                               type="button"
@@ -1965,8 +1983,11 @@ function EditTemplate() {
                                 const newReemplazos = [...reemplazos];
                                 newReemplazos[rIdx] = '';
                                 updateFirma(index, 'reemplazos', newReemplazos);
+                                const newCargos = { ...(firma.cargoReemplazos || {}) };
+                                delete newCargos[reemplazos[rIdx]?.toLowerCase().trim()];
+                                updateFirma(index, 'cargoReemplazos', newCargos);
                               }}
-                              style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '12px', color: '#dc2626' }}
+                              style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '12px', color: '#dc2626', marginTop: '2px' }}
                               title="Quitar reemplazo"
                             >✕</button>
                           )}

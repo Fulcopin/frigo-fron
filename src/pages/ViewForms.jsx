@@ -657,8 +657,29 @@ function ViewForms() {
       // pero fusionar con los headerFields actuales para mostrar los campos con defaultValue correctamente
       console.log('📸 Usando snapshot de template (versión histórica)');
       const snapshot = selectedFormVersionInfo.templateSnapshot;
+
+      // 🔧 FIX: Fusionar campos 'nota' del template actual en las secciones del snapshot
+      // Los campos nota son estáticos (no dependen de datos guardados) y pueden haberse añadido
+      // al template después de que el formulario fue llenado.
+      const mergedBodyElements = (snapshot?.bodyElements || []).map((snapshotEl, idx) => {
+        if (snapshotEl.type !== 'section') return snapshotEl;
+        const currentEl = (currentTemplate?.bodyElements || []).find(
+          el => el.type === 'section' && (el.id === snapshotEl.id || el.title === snapshotEl.title)
+        ) || currentTemplate?.bodyElements?.[idx];
+        if (!currentEl || currentEl.type !== 'section') return snapshotEl;
+        // Agregar campos nota del template actual que no existen en el snapshot
+        const existingLabels = new Set((snapshotEl.fields || []).map(f => f.label));
+        const notaFieldsToAdd = (currentEl.fields || []).filter(
+          f => f.type === 'nota' && !existingLabels.has(f.label)
+        );
+        if (notaFieldsToAdd.length === 0) return snapshotEl;
+        return { ...snapshotEl, fields: [...(snapshotEl.fields || []), ...notaFieldsToAdd] };
+      });
+
       correspondingTemplate = {
         ...snapshot,
+        // Usar bodyElements fusionados para mostrar campos nota añadidos después
+        bodyElements: mergedBodyElements,
         // Usar headerFields del template actual si tiene más campos (p.ej. campos con defaultValue añadidos después)
         headerFields: (currentTemplate?.headerFields?.length ?? 0) >= (snapshot?.headerFields?.length ?? 0)
           ? (currentTemplate?.headerFields ?? snapshot?.headerFields ?? [])
@@ -1307,7 +1328,13 @@ function ViewForms() {
                             🔄 Reemplazo autorizado
                           </div>
                         )}
-                        <h4>{puesto}</h4>
+                        {/* 🔄 Si el firmante es reemplazo y tiene cargoFirmante, mostrarlo como título */}
+                        <h4>{data.esReemplazo && data.cargoFirmante ? data.cargoFirmante : puesto}</h4>
+                        {data.esReemplazo && data.cargoFirmante && (
+                          <p style={{ fontSize: '11px', color: '#6b7280', marginTop: '-6px', marginBottom: '6px', fontStyle: 'italic' }}>
+                            En representación de: {puesto}
+                          </p>
+                        )}
                         <div className="signature-data">
                           {/* Mostrar imagen si ya firmó */}
                           {yaFirmado ? (
@@ -1349,7 +1376,8 @@ function ViewForms() {
                                 email: currentUser?.email || updatedData.email || '',
                                 ...(esReemplazoDefinido && !isCurrentUserSlot ? { 
                                   esReemplazo: true, 
-                                  reemplazandoA: data.nombre || templateFirmaConfig?.nombreCompleto || '' 
+                                  reemplazandoA: data.nombre || templateFirmaConfig?.nombreCompleto || '',
+                                  cargoFirmante: templateFirmaConfig?.cargoReemplazos?.[nombreParaFirmar.toLowerCase().trim()] || ''
                                 } : {})
                               })}
                               cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}

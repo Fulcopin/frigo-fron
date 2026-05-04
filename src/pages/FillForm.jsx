@@ -8792,7 +8792,11 @@ useEffect(() => {
                             onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, {
                               ...updatedData,
                               nombre: nombreParaMostrar,
-                              ...(esReemplazoDefinido && !isCurrentUserSlot ? { esReemplazo: true, reemplazandoA: nombreAsignado } : {})
+                              ...(esReemplazoDefinido && !isCurrentUserSlot ? {
+                                esReemplazo: true,
+                                reemplazandoA: nombreAsignado,
+                                cargoFirmante: firma.cargoReemplazos?.[currentUserName] || ''
+                              } : {})
                             })}
                             cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
                             cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
