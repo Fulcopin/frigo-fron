@@ -39,10 +39,48 @@ const isImageUrl = (val) => {
 };
 
 const renderCellValue = (value, fieldType) => {
-  if (value === undefined || value === null || value === '' || value === '-') return '-';
+  if (value === undefined || value === null) return '-';
   if (typeof value === 'object') return JSON.stringify(value);
   const strVal = String(value);
-  
+
+  // ── CHECKBOX: manejar ANTES del check genérico de vacío/guión ──
+  if (fieldType === 'checkbox') {
+    // Vacío o sin selección
+    if (!strVal.trim() || strVal.trim() === '-' || strVal.trim() === '') {
+      return <span style={{ color: '#9ca3af' }}>—</span>;
+    }
+    const upper = strVal.toUpperCase().trim()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // quitar tildes para comparar
+    if (upper === 'SI' || upper === 'YES' || upper === 'TRUE' || upper === '1' || upper === 'SÍ') {
+      return <span style={{ color: '#059669', fontWeight: '700', fontSize: '1.1em' }}>✓</span>;
+    }
+    if (upper === 'NO' || upper === 'FALSE' || upper === '0') {
+      return <span style={{ color: '#9ca3af' }}>—</span>;
+    }
+    // Multi-selección: "Opción A, Opción B, Opción C"
+    const selectedValues = strVal.split(',').map(v => v.trim()).filter(Boolean);
+    if (selectedValues.length > 1 || (selectedValues.length === 1 && !['SI','NO','SÍ','YES','TRUE','FALSE','0','1','-'].includes(selectedValues[0].toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')))) {
+      return (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+          {selectedValues.map((v, i) => (
+            <span key={i} style={{
+              background: '#d1fae5',
+              color: '#065f46',
+              padding: '2px 8px',
+              borderRadius: '12px',
+              fontSize: '0.82em',
+              fontWeight: '600',
+              border: '1px solid #6ee7b7'
+            }}>✓ {v}</span>
+          ))}
+        </div>
+      );
+    }
+    return strVal;
+  }
+
+  if (!strVal.trim() || strVal === '-' || strVal === '') return '-';
+
   // Formatear fechas ISO (quitar la "T" y mostrar bonito)
   // Detecta: 2026-03-18T16:03, 2026-03-18T16:03:00, etc.
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(strVal)) {
@@ -57,20 +95,6 @@ const renderCellValue = (value, fieldType) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
     const [y, m, day] = strVal.split('-');
     return `${day}/${m}/${y}`;
-  }
-  
-  // Checkbox visual rendering
-  if (fieldType === 'checkbox') {
-    const upper = strVal.toUpperCase().trim()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // remove accents for comparison
-    if (upper === 'SI' || upper === 'YES' || upper === 'TRUE' || upper === '1') {
-      return <span style={{ color: '#059669', fontWeight: '700', fontSize: '1.1em' }}>✓</span>;
-    }
-    if (upper === 'NO' || upper === 'FALSE' || upper === '0' || upper === '-') {
-      return <span style={{ color: '#9ca3af' }}>—</span>;
-    }
-    // Non-boolean value (e.g. "Cambio de producto"): show as text
-    return strVal;
   }
   
   if (isImageUrl(strVal)) {
@@ -830,9 +854,20 @@ function ViewForms() {
           ) : null}
 
           {/* --- NUEVO: RENDERIZADO DEL CUERPO DINÁMICO --- */}
-          {correspondingTemplate && selectedForm.bodyData && Array.isArray(selectedForm.bodyData) && selectedForm.bodyData.map((elementData, elementIndex) => {
-            const templateElement = correspondingTemplate.bodyElements[elementIndex];
+          {correspondingTemplate && selectedForm.bodyData && Array.isArray(selectedForm.bodyData) && correspondingTemplate.bodyElements && correspondingTemplate.bodyElements.map((templateElement, elementIndex) => {
             if (!templateElement) return null;
+            // Buscar el dato correspondiente por ID primero (robusto ante re-ordenamiento), luego por índice
+            let elementData = null;
+            const savedBodyData = Array.isArray(selectedForm.bodyData) ? selectedForm.bodyData : [];
+            if (templateElement.id !== undefined && templateElement.id !== null) {
+              const byId = savedBodyData.find(bd =>
+                bd !== null && bd !== undefined &&
+                (bd.id === templateElement.id || String(bd.id) === String(templateElement.id))
+              );
+              elementData = byId !== undefined ? byId : (savedBodyData[elementIndex] ?? null);
+            } else {
+              elementData = savedBodyData[elementIndex] ?? null;
+            }
             
             // Renderizar una SECCIÓN
             if (templateElement.type === 'section') {
@@ -877,6 +912,51 @@ function ViewForms() {
                           <div key={key} style={{ gridColumn: '1 / -1' }}>
                             <span className="data-label">{key}:</span>
                             <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '6px', display: 'block', marginTop: '6px', border: '1px solid #e5e7eb' }} />
+                          </div>
+                        );
+                      }
+                      // ── Checkbox con opciones múltiples ──
+                      if ((fieldDef.type === 'checkbox' || fieldDef.type === 'radio') && fieldDef.options && fieldDef.options.length > 0) {
+                        const strVal = value != null ? String(value).trim() : '';
+                        const upperVal = strVal.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                        // Multi-selección: parsear valores separados por coma
+                        let selectedValues = (strVal && strVal !== '-' && !['SI','SÍ','YES','TRUE','1','NO','FALSE','0'].includes(upperVal))
+                          ? strVal.split(',').map(v => v.trim()).filter(Boolean)
+                          : [];
+                        const isSingleTrue = upperVal === 'SI' || upperVal === 'SÍ' || upperVal === 'YES' || upperVal === 'TRUE' || upperVal === '1';
+                        // Compatibilidad: si no hay valor en la clave única, buscar opciones como claves individuales en sectionData (estructura antigua)
+                        if (!isSingleTrue && selectedValues.length === 0) {
+                          const fromIndividualKeys = fieldDef.options.filter(opt => {
+                            const v = sectionData[opt];
+                            if (v == null) return false;
+                            const u = String(v).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+                            return u === 'SI' || u === 'SÍ' || u === 'YES' || u === 'TRUE' || u === '1';
+                          });
+                          selectedValues = fromIndividualKeys;
+                        }
+                        return (
+                          <div key={key} style={{ gridColumn: '1 / -1' }}>
+                            <span className="data-label" style={{ display: 'block', marginBottom: '6px' }}>{key}:</span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', paddingLeft: '4px' }}>
+                              {fieldDef.options.map((opt, oi) => {
+                                const checked = isSingleTrue || selectedValues.includes(opt);
+                                return (
+                                  <span key={oi} style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                    padding: '3px 10px', borderRadius: '14px', fontSize: '0.83em',
+                                    fontWeight: checked ? '700' : '400',
+                                    background: checked ? '#d1fae5' : '#f3f4f6',
+                                    color: checked ? '#065f46' : '#9ca3af',
+                                    border: checked ? '1px solid #6ee7b7' : '1px solid #e5e7eb',
+                                  }}>
+                                    {checked ? '✓' : '☐'} {opt}
+                                  </span>
+                                );
+                              })}
+                              {selectedValues.length === 0 && !isSingleTrue && (
+                                <span style={{ color: '#9ca3af', fontSize: '0.85em', fontStyle: 'italic' }}>— Sin selección</span>
+                              )}
+                            </div>
                           </div>
                         );
                       }
@@ -1228,6 +1308,20 @@ function ViewForms() {
                         )}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              );
+            }
+
+            // Renderizar OBSERVACIONES (texto libre del usuario)
+            if (templateElement.type === 'observaciones') {
+              const obsData = elementData && elementData.data ? elementData.data : {};
+              const obsText = obsData.texto ?? elementData?.texto ?? elementData?.value ?? '';
+              return (
+                <div key={templateElement.id || elementIndex} className="data-section">
+                  <h3>{templateElement.title || 'Observaciones'}</h3>
+                  <div className="observations-box" style={{ minHeight: '60px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '12px 16px', color: '#374151', whiteSpace: 'pre-wrap' }}>
+                    {obsText ? obsText : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Sin observaciones</span>}
                   </div>
                 </div>
               );

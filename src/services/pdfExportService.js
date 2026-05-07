@@ -525,7 +525,7 @@ const drawBodyTable = (doc, bodyData, bodyElements, startY) => {
       fontSize: tblStyles2.bodyFontSize,
       textColor: [51, 51, 51],
       cellPadding: tblStyles2.cellPadding,
-      overflow: 'ellipsize',
+      overflow: 'linebreak',
       halign: 'center',
       valign: 'middle',
       lineWidth: 0.15,
@@ -956,7 +956,8 @@ export const exportFormToPDF = async (form, template) => {
       console.log(`📌 Sección ${index + 1}:`, section);
       
       // Verificar si hay espacio, si no, agregar nueva página
-      if (currentY + 20 > doc.internal.pageSize.getHeight()) {
+      // 45mm reservation ensures room for section title (~19mm) + at least 1-2 fields
+      if (currentY + 45 > doc.internal.pageSize.getHeight()) {
         doc.addPage();
         currentY = 20;
       }
@@ -1258,7 +1259,7 @@ const rows = tableData.map((row, rowIndex) => {
               fontSize: tblStyles.bodyFontSize,
               textColor: [51, 51, 51],
               cellPadding: tblStyles.cellPadding,
-              overflow: 'ellipsize',
+              overflow: 'linebreak',
               halign: 'center',
               valign: 'middle',
               lineWidth: 0.15,
@@ -1340,6 +1341,7 @@ const rows = tableData.map((row, rowIndex) => {
         };
 
         const secPgW2 = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
         const maxW = secPgW2 - 22;
 
         // Iterar por los campos del TEMPLATE (no sólo los datos guardados)
@@ -1354,7 +1356,7 @@ const rows = tableData.map((row, rowIndex) => {
           const fieldType = (fieldDef.type || 'text').toLowerCase();
           const fieldLabel = fieldDef.label || '';
 
-          if (currentY > 250) {
+          if (currentY > pageH - 20) {
             doc.addPage();
             currentY = 20;
           }
@@ -1370,7 +1372,7 @@ const rows = tableData.map((row, rowIndex) => {
             doc.setFont('helvetica', 'italic');
             doc.setTextColor(91, 33, 182); // morado
             const contentLines = doc.splitTextToSize(sanitizeText(contentText), maxW - 4);
-            if (currentY + contentLines.length * 5.5 + 6 > 270) { doc.addPage(); currentY = 20; }
+            if (currentY + contentLines.length * 5.5 + 6 > pageH - 10) { doc.addPage(); currentY = 20; }
             doc.setDrawColor(167, 139, 250);
             doc.setFillColor(245, 243, 255);
             doc.setLineWidth(0.3);
@@ -1392,6 +1394,104 @@ const rows = tableData.map((row, rowIndex) => {
             ''
           ).trim();
 
+          // ── TIPO: checkbox (booleano o multi-selección) ──
+          if (fieldType === 'checkbox' || fieldType === 'radio') {
+            doc.setFontSize(8.5);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...COLORS.sectionTitle);
+            doc.text(sanitizeText(`${fieldLabel}:`), 12, currentY);
+            currentY += 6;
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(...COLORS.text);
+
+            const upperVal = strVal.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const isSingleTrue = upperVal === 'SI' || upperVal === 'SÍ' || upperVal === 'YES' || upperVal === 'TRUE' || upperVal === '1';
+            const isSingleFalse = upperVal === 'NO' || upperVal === 'FALSE' || upperVal === '0';
+            const fieldOpts = fieldDef.options || [];
+
+            if (!strVal || strVal === '-') {
+              // Sin valor → buscar opciones como claves individuales (compatibilidad con estructura antigua)
+              let selectedFromIndividualKeys = [];
+              if (fieldOpts.length > 0) {
+                selectedFromIndividualKeys = fieldOpts.filter(opt => {
+                  const v = sectionData[opt];
+                  if (v == null) return false;
+                  const u = String(v).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                  return u === 'SI' || u === 'SÍ' || u === 'YES' || u === 'TRUE' || u === '1';
+                });
+              }
+              if (selectedFromIndividualKeys.length > 0) {
+                for (const opt of fieldOpts) {
+                  if (currentY > pageH - 20) { doc.addPage(); currentY = 20; }
+                  const checked = selectedFromIndividualKeys.includes(opt);
+                  doc.setFontSize(8);
+                  if (checked) {
+                    doc.setTextColor(5, 150, 105);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(`\u2713 ${sanitizeText(opt)}`, 16, currentY);
+                    doc.setFont('helvetica', 'normal');
+                  } else {
+                    doc.setTextColor(180, 180, 180);
+                    doc.text(`\u25A1 ${sanitizeText(opt)}`, 16, currentY);
+                  }
+                  doc.setTextColor(...COLORS.text);
+                  currentY += 5;
+                }
+              } else if (fieldOpts.length > 0) {
+                for (const opt of fieldOpts) {
+                  if (currentY > pageH - 20) { doc.addPage(); currentY = 20; }
+                  doc.setFontSize(8);
+                  doc.setTextColor(180, 180, 180);
+                  doc.text(`\u25A1 ${sanitizeText(opt)}`, 16, currentY);
+                  doc.setTextColor(...COLORS.text);
+                  currentY += 5;
+                }
+              } else {
+                doc.setTextColor(160, 160, 160);
+                doc.setFont('helvetica', 'italic');
+                doc.text('(Sin selección)', 16, currentY);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(...COLORS.text);
+                currentY += 5;
+              }
+            } else if (isSingleTrue) {
+              doc.setTextColor(5, 150, 105);
+              doc.setFont('helvetica', 'bold');
+              doc.text('\u2713 Si', 16, currentY);
+              doc.setFont('helvetica', 'normal');
+              doc.setTextColor(...COLORS.text);
+              currentY += 5;
+            } else if (isSingleFalse) {
+              doc.setTextColor(156, 163, 175);
+              doc.text('\u2014 No', 16, currentY);
+              doc.setTextColor(...COLORS.text);
+              currentY += 5;
+            } else {
+              // Multi-selección: "OpciónA, OpciónB, OpciónC"
+              const selected = strVal.split(',').map(v => v.trim()).filter(Boolean);
+              const allOpts = fieldOpts.length > 0 ? fieldOpts : selected;
+              for (const opt of allOpts) {
+                if (currentY > pageH - 20) { doc.addPage(); currentY = 20; }
+                const isChecked = selected.includes(opt);
+                doc.setFontSize(8);
+                if (isChecked) {
+                  doc.setTextColor(5, 150, 105);
+                  doc.setFont('helvetica', 'bold');
+                  doc.text(`\u2713 ${sanitizeText(opt)}`, 16, currentY);
+                  doc.setFont('helvetica', 'normal');
+                } else {
+                  doc.setTextColor(180, 180, 180);
+                  doc.text(`\u25A1 ${sanitizeText(opt)}`, 16, currentY);
+                }
+                doc.setTextColor(...COLORS.text);
+                currentY += 5;
+              }
+            }
+            currentY += 3;
+            hasRendered = true;
+            continue;
+          }
+
           if (isImageUrl(strVal)) {
             // 🖼️ Imagen
             doc.setFontSize(8.5);
@@ -1406,7 +1506,7 @@ const rows = tableData.map((row, rowIndex) => {
               }
               const imgWidth = 60;
               const imgHeight = 45;
-              if (currentY + imgHeight > 270) { doc.addPage(); currentY = 20; }
+              if (currentY + imgHeight > pageH - 15) { doc.addPage(); currentY = 20; }
               doc.addImage(imageData, 'PNG', 12, currentY, imgWidth, imgHeight);
               currentY += imgHeight + 5;
             } catch (imgError) {
@@ -1461,7 +1561,7 @@ const rows = tableData.map((row, rowIndex) => {
 
         // Renderizar cajas de campos largos/textarea en grid (hasta 3 por fila)
         if (boxFields.length > 0) {
-          if (currentY > 220) { doc.addPage(); currentY = 20; }
+          if (currentY > pageH - 30) { doc.addPage(); currentY = 20; }
           const boxCols = Math.min(boxFields.length, 3);
           const boxW = (secPgW2 - 20) / boxCols;
           const wrappedBoxTexts = boxFields.map(f =>
@@ -1517,7 +1617,7 @@ const rows = tableData.map((row, rowIndex) => {
           const fallbackEntries = Object.entries(sectionData).filter(([k]) => !k.startsWith('_'));
           if (fallbackEntries.length > 0) {
             for (const [key, value] of fallbackEntries) {
-              if (currentY > 250) { doc.addPage(); currentY = 20; }
+              if (currentY > pageH - 20) { doc.addPage(); currentY = 20; }
               const displayVal = String(value ?? '').trim();
               if (displayVal && displayVal.length > 60) {
                 boxFields.push({ label: key, value: displayVal });
@@ -1671,7 +1771,7 @@ const rows = tableData.map((row, rowIndex) => {
           }
 
           // Check page space
-          if (currentY > 220) {
+          if (currentY > doc.internal.pageSize.getHeight() - 20) {
             doc.addPage();
             currentY = 20;
           }
@@ -1710,7 +1810,7 @@ const rows = tableData.map((row, rowIndex) => {
             margin: { left: 8, right: 8 },
             styles: {
               cellPadding: 1,
-              overflow: 'ellipsize',
+              overflow: 'linebreak',
               lineWidth: 0.15,
               lineColor: [200, 200, 200]
             }
