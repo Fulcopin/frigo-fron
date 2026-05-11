@@ -26,6 +26,8 @@ import SessionHistory from "./pages/SessionHistory";
 import MyDrafts from "./pages/MyDrafts";
 import DocumentRegistry from "./pages/DocumentRegistry";
 import SeedBPMTemplates from "./pages/SeedBPMTemplates";
+import TrazabilidadConfig from "./pages/TrazabilidadConfig";
+import TrazabilidadBusqueda from "./pages/TrazabilidadBusqueda";
 import FrigoVoice from "./components/FrigoVoice"
 import "./App.css"
 
@@ -76,6 +78,9 @@ function Navigation() {
     { divider: true, label: "Documentos", show: true },
     { to: "/document-registry", icon: "📄", label: "Lista de Documentos", show: true },
     { to: "/seed-bpm-templates", icon: "🧤", label: "Crear Plantillas BPM", show: isAdminOrSupervisor },
+    { divider: true, label: "Trazabilidad", show: true },
+    { to: "/trazabilidad", icon: "🔍", label: "Consultar Trazabilidad", show: true },
+    { to: "/trazabilidad-config", icon: "🔗", label: "Config. Trazabilidad", show: isAdminOrSupervisor },
   ]
 
   return (
@@ -180,7 +185,9 @@ function getPageName(pathname) {
     '/session-history': 'Registro de Tiempos',
     '/my-drafts': 'Mis Borradores',
     '/document-registry': 'Documentos Registrados',
-    '/seed-bpm-templates': 'Crear Plantillas BPM'
+    '/seed-bpm-templates': 'Crear Plantillas BPM',
+    '/trazabilidad': 'Trazabilidad de Lotes',
+    '/trazabilidad-config': 'Configuración de Trazabilidad'
   }
   
   // Para rutas dinámicas como /edit-template/:id
@@ -331,6 +338,20 @@ function App() {
               <Route path="/seed-bpm-templates" element={
                 <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
                   <SeedBPMTemplates />
+                </RoleBasedRoute>
+              } />
+
+              {/* Consulta de Trazabilidad - Acceso para todos */}
+              <Route path="/trazabilidad" element={
+                <ProtectedRoute>
+                  <TrazabilidadBusqueda />
+                </ProtectedRoute>
+              } />
+
+              {/* Configuración de Trazabilidad - Solo Admin y Supervisor */}
+              <Route path="/trazabilidad-config" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <TrazabilidadConfig />
                 </RoleBasedRoute>
               } />
             </Routes>

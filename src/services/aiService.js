@@ -120,6 +120,127 @@ export async function agentVoiceQuery(audioBlob) {
 }
 
 /**
+ * Obtiene el contenido completo (HeaderData + TODAS las filas BodyData) de un FormID especifico
+ * usando el MCP tool obtener_formulario_completo.
+ * Devuelve { form_id, template_codigo, template_nombre, header, tablas, ... } o null.
+ */
+export async function mcpObtenerFormulario(formId) {
+  const result = await agentQuery(
+    `obtén el contenido completo del formulario llenado con ID ${formId} usando la herramienta obtener_formulario_completo, necesito todas las filas y columnas`
+  );
+
+  if (Array.isArray(result.tool_results) && result.tool_results.length > 0) {
+    for (const tr of result.tool_results) {
+      try {
+        const parsed = typeof tr === 'string' ? JSON.parse(tr) : tr;
+        if (parsed?.data?.tablas !== undefined) return parsed.data;
+      } catch {
+        // continuar
+      }
+    }
+  }
+  // Fallback: buscar JSON en el texto libre de respuesta
+  try {
+    const match = result.response?.match(/\{[\s\S]*?"tablas"\s*:\s*\[[\s\S]*?\]\s*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (parsed?.tablas !== undefined) return parsed;
+      if (parsed?.data?.tablas !== undefined) return parsed.data;
+    }
+  } catch { /* ignorar */ }
+  return null;
+}
+
+/**
+ * Rastrea la trazabilidad de un lote consultando FilledForms via MCP auditar_trazabilidad_lote.
+ * Devuelve { pasos, soloBorradores, numeroLote, mensaje }
+ */
+export async function mcpAuditarLote(numeroLote) {
+  const result = await agentQuery(
+    `rastrea la trazabilidad completa del lote ${numeroLote} usando la herramienta auditar_trazabilidad_lote`
+  );
+
+  if (Array.isArray(result.tool_results) && result.tool_results.length > 0) {
+    for (const tr of result.tool_results) {
+      try {
+        const parsed = typeof tr === 'string' ? JSON.parse(tr) : tr;
+        if (parsed?.data?.pasos) {
+          return {
+            pasos: parsed.data.pasos,
+            soloBorradores: parsed.data.solo_borradores || false,
+            numeroLote: parsed.data.numero_lote || numeroLote,
+            mensaje: parsed.message || '',
+          };
+        }
+      } catch {
+        // continuar con siguiente resultado
+      }
+    }
+  }
+
+  // Fallback: no se pudo extraer estructura, devolver respuesta de texto
+  return {
+    pasos: [],
+    soloBorradores: false,
+    numeroLote,
+    mensaje: result.response || 'Sin resultados.',
+  };
+}
+
+/**
+ * Lista todos los templates disponibles via el tool MCP listar_templates.
+ * Devuelve array normalizado: [{templateID, codigo, nombre, proceso, quienLoLlena, frecuencia}]
+ */
+export async function mcpListarTemplates() {
+  const result = await agentQuery('lista todos los formularios disponibles en el sistema usando la herramienta listar_templates');
+
+  // Intentar extraer de tool_results (respuesta estructurada del agente)
+  if (Array.isArray(result.tool_results) && result.tool_results.length > 0) {
+    for (const tr of result.tool_results) {
+      try {
+        const parsed = typeof tr === 'string' ? JSON.parse(tr) : tr;
+        const templates = parsed?.data?.templates || parsed?.templates;
+        if (Array.isArray(templates) && templates.length > 0) {
+          return templates.map(t => ({
+            templateID: t.template_id ?? t.templateID,
+            codigo: t.codigo,
+            nombre: t.nombre,
+            proceso: t.proceso || '',
+            quienLoLlena: t.quien_lo_llena || '',
+            frecuencia: t.frecuencia || '',
+          }));
+        }
+      } catch {
+        // continuar con el siguiente resultado
+      }
+    }
+  }
+
+  // Fallback: intentar extraer JSON del texto de respuesta
+  try {
+    const match = result.response && result.response.match(/\{[\s\S]*?"templates"\s*:\s*\[[\s\S]*?\]\s*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      const templates = parsed?.data?.templates || parsed?.templates;
+      if (Array.isArray(templates)) {
+        return templates.map(t => ({
+          templateID: t.template_id ?? t.templateID,
+          codigo: t.codigo,
+          nombre: t.nombre,
+          proceso: t.proceso || '',
+          quienLoLlena: t.quien_lo_llena || '',
+          frecuencia: t.frecuencia || '',
+        }));
+      }
+    }
+  } catch {
+    // ignorar
+  }
+
+  return [];
+}
+
+/**
  * Text-to-Speech usando Web Speech API del navegador
  */
 export function speak(text, lang = 'es-ES') {

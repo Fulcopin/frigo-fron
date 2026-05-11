@@ -26,6 +26,90 @@ const sanitizeText = (text) => {
 };
 
 /**
+ * Parsea texto con **negrita** markdown y lo envuelve en líneas que caben en maxWidth.
+ * Retorna array de líneas; cada línea es array de segmentos { text, bold, width }.
+ * baseFont: 'normal' | 'italic'  — la fuente base del bloque que lo contiene.
+ */
+const wrapMarkdownText = (doc, rawText, maxWidth, baseFont = 'normal') => {
+  // Sanitizar sin asteriscos para que no se cuelen caracteres extraños
+  const clean = (typeof rawText === 'string' ? rawText : String(rawText ?? '')).replace(/[^\x20-\x7E\xA0-\xFF\n\r\t*]/g, '');
+
+  // Dividir en segmentos por **...**
+  const segs = [];
+  const regex = /\*\*(.+?)\*\*/g;
+  let last = 0, m;
+  while ((m = regex.exec(clean)) !== null) {
+    if (m.index > last) segs.push({ text: clean.slice(last, m.index), bold: false });
+    segs.push({ text: m[1], bold: true });
+    last = m.index + m[0].length;
+  }
+  if (last < clean.length) segs.push({ text: clean.slice(last), bold: false });
+
+  // Tokenizar preservando espacios como tokens separados
+  const tokens = [];
+  for (const seg of segs) {
+    for (const part of seg.text.split(/([ \t]+)/)) {
+      if (part) tokens.push({ text: part, bold: seg.bold });
+    }
+  }
+
+  // Construir líneas midiendo con jsPDF
+  const boldStyle = baseFont === 'italic' ? 'bolditalic' : 'bold';
+  const lines = [];
+  let curLine = [], curWidth = 0;
+
+  for (const tok of tokens) {
+    const style = tok.bold ? boldStyle : baseFont;
+    doc.setFont('helvetica', style);
+    const tw = doc.getTextWidth(tok.text);
+    const isSpace = /^[ \t]+$/.test(tok.text);
+    if (isSpace) {
+      if (curLine.length > 0) { curLine.push({ ...tok, width: tw }); curWidth += tw; }
+      continue;
+    }
+    if (curLine.length > 0 && curWidth + tw > maxWidth) {
+      // Quitar espacios finales de la línea
+      while (curLine.length > 0 && /^[ \t]+$/.test(curLine[curLine.length - 1].text)) {
+        curWidth -= curLine[curLine.length - 1].width;
+        curLine.pop();
+      }
+      lines.push(curLine);
+      curLine = [];
+      curWidth = 0;
+    }
+    curLine.push({ ...tok, width: tw });
+    curWidth += tw;
+  }
+  if (curLine.length > 0) {
+    while (curLine.length > 0 && /^[ \t]+$/.test(curLine[curLine.length - 1].text)) curLine.pop();
+    if (curLine.length > 0) lines.push(curLine);
+  }
+  if (lines.length === 0) lines.push([]);
+  doc.setFont('helvetica', baseFont);
+  return lines;
+};
+
+/**
+ * Dibuja líneas devueltas por wrapMarkdownText en el PDF.
+ * Devuelve la Y final (y + lines.length * lineHeight).
+ */
+const drawMarkdownLines = (doc, lines, x, y, lineHeight, baseFont = 'normal') => {
+  const boldStyle = baseFont === 'italic' ? 'bolditalic' : 'bold';
+  let cy = y;
+  for (const line of lines) {
+    let lx = x;
+    for (const seg of line) {
+      doc.setFont('helvetica', seg.bold ? boldStyle : baseFont);
+      doc.text(seg.text, lx, cy);
+      lx += seg.width;
+    }
+    cy += lineHeight;
+  }
+  doc.setFont('helvetica', baseFont);
+  return cy;
+};
+
+/**
  * Convierte imagen a Base64 para incrustar en PDF
  */
 const getBase64Image = (imgUrl) => {
@@ -956,8 +1040,11 @@ export const exportFormToPDF = async (form, template) => {
       console.log(`📌 Sección ${index + 1}:`, section);
       
       // Verificar si hay espacio, si no, agregar nueva página
-      // 45mm reservation ensures room for section title (~19mm) + at least 1-2 fields
-      if (currentY + 45 > doc.internal.pageSize.getHeight()) {
+      // Para tablas se reserva más espacio (título + cabeceras de grupo + primeras filas)
+      // para evitar el patrón: título en pág 1 → página en blanco → datos en pág 2
+      const _isTableSection = section.type === 'table' && section.columns;
+      const _minSpace = _isTableSection ? (isCompactMode ? 65 : 85) : 45;
+      if (currentY + _minSpace > doc.internal.pageSize.getHeight()) {
         doc.addPage();
         currentY = 20;
       }
@@ -1008,12 +1095,12 @@ export const exportFormToPDF = async (form, template) => {
       }
 
       // Espacio antes del título de sección
-      currentY += isCompactMode ? 3 : 5;
+      currentY += isCompactMode ? 2 : 3;
 
       // Título de la sección - Estilo Excel
       const secPageW = doc.internal.pageSize.getWidth();
       const secContentW = secPageW - 16;
-      const secTitleH = isCompactMode ? 5 : 8;
+      const secTitleH = isCompactMode ? 5 : 7;
       doc.setFontSize(isCompactMode ? 7 : 9);
       doc.setFont('helvetica', 'bold');
       doc.setFillColor(...COLORS.secondary);
@@ -1024,8 +1111,8 @@ export const exportFormToPDF = async (form, template) => {
       doc.setTextColor(...COLORS.sectionTitle);
       
       const sectionTitle = section.title || section.sectionTitle || section.label || 'Seccion';
-      doc.text(sanitizeText(sectionTitle.toUpperCase()), 10, currentY + secTitleH - 2);
-      currentY += isCompactMode ? 8 : 14;
+      doc.text(sanitizeText(sectionTitle.toUpperCase()), 10, currentY + secTitleH - 1.5);
+      currentY += isCompactMode ? 8 : 11;
       
       // Tipo de sección: tabla
       if (section.type === 'table' && section.columns) {
@@ -1130,10 +1217,11 @@ const rows = tableData.map((row, rowIndex) => {
           console.log(`Filas procesadas para "${sectionTitle}":`, rows);
           
           // Filtrar filas completamente vacías (ignorar propiedades internas _prefixed)
+          // No usar fallback a "rows" para evitar renderizar filas vacías que inflan el PDF
           const filteredRows = rows.filter(row => row.some(cell => cell && cell.trim() !== ''));
           
-          // Sanitizar todas las celdas de las filas
-          const sanitizedRows = (filteredRows.length > 0 ? filteredRows : rows).map(row => 
+          // Sanitizar solo filas con datos; filas totalmente vacías se omiten para compactar el PDF
+          const sanitizedRows = filteredRows.map(row => 
             row.map(cell => sanitizeText(cell))
           );
           
@@ -1279,12 +1367,14 @@ const rows = tableData.map((row, rowIndex) => {
             alternateRowStyles: {
               fillColor: [242, 247, 252]
             },
-            margin: tblMargins,
+            margin: { ...tblMargins, top: 20 },
             styles: {
               lineWidth: 0.15,
               lineColor: [200, 200, 200],
               font: 'helvetica'
             },
+            showHead: 'everyPage',
+            showFoot: 'lastPage',
             didDrawCell: (data) => {
               // Diagonal en celdas vacías
               if (data.section === 'body') {
@@ -1371,16 +1461,17 @@ const rows = tableData.map((row, rowIndex) => {
             doc.setFontSize(8.5);
             doc.setFont('helvetica', 'italic');
             doc.setTextColor(91, 33, 182); // morado
-            const contentLines = doc.splitTextToSize(sanitizeText(contentText), maxW - 4);
-            if (currentY + contentLines.length * 5.5 + 6 > pageH - 10) { doc.addPage(); currentY = 20; }
+            const contentMdLines = wrapMarkdownText(doc, contentText, maxW - 4, 'italic');
+            if (currentY + contentMdLines.length * 5.5 + 6 > pageH - 10) { doc.addPage(); currentY = 20; }
             doc.setDrawColor(167, 139, 250);
             doc.setFillColor(245, 243, 255);
             doc.setLineWidth(0.3);
-            doc.roundedRect(10, currentY - 4, secPgW2 - 20, contentLines.length * 5.5 + 6, 2, 2, 'FD');
-            doc.text(contentLines, 13, currentY);
+            doc.roundedRect(10, currentY - 4, secPgW2 - 20, contentMdLines.length * 5.5 + 6, 2, 2, 'FD');
+            doc.setTextColor(91, 33, 182);
+            drawMarkdownLines(doc, contentMdLines, 13, currentY, 5.5, 'italic');
             doc.setDrawColor(0); doc.setFillColor(255, 255, 255);
             doc.setTextColor(...COLORS.text); doc.setFont('helvetica', 'normal');
-            currentY += contentLines.length * 5.5 + 10;
+            currentY += contentMdLines.length * 5.5 + 10;
             hasRendered = true;
             continue;
           }
@@ -1405,7 +1496,7 @@ const rows = tableData.map((row, rowIndex) => {
             doc.setTextColor(...COLORS.text);
 
             const upperVal = strVal.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-            const isSingleTrue = upperVal === 'SI' || upperVal === 'SÍ' || upperVal === 'YES' || upperVal === 'TRUE' || upperVal === '1';
+            const isSingleTrue = upperVal === 'SI' || upperVal === 'SI' || upperVal === 'YES' || upperVal === 'TRUE' || upperVal === '1';
             const isSingleFalse = upperVal === 'NO' || upperVal === 'FALSE' || upperVal === '0';
             const fieldOpts = fieldDef.options || [];
 
@@ -1417,39 +1508,25 @@ const rows = tableData.map((row, rowIndex) => {
                   const v = sectionData[opt];
                   if (v == null) return false;
                   const u = String(v).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                  return u === 'SI' || u === 'SÍ' || u === 'YES' || u === 'TRUE' || u === '1';
+                  return u === 'SI' || u === 'SI' || u === 'YES' || u === 'TRUE' || u === '1';
                 });
               }
               if (selectedFromIndividualKeys.length > 0) {
-                for (const opt of fieldOpts) {
-                  if (currentY > pageH - 20) { doc.addPage(); currentY = 20; }
-                  const checked = selectedFromIndividualKeys.includes(opt);
-                  doc.setFontSize(8);
-                  if (checked) {
-                    doc.setTextColor(5, 150, 105);
-                    doc.setFont('helvetica', 'bold');
-                    doc.text(`\u2713 ${sanitizeText(opt)}`, 16, currentY);
-                    doc.setFont('helvetica', 'normal');
-                  } else {
-                    doc.setTextColor(180, 180, 180);
-                    doc.text(`\u25A1 ${sanitizeText(opt)}`, 16, currentY);
-                  }
-                  doc.setTextColor(...COLORS.text);
-                  currentY += 5;
-                }
-              } else if (fieldOpts.length > 0) {
-                for (const opt of fieldOpts) {
+                // Solo mostrar las opciones seleccionadas
+                for (const opt of selectedFromIndividualKeys) {
                   if (currentY > pageH - 20) { doc.addPage(); currentY = 20; }
                   doc.setFontSize(8);
-                  doc.setTextColor(180, 180, 180);
-                  doc.text(`\u25A1 ${sanitizeText(opt)}`, 16, currentY);
+                  doc.setTextColor(5, 150, 105);
+                  doc.setFont('helvetica', 'bold');
+                  doc.text(`[X] ${sanitizeText(opt)}`, 16, currentY);
+                  doc.setFont('helvetica', 'normal');
                   doc.setTextColor(...COLORS.text);
                   currentY += 5;
                 }
               } else {
                 doc.setTextColor(160, 160, 160);
                 doc.setFont('helvetica', 'italic');
-                doc.text('(Sin selección)', 16, currentY);
+                doc.text('(Sin seleccion)', 16, currentY);
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(...COLORS.text);
                 currentY += 5;
@@ -1457,32 +1534,34 @@ const rows = tableData.map((row, rowIndex) => {
             } else if (isSingleTrue) {
               doc.setTextColor(5, 150, 105);
               doc.setFont('helvetica', 'bold');
-              doc.text('\u2713 Si', 16, currentY);
+              doc.text('[X] Si', 16, currentY);
               doc.setFont('helvetica', 'normal');
               doc.setTextColor(...COLORS.text);
               currentY += 5;
             } else if (isSingleFalse) {
               doc.setTextColor(156, 163, 175);
-              doc.text('\u2014 No', 16, currentY);
+              doc.text('[ ] No', 16, currentY);
               doc.setTextColor(...COLORS.text);
               currentY += 5;
             } else {
-              // Multi-selección: "OpciónA, OpciónB, OpciónC"
+              // Multi-selección: "OpciónA, OpciónB, OpciónC" — solo mostrar las seleccionadas
               const selected = strVal.split(',').map(v => v.trim()).filter(Boolean);
-              const allOpts = fieldOpts.length > 0 ? fieldOpts : selected;
-              for (const opt of allOpts) {
-                if (currentY > pageH - 20) { doc.addPage(); currentY = 20; }
-                const isChecked = selected.includes(opt);
-                doc.setFontSize(8);
-                if (isChecked) {
+              if (selected.length > 0) {
+                for (const opt of selected) {
+                  if (currentY > pageH - 20) { doc.addPage(); currentY = 20; }
+                  doc.setFontSize(8);
                   doc.setTextColor(5, 150, 105);
                   doc.setFont('helvetica', 'bold');
-                  doc.text(`\u2713 ${sanitizeText(opt)}`, 16, currentY);
+                  doc.text(`[X] ${sanitizeText(opt)}`, 16, currentY);
                   doc.setFont('helvetica', 'normal');
-                } else {
-                  doc.setTextColor(180, 180, 180);
-                  doc.text(`\u25A1 ${sanitizeText(opt)}`, 16, currentY);
+                  doc.setTextColor(...COLORS.text);
+                  currentY += 5;
                 }
+              } else {
+                doc.setTextColor(160, 160, 160);
+                doc.setFont('helvetica', 'italic');
+                doc.text('(Sin seleccion)', 16, currentY);
+                doc.setFont('helvetica', 'normal');
                 doc.setTextColor(...COLORS.text);
                 currentY += 5;
               }
@@ -1537,9 +1616,9 @@ const rows = tableData.map((row, rowIndex) => {
             currentY += keyLines.length * 5.5 + 1;
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(...COLORS.text);
-            const valLines = doc.splitTextToSize(sanitizeText(strVal), maxW - 6);
-            doc.text(valLines, 16, currentY);
-            currentY += valLines.length * 5.5 + 4;
+            const valMdLines = wrapMarkdownText(doc, strVal, maxW - 6, 'normal');
+            drawMarkdownLines(doc, valMdLines, 16, currentY, 5.5, 'normal');
+            currentY += valMdLines.length * 5.5 + 4;
             hasRendered = true;
           } else {
             // Campo vacío: mostrar label + línea subrayada compacta
@@ -1565,7 +1644,7 @@ const rows = tableData.map((row, rowIndex) => {
           const boxCols = Math.min(boxFields.length, 3);
           const boxW = (secPgW2 - 20) / boxCols;
           const wrappedBoxTexts = boxFields.map(f =>
-            doc.splitTextToSize(sanitizeText(f.value || ''), boxW - 6)
+            wrapMarkdownText(doc, f.value || '', boxW - 6, 'normal')
           );
           const rowCount = Math.ceil(boxFields.length / boxCols);
           const rowHeights = Array.from({ length: rowCount }, (_, rowIdx) => {
@@ -1598,7 +1677,7 @@ const rows = tableData.map((row, rowIndex) => {
             doc.setFontSize(6.5);
             doc.setTextColor(...COLORS.text);
             if (boxFields[i].value) {
-              doc.text(wrappedBoxTexts[i], xBase + 2, rowY + 10);
+              drawMarkdownLines(doc, wrappedBoxTexts[i], xBase + 2, rowY + 10, 4.5, 'normal');
             } else {
               doc.setTextColor(160, 160, 160);
               doc.setFont('helvetica', 'italic');
@@ -1682,9 +1761,9 @@ const rows = tableData.map((row, rowIndex) => {
           doc.setFontSize(9);
           doc.setFont('helvetica', 'normal');
           doc.setTextColor(...COLORS.text);
-          const obsLines = doc.splitTextToSize(sanitizeText(String(obsText)), obsContentW);
-          doc.text(obsLines, 12, currentY);
-          currentY += obsLines.length * 6 + 8;
+          const obsMdLines = wrapMarkdownText(doc, String(obsText), obsContentW, 'normal');
+          drawMarkdownLines(doc, obsMdLines, 12, currentY, 6, 'normal');
+          currentY += obsMdLines.length * 6 + 8;
         } else {
           doc.setFontSize(9);
           doc.setTextColor(150, 150, 150);
@@ -1708,9 +1787,9 @@ const rows = tableData.map((row, rowIndex) => {
           doc.setFontSize(9);
           doc.setFont('helvetica', 'normal');
           const txtPgW = doc.internal.pageSize.getWidth();
-          const textLines = doc.splitTextToSize(sanitizeText(String(textValue)), txtPgW - 20);
-          doc.text(textLines, 12, currentY);
-          currentY += (textLines.length * 5) + 5;
+          const textMdLines = wrapMarkdownText(doc, String(textValue), txtPgW - 20, 'normal');
+          drawMarkdownLines(doc, textMdLines, 12, currentY, 5, 'normal');
+          currentY += (textMdLines.length * 5) + 5;
         } else {
           doc.setFontSize(9);
           doc.setTextColor(150, 150, 150);
@@ -1853,9 +1932,9 @@ const rows = tableData.map((row, rowIndex) => {
       
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      const obsLines = doc.splitTextToSize(sanitizeText(form.observaciones), obsContentW);
-      doc.text(obsLines, 12, currentY);
-      currentY += (obsLines.length * 5) + 5;
+      const obsFinalMdLines = wrapMarkdownText(doc, form.observaciones, obsContentW, 'normal');
+      drawMarkdownLines(doc, obsFinalMdLines, 12, currentY, 5, 'normal');
+      currentY += (obsFinalMdLines.length * 5) + 5;
     }
     
     // 5. Dibujar firmas
