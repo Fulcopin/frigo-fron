@@ -123,6 +123,26 @@ const renderCellValue = (value, fieldType) => {
   return strVal;
 };
 
+// Igual que en FillForm: agrupa columnas consecutivas por su propiedad `group`
+const processColumnGroups = (columns = []) => {
+  if (!columns.length) return [];
+  const result = [];
+  const namedGroups = {};
+  columns.forEach((col) => {
+    const groupName = col.group || '';
+    if (!groupName) {
+      result.push({ groupName: '', columns: [col] });
+    } else {
+      if (!namedGroups[groupName]) {
+        namedGroups[groupName] = { groupName, columns: [] };
+        result.push(namedGroups[groupName]);
+      }
+      namedGroups[groupName].columns.push(col);
+    }
+  });
+  return result;
+};
+
 function ViewForms() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -723,7 +743,26 @@ function ViewForms() {
           <button onClick={() => setSelectedForm(null)} className="btn-back">← Volver a la lista</button>
           <div className="viewer-actions">
             <button onClick={printForm} className="btn-secondary">🖨️ Imprimir</button>
-            <button onClick={() => handleExportPDF(selectedForm)} className="btn-pdf" title="Exportar a PDF">📄 PDF</button>
+            {(() => {
+              // Verificar si todas las firmas requeridas están completas
+              const requiredFirmas = correspondingTemplate?.firmas || [];
+              const firmasData = selectedForm?.firmasData || {};
+              const allSigned = requiredFirmas.length === 0 || requiredFirmas.every(f => {
+                const d = firmasData[f.puesto];
+                return d && (d.imagenUrl || d.imagen || d.firma || d.nombre);
+              });
+              return (
+                <button
+                  onClick={() => handleExportPDF(selectedForm)}
+                  className="btn-pdf"
+                  title={allSigned ? 'Exportar a PDF' : 'Firmas pendientes — el PDF se habilita al completar todas las firmas'}
+                  disabled={!allSigned}
+                  style={!allSigned ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                >
+                  📄 PDF{!allSigned ? ' 🔒' : ''}
+                </button>
+              );
+            })()}
             <button onClick={() => handleExportExcel(selectedForm)} className="btn-excel" title="Exportar a Excel">📊 Excel</button>
             <button onClick={() => openEmailModal(selectedForm)} className="btn-email" title="Enviar por correo">📧 Correo</button>
             <button onClick={() => exportToJSON(selectedForm)} className="btn-secondary">📥 JSON</button>
@@ -1001,49 +1040,36 @@ function ViewForms() {
                 }
               }
               
-              return (
+              {
+                const vfGroupedCols = processColumnGroups(templateElement.columns);
+                return (
                 <div key={templateElement.id} className="data-section">
                   <h3>{templateElement.title}</h3>
-                  <div className="table-wrapper" style={templateElement.columns.length > 10 ? { fontSize: '0.78rem' } : {}}>
-                    <table className={`view-table${templateElement.columns.length > 8 ? ' view-table-compact' : ''}`}>
+                  <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh' }}>
+                    <table className="data-table view-data-table">
                       <thead>
-                        {/* Grouped column headers */}
-                        {templateElement.columns.some(col => col.group) && (() => {
-                          // Build group spans: consecutive columns with same group get merged
-                          const headerItems = [];
-                          templateElement.columns.forEach((col) => {
-                            if (!col.group) {
-                              // Non-grouped column: render individually with rowSpan=2
-                              headerItems.push({ type: 'single', label: col.label || col.header || col.name || col.id, unit: col.unit || '', span: 1 });
-                            } else {
-                              const last = headerItems[headerItems.length - 1];
-                              if (last && last.type === 'group' && last.name === col.group) {
-                                last.span++;
-                              } else {
-                                headerItems.push({ type: 'group', name: col.group, span: 1 });
-                              }
-                            }
-                          });
-                          return (
-                            <tr>
-                              <th rowSpan={2} style={{ verticalAlign: 'bottom' }}>#</th>
-                              {headerItems.map((item, i) => (
-                                item.type === 'single'
-                                  ? <th key={`hdr-${i}`} rowSpan={2} style={{ verticalAlign: 'bottom', fontSize: '0.8rem' }}>{item.label}{item.unit && <div style={{ fontSize: '0.68rem', color: '#6b7280', fontWeight: 400 }}>{item.unit}</div>}</th>
-                                  : <th key={`hdr-${i}`} colSpan={item.span} style={{ textAlign: 'center', background: '#eef2ff', color: '#3730a3', fontWeight: '700', fontSize: '0.8rem', borderBottom: '2px solid #6366f1' }}>{item.name}</th>
-                              ))}
-                            </tr>
-                          );
-                        })()}
+                        {/* Fila 1: grupos y columnas sin grupo (igual que FillForm) */}
                         <tr>
-                          {!templateElement.columns.some(col => col.group) && <th>#</th>}
-                          {templateElement.columns.map((col, colIndex) => {
-                            // Skip non-grouped columns (they already have rowSpan=2 in the group row)
-                            if (templateElement.columns.some(c => c.group) && !col.group) return null;
-                            return (
-                              <th key={`subhdr-${colIndex}`} style={{ fontSize: '0.8rem' }}>{col.label || col.header || col.name || col.id || `Col ${colIndex + 1}`}{col.unit && <div style={{ fontSize: '0.68rem', color: '#6b7280', fontWeight: 400 }}>{col.unit}</div>}</th>
-                            );
-                          })}
+                          <th rowSpan={2}>#</th>
+                          {vfGroupedCols.map((group, gi) => (
+                            group.columns.length === 1
+                              ? <th key={`g-${gi}`} rowSpan={2}>
+                                  {group.columns[0].label || group.columns[0].header || group.columns[0].name}
+                                  {group.columns[0].unit && <span style={{ display: 'block', fontSize: '0.6rem', fontWeight: 400, opacity: 0.8 }}>{group.columns[0].unit}</span>}
+                                </th>
+                              : <th key={`g-${gi}`} colSpan={group.columns.length}>{group.groupName}</th>
+                          ))}
+                        </tr>
+                        {/* Fila 2: sub-columnas de grupos (columnas sin grupo ya tienen rowSpan=2) */}
+                        <tr>
+                          {vfGroupedCols.filter(g => g.columns.length > 1).flatMap((group, gi) =>
+                            group.columns.map((col, ci) => (
+                              <th key={`sg-${gi}-${ci}`}>
+                                {col.label || col.header || col.name}
+                                {col.unit && <span style={{ display: 'block', fontSize: '0.6rem', fontWeight: 400, opacity: 0.8 }}>{col.unit}</span>}
+                              </th>
+                            ))
+                          )}
                         </tr>
                       </thead>
                       <tbody>
@@ -1208,7 +1234,8 @@ function ViewForms() {
                     </table>
                   </div>
                 </div>
-              );
+                );
+              }
             }
 
             // Renderizar NOTA ESTÁTICA

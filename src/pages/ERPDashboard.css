@@ -1,28 +1,55 @@
+/* ═══════════════════════════════════════════════════════
+   ERP DASHBOARD  –  Estilos completos
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Layout principal ─────────────────────────────────── */
 .erp-dashboard {
-  padding: 20px;
-  background: #f1f5f9;
-  height: calc(100vh - 60px); /* Ajustar según navbar */
   display: flex;
   flex-direction: column;
+  height: calc(100vh - 60px);
+  padding: 16px 20px;
+  background: #f1f5f9;
+  gap: 12px;
+  box-sizing: border-box;
+  overflow: hidden;         /* el scroll lo lleva la tabla */
 }
 
+/* ── Cabecera ─────────────────────────────────────────── */
 .erp-header {
   background: white;
-  padding: 15px 20px;
-  border-radius: 10px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  padding: 14px 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   flex-wrap: wrap;
-  gap: 15px;
+  gap: 14px;
 }
 
-.erp-title h1 { margin: 0; color: #1e293b; font-size: 1.5rem; }
-.erp-title p { margin: 0; color: #64748b; font-size: 0.9rem; }
+.erp-title h1 {
+  margin: 0 0 2px;
+  font-size: 1.35rem;
+  color: #1e293b;
+  font-weight: 800;
+}
 
+.erp-tpl-badge {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #3b82f6;
+  font-weight: 600;
+  background: #eff6ff;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid #bfdbfe;
+}
+
+/* ── Controles ────────────────────────────────────────── */
 .erp-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: flex-end;
 }
@@ -30,110 +57,338 @@
 .control-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
-.control-group label { font-size: 0.75rem; font-weight: 600; color: #475569; }
-.control-group input, .control-group select {
-  padding: 8px;
+.control-group label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.control-group input[type="date"],
+.control-group select,
+.erp-select-template {
+  padding: 7px 10px;
   border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #1e293b;
+  background: #f8fafc;
+  outline: none;
+  transition: border-color .2s, box-shadow .2s;
+  height: 36px;
+  box-sizing: border-box;
 }
 
-.btn-refresh {
-  background: #3b82f6;
-  color: white;
+.control-group input[type="date"]:focus,
+.erp-select-template:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+  background: white;
+}
+
+.erp-select-template {
+  min-width: 220px;
+  max-width: 320px;
+}
+
+/* Botones de acción */
+.btn-refresh,
+.btn-excel-erp,
+.btn-cols {
+  height: 36px;
+  padding: 0 16px;
   border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
-  font-weight: 600;
-  height: 38px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  transition: opacity .15s, transform .1s;
 }
 
-.btn-excel-erp {
-  background: #10b981;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  height: 38px;
-}
+.btn-refresh       { background: #3b82f6; color: white; }
+.btn-excel-erp     { background: #10b981; color: white; }
+.btn-cols          { background: #6366f1; color: white; }
 
+.btn-refresh:hover,
+.btn-excel-erp:hover,
+.btn-cols:hover     { opacity: .88; transform: translateY(-1px); }
+
+.btn-refresh:disabled,
+.btn-excel-erp:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+/* ── Stats ────────────────────────────────────────────── */
 .erp-stats {
   display: flex;
-  gap: 15px;
-  margin: 15px 0;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .stat-box {
   background: white;
-  padding: 10px 20px;
-  border-radius: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   gap: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  min-width: 110px;
 }
 
-.stat-val { font-weight: 800; font-size: 1.2rem; color: #0f172a; }
-.stat-lbl { font-size: 0.85rem; color: #64748b; text-transform: uppercase; }
+.stat-val {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #1e293b;
+}
 
-/* GRID AREA */
+.stat-lbl {
+  font-size: 0.72rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* ── Panel de columnas ────────────────────────────────── */
+.col-panel {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+
+.col-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.col-panel-header strong { font-size: .9rem; color: #1e293b; }
+
+.col-panel-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.col-panel-actions button {
+  padding: 4px 10px;
+  font-size: .78rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-weight: 600;
+  color: #475569;
+  transition: background .15s;
+}
+
+.col-panel-actions button:hover { background: #f1f5f9; }
+
+.col-panel-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+
+.col-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: .78rem;
+  color: #334155;
+  transition: background .15s, border-color .15s;
+  user-select: none;
+}
+
+.col-item:hover { background: #eff6ff; border-color: #93c5fd; }
+
+.col-item input[type="checkbox"] {
+  margin: 0;
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
+
+/* ── Error ────────────────────────────────────────────── */
+.erp-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #dc2626;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: .875rem;
+  flex-shrink: 0;
+}
+
+/* ── Grid/Tabla ───────────────────────────────────────── */
 .erp-grid-wrapper {
   flex: 1;
   background: white;
-  border-radius: 10px;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-  overflow: auto; /* IMPORTANTE: Permite scroll */
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   border: 1px solid #e2e8f0;
+  overflow: auto;           /* scroll horizontal Y vertical */
+  min-height: 0;            /* crítico para que flex no se desborde */
+  position: relative;
 }
 
+/* Loading */
+.erp-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 14px;
+  color: #64748b;
+}
+
+.erp-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e2e8f0;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Empty */
+.erp-empty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 60px 20px;
+  font-size: 1rem;
+}
+
+/* Tabla */
 .erp-table {
   width: 100%;
-  border-collapse: separate; /* Necesario para sticky headers */
+  border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  table-layout: auto;
+}
+
+/* Headers */
+.erp-table thead tr {
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .erp-table th {
-  background: #f8fafc;
+  background: #f1f5f9;
   color: #334155;
   font-weight: 700;
-  padding: 12px;
+  padding: 10px 12px;
   text-align: left;
-  border-bottom: 2px solid #e2e8f0;
-  border-right: 1px solid #f1f5f9;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  border-bottom: 2px solid #cbd5e1;
+  border-right: 1px solid #e2e8f0;
   white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* Header fijo de número */
+.th-num, .td-num {
+  min-width: 42px;
+  text-align: center;
+  font-weight: 700;
+  color: #6366f1;
+}
+
+/* Columna fija izquierda (número) */
+.th-fixed {
+  position: sticky;
+  left: 0;
+  z-index: 30;   /* más que thead normal */
+  background: #e0e7ff !important;
+  border-right: 2px solid #a5b4fc !important;
+}
+
+/* Celdas */
 .erp-table td {
-  padding: 8px 12px;
+  padding: 7px 12px;
   border-bottom: 1px solid #f1f5f9;
   border-right: 1px solid #f1f5f9;
   color: #475569;
   white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
-.erp-table tr:hover td {
-  background-color: #f1f5f9;
-}
-
-/* Columnas fijas (ID, Fecha, Lote) */
-.th-fixed, .td-fixed {
-  background-color: #f8fafc; /* Fondo para que no sea transparente al scrollear */
+.td-fixed {
   position: sticky;
   left: 0;
-  z-index: 20; /* Mayor que el header normal */
+  z-index: 10;
+  background: #ede9fe;
+  border-right: 2px solid #a5b4fc !important;
 }
 
-/* Alternancia sutil */
-.erp-table tr:nth-child(even) td:not(.td-fixed) {
-  background-color: #fcfcfc;
+.td-empty { color: #cbd5e1; font-style: italic; }
+
+/* Filas alternadas */
+.erp-row-alt td { background: #fafafa; }
+.erp-row-alt .td-fixed { background: #e8e4fb; }
+
+/* Hover */
+.erp-table tbody tr:hover td { background: #eff6ff; }
+.erp-table tbody tr:hover .td-fixed { background: #dbeafe; }
+
+/* ── Paginación ───────────────────────────────────────── */
+.erp-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  position: sticky;
+  bottom: 0;
 }
+
+.erp-pagination button {
+  padding: 5px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-weight: 700;
+  color: #3b82f6;
+  font-size: .9rem;
+  transition: background .15s;
+}
+
+.erp-pagination button:hover:not(:disabled) { background: #eff6ff; border-color: #93c5fd; }
+.erp-pagination button:disabled { opacity: .35; cursor: not-allowed; color: #94a3b8; }
+
+.erp-pagination span { font-size: .875rem; color: #475569; }
+.pag-info { font-size: .78rem; color: #94a3b8; margin-left: 8px; }
