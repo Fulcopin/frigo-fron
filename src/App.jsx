@@ -28,6 +28,7 @@ import DocumentRegistry from "./pages/DocumentRegistry";
 import SeedBPMTemplates from "./pages/SeedBPMTemplates";
 import TrazabilidadConfig from "./pages/TrazabilidadConfig";
 import TrazabilidadBusqueda from "./pages/TrazabilidadBusqueda";
+import MassBalanceForm from "./pages/MassBalanceForm";
 import FrigoVoice from "./components/FrigoVoice"
 import "./App.css"
 
@@ -81,6 +82,7 @@ function Navigation() {
     { divider: true, label: "Trazabilidad", show: true },
     { to: "/trazabilidad", icon: "🔍", label: "Consultar Trazabilidad", show: true },
     { to: "/trazabilidad-config", icon: "🔗", label: "Config. Trazabilidad", show: isAdminOrSupervisor },
+    { to: "/mass-balance", icon: "⚖️", label: "Balance de Masas", show: true },
   ]
 
   return (
@@ -187,7 +189,8 @@ function getPageName(pathname) {
     '/document-registry': 'Documentos Registrados',
     '/seed-bpm-templates': 'Crear Plantillas BPM',
     '/trazabilidad': 'Trazabilidad de Lotes',
-    '/trazabilidad-config': 'Configuración de Trazabilidad'
+    '/trazabilidad-config': 'Configuración de Trazabilidad',
+    '/mass-balance': 'Balance de Masas'
   }
   
   // Para rutas dinámicas como /edit-template/:id
@@ -353,6 +356,13 @@ function App() {
                 <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
                   <TrazabilidadConfig />
                 </RoleBasedRoute>
+              } />
+
+              {/* Balance de Masas - Acceso para todos */}
+              <Route path="/mass-balance" element={
+                <ProtectedRoute>
+                  <MassBalanceForm />
+                </ProtectedRoute>
               } />
             </Routes>
           </main>

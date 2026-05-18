@@ -20,7 +20,8 @@ const ERPDashboard = () => {
         inicio: new Date(new Date().setDate(new Date().getDate() - 30))
             .toISOString().split('T')[0],
         fin: new Date().toISOString().split('T')[0],
-        templateId: ''
+        templateId: '',
+        lote: ''
     });
 
     // ─── Cargar templates ───────────────────────────────────────────────────
@@ -42,7 +43,7 @@ const ERPDashboard = () => {
         try {
             const q = `?inicio=${filters.inicio}&fin=${filters.fin}${
                 filters.templateId ? `&templateId=${filters.templateId}` : ''
-            }`;
+            }${filters.lote ? `&lote=${encodeURIComponent(filters.lote)}` : ''}`;
             const res = await fetch(`${API_BASE_URL}/FilledForms/erp-report${q}`);
             if (!res.ok) throw new Error(`Error API ${res.status}`);
             const data = await res.json();
@@ -584,6 +585,19 @@ const ERPDashboard = () => {
                                 ))
                             }
                         </select>
+                    </div>
+
+                    {/* Filtro por Lote */}
+                    <div className="control-group">
+                        <label>Lote / Texto</label>
+                        <input 
+                            type="text" 
+                            placeholder="Ej. 260511" 
+                            value={filters.lote}
+                            onChange={e => setFilters({ ...filters, lote: e.target.value })}
+                            onKeyDown={e => e.key === 'Enter' && fetchERPData()}
+                            title="Busca coincidencias exactas en el formulario"
+                        />
                     </div>
 
                     <button onClick={fetchERPData} className="btn-refresh" disabled={loading}>

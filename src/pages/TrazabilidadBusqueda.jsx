@@ -1,5 +1,6 @@
-﻿import { useState, useCallback, useEffect, useRef } from 'react';
-import { mcpAuditarLote, mcpObtenerFormulario, agentQuery } from '../services/aiService';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { mcpObtenerFormulario, agentQuery } from '../services/aiService';
+import TraceabilityService from '../services/traceabilityService';
 import './TrazabilidadBusqueda.css';
 
 // â”€â”€â”€ Config storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -75,6 +76,10 @@ export default function TrazabilidadBusqueda() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [expandedPaso, setExpandedPaso] = useState(null);
+  
+  // All lotes state
+  const [allLotes, setAllLotes] = useState([]);
+  const [loadingLotes, setLoadingLotes] = useState(false);
 
   // Full form data per paso
   const [formDataCache, setFormDataCache] = useState({}); // { formId: data | { error } | undefined }
@@ -108,10 +113,30 @@ export default function TrazabilidadBusqueda() {
     if (aiOpen) aiBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [aiMessages, aiOpen]);
 
-  // â”€â”€ Search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const buscar = useCallback(async () => {
-    const v = lote.trim();
+  // Load all lotes on mount
+  useEffect(() => {
+    const fetchLotes = async () => {
+      setLoadingLotes(true);
+      try {
+        const data = await TraceabilityService.getLotes();
+        if (data && data.lotes) {
+          setAllLotes(data.lotes);
+        }
+      } catch (err) {
+        console.error("No se pudieron cargar los lotes", err);
+      } finally {
+        setLoadingLotes(false);
+      }
+    };
+    fetchLotes();
+  }, []);
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  const buscar = useCallback(async (loteParam = null) => {
+    const v = loteParam || lote.trim();
     if (!v) return;
+    if (loteParam && loteParam !== lote) setLote(loteParam);
+    
     setLoading(true);
     setError('');
     setResult(null);
@@ -125,10 +150,10 @@ export default function TrazabilidadBusqueda() {
       text: AI_INITIAL_MESSAGE,
     }]);
     try {
-      const data = await mcpAuditarLote(v);
+      const data = await TraceabilityService.getLoteTraceability(v);
       setResult(data);
     } catch {
-      setError('No se pudo conectar con el servidor MCP. Verifica que frigo-ai estÃ© activo en el puerto 8100.');
+      setError('No se pudo conectar con el backend de Trazabilidad.');
     } finally {
       setLoading(false);
     }
@@ -136,7 +161,7 @@ export default function TrazabilidadBusqueda() {
 
   const handleKey = (e) => { if (e.key === 'Enter') buscar(); };
 
-  // â”€â”€ Load full form data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Load full form data ─────────────────────────────────────────────────────
   const loadFormData = useCallback(async (formId) => {
     if (formDataCache[formId] !== undefined || loadingFormId) return;
     setLoadingFormId(formId);
@@ -150,7 +175,7 @@ export default function TrazabilidadBusqueda() {
     }
   }, [formDataCache, loadingFormId]);
 
-  // â”€â”€ Column selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Column selection ───────────────────────────────────────────────────────
   const toggleCol = useCallback((formId, tablaIdx, col) => {
     const key = `${formId}_${tablaIdx}`;
     setSelectedCols(prev => {
@@ -237,7 +262,7 @@ export default function TrazabilidadBusqueda() {
     }
   }, [aiLoading, aiMessages, autoLoadingForAi, formDataCache, result, selectedCols]);
 
-  // â”€â”€ AI Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── AI Chat ────────────────────────────────────────────────────────────────
   const sendAiMessage = useCallback(async (text) => {
     const query = (text || aiInput).trim();
     if (!query || aiLoading) return;
@@ -270,7 +295,7 @@ export default function TrazabilidadBusqueda() {
     }
   }, [aiInput, aiLoading, aiMessages, result, formDataCache, selectedCols]);
 
-  // â”€â”€ Compliance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Compliance ──────────────────────────────────────────────────────────────
   const compliance = detalles
     .filter(d => d.tipo === 'DATOS_SISTEMA' && d.codigoDocumento)
     .map(det => {
@@ -282,12 +307,12 @@ export default function TrazabilidadBusqueda() {
   const totalOk = compliance.filter(c => c.ok).length;
   const pct = compliance.length > 0 ? Math.round((totalOk / compliance.length) * 100) : 0;
 
-  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="tb-container">
       {/* Header */}
       <div className="tb-header">
-        <h1 className="tb-title">ðŸ” Trazabilidad de Lotes</h1>
+        <h1 className="tb-title">🔍 Trazabilidad de Lotes</h1>
         <p className="tb-subtitle">
           Rastrea formularios llenados, selecciona columnas y analiza los datos con IA
         </p>
@@ -299,32 +324,32 @@ export default function TrazabilidadBusqueda() {
           <div className="tb-format-wrap">
             <label className="tb-label">Formato:</label>
             <select className="tb-select" value={selectedFormatoId} onChange={e => setSelectedFormatoId(e.target.value)}>
-              <option value="">â€” Sin seleccionar â€”</option>
+              <option value="">— Sin seleccionar —</option>
               {formatos.map(f => <option key={f.id} value={String(f.id)}>{f.nombre}</option>)}
             </select>
           </div>
         )}
         <div className="tb-input-wrap">
-          <span className="tb-search-icon">ðŸ”Ž</span>
+          <span className="tb-search-icon">🔍</span>
           <input
             className="tb-input"
             type="text"
-            placeholder={selectedFormato?.campoBusqueda ? `${selectedFormato.campoBusqueda} (ej. 260302)` : 'NÃºmero de lote (ej. 260302)'}
+            placeholder={selectedFormato?.campoBusqueda ? `${selectedFormato.campoBusqueda} (ej. 260302)` : 'Número de lote (ej. 260302)'}
             value={lote}
             onChange={e => setLote(e.target.value)}
             onKeyDown={handleKey}
             autoFocus
           />
         </div>
-        <button className="tb-btn-search" onClick={buscar} disabled={loading || !lote.trim()}>
-          {loading ? 'â³ Buscandoâ€¦' : 'ðŸ”— Rastrear'}
+        <button className="tb-btn-search" onClick={() => buscar()} disabled={loading || !lote.trim()}>
+          {loading ? '⏳ Buscando…' : '🔗 Rastrear'}
         </button>
       </div>
 
-      {error && <div className="tb-error">âš ï¸ {error}</div>}
-      {loading && <div className="tb-loading"><div className="tb-spinner" /><span>Consultando formularios llenados vÃ­a MCPâ€¦</span></div>}
+      {error && <div className="tb-error">⚠️ {error}</div>}
+      {loading && <div className="tb-loading"><div className="tb-spinner" /><span>Consultando trazabilidad en el backend…</span></div>}
 
-      {/* â•â•â•â•â•â•â•â•â•â• RESULTS â•â•â•â•â•â•â•â•â•â• */}
+      {/* ══════════ RESULTS ══════════ */}
       {result && !loading && (
         <div className="tb-results">
 
@@ -349,7 +374,7 @@ export default function TrazabilidadBusqueda() {
               )}
               {totalSelectedCols > 0 && (
                 <button className="tb-summary-badge badge-sel" onClick={() => setAiOpen(true)}>
-                  ðŸ“Š {totalSelectedCols} columna{totalSelectedCols !== 1 ? 's' : ''} â€” Analizar con IA â†’
+                  📊 {totalSelectedCols} columna{totalSelectedCols !== 1 ? 's' : ''} — Analizar con IA →
                 </button>
               )}
             </div>
@@ -360,7 +385,7 @@ export default function TrazabilidadBusqueda() {
             <div className="tb-compliance">
               <div className="tb-compliance-top">
                 <h3 className="tb-compliance-title">
-                  Completitud â€” <em>{selectedFormato?.nombre}</em>
+                  Completitud — <em>{selectedFormato?.nombre}</em>
                 </h3>
                 <div className={`tb-pct-pill ${pct === 100 ? 'pct-full' : pct >= 50 ? 'pct-half' : 'pct-low'}`}>
                   {pct}% <span className="tb-pct-sub">({totalOk}/{compliance.length})</span>
@@ -369,7 +394,7 @@ export default function TrazabilidadBusqueda() {
               <div className="tb-compliance-grid">
                 {compliance.map(({ det, found, ok }) => (
                   <div key={det.id} className={`tb-comp-item ${ok ? 'comp-ok' : 'comp-miss'}`}>
-                    <span className="tb-comp-icon">{ok ? 'âœ…' : 'âŒ'}</span>
+                    <span className="tb-comp-icon">{ok ? '✅' : '❌'}</span>
                     <div className="tb-comp-text">
                       <span className="tb-comp-code">{det.codigoDocumento}</span>
                       <span className="tb-comp-name">{det.nombreDocumento}</span>
@@ -390,7 +415,7 @@ export default function TrazabilidadBusqueda() {
                 <span className="tb-timeline-count">{result.pasos.length} registros</span>
               </h3>
               <p className="tb-timeline-hint">
-                ðŸ’¡ Usa <b>Usar todos los documentos con IA</b> para analizar el lote completo de una vez, o carga formularios individuales si quieres revisar columnas especificas.
+                💡 Usa <b>Usar todos los documentos con IA</b> para analizar el lote completo de una vez, o carga formularios individuales si quieres revisar columnas especificas.
               </p>
               <div className="tb-timeline-list">
                 {result.pasos.map((paso, i) => {
@@ -411,7 +436,7 @@ export default function TrazabilidadBusqueda() {
                         </div>
                         <div className="tb-paso-card">
 
-                          {/* â”€â”€ Card title row â”€â”€ */}
+                          {/* ── Card title row ── */}
                           <div className="tb-paso-top">
                             <div className="tb-paso-id-col">
                               <span className="tb-paso-num">{i + 1}</span>
@@ -424,8 +449,8 @@ export default function TrazabilidadBusqueda() {
                                 <span className="tb-paso-nombre">{paso.template_nombre}</span>
                               </div>
                               <div className="tb-paso-meta-row">
-                                <span>ðŸ“… {formatDate(paso.created_at)}</span>
-                                <span>ðŸ‘¤ {paso.filled_by || 'N/A'}</span>
+                                <span>📅 {formatDate(paso.created_at)}</span>
+                                <span>👤 {paso.filled_by || 'N/A'}</span>
                                 {paso.filled_by_role && (
                                   <span className="tb-paso-role">{paso.filled_by_role}</span>
                                 )}
@@ -440,7 +465,7 @@ export default function TrazabilidadBusqueda() {
                                   className="tb-paso-toggle"
                                   onClick={() => setExpandedPaso(isExpanded ? null : i)}
                                 >
-                                  {isExpanded ? 'â–² Ocultar' : 'â–¼ Resumen'}
+                                  {isExpanded ? '▲ Ocultar' : '▼ Resumen'}
                                 </button>
                               )}
                               {paso.form_id && !hasFd && !isLoadingFull && (
@@ -449,21 +474,21 @@ export default function TrazabilidadBusqueda() {
                                   onClick={() => loadFormData(paso.form_id)}
                                   title="Cargar todas las filas y columnas del formulario"
                                 >
-                                  ðŸ“Š Datos completos
+                                  📊 Datos completos
                                 </button>
                               )}
                               {isLoadingFull && (
-                                <span className="tb-loadfull-spin">â³ Cargandoâ€¦</span>
+                                <span className="tb-loadfull-spin">⏳ Cargando…</span>
                               )}
                               {hasFd && (
                                 <span className="tb-loadfull-ok">
-                                  âœ“ {fd.tablas?.length || 0} tabla{fd.tablas?.length !== 1 ? 's' : ''}, {fd.tablas?.reduce((a, t) => a + t.total_filas, 0) || 0} filas
+                                  ✓ {fd.tablas?.length || 0} tabla{fd.tablas?.length !== 1 ? 's' : ''}, {fd.tablas?.reduce((a, t) => a + t.total_filas, 0) || 0} filas
                                 </span>
                               )}
                             </div>
                           </div>
 
-                          {/* â”€â”€ Quick view (resumen) â”€â”€ */}
+                          {/* ── Quick view (resumen) ── */}
                           {isExpanded && (
                             <div className="tb-paso-details">
                               {paso.header && Object.keys(paso.header).length > 0 && (
@@ -493,7 +518,7 @@ export default function TrazabilidadBusqueda() {
                                         </tbody>
                                       </table>
                                       {paso.body_rows.length > 10 && (
-                                        <p className="tb-body-more">â€¦ {paso.body_rows.length - 10} filas mÃ¡s</p>
+                                        <p className="tb-body-more">… {paso.body_rows.length - 10} filas mÃ¡s</p>
                                       )}
                                     </div>
                                   </div>
@@ -505,11 +530,11 @@ export default function TrazabilidadBusqueda() {
                             </div>
                           )}
 
-                          {/* â”€â”€ Full data panel â”€â”€ */}
+                          {/* ── Full data panel ── */}
                           {hasFd && (
                             <div className="tb-fulldata">
                               <div className="tb-fulldata-topbar">
-                                <span className="tb-fulldata-title">ðŸ“Š Datos completos del formulario</span>
+                                <span className="tb-fulldata-title">📊 Datos completos del formulario</span>
                                 <span className="tb-fulldata-hint">Selecciona columnas para enviar al agente IA</span>
                               </div>
 
@@ -535,13 +560,13 @@ export default function TrazabilidadBusqueda() {
                                     <div className="tb-tabla-topbar">
                                       <span className="tb-tabla-label">
                                         Tabla {ti + 1}
-                                        <span className="tb-tabla-stats"> Â· {tabla.total_filas} filas Â· {tabla.columnas.length} columnas</span>
+                                        <span className="tb-tabla-stats"> · {tabla.total_filas} filas · {tabla.columnas.length} columnas</span>
                                       </span>
                                       <button
                                         className={`tb-col-toggle-all ${allSel ? 'toggle-all-on' : ''}`}
                                         onClick={() => toggleAllCols(paso.form_id, ti, tabla.columnas)}
                                       >
-                                        {allSel ? 'âœ“ Quitar todo' : 'â˜‘ Seleccionar todo'}
+                                        {allSel ? '✓ Quitar todo' : '☑ Seleccionar todo'}
                                       </button>
                                     </div>
                                     <div className="tb-fulldata-table-wrap">
@@ -620,18 +645,63 @@ export default function TrazabilidadBusqueda() {
         </div>
       )}
 
-      {/* Initial guide */}
+      {/* Initial guide & Lotes List */}
       {!result && !loading && !error && (
-        <div className="tb-guide">
-          <div className="tb-guide-icon">ðŸ”—</div>
-          <h3>Trazabilidad con datos reales</h3>
-          <ol className="tb-guide-steps">
-            <li>Ingresa el nÃºmero de lote y haz clic en <b>Rastrear</b></li>
-            <li>En cada formulario, haz clic en <b>ðŸ“Š Datos completos</b></li>
-            <li><b>Selecciona las columnas</b> que quieres analizar (Kg, Temperatura, Especieâ€¦)</li>
-            <li>Usa el <b>ðŸ¤– Panel IA</b> para calcular mermas, comparar valores o generar reportes</li>
-          </ol>
-          <p className="tb-guide-tip">ðŸ’¡ La IA recibe el contenido real de los formularios como contexto</p>
+        <div className="tb-guide-and-lotes">
+          <div className="tb-guide">
+            <div className="tb-guide-icon">🔗</div>
+            <h3>Trazabilidad con datos reales</h3>
+            <ol className="tb-guide-steps">
+              <li>Ingresa el número de lote y haz clic en <b>Rastrear</b></li>
+              <li>En cada formulario, haz clic en <b>📊 Datos completos</b></li>
+              <li><b>Selecciona las columnas</b> que quieres analizar (Kg, Temperatura, Especie…)</li>
+              <li>Usa el <b>🤖 Panel IA</b> para calcular mermas, comparar valores o generar reportes</li>
+            </ol>
+            <p className="tb-guide-tip">💡 La IA recibe el contenido real de los formularios como contexto</p>
+          </div>
+
+          <div className="tb-lotes-list-container" style={{ marginTop: '30px', background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ borderBottom: '2px solid #0056b3', paddingBottom: '10px', color: '#0056b3' }}>
+              📦 Lotes Recientes Registrados
+            </h3>
+            {loadingLotes ? (
+              <p>⏳ Cargando lotes...</p>
+            ) : allLotes.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px', marginTop: '15px' }}>
+                {allLotes.map(l => (
+                  <div 
+                    key={l.lote} 
+                    style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '6px', cursor: 'pointer', transition: 'all 0.2s' }}
+                    onClick={() => buscar(l.lote)}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = '#0056b3'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = '#ddd'}
+                  >
+                    <div style={{ fontWeight: 'bold', fontSize: '1.1em', marginBottom: '8px', color: '#333' }}>
+                      Lote: {l.lote}
+                    </div>
+                    {l.productos && l.productos.length > 0 && (
+                      <div style={{ fontSize: '0.85em', color: '#0056b3', marginBottom: '4px' }}>
+                        <b>Producto:</b> {l.productos.join(', ')}
+                      </div>
+                    )}
+                    {l.subproductos && l.subproductos.length > 0 && (
+                      <div style={{ fontSize: '0.85em', color: '#e67e22', marginBottom: '8px' }}>
+                        <b>Subproducto:</b> {l.subproductos.join(', ')}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '5px', marginTop: '8px' }}>
+                      <span style={{ display: 'inline-block', backgroundColor: '#e9ecef', padding: '2px 6px', borderRadius: '4px', fontSize: '0.85em', marginRight: '5px' }}>
+                        {l.count} formularios
+                      </span>
+                      <span>Último: {l.last_date}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ color: '#777' }}>No hay lotes registrados recientemente.</p>
+            )}
+          </div>
         </div>
       )}
 

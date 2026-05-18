@@ -3860,9 +3860,40 @@ useEffect(() => {
         });
         
         // 🔥 PRIMERO: Construir las filas con el valor editado
+        let baseRow = { ...(element.data[rowIndex] || {}), [columnLabel]: value };
+
+        // 🆕 AUTO-RELLENO POR apiMap: si la columna que cambió tiene apiMap y hay datos en apiDetailsData,
+        // buscar el registro coincidente y rellenar automáticamente el resto de columnas apiMap de la fila.
+        const changedColTemplate = cols.find((col, ci) => colKeyMap.get(ci) === columnLabel || col.label === columnLabel);
+        if (changedColTemplate?.apiMap && apiDetailsData.length > 0) {
+          // Buscar en apiDetailsData el detalle cuyo campo apiMap coincide con el valor seleccionado
+          const matchedDetail = apiDetailsData.find(detail => {
+            const detVal = detail.hasOwnProperty(changedColTemplate.apiMap)
+              ? detail[changedColTemplate.apiMap]
+              : detail['_' + changedColTemplate.apiMap];
+            return detVal !== undefined && detVal !== null && String(detVal) === String(value);
+          });
+
+          if (matchedDetail) {
+            // Rellenar todas las demás columnas de la fila que tengan apiMap
+            cols.forEach((col, ci) => {
+              if (!col.apiMap || col.apiMap === changedColTemplate.apiMap) return;
+              const colKey = colKeyMap.get(ci);
+              const detVal = matchedDetail.hasOwnProperty(col.apiMap)
+                ? matchedDetail[col.apiMap]
+                : matchedDetail.hasOwnProperty('_' + col.apiMap)
+                  ? matchedDetail['_' + col.apiMap]
+                  : undefined;
+              if (detVal !== undefined && detVal !== null && detVal !== '') {
+                baseRow[colKey] = String(detVal);
+              }
+            });
+          }
+        }
+
         let updatedRows = element.data.map((row, rIndex) => {
           if (rIndex === rowIndex) {
-            return { ...row, [columnLabel]: value };
+            return baseRow;
           }
           return row;
         });
@@ -4005,7 +4036,7 @@ useEffect(() => {
       return element;
     }));
     setHasUnsavedChanges(true);
-  }, [selectedTemplate, shouldEnableAutoSum]);
+  }, [selectedTemplate, shouldEnableAutoSum, apiDetailsData]);
   
   // --- RENDER FIELD CORREGIDO (COMBO BOX FIX) ---
  // --- RENDER FIELD CORREGIDO (COMPLETO Y DEFINITIVO) ---
@@ -5265,17 +5296,76 @@ useEffect(() => {
                   // 🆕 Guardar CABECERAS para los selectores
                   setApiMovimientoData(cabecerasArray);
                   
-                  // Guardar DETALLES para las tablas (como opciones de SELECT, NO auto-llenar filas)
+                  // Guardar DETALLES para las tablas (opciones de SELECT + auto-relleno de filas)
                   setApiDetailsData(combinedDetails);
-                  console.log('✅ Datos actualizados (disponibles en selects):', {
+                  console.log('✅ Datos actualizados (disponibles en selects + auto-relleno):', {
                     apiMovimientoData: cabecerasArray.length,
                     apiDetailsData: combinedDetails.length
                   });
                   
-                  // 🎯 NO auto-llenar tablas: las filas se mantienen vacías
-                  // Los datos de la API estarán disponibles como opciones en los SELECT dropdowns
-                  // de cada celda que tenga apiMap configurado (renderField se encarga)
-                  console.log('ℹ️ Las tablas mantienen sus filas vacías. Los datos de la API aparecerán como opciones en los selectores de cada celda.');
+                  // 🔥 AUTO-RELLENAR tablas cuyos columnas tengan apiMap configurado
+                  // Si una columna tiene apiMap = "detProducto" o "detPesoRomaneo", etc.,
+                  // se crea una fila por cada detalle de la API con esos valores pre-cargados.
+                  if (combinedDetails.length > 0 && selectedTemplate?.bodyElements) {
+                    setBodyData(prevBody => {
+                      const newBodyData = [...prevBody];
+
+                      (selectedTemplate.bodyElements || []).forEach((templateElement) => {
+                        if (templateElement.type !== 'table') return;
+
+                        const cols = templateElement.columns || [];
+                        const colsWithApiMap = cols.filter(col => col.apiMap);
+                        if (colsWithApiMap.length === 0) return;
+
+                        // Construir mapa de claves deduplicadas (igual que createNewTab)
+                        const seenLabels = new Map();
+                        cols.forEach((col, ci) => {
+                          const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+                          if (!seenLabels.has(lbl)) seenLabels.set(lbl, []);
+                          seenLabels.get(lbl).push(ci);
+                        });
+                        const getColKey = (col, ci) => {
+                          const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+                          return seenLabels.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl;
+                        };
+
+                        const bodyIndex = newBodyData.findIndex(b => b.id === templateElement.id);
+                        if (bodyIndex === -1) return;
+
+                        // Crear una fila por cada detalle de la API
+                        const newRows = combinedDetails.map((detail) => {
+                          const row = {};
+                          cols.forEach((col, ci) => {
+                            const colKey = getColKey(col, ci);
+                            if (col.apiMap) {
+                              // Buscar directamente o con prefijo _
+                              const val = detail.hasOwnProperty(col.apiMap)
+                                ? detail[col.apiMap]
+                                : detail.hasOwnProperty('_' + col.apiMap)
+                                  ? detail['_' + col.apiMap]
+                                  : '';
+                              row[colKey] = val !== null && val !== undefined ? String(val) : '';
+                            } else {
+                              row[colKey] = '';
+                            }
+                          });
+                          return row;
+                        });
+
+                        newBodyData[bodyIndex] = {
+                          ...newBodyData[bodyIndex],
+                          data: newRows
+                        };
+
+                        console.log(`✅ Tabla "${templateElement.title || templateElement.id}" auto-rellenada con ${newRows.length} filas desde API`);
+                      });
+
+                      return newBodyData;
+                    });
+                    console.log(`✅ Auto-relleno completado: ${combinedDetails.length} filas cargadas en las tablas con apiMap.`);
+                  } else {
+                    console.log('ℹ️ Sin detalles para auto-rellenar o template sin tablas con apiMap.');
+                  }
                   
                 } catch (err) {
                   console.error('❌ Error cargando detalles:', err);
