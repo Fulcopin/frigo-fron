@@ -16,6 +16,8 @@ import "./FillForm.tablet.css"  // 📱 Estilos optimizados para tablets
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import authService from "../services/authService";
 import { evaluarFormula as evaluarFormulaEngine, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
+import LoteTrazabilidadPanel from '../components/LoteTrazabilidadPanel';
+import { isTrazaEnabled, addLotes, getLotesDisponibles } from '../hooks/useLoteStore';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -223,7 +225,51 @@ function FillForm() {
   const [columnImporterLoading, setColumnImporterLoading] = useState(false); // Estado de carga
   const [columnImporterError, setColumnImporterError] = useState(null); // Estado de error
 
-  // 🔄 Forzar re-render cuando apiDetailsData O apiMovimientoData cambien
+  // 📦 Trazabilidad de lotes
+  const [loteTraza, setLoteTraza] = useState({
+    procesoOrigen: '', loteOrigen: '', productoOrigen: '', pesoEntrada: 0,
+    desperdicios: [], lotesGenerados: [], totalDesperdicio: 0,
+    pesoNetoDisponible: 0, totalPesoOut: 0, isBalanced: false
+  });
+  const [formLotesDisp, setFormLotesDisp] = useState([]);
+  const [panelResetKey, setPanelResetKey] = useState(0);
+  // Trazabilidad extra columns per table element: { [elementIndex]: { [rowIndex]: { _clasificacion, _producto, _nuevoLote } } }
+  const [tableTrazaData, setTableTrazaData] = useState({});
+  const handleTableTrazaChange = (elementIndex, rowIndex, field, value) => {
+    setTableTrazaData(prev => ({
+      ...prev,
+      [elementIndex]: {
+        ...(prev[elementIndex] || {}),
+        [rowIndex]: { ...(prev[elementIndex]?.[rowIndex] || {}), [field]: value }
+      }
+    }));
+  };
+
+  // � Cargar lotes disponibles cuando el template tiene trazabilidad activa
+  useEffect(() => {
+    if (selectedTemplate && isTrazaEnabled(selectedTemplate.templateID)) {
+      getLotesDisponibles()
+        .then(d => setFormLotesDisp(d || []))
+        .catch(() => setFormLotesDisp([]));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTemplate?.templateID]);
+
+  const handleQuickLoteChange = (field, value) => {
+    const updated = { ...loteTraza, [field]: value };
+    if (field === 'loteOrigen') {
+      const found = formLotesDisp.find(l => (l.lote || l.numeroLote) === value);
+      if (found) {
+        updated.procesoOrigen = found.proceso || '';
+        updated.productoOrigen = found.producto || '';
+        updated.pesoEntrada = Number(found.pesoNeto) || Number(found.pesoEntrada) || 0;
+      }
+      setPanelResetKey(k => k + 1);
+    }
+    setLoteTraza(updated);
+  };
+
+  // �🔄 Forzar re-render cuando apiDetailsData O apiMovimientoData cambien
   useEffect(() => {
     if (apiDetailsData.length > 0 || apiMovimientoData.length > 0) {
       console.log('🔄 Datos de API actualizados → Forzando re-render de selectores');
@@ -4996,6 +5042,25 @@ useEffect(() => {
 
       // ✅ EL GUARDADO FUE EXITOSO
       setHasUnsavedChanges(false);
+
+      // 📦 Guardar lotes de trazabilidad en inventario
+      if (isTrazaEnabled(selectedTemplate?.templateID) && loteTraza.lotesGenerados?.some(l => l.lote)) {
+        const formId = responseData?.formID || responseData?.id || String(Date.now());
+        const fecha = new Date().toISOString().split('T')[0];
+        const lotesAGuardar = loteTraza.lotesGenerados
+          .filter(lg => lg.lote)
+          .map(lg => ({
+            lote: lg.lote, producto: lg.producto, clasificacion: lg.clasificacion,
+            pesoEntrada: Number(lg.pesoNeto) || 0, desperdicio: 0,
+            proceso: selectedTemplate.proceso || selectedTemplate.nombre || '',
+            lotePadre: loteTraza.loteOrigen || '',
+            formId, templateId: String(selectedTemplate.templateID), fecha
+          }));
+        await addLotes(lotesAGuardar, loteTraza.loteOrigen || null);
+        setLoteTraza({ procesoOrigen: '', loteOrigen: '', productoOrigen: '', pesoEntrada: 0,
+          desperdicios: [], lotesGenerados: [], totalDesperdicio: 0,
+          pesoNetoDisponible: 0, totalPesoOut: 0, isBalanced: false });
+      }
       
       // 🗑️ Eliminar borrador de BD si existía
       if (currentDraftId) {
@@ -7312,6 +7377,78 @@ useEffect(() => {
           </div>
         )}
 
+        {/* 📦 SECCIÓN RÁPIDA DE LOTE TRAZABILIDAD — solo cuando está habilitada */}
+        {selectedTemplate && isTrazaEnabled(selectedTemplate.templateID) && (
+          <AccordionSection
+            title="Lote de Trazabilidad"
+            icon="🔗"
+            badge={loteTraza.loteOrigen ? `Lote: ${loteTraza.loteOrigen}` : 'Sin lote'}
+            isExpanded={expandedSections.loteTraza !== false}
+            onToggle={() => toggleSection('loteTraza')}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', padding: '4px 0' }}>
+              <div className="form-field">
+                <label>📥 Lote de Entrada</label>
+                {formLotesDisp.length > 0 ? (
+                  <select
+                    value={loteTraza.loteOrigen || ''}
+                    onChange={e => handleQuickLoteChange('loteOrigen', e.target.value)}
+                    style={{ width: '100%' }}
+                  >
+                    <option value="">— Seleccionar del inventario —</option>
+                    {formLotesDisp.map(l => (
+                      <option key={l.id} value={l.lote || l.numeroLote}>
+                        {l.lote || l.numeroLote} — {l.producto} ({Number(l.pesoNeto).toFixed(1)} lbs disp.)
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={loteTraza.loteOrigen || ''}
+                    onChange={e => handleQuickLoteChange('loteOrigen', e.target.value)}
+                    placeholder="Ej: 260511"
+                    style={{ width: '100%' }}
+                  />
+                )}
+              </div>
+              <div className="form-field">
+                <label>⚙️ Proceso</label>
+                <input
+                  value={loteTraza.procesoOrigen || ''}
+                  onChange={e => handleQuickLoteChange('procesoOrigen', e.target.value)}
+                  placeholder="Ej: Fileteo, Corte…"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div className="form-field">
+                <label>🐟 Producto</label>
+                <input
+                  value={loteTraza.productoOrigen || ''}
+                  onChange={e => handleQuickLoteChange('productoOrigen', e.target.value)}
+                  placeholder="Ej: Mahi Mahi"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              {loteTraza.pesoEntrada > 0 && (
+                <div className="form-field">
+                  <label>⚖️ Peso entrada (lbs)</label>
+                  <input
+                    type="number"
+                    value={loteTraza.pesoEntrada || ''}
+                    onChange={e => handleQuickLoteChange('pesoEntrada', Number(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                </div>
+              )}
+            </div>
+            {loteTraza.loteOrigen && (
+              <div style={{ marginTop: '8px', padding: '6px 10px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '6px', fontSize: '0.82rem', color: '#166534' }}>
+                ✅ Lote <strong>{loteTraza.loteOrigen}</strong> seleccionado → completa el balance en la sección de Trazabilidad al final del formulario
+              </div>
+            )}
+          </AccordionSection>
+        )}
+
         {/* HEADER FIELDS CON ACORDEÓN */}
         {selectedTemplate.headerFields?.length > 0 && (
             <AccordionSection
@@ -8048,6 +8185,13 @@ useEffect(() => {
                         {groupedColumns.map((group, index) => (
                           <th key={index} colSpan={group.columns.length}>{group.groupName}</th>
                         ))}
+                        {selectedTemplate && isTrazaEnabled(selectedTemplate.templateID) && (
+                          <>
+                            <th rowSpan="2" style={{ background: '#064e3b', color: '#d1fae5', minWidth: '110px', whiteSpace: 'normal', fontSize: '0.68rem', verticalAlign: 'middle', textAlign: 'center' }}>Clasificación</th>
+                            <th rowSpan="2" style={{ background: '#064e3b', color: '#d1fae5', minWidth: '110px', whiteSpace: 'normal', fontSize: '0.68rem', verticalAlign: 'middle', textAlign: 'center' }}>Producto</th>
+                            <th rowSpan="2" style={{ background: '#064e3b', color: '#d1fae5', minWidth: '110px', whiteSpace: 'normal', fontSize: '0.68rem', verticalAlign: 'middle', textAlign: 'center' }}>Nuevo Lote</th>
+                          </>
+                        )}
                         <th rowSpan="2" style={{ background: '#4b5563', color: 'white', position: 'sticky', right: 0, zIndex: 12, minWidth: '80px' }}>Acciones</th>
                       </tr>
                       <tr>
@@ -8417,6 +8561,45 @@ useEffect(() => {
           );
         })}
         
+        {selectedTemplate && isTrazaEnabled(selectedTemplate.templateID) && (() => {
+          const trazaRow = tableTrazaData?.[elementIndex]?.[capturedRowIndex] || {};
+          return (
+            <>
+              <td style={{ padding: '2px 4px', minWidth: '110px' }}>
+                <select
+                  value={trazaRow._clasificacion || ''}
+                  onChange={e => handleTableTrazaChange(elementIndex, capturedRowIndex, '_clasificacion', e.target.value)}
+                  style={{ width: '100%', fontSize: '0.78rem', padding: '3px 4px', border: '1px solid #6ee7b7', borderRadius: '4px', background: '#f0fdf4' }}
+                >
+                  <option value="">--</option>
+                  <option>Cabeza</option>
+                  <option>Cola</option>
+                  <option>Filete</option>
+                  <option>Piel</option>
+                  <option>Recorte</option>
+                  <option>Merma</option>
+                  <option>Otro</option>
+                </select>
+              </td>
+              <td style={{ padding: '2px 4px', minWidth: '110px' }}>
+                <input
+                  value={trazaRow._producto || ''}
+                  onChange={e => handleTableTrazaChange(elementIndex, capturedRowIndex, '_producto', e.target.value)}
+                  placeholder="Producto..."
+                  style={{ width: '100%', fontSize: '0.78rem', padding: '3px 4px', border: '1px solid #6ee7b7', borderRadius: '4px', background: '#f0fdf4' }}
+                />
+              </td>
+              <td style={{ padding: '2px 4px', minWidth: '110px' }}>
+                <input
+                  value={trazaRow._nuevoLote || ''}
+                  onChange={e => handleTableTrazaChange(elementIndex, capturedRowIndex, '_nuevoLote', e.target.value)}
+                  placeholder="Nº lote..."
+                  style={{ width: '100%', fontSize: '0.78rem', padding: '3px 4px', border: '1px solid #6ee7b7', borderRadius: '4px', background: '#f0fdf4' }}
+                />
+              </td>
+            </>
+          );
+        })()}
         {(() => {
           const delRowIndex = capturedRowIndex;
           return (
@@ -8916,6 +9099,15 @@ useEffect(() => {
                   })}
                 </div>
           </AccordionSection>
+        )}
+
+        {/* 📦 Panel de Trazabilidad de Lotes — solo cuando está habilitado para este template */}
+        {selectedTemplate && isTrazaEnabled(selectedTemplate.templateID) && (
+          <LoteTrazabilidadPanel
+            key={panelResetKey}
+            onChange={setLoteTraza}
+            initialData={loteTraza.loteOrigen ? loteTraza : undefined}
+          />
         )}
 
         <div className="form-actions-bottom" style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>

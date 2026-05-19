@@ -28,7 +28,8 @@ import DocumentRegistry from "./pages/DocumentRegistry";
 import SeedBPMTemplates from "./pages/SeedBPMTemplates";
 import TrazabilidadConfig from "./pages/TrazabilidadConfig";
 import TrazabilidadBusqueda from "./pages/TrazabilidadBusqueda";
-import MassBalanceForm from "./pages/MassBalanceForm";
+import MassBalanceForm from "./pages/MassBalanceForm"
+import LotesInventario from "./pages/LotesInventario"
 import FrigoVoice from "./components/FrigoVoice"
 import "./App.css"
 
@@ -83,6 +84,7 @@ function Navigation() {
     { to: "/trazabilidad", icon: "🔍", label: "Consultar Trazabilidad", show: true },
     { to: "/trazabilidad-config", icon: "🔗", label: "Config. Trazabilidad", show: isAdminOrSupervisor },
     { to: "/mass-balance", icon: "⚖️", label: "Balance de Masas", show: true },
+    { to: "/lotes-inventario", icon: "📦", label: "Inventario de Lotes", show: true },
   ]
 
   return (
@@ -190,7 +192,8 @@ function getPageName(pathname) {
     '/seed-bpm-templates': 'Crear Plantillas BPM',
     '/trazabilidad': 'Trazabilidad de Lotes',
     '/trazabilidad-config': 'Configuración de Trazabilidad',
-    '/mass-balance': 'Balance de Masas'
+    '/mass-balance': 'Balance de Masas',
+    '/lotes-inventario': 'Inventario de Lotes',
   }
   
   // Para rutas dinámicas como /edit-template/:id
@@ -362,6 +365,15 @@ function App() {
               <Route path="/mass-balance" element={
                 <ProtectedRoute>
                   <MassBalanceForm />
+                </ProtectedRoute>
+              } />
+
+              {/* Inventario de Lotes - Acceso para todos */}
+              <Route path="/lotes-inventario" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <LotesInventario />
+                  </ErrorBoundary>
                 </ProtectedRoute>
               } />
             </Routes>

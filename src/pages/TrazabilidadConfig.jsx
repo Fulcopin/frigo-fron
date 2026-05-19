@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import authService from '../services/authService';
 import { agentQuery, mcpListarTemplates } from '../services/aiService';
+import { isTrazaEnabled, setTrazaEnabled } from '../hooks/useLoteStore';
 import './TrazabilidadConfig.css';
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
@@ -142,6 +143,8 @@ export default function TrazabilidadConfig() {
   const [selectedFormato, setSelectedFormato] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activePanel, setActivePanel] = useState('list'); // 'list' | 'detail'
+  const [mainTab, setMainTab] = useState('formatos'); // 'formatos' | 'lotes'
+  const [lotesEnabled, setLotesEnabled] = useState({});
 
   // Format form modal
   const [showFormatoModal, setShowFormatoModal] = useState(false);
@@ -240,7 +243,15 @@ export default function TrazabilidadConfig() {
   // ── Load templates via MCP listar_templates ─────────────────────────────────
   useEffect(() => {
     mcpListarTemplates()
-      .then(arr => setTemplates(arr))
+      .then(arr => {
+        setTemplates(arr);
+        // Initialize lotesEnabled state from useLoteStore
+        const enabled = {};
+        arr.forEach(t => {
+          enabled[String(t.templateID)] = isTrazaEnabled(String(t.templateID));
+        });
+        setLotesEnabled(enabled);
+      })
       .catch(() => setTemplates([]))
       .finally(() => setLoadingTemplates(false));
   }, []);
@@ -540,15 +551,94 @@ export default function TrazabilidadConfig() {
             Define los formatos y el orden de los reportes para auditorías y autoridades
           </p>
         </div>
-        {isAdmin && (
+        {isAdmin && mainTab === 'formatos' && (
           <button className="traz-btn-primary" onClick={() => openFormatoModal()}>
             + Nuevo formato
           </button>
         )}
       </div>
 
+      {/* ── MAIN TAB BAR ───────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: '4px', borderBottom: '2px solid #e2e8f0', marginBottom: '16px' }}>
+        {[
+          { key: 'formatos', label: '🔗 Formatos de Trazabilidad' },
+          { key: 'lotes', label: '📦 Lotes por Template' },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setMainTab(t.key)}
+            style={{
+              background: 'none', border: 'none',
+              borderBottom: mainTab === t.key ? '2px solid #1d4ed8' : '2px solid transparent',
+              padding: '8px 16px', fontSize: '13px', fontWeight: 600,
+              color: mainTab === t.key ? '#1d4ed8' : '#64748b',
+              cursor: 'pointer', marginBottom: '-2px'
+            }}
+          >{t.label}</button>
+        ))}
+      </div>
+
+      {/* ── LOTES CONFIG TAB ───────────────────────────────────────────────── */}
+      {mainTab === 'lotes' && (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>Habilitar seguimiento de lotes por template</h2>
+            <p style={{ margin: 0, color: '#64748b', fontSize: '12px' }}>
+              Al activar un template, el panel &quot;Trazabilidad de Lotes&quot; aparecerá en ese formulario y los lotes generados se guardarán en el inventario automáticamente.
+            </p>
+          </div>
+          {loadingTemplates ? (
+            <p style={{ color: '#94a3b8' }}>Cargando templates…</p>
+          ) : templates.length === 0 ? (
+            <p style={{ color: '#94a3b8' }}>No hay templates disponibles.</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ background: '#f1f5f9' }}>
+                  <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>ID</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Template</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Proceso</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Seguimiento de lotes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {templates.map(t => {
+                  const tid = String(t.templateID);
+                  const enabled = !!lotesEnabled[tid];
+                  return (
+                    <tr key={tid} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#94a3b8' }}>{t.templateID}</td>
+                      <td style={{ padding: '7px 10px', fontWeight: 600 }}>{t.nombre}</td>
+                      <td style={{ padding: '7px 10px', color: '#64748b' }}>{t.proceso || '—'}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                        <button
+                          onClick={() => {
+                            const next = !enabled;
+                            setTrazaEnabled(tid, next);
+                            setLotesEnabled(prev => ({ ...prev, [tid]: next }));
+                          }}
+                          style={{
+                            padding: '4px 16px', borderRadius: '20px', fontSize: '12px',
+                            fontWeight: 700, border: 'none', cursor: 'pointer',
+                            background: enabled ? '#dcfce7' : '#f1f5f9',
+                            color: enabled ? '#15803d' : '#64748b',
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          {enabled ? '✅ Activado' : '○ Desactivado'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
       {/* ── TWO-PANEL LAYOUT ─────────────────────────────────────────────────── */}
-      <div className="traz-panels">
+      <div className="traz-panels" style={{ display: mainTab !== 'formatos' ? 'none' : undefined }}>
 
         {/* ══ LEFT PANEL: FORMATS LIST ════════════════════════════════════════ */}
         <div className={`traz-panel-left ${activePanel === 'detail' && selectedFormato ? 'panel-hidden-mobile' : ''}`}>
