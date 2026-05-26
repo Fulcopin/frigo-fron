@@ -16,14 +16,39 @@ const TRAZA_KEY = 'frigolab_traza_templates';
 
 /**
  * Normaliza un objeto de lote del backend al shape que usa el frontend.
- * El backend usa `numeroLote`, el frontend usa `lote`.
+ * El backend puede devolver PascalCase (NumeroLote) o camelCase (numeroLote).
  */
 function _norm(l) {
   if (!l) return l;
-  return { ...l, lote: l.numeroLote ?? l.lote ?? '' };
+  // Normalizar PascalCase → camelCase para todos los campos relevantes
+  const n = {
+    ...l,
+    id:            l.id            ?? l.Id,
+    lote:          l.lote          ?? l.numeroLote  ?? l.NumeroLote  ?? '',
+    numeroLote:    l.numeroLote    ?? l.NumeroLote  ?? l.lote        ?? '',
+    proceso:       l.proceso       ?? l.Proceso      ?? '',
+    producto:      l.producto      ?? l.Producto     ?? '',
+    clasificacion: l.clasificacion ?? l.Clasificacion ?? '',
+    pesoEntrada:   l.pesoEntrada   ?? l.PesoEntrada  ?? 0,
+    desperdicio:   l.desperdicio   ?? l.Desperdicio  ?? 0,
+    tipoDesperdicio: l.tipoDesperdicio ?? l.TipoDesperdicio ?? '',
+    pesoNeto:      l.pesoNeto      ?? l.PesoNeto     ?? 0,
+    estado:        l.estado        ?? l.Estado       ?? 'disponible',
+    lotePadre:     l.lotePadre     ?? l.LotePadre    ?? '',
+    formId:        l.formId        ?? l.FormId       ?? null,
+    templateId:    l.templateId    ?? l.TemplateId   ?? '',
+    fecha:         l.fecha         ?? l.Fecha        ?? null,
+    notas:         l.notas         ?? l.Notas        ?? '',
+    creadoEn:      l.creadoEn      ?? l.CreadoEn     ?? null,
+  };
+  return n;
 }
-function _normList(arr) {
-  return Array.isArray(arr) ? arr.map(_norm) : arr;
+function _normList(data) {
+  // ReferenceHandler.Preserve envuelve arrays como { "$id": "1", "$values": [...] }
+  const arr = Array.isArray(data) ? data
+    : (data && Array.isArray(data['$values'])) ? data['$values']
+    : [];
+  return arr.map(_norm);
 }
 
 async function _apiFetch(url, options = {}) {
@@ -195,6 +220,18 @@ export async function liberarLote(id) {
 export async function deleteLote(id) {
   return _apiFetch(`${API_LOTES}/${id}`, {
     method: 'DELETE',
+  });
+}
+
+/**
+ * Escanea todos los formularios guardados en la BD, extrae los lotes
+ * que aparecen en los campos JSON y los registra en LotesInventario.
+ * Omite lotes que ya existen. Devuelve un resumen del proceso.
+ * @returns {{ totalFormulariosEscaneados, lotesDetectadosEnJson, lotesNuevosRegistrados, lotesYaExistentes, lotes }}
+ */
+export async function sincronizarDesdeFormularios() {
+  return _apiFetch(`${API_LOTES}/sincronizar-desde-formularios`, {
+    method: 'POST',
   });
 }
 

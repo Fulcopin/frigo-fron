@@ -7,6 +7,7 @@ import {
   liberarLote,
   addLote,
   getArbol,
+  sincronizarDesdeFormularios,
 } from '../hooks/useLoteStore';
 import './LotesInventario.css';
 
@@ -57,6 +58,8 @@ export default function LotesInventario() {
   const [filtroProc, setFiltroProc] = useState('');
   const [loading, setLoading]  = useState(false);
   const [error, setError]      = useState(null);
+  const [syncing, setSyncing]  = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
   // Modal de detalle
   const [detalleLote, setDetalleLote] = useState(null);
 
@@ -140,6 +143,21 @@ export default function LotesInventario() {
     }
   };
 
+  // ── Sincronizar desde formularios ──
+  const handleSincronizar = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await sincronizarDesdeFormularios();
+      setSyncResult(res);
+      await cargarLotes();
+    } catch (err) {
+      alert('Error al sincronizar: ' + err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // ── Guardar nuevo lote ──
   const handleGuardarNuevo = async () => {
     if (!nuevo.lote || !nuevo.proceso || !n(nuevo.pesoEntrada)) {
@@ -173,13 +191,36 @@ export default function LotesInventario() {
           <h1>Inventario de Lotes</h1>
           <span className="li-page-sub">Trazabilidad de proceso</span>
         </div>
-        <button className="li-btn-primary" onClick={() => setShowNuevo(true)}>
-          + Nuevo lote
-        </button>
+        <div className="li-header-actions">
+          <button
+            className="li-btn-secondary"
+            onClick={handleSincronizar}
+            disabled={syncing}
+            title="Escanea todos los formularios guardados y registra los lotes detectados en el inventario"
+          >
+            {syncing ? '⏳ Sincronizando…' : '🔄 Sincronizar desde formularios'}
+          </button>
+          <button className="li-btn-primary" onClick={() => setShowNuevo(true)}>
+            + Nuevo lote
+          </button>
+        </div>
       </div>
 
       {error && <div className="li-error">⚠️ {error}</div>}
       {loading && <div className="li-loading">Cargando lotes…</div>}
+
+      {/* ── RESULTADO SINCRONIZACIÓN ── */}
+      {syncResult && (
+        <div className="li-sync-result">
+          <span>✅ Sincronización completada —</span>
+          <strong> {syncResult.lotesNuevosRegistrados} lotes nuevos</strong> registrados
+          {syncResult.lotesYaExistentes > 0 && (
+            <span> · {syncResult.lotesYaExistentes} ya existían</span>
+          )}
+          <span> · {syncResult.totalFormulariosEscaneados} formularios escaneados</span>
+          <button className="li-sync-close" onClick={() => setSyncResult(null)}>✕</button>
+        </div>
+      )}
 
       {/* ── STATS ── */}
       <div className="li-stats">

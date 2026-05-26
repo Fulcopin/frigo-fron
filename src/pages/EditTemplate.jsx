@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import "./CreateTemplate.css"
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
-import { MAPPABLE_API_FIELDS } from "../api/apiMappings";
+import { MAPPABLE_API_FIELDS, API_CODIGO_ENDPOINTS, API_CODIGO_JSON_FIELDS } from "../api/apiMappings";
 import UserSelector from "../components/UserSelector";
 import { fetchUsers } from "../services/userService";
 
@@ -65,6 +65,15 @@ function EditTemplate() {
 
   const sectionFieldTypes = fieldTypes.filter(t => true);
   const tableFieldTypes = fieldTypes.filter(t => t.value !== "image");
+
+  // Campos por defecto de Lote Entrante (5 campos)
+  const DEFAULT_LE_CAMPOS = [
+    { key: 'lote',          label: 'Lote',             activo: true, apiMap: 'cabId' },
+    { key: 'proceso',       label: 'Proceso Entrante', activo: true, apiMap: 'cabTipo' },
+    { key: 'clasificacion', label: 'Clasificación',    activo: true, apiMap: 'cabEstado' },
+    { key: 'tipoProducto',  label: 'Tipo de Producto', activo: true, apiMap: 'detEspecie' },
+    { key: 'producto',      label: 'Producto',         activo: true, apiMap: 'detProducto' },
+  ];
 
   // ✅ Cargar puestos desde la API de Signatures
   useEffect(() => {
@@ -169,12 +178,22 @@ function EditTemplate() {
   const addHeaderField = () => setTemplate((prev) => ({ ...prev, headerFields: [...prev.headerFields, { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" }] }));
   const updateHeaderField = (index, field, value) => setTemplate((prev) => ({ ...prev, headerFields: prev.headerFields.map((item, i) => (i === index ? { ...item, [field]: value } : item)) }));
   const removeHeaderField = (index) => setTemplate((prev) => ({ ...prev, headerFields: prev.headerFields.filter((_, i) => i !== index) }));
+  const addLoteEntranteToHeader = () => setTemplate(prev => ({ ...prev, headerFields: [...prev.headerFields, {
+    id: `le_h_${Date.now()}`, type: 'lote_entrante', label: 'Lote Entrante', usaApi: false,
+    campos: [
+      { key: 'lote',          label: 'Lote',             activo: true, apiMap: 'cabId' },
+      { key: 'proceso',       label: 'Proceso Entrante', activo: true, apiMap: 'cabTipo' },
+      { key: 'clasificacion', label: 'Clasificación',    activo: true, apiMap: 'cabEstado' },
+      { key: 'tipoProducto',  label: 'Tipo de Producto', activo: true, apiMap: 'detEspecie' },
+      { key: 'producto',      label: 'Producto',         activo: true, apiMap: 'detProducto' },
+    ]
+  }] }));
 
   const addBodyElement = (type) => {
     let newElement = {
       id: Date.now(),
       type: type,
-      title: type === 'section' ? 'Nueva Sección de Campos' : type === 'observaciones' ? 'Observaciones' : type === 'tinas' ? 'Control de Tinas' : type === 'nota_estatica' ? 'NOTA' : 'Nueva Tabla de Datos',
+      title: type === 'section' ? 'Nueva Sección de Campos' : type === 'observaciones' ? 'Observaciones' : type === 'tinas' ? 'Control de Tinas' : type === 'nota_estatica' ? 'NOTA' : type === 'lote_entrante' ? 'Datos de Lote Entrante' : 'Nueva Tabla de Datos',
     };
     if (type === 'section') {
       newElement.fields = [];
@@ -195,6 +214,15 @@ function EditTemplate() {
         ],
         cycles: 3,
       };
+    } else if (type === 'lote_entrante') {
+      newElement.usaApi = false;
+      newElement.campos = [
+        { key: 'lote',          label: 'Lote',             activo: true, apiMap: 'cabId' },
+        { key: 'proceso',       label: 'Proceso Entrante', activo: true, apiMap: 'cabTipo' },
+        { key: 'clasificacion', label: 'Clasificación',    activo: true, apiMap: 'cabEstado' },
+        { key: 'tipoProducto',  label: 'Tipo de Producto', activo: true, apiMap: 'detEspecie' },
+        { key: 'producto',      label: 'Producto',         activo: true, apiMap: 'detProducto' },
+      ];
     } else {
       newElement.columns = [];
       newElement.defaultRows = 5;
@@ -616,13 +644,90 @@ function EditTemplate() {
       <div className="form-section">
         <div className="section-header">
           <h2>📝 Campos del Encabezado</h2>
-          <button onClick={addHeaderField} className="btn-add">+ Agregar Campo</button>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button onClick={addHeaderField} className="btn-add">+ Agregar Campo</button>
+            <button onClick={addLoteEntranteToHeader} className="btn-add" style={{ background: '#16a34a', borderColor: '#16a34a' }}>📦 + Lote Entrante</button>
+          </div>
         </div>
         {template.headerFields.map((field, index) => (
           <div key={index} className="field-item">
 
-            {/* ═══ NOTA EN ENCABEZADO ═══ */}
-            {field.type === "nota" ? (
+            {/* ═══ LOTE ENTRANTE EN ENCABEZADO ═══ */}
+            {field.type === 'lote_entrante' ? (
+              <div style={{ background: '#f0fdf4', border: '2px solid #86efac', borderRadius: '12px', padding: '16px', width: '100%', boxSizing: 'border-box' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                  <strong style={{ color: '#15803d', fontSize: '14px' }}>📦 Lote Entrante — Encabezado</strong>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input type="text" value={field.label} onChange={(e) => updateHeaderField(index, 'label', e.target.value)}
+                      placeholder="Nombre del bloque" style={{ padding: '5px 8px', border: '1px solid #86efac', borderRadius: '6px', fontSize: '13px', minWidth: '160px' }} />
+                    <button onClick={() => removeHeaderField(index)} className="btn-remove" title="Eliminar">🗑️</button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', padding: '8px 12px', background: field.usaApi !== false ? '#dcfce7' : '#f3f4f6', borderRadius: '6px', border: `1px solid ${field.usaApi !== false ? '#86efac' : '#d1d5db'}` }}>
+                  <input type="checkbox" id={`h-usaApi-et-${index}`} checked={field.usaApi !== false} onChange={(e) => updateHeaderField(index, 'usaApi', e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
+                  <label htmlFor={`h-usaApi-et-${index}`} style={{ cursor: 'pointer', fontWeight: 600, color: field.usaApi !== false ? '#15803d' : '#4a5568', fontSize: '13px', margin: 0 }}>📡 Usa API Externa (autocompletar desde ERP)</label>
+                </div>
+
+                {/* ─── Vincular con todas las tablas (desde encabezado) ─── */}
+                <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => {
+                      const refVal = `header:${field.id || field.label}`;
+                      setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map(el => {
+                        if (el.type !== 'table') return el;
+                        const refs = Array.isArray(el.loteEntranteRefs) ? el.loteEntranteRefs : (el.loteEntranteRef ? [String(el.loteEntranteRef)] : []);
+                        const next = refs.includes(refVal) ? refs : [...refs, refVal];
+                        return { ...el, loteEntranteRefs: next, loteEntranteRef: next[0] };
+                      })}));
+                    }}
+                    style={{ background: 'linear-gradient(135deg, #16a34a, #15803d)', color: 'white', border: 'none', borderRadius: '7px', padding: '6px 14px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    🔗 Vincular con TODAS las tablas
+                  </button>
+                  <button
+                    onClick={() => {
+                      const refVal = `header:${field.id || field.label}`;
+                      setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map(el => {
+                        if (el.type !== 'table') return el;
+                        const refs = Array.isArray(el.loteEntranteRefs) ? el.loteEntranteRefs : (el.loteEntranteRef ? [String(el.loteEntranteRef)] : []);
+                        const next = refs.filter(r => r !== refVal);
+                        return { ...el, loteEntranteRefs: next, loteEntranteRef: next[0] || null };
+                      })}));
+                    }}
+                    style={{ background: '#f3f4f6', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    ✂️ Desvincular todas
+                  </button>
+                  <span style={{ fontSize: '11px', color: '#6b7280' }}>
+                    Vinculadas: <strong style={{ color: '#15803d' }}>{template.bodyElements.filter(el => el.type === 'table' && (Array.isArray(el.loteEntranteRefs) ? el.loteEntranteRefs : (el.loteEntranteRef ? [String(el.loteEntranteRef)] : [])).includes(`header:${field.id || field.label}`)).length}</strong> / {template.bodyElements.filter(el => el.type === 'table').length}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {(field.campos || DEFAULT_LE_CAMPOS).map((campo, cIdx) => (
+                    <div key={campo.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px', background: campo.activo !== false ? 'white' : '#f9fafb', borderRadius: '6px', border: `1px solid ${campo.activo !== false ? '#86efac' : '#e5e7eb'}`, flexWrap: 'wrap' }}>
+                      <input type="checkbox" checked={campo.activo !== false} onChange={(e) => {
+                        const base = field.campos || DEFAULT_LE_CAMPOS;
+                        updateHeaderField(index, 'campos', base.map((c, i) => i === cIdx ? { ...c, activo: e.target.checked } : c));
+                      }} style={{ width: '14px', height: '14px', cursor: 'pointer', flexShrink: 0 }} />
+                      <input type="text" value={campo.label} onChange={(e) => {
+                        const base = field.campos || DEFAULT_LE_CAMPOS;
+                        updateHeaderField(index, 'campos', base.map((c, i) => i === cIdx ? { ...c, label: e.target.value } : c));
+                      }} style={{ flex: '1', minWidth: '120px', padding: '4px 7px', border: '1px solid #d1d5db', borderRadius: '5px', fontSize: '12px' }} />
+                      {field.usaApi !== false && (
+                        <input type="text" value={campo.apiMap || ''} onChange={(e) => {
+                          const base = field.campos || DEFAULT_LE_CAMPOS;
+                          updateHeaderField(index, 'campos', base.map((c, i) => i === cIdx ? { ...c, apiMap: e.target.value } : c));
+                        }} placeholder="apiMap" style={{ width: '130px', padding: '4px 7px', border: '1px solid #86efac', borderRadius: '5px', fontSize: '11px', background: '#f0fdf4' }} />
+                      )}
+                      <span style={{ fontSize: '11px', color: campo.activo !== false ? '#16a34a' : '#9ca3af', fontWeight: 500 }}>{campo.activo !== false ? '✅' : '⬜'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            ) : /* ═══ NOTA EN ENCABEZADO ═══ */
+            field.type === "nota" ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ flex: '2', minWidth: '160px' }}>
@@ -747,6 +852,7 @@ function EditTemplate() {
             <button onClick={() => addBodyElement('observaciones')} className="btn-secondary" style={{ background: '#6366f1' }}>📝 Añadir Observaciones</button>
             <button onClick={() => addBodyElement('nota_estatica')} className="btn-secondary" style={{ background: '#d97706' }}>📌 Añadir Nota/Aviso</button>
             <button onClick={() => addBodyElement('tinas')} className="btn-secondary" style={{ background: '#0891b2' }}>🧊 Añadir Control de Tinas</button>
+            <button onClick={() => addBodyElement('lote_entrante')} className="btn-secondary" style={{ background: '#16a34a' }}>📦 Añadir Lote Entrante</button>
           </div>
         </div>
         {template.bodyElements.map((element, elementIndex) => (
@@ -1297,7 +1403,127 @@ function EditTemplate() {
               </div>
             )}
 
-            {/* TABLA DE DATOS */}
+            {/* 📦 LOTE ENTRANTE */}
+            {element.type === 'lote_entrante' && (
+              <div className="body-element-content" style={{ background: '#f0fdf4', border: '2px solid #86efac', borderRadius: '12px', padding: '20px' }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <strong style={{ color: '#15803d', fontSize: '15px' }}>📦 Sección de Lote Entrante</strong>
+                  <p style={{ color: '#6b7280', fontSize: '13px', margin: '4px 0 0' }}>Campos para registrar información del lote de entrada.</p>
+                </div>
+
+                {/* Toggle Usa API */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '18px', padding: '12px 16px', background: element.usaApi !== false ? '#dcfce7' : '#f3f4f6', borderRadius: '8px', border: `2px solid ${element.usaApi !== false ? '#86efac' : '#d1d5db'}` }}>
+                  <input
+                    type="checkbox"
+                    id={`usaApi-le-${elementIndex}`}
+                    checked={element.usaApi !== false}
+                    onChange={(e) => updateBodyElement(elementIndex, 'usaApi', e.target.checked)}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor={`usaApi-le-${elementIndex}`} style={{ cursor: 'pointer', fontWeight: '600', color: element.usaApi !== false ? '#15803d' : '#4a5568', fontSize: '14px', margin: 0 }}>
+                    📡 Usa API Externa (autocompletar desde ERP)
+                  </label>
+                  {element.usaApi !== false
+                    ? <span style={{ fontSize: '12px', color: '#16a34a', marginLeft: 'auto' }}>✅ Los datos vendrán del lote seleccionado</span>
+                    : <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: 'auto' }}>✏️ El usuario ingresa manualmente</span>
+                  }
+                </div>
+
+                {/* Campos configurables */}
+                <strong style={{ display: 'block', marginBottom: '10px', color: '#166534', fontSize: '13px' }}>Campos de la sección:</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {(element.campos || DEFAULT_LE_CAMPOS).map((campo, campoIdx) => (
+                    <div key={campo.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', background: campo.activo !== false ? 'white' : '#f9fafb', borderRadius: '8px', border: `1px solid ${campo.activo !== false ? '#86efac' : '#e5e7eb'}`, flexWrap: 'wrap' }}>
+                      <input
+                        type="checkbox"
+                        checked={campo.activo !== false}
+                        onChange={(e) => {
+                          const base = element.campos || DEFAULT_LE_CAMPOS;
+                          const newCampos = base.map((c, i) => i === campoIdx ? { ...c, activo: e.target.checked } : c);
+                          updateBodyElement(elementIndex, 'campos', newCampos);
+                        }}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer', flexShrink: 0 }}
+                      />
+                      <div style={{ flex: '1', minWidth: '140px' }}>
+                        <label style={{ fontSize: '11px', color: '#6b7280', display: 'block', marginBottom: '2px' }}>Etiqueta del campo</label>
+                        <input
+                          type="text"
+                          value={campo.label}
+                          onChange={(e) => {
+                            const base = element.campos || DEFAULT_LE_CAMPOS;
+                            const newCampos = base.map((c, i) => i === campoIdx ? { ...c, label: e.target.value } : c);
+                            updateBodyElement(elementIndex, 'campos', newCampos);
+                          }}
+                          style={{ padding: '5px 8px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px', width: '100%', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                      {element.usaApi !== false && (
+                        <div style={{ minWidth: '160px' }}>
+                          <label style={{ fontSize: '11px', color: '#16a34a', display: 'block', marginBottom: '2px' }}>🔗 API Map (campo del lote)</label>
+                          <input
+                            type="text"
+                            value={campo.apiMap || ''}
+                            onChange={(e) => {
+                              const base = element.campos || DEFAULT_LE_CAMPOS;
+                              const newCampos = base.map((c, i) => i === campoIdx ? { ...c, apiMap: e.target.value } : c);
+                              updateBodyElement(elementIndex, 'campos', newCampos);
+                            }}
+                            placeholder="Ej: cabId, cabTipo..."
+                            style={{ padding: '5px 8px', border: '1px solid #86efac', borderRadius: '6px', fontSize: '12px', width: '100%', boxSizing: 'border-box', background: '#f0fdf4' }}
+                          />
+                        </div>
+                      )}
+                      <span style={{ fontSize: '12px', color: campo.activo !== false ? '#16a34a' : '#9ca3af', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                        {campo.activo !== false ? '✅ Activo' : '⬜ Inactivo'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ marginTop: '14px', padding: '10px 14px', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #bbf7d0', fontSize: '12px', color: '#166534' }}>
+                  💡 <strong>Lote:</strong> Número del lote &nbsp;|&nbsp;
+                  <strong>Proceso Entrante:</strong> Tipo de movimiento &nbsp;|&nbsp;
+                  <strong>Clasificación:</strong> Estado/calidad &nbsp;|&nbsp;
+                  <strong>Tipo de Producto:</strong> Especie/tipo &nbsp;|&nbsp;
+                  <strong>Producto:</strong> Producto del detalle
+                </div>
+
+                {/* ─── Vincular con todas las tablas ─── */}
+                <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => {
+                      const refVal = String(element.id);
+                      setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map(el => {
+                        if (el.type !== 'table') return el;
+                        const refs = Array.isArray(el.loteEntranteRefs) ? el.loteEntranteRefs : (el.loteEntranteRef ? [String(el.loteEntranteRef)] : []);
+                        const next = refs.includes(refVal) ? refs : [...refs, refVal];
+                        return { ...el, loteEntranteRefs: next, loteEntranteRef: next[0] };
+                      })}));
+                    }}
+                    style={{ background: 'linear-gradient(135deg, #16a34a, #15803d)', color: 'white', border: 'none', borderRadius: '7px', padding: '7px 16px', fontSize: '13px', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    🔗 Vincular con TODAS las tablas
+                  </button>
+                  <button
+                    onClick={() => {
+                      const refVal = String(element.id);
+                      setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map(el => {
+                        if (el.type !== 'table') return el;
+                        const refs = Array.isArray(el.loteEntranteRefs) ? el.loteEntranteRefs : (el.loteEntranteRef ? [String(el.loteEntranteRef)] : []);
+                        const next = refs.filter(r => r !== refVal);
+                        return { ...el, loteEntranteRefs: next, loteEntranteRef: next[0] || null };
+                      })}));
+                    }}
+                    style={{ background: '#f3f4f6', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '7px', padding: '7px 14px', fontSize: '13px', cursor: 'pointer' }}
+                  >
+                    ✂️ Desvincular todas
+                  </button>
+                  <span style={{ fontSize: '11px', color: '#6b7280' }}>
+                    Tablas vinculadas: <strong style={{ color: '#15803d' }}>{template.bodyElements.filter(el => el.type === 'table' && (Array.isArray(el.loteEntranteRefs) ? el.loteEntranteRefs : (el.loteEntranteRef ? [String(el.loteEntranteRef)] : [])).includes(String(element.id))).length}</strong> de <strong>{template.bodyElements.filter(el => el.type === 'table').length}</strong>
+                  </span>
+                </div>
+              </div>
+            )}}
             {element.type === 'table' && (
               <div className="body-element-content">
                 <div className="section-header-inner">
@@ -1309,6 +1535,174 @@ function EditTemplate() {
                     </div>
                   </div>
                 </div>
+
+                {/* ─── Relacionar con Lote(s) Entrante(s) ─── */}
+                {(template.bodyElements.some(el => el.type === 'lote_entrante') || template.headerFields.some(f => f.type === 'lote_entrante')) && (() => {
+                  const allLotes = [
+                    ...template.headerFields.filter(f => f.type === 'lote_entrante').map(f => ({ val: `header:${f.id || f.label}`, label: `📌 ${f.label || 'Lote Entrante'} (Encabezado)` })),
+                    ...template.bodyElements.filter(el => el.type === 'lote_entrante').map(le => ({ val: String(le.id), label: `📦 ${le.title || 'Datos de Lote Entrante'} (Cuerpo)` })),
+                  ];
+                  const refs = Array.isArray(element.loteEntranteRefs) ? element.loteEntranteRefs
+                    : element.loteEntranteRef ? [String(element.loteEntranteRef)] : [];
+                  const toggleRef = (val) => {
+                    const next = refs.includes(val) ? refs.filter(r => r !== val) : [...refs, val];
+                    updateBodyElement(elementIndex, 'loteEntranteRefs', next);
+                    updateBodyElement(elementIndex, 'loteEntranteRef', next[0] || null);
+                  };
+                  return (
+                    <div style={{ margin: '0 0 16px', padding: '12px 16px', background: '#f0fdf4', border: '2px solid #86efac', borderRadius: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 700, color: '#15803d' }}>📦 Lotes Entrantes vinculados a esta tabla</span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button onClick={() => { updateBodyElement(elementIndex, 'loteEntranteRefs', allLotes.map(l => l.val)); updateBodyElement(elementIndex, 'loteEntranteRef', allLotes[0]?.val || null); }}
+                            style={{ background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}>Todos</button>
+                          <button onClick={() => { updateBodyElement(elementIndex, 'loteEntranteRefs', []); updateBodyElement(elementIndex, 'loteEntranteRef', null); }}
+                            style={{ background: '#f3f4f6', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer' }}>Ninguno</button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {allLotes.map(lote => (
+                          <label key={lote.val} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', background: refs.includes(lote.val) ? '#dcfce7' : 'white', borderRadius: '6px', border: `1px solid ${refs.includes(lote.val) ? '#86efac' : '#e5e7eb'}`, cursor: 'pointer', fontSize: '13px', fontWeight: refs.includes(lote.val) ? 600 : 400 }}>
+                            <input type="checkbox" checked={refs.includes(lote.val)} onChange={() => toggleRef(lote.val)} style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#16a34a' }} />
+                            {lote.label}
+                          </label>
+                        ))}
+                        {allLotes.length === 0 && <span style={{ fontSize: '12px', color: '#9ca3af' }}>No hay bloques de Lote Entrante en este formulario.</span>}
+                      </div>
+                      {refs.length > 0 && <div style={{ marginTop: '8px', fontSize: '12px', color: '#16a34a' }}>✅ {refs.length} lote(s) vinculado(s) — el operario verá sus datos junto a esta tabla</div>}
+                    </div>
+                  );
+                })()}
+
+                {/* ─────────── PANEL: API POR CÓDIGO ─────────── */}
+                <div style={{
+                  background: element.usaApiPorCodigo ? 'linear-gradient(135deg, #fdf4ff, #fae8ff)' : '#f9fafb',
+                  border: `2px solid ${element.usaApiPorCodigo ? '#a855f7' : '#e5e7eb'}`,
+                  borderRadius: '12px',
+                  padding: '14px 16px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="checkbox"
+                      id={`usaApiPorCodigo-${elementIndex}`}
+                      checked={element.usaApiPorCodigo || false}
+                      onChange={(e) => updateBodyElement(elementIndex, 'usaApiPorCodigo', e.target.checked)}
+                      style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#a855f7' }}
+                    />
+                    <label htmlFor={`usaApiPorCodigo-${elementIndex}`} style={{ cursor: 'pointer', fontWeight: '600', color: element.usaApiPorCodigo ? '#7e22ce' : '#4a5568', fontSize: '14px', margin: 0 }}>
+                      🔍 API por Código (autocompletar fila al escanear/ingresar un código)
+                    </label>
+                  </div>
+
+                  {element.usaApiPorCodigo && (
+                    <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ background: '#fdf4ff', border: '1px solid #d8b4fe', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: '#6b21a8' }}>
+                        💡 Al llenar el formulario, cuando el operario ingrese un código en la columna gatillo, se llamará automáticamente a esta API y se completarán las demás columnas con el resultado.
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: '#7e22ce' }}>🌐 Endpoint de la API</label>
+                        <select
+                          value={element.apiCodigoUrl || ''}
+                          onChange={(e) => updateBodyElement(elementIndex, 'apiCodigoUrl', e.target.value)}
+                          style={{ padding: '8px 10px', border: '1.5px solid #d8b4fe', borderRadius: '6px', fontSize: '13px', background: 'white' }}
+                        >
+                          {API_CODIGO_ENDPOINTS.map(ep => (
+                            <option key={ep.value} value={ep.value}>{ep.label}</option>
+                          ))}
+                        </select>
+                        {element.apiCodigoUrl && (
+                          <div style={{ fontSize: '11px', color: '#7e22ce', marginTop: '2px', wordBreak: 'break-all' }}>
+                            🔗 Se usará: <code style={{ background: '#f3e8ff', padding: '1px 4px', borderRadius: '3px' }}>{import.meta.env.VITE_API_EXTERNAL_URL}/{element.apiCodigoUrl}&lt;código&gt;</code>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '12px', fontWeight: 600, color: '#7e22ce' }}>🎯 Columna gatillo (donde se escribe el código)</label>
+                          <select
+                            value={element.apiCodigoTriggerCol || ''}
+                            onChange={(e) => updateBodyElement(elementIndex, 'apiCodigoTriggerCol', e.target.value)}
+                            style={{ padding: '8px 10px', border: '1.5px solid #d8b4fe', borderRadius: '6px', fontSize: '13px', background: 'white' }}
+                          >
+                            <option value="">-- Seleccionar columna --</option>
+                            {(element.columns || []).filter(c => c.label).map((col, ci) => (
+                              <option key={ci} value={col.label}>{col.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div style={{ flex: 1, minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '12px', fontWeight: 600, color: '#7e22ce' }}>🔒 Campo ID oculto del JSON</label>
+                          <select
+                            value={element.apiCodigoHiddenField || ''}
+                            onChange={(e) => updateBodyElement(elementIndex, 'apiCodigoHiddenField', e.target.value)}
+                            style={{ padding: '8px 10px', border: '1.5px solid #d8b4fe', borderRadius: '6px', fontSize: '13px', background: 'white' }}
+                          >
+                            {API_CODIGO_JSON_FIELDS.map(f => (
+                              <option key={f.value} value={f.value}>{f.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {(element.columns || []).some(c => c.apiCodigo) && (
+                        <div style={{ background: 'white', border: '1px solid #e9d5ff', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#4a5568' }}>
+                          <strong style={{ color: '#7e22ce' }}>🗺️ Mapeo configurado:</strong>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                            {(element.columns || []).filter(c => c.apiCodigo).map((c, i) => (
+                              <span key={i} style={{ background: '#fdf4ff', border: '1px solid #d8b4fe', borderRadius: '20px', padding: '2px 10px', fontSize: '11px', color: '#7e22ce', fontWeight: 600 }}>
+                                {c.label} ← <code style={{ fontFamily: 'monospace' }}>{c.apiCodigo}</code>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ─── CARGA MASIVA POR ID DE CABECERA ─── */}
+                      <div style={{ borderTop: '1px solid #d8b4fe', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#7e22ce' }}>📥 Cargar todas las filas por ID de cabecera</div>
+                        <div style={{ fontSize: '11px', color: '#6b21a8', background: '#fdf4ff', border: '1px solid #d8b4fe', borderRadius: '6px', padding: '6px 10px' }}>
+                          Al escanear un código se captura automáticamente el ID de cabecera (ej: <code>detCabId</code>). Luego aparecerá un botón para cargar TODAS las filas del movimiento de una vez y sugerir el siguiente código en secuencia.
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: '#7e22ce' }}>🗝️ Campo del JSON = ID de cabecera</label>
+                            <select
+                              value={element.apiCabIdJsonField || 'detCabId'}
+                              onChange={(e) => updateBodyElement(elementIndex, 'apiCabIdJsonField', e.target.value)}
+                              style={{ padding: '8px 10px', border: '1.5px solid #d8b4fe', borderRadius: '6px', fontSize: '13px', background: 'white' }}
+                            >
+                              {API_CODIGO_JSON_FIELDS.filter(f => f.value).map(f => (
+                                <option key={f.value} value={f.value}>{f.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: '#7e22ce' }}>🌐 Endpoint de carga masiva</label>
+                            <select
+                              value={element.apiPorIdEndpoint || ''}
+                              onChange={(e) => updateBodyElement(elementIndex, 'apiPorIdEndpoint', e.target.value)}
+                              style={{ padding: '8px 10px', border: '1.5px solid #d8b4fe', borderRadius: '6px', fontSize: '13px', background: 'white' }}
+                            >
+                              {API_CODIGO_ENDPOINTS.map(ep => (
+                                <option key={ep.value} value={ep.value}>{ep.label}</option>
+                              ))}
+                            </select>
+                            {element.apiPorIdEndpoint && (
+                              <div style={{ fontSize: '11px', color: '#7e22ce', marginTop: '2px', wordBreak: 'break-all' }}>
+                                🔗 Se usará: <code style={{ background: '#f3e8ff', padding: '1px 4px', borderRadius: '3px' }}>{import.meta.env.VITE_API_EXTERNAL_URL}/{element.apiPorIdEndpoint}&lt;cabId&gt;</code>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="section-header-inner">
                   <h4>Columnas de la Tabla</h4>
                   <button onClick={() => addColumnToTable(elementIndex)} className="btn-add-small">+ Agregar Columna</button>
@@ -1484,6 +1878,27 @@ function EditTemplate() {
                           ))}
                         </select>
                       </div>
+
+                      {/* 🔍 API POR CÓDIGO: campo del JSON que se mapea a esta columna */}
+                      {element.usaApiPorCodigo && (
+                        <div className="form-group" style={{ background: '#fdf4ff', border: '1.5px solid #d8b4fe', borderRadius: '6px', padding: '6px 10px' }}>
+                          <label style={{ color: '#7e22ce', fontWeight: 600, fontSize: '12px' }}>🔍 Campo del JSON → esta columna</label>
+                          <select
+                            value={column.apiCodigo || ''}
+                            onChange={(e) => updateColumnInTable(elementIndex, colIndex, 'apiCodigo', e.target.value)}
+                            style={{ padding: '6px 8px', border: '1px solid #d8b4fe', borderRadius: '6px', fontSize: '12px', background: 'white', width: '100%', marginTop: '4px' }}
+                          >
+                            {API_CODIGO_JSON_FIELDS.map(f => (
+                              <option key={f.value} value={f.value}>{f.label}</option>
+                            ))}
+                          </select>
+                          {column.apiCodigo && (
+                            <div style={{ marginTop: '4px', fontSize: '11px', color: '#7e22ce' }}>
+                              ✅ <strong>{column.label || 'Esta columna'}</strong> ← <code style={{ fontFamily: 'monospace', background: '#f3e8ff', padding: '1px 4px', borderRadius: '3px' }}>{column.apiCodigo}</code>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={column.required || false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "required", e.target.checked)}/>Requerido</label></div>
 

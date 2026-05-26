@@ -76,3 +76,32 @@ export const MAPPABLE_API_FIELDS = {
     { value: "_cabLugarDesembarque", label: "📍 Lugar Desembarque (_cabLugarDesembarque)" },
   ],
 };
+
+// ─── API POR CÓDIGO: endpoints predefinidos ───
+// El valor se concatena con API_EXTERNAL_BASE_URL en FillForm al hacer el fetch.
+export const API_CODIGO_ENDPOINTS = [
+  { value: "", label: "-- Seleccionar endpoint --" },
+  { value: "Movimientos/MovimientoDetallesPorCodigo?detCodigo=", label: "📦 Detalles por Código (MovimientoDetallesPorCodigo)" },
+  { value: "Movimientos/MovimientoDetallesPorId/", label: "📋 Todas las filas por ID de Cabecera (MovimientoDetallesPorId)" },
+];
+
+// ─── API POR CÓDIGO: campos del JSON de detalle ───
+export const API_CODIGO_JSON_FIELDS = [
+  { value: "", label: "-- Sin mapeo --" },
+  { value: "detId", label: "🔑 detId — ID Detalle (usar como campo oculto)" },
+  { value: "detCabId", label: "🔗 detCabId — ID Lote Principal" },
+  { value: "detCodigo", label: "🏷️ detCodigo — Código / Lote de Proceso" },
+  { value: "detProducto", label: "📦 detProducto — Producto" },
+  { value: "detEspecie", label: "🐟 detEspecie — Especie" },
+  { value: "detTipoTina", label: "🧊 detTipoTina — Tipo de Tina" },
+  { value: "detNumeroPiezaTina", label: "🔢 detNumeroPiezaTina — Número Pieza/Tina" },
+  { value: "detPesoTara", label: "⚖️ detPesoTara — Peso Tara" },
+  { value: "detPesoBrutoBalanza", label: "⚖️ detPesoBrutoBalanza — Peso Bruto Balanza" },
+  { value: "detPesoNetoBalanza", label: "⚖️ detPesoNetoBalanza — Peso Neto Balanza" },
+  { value: "detPesoRomaneo", label: "⚖️ detPesoRomaneo — Peso Romaneo" },
+  { value: "detCantidadPiezas", label: "📊 detCantidadPiezas — Cantidad de Piezas" },
+  { value: "detCajas", label: "📦 detCajas — Número de Cajas" },
+  { value: "detCodigoErpProducto", label: "🏷️ detCodigoErpProducto — Código ERP Producto" },
+  { value: "detTipoControl", label: "✅ detTipoControl — Tipo de Control" },
+  { value: "detTemperatura", label: "🌡️ detTemperatura — Temperatura" },
+];

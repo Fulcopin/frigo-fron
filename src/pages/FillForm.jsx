@@ -235,6 +235,13 @@ function FillForm() {
   const [panelResetKey, setPanelResetKey] = useState(0);
   // Trazabilidad extra columns per table element: { [elementIndex]: { [rowIndex]: { _clasificacion, _producto, _nuevoLote } } }
   const [tableTrazaData, setTableTrazaData] = useState({});
+  // API por Código: loading state per cell { "elementIndex-rowIndex": bool }
+  const [apiCodigoLoadingRows, setApiCodigoLoadingRows] = useState({});
+  // API por ID de cabecera: { [elementIndex]: cabId } y loading { [elementIndex]: bool }
+  const [apiCabIdByTable, setApiCabIdByTable] = useState({});
+  const [apiPorIdLoadingTable, setApiPorIdLoadingTable] = useState({});
+  // Siguiente código en secuencia por tabla: { [elementIndex]: 'A26135-002-004' }
+  const [nextDetCodigoByTable, setNextDetCodigoByTable] = useState({});
   const handleTableTrazaChange = (elementIndex, rowIndex, field, value) => {
     setTableTrazaData(prev => ({
       ...prev,
@@ -911,7 +918,17 @@ useEffect(() => {
     
     // Inicializar header vacío (usando defaultValue si existe)
     (template.headerFields || []).forEach((field) => {
-      newTab.headerData[field.label] = field.defaultValue || "";
+      if (field.type === 'lote_entrante') {
+        // Para lote entrante en encabezado: inicializar como array de entradas
+        const camposInit = {};
+        (field.campos || [
+          { key: 'lote', activo: true }, { key: 'proceso', activo: true },
+          { key: 'clasificacion', activo: true }, { key: 'tipoProducto', activo: true }, { key: 'producto', activo: true }
+        ]).filter(c => c.activo !== false).forEach(c => { camposInit[c.key] = ''; });
+        newTab.headerData[field.label] = [camposInit];
+      } else {
+        newTab.headerData[field.label] = field.defaultValue || "";
+      }
     });
     
     // Inicializar body vacío
@@ -981,6 +998,16 @@ useEffect(() => {
           }
         });
         return { id: element.id, type: 'tinas', data: tinaData };
+      }
+      if (element.type === 'lote_entrante') {
+        const camposData = {};
+        (element.campos || [
+          { key: 'lote', activo: true }, { key: 'proceso', activo: true },
+          { key: 'clasificacion', activo: true }, { key: 'tipoProducto', activo: true }, { key: 'producto', activo: true },
+        ]).filter(c => c.activo !== false).forEach(campo => {
+          camposData[campo.key] = '';
+        });
+        return { id: element.id, type: 'lote_entrante', data: [camposData] };
       }
       return null;
     }).filter(Boolean);
@@ -2786,7 +2813,48 @@ useEffect(() => {
     }
   };
 
-  // 🗑️ Eliminar filas vacías de una tabla
+  // � Guardar entradas de un bloque lote_entrante en LotesInventario
+  const guardarLoteEnInventario = async (lotEntries, campos, blockLabel) => {
+    const toSave = (lotEntries || []).filter(e =>
+      Object.values(e).some(v => v !== null && v !== undefined && String(v).trim() !== '')
+    );
+    if (toSave.length === 0) {
+      alert('No hay datos de lote para guardar. Completa al menos un campo.');
+      return;
+    }
+    const fecha = new Date().toISOString().split('T')[0];
+    const templateProceso = selectedTemplate?.proceso || selectedTemplate?.nombre || 'Sin proceso';
+    const lotes = toSave.map((e, i) => {
+      const loteKey    = (campos || []).find(c => /lote/i.test(c.label))?.key    || 'lote';
+      const procesoKey = (campos || []).find(c => /proceso/i.test(c.label))?.key || 'proceso';
+      const productoKey= (campos || []).find(c => /producto/i.test(c.label))?.key|| 'producto';
+      const clasifKey  = (campos || []).find(c => /clasif/i.test(c.label))?.key  || 'clasificacion';
+      const tipoKey    = (campos || []).find(c => /tipo/i.test(c.label))?.key    || 'tipo_producto';
+      const numeroLote = (e[loteKey] || e.lote || e.numeroLote || '').trim() || (blockLabel + '-' + (i + 1));
+      const proceso    = (e[procesoKey] || e.proceso || '').trim() || templateProceso;
+      return {
+        lote:          numeroLote,
+        proceso,
+        producto:      e[productoKey] || e.producto || '',
+        clasificacion: e[clasifKey]   || e.clasificacion || '',
+        pesoEntrada:   Number(e.peso_entrada || e.pesoEntrada) || 0,
+        desperdicio:   0,
+        notas:         e[tipoKey] ? ('Tipo de Producto: ' + e[tipoKey]) : '',
+        estado:        'disponible',
+        formId:        id ? Number(id) : null,
+        templateId:    String(selectedTemplate?.templateID || ''),
+        fecha,
+      };
+    });
+    try {
+      const saved = await addLotes(lotes);
+      alert(saved.length + ' lote(s) de "' + blockLabel + '" guardados en Inventario de Lotes.');
+    } catch (err) {
+      alert('Error al guardar lotes: ' + err.message);
+    }
+  }
+
+  // �🗑️ Eliminar filas vacías de una tabla
   const removeEmptyRows = (elementIndex, fieldLabel) => {
     const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
     if (!tableElement) return;
@@ -4084,6 +4152,161 @@ useEffect(() => {
     setHasUnsavedChanges(true);
   }, [selectedTemplate, shouldEnableAutoSum, apiDetailsData]);
   
+  // --- API POR CÓDIGO: buscar datos al ingresar un código en la columna gatillo ---
+  const handleApiPorCodigoLookup = async (elementIndex, rowIndex, code, tableTemplate) => {
+    if (!code || !tableTemplate?.apiCodigoUrl) return;
+    const loadKey = `${elementIndex}-${rowIndex}`;
+    setApiCodigoLoadingRows(prev => ({ ...prev, [loadKey]: true }));
+    try {
+      // Si la URL configurada empieza con "/" o no es absoluta, prefija con API_EXTERNAL_BASE_URL
+      let baseUrl = tableTemplate.apiCodigoUrl;
+      if (baseUrl.startsWith('/') || (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://'))) {
+        baseUrl = API_EXTERNAL_BASE_URL.replace(/\/$/, '') + '/' + baseUrl.replace(/^\//, '');
+      }
+      const url = baseUrl + encodeURIComponent(String(code));
+      console.log('🔍 API por Código URL:', url);
+      const token = await ensureApiToken();
+      const response = await fetch(url, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      // Soporta tanto array como objeto único
+      const item = Array.isArray(data) ? data[0] : data;
+      if (!item) { console.warn('🔍 API por Código: sin resultados para', code); return; }
+
+      // Construir mapa de claves deduplicadas igual que en handleTableFieldChangeWithAutoSave
+      const cols = tableTemplate.columns || [];
+      const seenLbls = new Map();
+      cols.forEach((col, ci) => {
+        const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+        if (!seenLbls.has(lbl)) seenLbls.set(lbl, []);
+        seenLbls.get(lbl).push(ci);
+      });
+      const colKeyMap = new Map();
+      cols.forEach((col, ci) => {
+        const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+        colKeyMap.set(ci, seenLbls.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl);
+      });
+
+      const updates = {};
+      cols.forEach((col, ci) => {
+        if (col.apiCodigo && Object.prototype.hasOwnProperty.call(item, col.apiCodigo)) {
+          const key = colKeyMap.get(ci);
+          const val = item[col.apiCodigo];
+          if (val !== undefined && val !== null) updates[key] = String(val);
+        }
+      });
+      // Campo ID oculto
+      if (tableTemplate.apiCodigoHiddenField && Object.prototype.hasOwnProperty.call(item, tableTemplate.apiCodigoHiddenField)) {
+        updates['_apiCodigoId'] = String(item[tableTemplate.apiCodigoHiddenField] ?? '');
+      }
+      // Guardar ID de cabecera para carga masiva (por defecto detCabId)
+      const cabIdField = tableTemplate.apiCabIdJsonField || 'detCabId';
+      if (item[cabIdField] != null) {
+        setApiCabIdByTable(prev => ({ ...prev, [elementIndex]: item[cabIdField] }));
+      }
+
+      if (Object.keys(updates).length > 0) {
+        setBodyData(prev => prev.map((element, index) => {
+          if (index !== elementIndex) return element;
+          const updatedData = [...(element.data || [])];
+          updatedData[rowIndex] = { ...(updatedData[rowIndex] || {}), ...updates };
+          return { ...element, data: updatedData };
+        }));
+        setHasUnsavedChanges(true);
+      }
+    } catch (err) {
+      console.warn('❌ API por Código error:', err);
+    } finally {
+      setApiCodigoLoadingRows(prev => ({ ...prev, [loadKey]: false }));
+    }
+  };
+
+  // Calcula el siguiente valor en secuencia de códigos tipo 'A26135-002-003' → 'A26135-002-004'
+  const getNextSequenceCode = (codes) => {
+    if (!codes || codes.length === 0) return null;
+    const sorted = [...codes].filter(Boolean).sort();
+    const lastCode = sorted[sorted.length - 1];
+    const match = lastCode.match(/^(.*?)(\d+)$/);
+    if (!match) return null;
+    const prefix = match[1];
+    const num = parseInt(match[2], 10);
+    const padLen = match[2].length;
+    return prefix + String(num + 1).padStart(padLen, '0');
+  };
+
+  // Carga TODAS las filas del movimiento usando el ID de cabecera guardado
+  const handleApiPorIdLoad = async (elementIndex, tableTemplate) => {
+    const cabId = apiCabIdByTable[elementIndex];
+    if (!cabId || !tableTemplate?.apiPorIdEndpoint) return;
+    setApiPorIdLoadingTable(prev => ({ ...prev, [elementIndex]: true }));
+    try {
+      let baseUrl = tableTemplate.apiPorIdEndpoint;
+      if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+        baseUrl = API_EXTERNAL_BASE_URL.replace(/\/$/, '') + '/' + baseUrl.replace(/^\//, '');
+      }
+      const url = baseUrl + encodeURIComponent(String(cabId));
+      console.log('📥 API por ID URL:', url);
+      const token = await ensureApiToken();
+      const response = await fetch(url, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      if (!Array.isArray(data) || data.length === 0) {
+        console.warn('📥 API por ID: sin resultados para cabId', cabId);
+        return;
+      }
+      // Construir colKeyMap igual que en handleApiPorCodigoLookup
+      const cols = tableTemplate.columns || [];
+      const seenLbls = new Map();
+      cols.forEach((col, ci) => {
+        const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+        if (!seenLbls.has(lbl)) seenLbls.set(lbl, []);
+        seenLbls.get(lbl).push(ci);
+      });
+      const colKeyMap = new Map();
+      cols.forEach((col, ci) => {
+        const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
+        colKeyMap.set(ci, seenLbls.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl);
+      });
+      // Para cada elemento del array construir una fila
+      const newRows = data.map(item => {
+        const row = {};
+        cols.forEach((col, ci) => {
+          if (col.apiCodigo && Object.prototype.hasOwnProperty.call(item, col.apiCodigo)) {
+            const key = colKeyMap.get(ci);
+            const val = item[col.apiCodigo];
+            if (val !== undefined && val !== null) row[key] = String(val);
+          }
+        });
+        if (tableTemplate.apiCodigoHiddenField && item[tableTemplate.apiCodigoHiddenField] != null) {
+          row['_apiCodigoId'] = String(item[tableTemplate.apiCodigoHiddenField]);
+        }
+        if (item.detCabId != null) row['_apiCabId'] = String(item.detCabId);
+        return row;
+      });
+      // Calcular siguiente código en secuencia
+      const triggerCol = cols.find(c => c.label === tableTemplate.apiCodigoTriggerCol);
+      const seqField = triggerCol?.apiCodigo || 'detCodigo';
+      const allCodigos = data.map(item => item[seqField]).filter(Boolean);
+      const nextCode = getNextSequenceCode(allCodigos);
+      if (nextCode) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: nextCode }));
+      // Reemplazar filas de la tabla con las cargadas
+      setBodyData(prev => prev.map((element, index) => {
+        if (index !== elementIndex) return element;
+        return { ...element, data: newRows };
+      }));
+      setHasUnsavedChanges(true);
+      console.log(`📥 API por ID: cargadas ${newRows.length} filas. Siguiente código sugerido: ${nextCode}`);
+    } catch (err) {
+      console.warn('❌ API por ID error:', err);
+    } finally {
+      setApiPorIdLoadingTable(prev => ({ ...prev, [elementIndex]: false }));
+    }
+  };
+
   // --- RENDER FIELD CORREGIDO (COMBO BOX FIX) ---
  // --- RENDER FIELD CORREGIDO (COMPLETO Y DEFINITIVO) ---
   const renderField = useCallback((field, value, onChange, rowIndex = null) => {
@@ -5061,7 +5284,115 @@ useEffect(() => {
           desperdicios: [], lotesGenerados: [], totalDesperdicio: 0,
           pesoNetoDisponible: 0, totalPesoOut: 0, isBalanced: false });
       }
-      
+
+      // 📦 AUTO-GUARDAR lotes desde TODAS las tablas y bloques lote_entrante del formulario
+      {
+        const autoFecha     = new Date().toISOString().split('T')[0];
+        const templateProc  = selectedTemplate?.proceso || selectedTemplate?.nombre || 'Sin proceso';
+        const autoFormId    = responseData?.formID || responseData?.id || null;
+        const autoTplId     = String(selectedTemplate?.templateID || '');
+        const lotesAuto     = [];
+        const numerosVistos = new Set();
+
+        // Registrar un lote evitando duplicados
+        const registrarLote = (obj) => {
+          const numero = String(obj.lote || '').trim();
+          if (!numero || numero.length < 2 || numerosVistos.has(numero.toLowerCase())) return;
+          numerosVistos.add(numero.toLowerCase());
+          lotesAuto.push({
+            lote:          numero,
+            proceso:       String(obj.proceso || templateProc).trim() || templateProc,
+            producto:      String(obj.producto      || '').trim(),
+            clasificacion: String(obj.clasificacion || '').trim(),
+            pesoEntrada:   Number(obj.pesoEntrada || obj.peso_entrada || obj.peso || 0) || 0,
+            desperdicio:   Number(obj.desperdicio || obj.merma || 0) || 0,
+            notas:         String(obj.notas || '').trim(),
+            estado:        'disponible',
+            formId:        autoFormId ? Number(autoFormId) : null,
+            templateId:    autoTplId,
+            fecha:         autoFecha,
+          });
+        };
+
+        // ── 1. Bloques lote_entrante en el BODY ───────────────────────────────
+        for (const element of cleanedBodyData) {
+          if (element.type !== 'lote_entrante') continue;
+          const entries = Array.isArray(element.data) ? element.data : (element.data ? [element.data] : []);
+          for (const entry of entries) {
+            if (!entry) continue;
+            registrarLote({
+              lote:          entry.lote || entry.numeroLote || '',
+              proceso:       entry.proceso || '',
+              producto:      entry.producto || '',
+              clasificacion: entry.clasificacion || '',
+              pesoEntrada:   entry.pesoEntrada || entry.peso_entrada || 0,
+              notas:         entry.tipoProducto ? `Tipo: ${entry.tipoProducto}` : '',
+            });
+          }
+        }
+
+        // ── 2. Campos lote_entrante en el HEADER ─────────────────────────────
+        for (const field of (selectedTemplate?.headerFields || [])) {
+          if (field.type !== 'lote_entrante') continue;
+          const entries = finalHeaderData[field.label];
+          if (!Array.isArray(entries)) continue;
+          for (const entry of entries) {
+            if (!entry) continue;
+            registrarLote({
+              lote:          entry.lote || entry.numeroLote || '',
+              proceso:       entry.proceso || '',
+              producto:      entry.producto || '',
+              clasificacion: entry.clasificacion || '',
+              pesoEntrada:   entry.pesoEntrada || entry.peso_entrada || 0,
+              notas:         entry.tipoProducto ? `Tipo: ${entry.tipoProducto}` : '',
+            });
+          }
+        }
+
+        // ── 3. Tablas normales con columna de lote ────────────────────────────
+        for (const element of cleanedBodyData) {
+          if (element.type !== 'table' || !Array.isArray(element.data)) continue;
+          for (const row of element.data) {
+            // Encontrar clave que represente el número de lote
+            const loteKey = Object.keys(row).find(k => /lote/i.test(k));
+            if (!loteKey) continue;
+            const loteVal = String(row[loteKey] || '').trim();
+            if (!loteVal) continue;
+
+            // Mapear columnas restantes por nombre de clave
+            const buscar = (patron) => {
+              const k = Object.keys(row).find(k2 => patron.test(k2));
+              return k ? String(row[k] || '').trim() : '';
+            };
+
+            registrarLote({
+              lote:          loteVal,
+              proceso:       buscar(/^proceso/i) || templateProc,
+              producto:      buscar(/producto/i),
+              clasificacion: buscar(/clasif/i),
+              pesoEntrada:   Number(buscar(/peso.*(entrada|bruto|neto|total)/i) || buscar(/peso(?!.*desp)/i)) || 0,
+              desperdicio:   Number(buscar(/desperdicio|merma/i)) || 0,
+              notas:         buscar(/observ|nota/i),
+            });
+          }
+        }
+
+        // Excluir lotes que ya se guardaron arriba por el bloque loteTraza
+        const yaEnTraza = new Set(
+          (loteTraza.lotesGenerados || []).filter(l => l.lote).map(l => String(l.lote).toLowerCase())
+        );
+        const lotesParaInventario = lotesAuto.filter(l => !yaEnTraza.has(l.lote.toLowerCase()));
+
+        if (lotesParaInventario.length > 0) {
+          try {
+            await addLotes(lotesParaInventario);
+            console.log(`📦 [LOTES] ${lotesParaInventario.length} lote(s) guardados en inventario automáticamente`);
+          } catch (loteErr) {
+            console.warn('⚠️ [LOTES] No se guardaron lotes en inventario:', loteErr.message);
+          }
+        }
+      }
+
       // 🗑️ Eliminar borrador de BD si existía
       if (currentDraftId) {
         try {
@@ -7459,14 +7790,97 @@ useEffect(() => {
               onToggle={() => toggleSection('header')}
             >
               <div className="header-grid">
-                {selectedTemplate.headerFields.map((field, index) => (
+                {selectedTemplate.headerFields.map((field, index) => {
+                  // 📦 LOTE ENTRANTE EN ENCABEZADO
+                  if (field.type === 'lote_entrante') {
+                    const rawVal = headerData[field.label];
+                    // Soporta formato antiguo (objeto) y nuevo (array)
+                    const entries = Array.isArray(rawVal) ? rawVal : (typeof rawVal === 'object' && rawVal !== null ? [rawVal] : [{}]);
+                    const camposActivos = (field.campos || [
+                      { key: 'lote', label: 'Lote', activo: true },
+                      { key: 'proceso', label: 'Proceso Entrante', activo: true },
+                      { key: 'clasificacion', label: 'Clasificación', activo: true },
+                      { key: 'tipoProducto', label: 'Tipo de Producto', activo: true },
+                      { key: 'producto', label: 'Producto', activo: true },
+                    ]).filter(c => c.activo !== false);
+                    const usaApiHdr = field.usaApi === true;
+                    const updateHdrEntry = (entryIdx, key, value) => {
+                      const newEntries = entries.map((e, i) => i === entryIdx ? { ...e, [key]: value } : e);
+                      setHeaderData(prev => ({ ...prev, [field.label]: newEntries }));
+                      setHasUnsavedChanges(true);
+                    };
+                    const addHdrEntry = () => {
+                      const emptyEntry = {};
+                      camposActivos.forEach(c => { emptyEntry[c.key] = ''; });
+                      setHeaderData(prev => ({ ...prev, [field.label]: [...entries, emptyEntry] }));
+                      setHasUnsavedChanges(true);
+                    };
+                    const removeHdrEntry = (entryIdx) => {
+                      if (entries.length <= 1) return;
+                      setHeaderData(prev => ({ ...prev, [field.label]: entries.filter((_, i) => i !== entryIdx) }));
+                      setHasUnsavedChanges(true);
+                    };
+                    return (
+                      <div key={field.label || `le-header-${index}`} style={{ gridColumn: '1 / -1', background: '#f0fdf4', border: '2px solid #86efac', borderRadius: '10px', padding: '14px 16px', marginBottom: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                          <span style={{ fontWeight: 700, color: '#15803d', fontSize: '14px' }}>
+                            📦 {field.label || 'Lote Entrante'}
+                            {usaApiHdr && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#16a34a', fontWeight: 400 }}>📡 API activa — puede editar manualmente</span>}
+                          </span>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              onClick={() => guardarLoteEnInventario(entries, camposActivos, field.label || 'Lote Entrante')}
+                              style={{ background: 'linear-gradient(135deg, #0369a1, #0284c7)', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 14px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}
+                              title="Enviar los datos de este lote al Inventario de Lotes"
+                            >
+                              💾 Guardar en Inventario
+                            </button>
+                            <button onClick={addHdrEntry} style={{ background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', padding: '5px 14px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}>
+                              ➕ Añadir Lote
+                            </button>
+                          </div>
+                        </div>
+                        {entries.map((entryVals, entryIdx) => (
+                          <div key={entryIdx} style={{ marginBottom: '8px', padding: '10px 12px', background: 'white', borderRadius: '8px', border: '1px solid #bbf7d0', position: 'relative' }}>
+                          {!usaApiHdr && entries.length > 1 && (
+                              <button onClick={() => removeHdrEntry(entryIdx)} style={{ position: 'absolute', top: '6px', right: '8px', background: 'transparent', border: 'none', color: '#dc2626', fontSize: '15px', cursor: 'pointer', fontWeight: 700, lineHeight: 1 }} title="Eliminar esta entrada">✕</button>
+                            )}
+                            {entries.length > 1 && <div style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', marginBottom: '6px' }}>Lote #{entryIdx + 1}</div>}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+                              {camposActivos.map(campo => (
+                                <div key={campo.key} className="form-field">
+                                  <label style={{ fontSize: '12px', color: '#374151', fontWeight: 600 }}>{campo.label}</label>
+                                  <input
+                                    type="text"
+                                    value={entryVals[campo.key] || ''}
+                                    onChange={(e) => updateHdrEntry(entryIdx, campo.key, e.target.value)}
+                                    placeholder={usaApiHdr ? `Desde lote (${campo.label.toLowerCase()})...` : `Ingrese ${campo.label.toLowerCase()}`}
+                                    style={{
+                                      padding: '7px 10px', border: `1px solid ${usaApiHdr ? '#86efac' : '#d1d5db'}`,
+                                      borderRadius: '6px', fontSize: '13px', width: '100%', boxSizing: 'border-box',
+                                      background: 'white',
+                                      color: '#111827',
+                                      cursor: 'text',
+                                      fontWeight: entryVals[campo.key] ? 600 : 'normal',
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
+                  // Campo normal
+                  return (
                   <div key={field.label || `header-field-${index}`} className="form-field">
                     <label>
                       {field.label}{field.required && <span className="required">*</span>}
                     </label>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                       {renderField(
-                        field, 
+                        field,
                         headerData[field.label], 
                         (value) => handleHeaderChangeWithAutoSave(field.label, value)
                       )}
@@ -7508,7 +7922,8 @@ useEffect(() => {
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </AccordionSection>
         )}
@@ -8018,6 +8433,34 @@ useEffect(() => {
           if (element.type === 'table') {
             const groupedColumns = processColumnGroups(element.columns);
             const rowCount = (currentElementData.data || []).filter(r => !r?._deleted).length;
+
+            // 📦 Paneles de Lotes Entrantes vinculados a esta tabla
+            const loteRef = element.loteEntranteRef;
+            // Soporta loteEntranteRefs (array) y loteEntranteRef (string legacy)
+            const loteRefs = Array.isArray(element.loteEntranteRefs) && element.loteEntranteRefs.length > 0
+              ? element.loteEntranteRefs
+              : (loteRef ? [String(loteRef)] : []);
+
+            const loteBannerList = loteRefs.map(ref => {
+              if (typeof ref === 'string' && ref.startsWith('header:')) {
+                const refKey = ref.slice(7);
+                const hField = selectedTemplate.headerFields?.find(f => f.type === 'lote_entrante' && (f.id === refKey || f.label === refKey));
+                if (hField) {
+                  const rawVals = headerData[hField.label];
+                  const entries = Array.isArray(rawVals) ? rawVals : (typeof rawVals === 'object' && rawVals !== null ? [rawVals] : [{}]);
+                  return { title: hField.label, campos: hField.campos || [], entries };
+                }
+              } else {
+                const leIdx = selectedTemplate.bodyElements?.findIndex(el => String(el.id) === String(ref));
+                if (leIdx !== undefined && leIdx >= 0) {
+                  const leEl = selectedTemplate.bodyElements[leIdx];
+                  const rawData = bodyData[leIdx]?.data;
+                  const entries = Array.isArray(rawData) ? rawData : (typeof rawData === 'object' && rawData !== null ? [rawData] : [{}]);
+                  return { title: leEl.title || 'Lote Entrante', campos: leEl.campos || [], entries };
+                }
+              }
+              return null;
+            }).filter(Boolean);
             
             return (
               <AccordionSection
@@ -8028,6 +8471,31 @@ useEffect(() => {
                 isExpanded={expandedSections[`body_${elementIndex}`] !== false}
                 onToggle={() => toggleBodySection(elementIndex)}
               >
+                {/* 📦 Banners de lotes vinculados a esta tabla */}
+                {loteBannerList.length > 0 && (
+                  <div style={{ margin: '0 0 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {loteBannerList.map((loteBannerData, bannerIdx) => (
+                      <div key={bannerIdx} style={{ padding: '10px 14px', background: '#f0fdf4', border: '2px solid #86efac', borderRadius: '8px' }}>
+                        <span style={{ fontWeight: 700, color: '#15803d', fontSize: '13px', display: 'block', marginBottom: '8px' }}>📦 {loteBannerData.title}</span>
+                        {(loteBannerData.entries || []).map((vals, entryIdx) => (
+                          <div key={entryIdx} style={{ marginBottom: entryIdx < (loteBannerData.entries.length - 1) ? '8px' : 0 }}>
+                            {loteBannerData.entries.length > 1 && <span style={{ fontSize: '10px', fontWeight: 700, color: '#6b7280', display: 'block', marginBottom: '4px' }}>Lote #{entryIdx + 1}</span>}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', alignItems: 'flex-start' }}>
+                              {(loteBannerData.campos || []).filter(c => c.activo !== false).map(campo => (
+                                <div key={campo.key} style={{ display: 'flex', flexDirection: 'column', minWidth: '110px' }}>
+                                  <span style={{ fontSize: '10px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{campo.label}</span>
+                                  <span style={{ fontSize: '13px', color: vals[campo.key] ? '#111827' : '#9ca3af', fontWeight: vals[campo.key] ? 600 : 400 }}>
+                                    {vals[campo.key] || '—'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="table-header">
                   <div className="table-controls-left">
                     <button onClick={() => addTableRow(elementIndex)} className="btn-add-row">
@@ -8042,7 +8510,25 @@ useEffect(() => {
                     <button onClick={() => restoreTableRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }} title="Restaurar las filas predefinidas de la plantilla">
                       🔄 Restaurar Filas
                     </button>
-                    {/* 📦 Botón de Agrupar / Crear Grupo */}
+                    {/* � Botón de carga masiva por ID de cabecera */}
+                    {(() => {
+                      const tableTempl = selectedTemplate?.bodyElements?.[elementIndex];
+                      const cabId = apiCabIdByTable[elementIndex];
+                      if (!tableTempl?.apiPorIdEndpoint || !cabId) return null;
+                      const isLoading = apiPorIdLoadingTable[elementIndex];
+                      return (
+                        <button
+                          onClick={() => handleApiPorIdLoad(elementIndex, tableTempl)}
+                          disabled={isLoading}
+                          className="btn-add-row"
+                          style={{ background: isLoading ? '#e5e7eb' : 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: isLoading ? '#9ca3af' : 'white' }}
+                          title={`Cargar todas las filas del movimiento ID ${cabId} desde la API`}
+                        >
+                          {isLoading ? '⏳ Cargando...' : `📥 Cargar filas (ID: ${cabId})`}
+                        </button>
+                      );
+                    })()}
+                    {/* �📦 Botón de Agrupar / Crear Grupo */}
                     {!groupingMode[elementIndex] ? (
                       <button
                         onClick={() => toggleGroupingMode(elementIndex)}
@@ -8182,6 +8668,9 @@ useEffect(() => {
                       <tr>
                         {groupingMode[elementIndex] && <th rowSpan="2" style={{ width: '40px', background: '#ede9fe' }}>☑️</th>}
                         <th rowSpan="2" style={{ background: '#4b5563', color: 'white' }}>#</th>
+                        {loteRefs.length > 0 && (
+                          <th rowSpan="2" style={{ background: '#166534', color: 'white', minWidth: '120px', fontSize: '0.68rem', verticalAlign: 'middle', textAlign: 'center', whiteSpace: 'normal' }}>📦 Lote</th>
+                        )}
                         {groupedColumns.map((group, index) => (
                           <th key={index} colSpan={group.columns.length}>{group.groupName}</th>
                         ))}
@@ -8384,9 +8873,76 @@ useEffect(() => {
       ? `row-${elementIndex}-pi${row._predefinedIndex}-${rowIndex}`
       : `row-${elementIndex}-${rowIndex}-${allDataRows.length}`;
 
+    // 📦 Construir opciones expandidas: una por cada entrada dentro de cada bloque lote
+    const LOTE_PALETTE = ['#16a34a','#2563eb','#dc2626','#d97706','#7c3aed','#0891b2','#db2777','#65a30d'];
+    const expandedLoteOpts = [];
+    loteRefs.forEach((ref, blockIdx) => {
+      let blockLabel = `Lote ${blockIdx + 1}`;
+      let entries = [];
+      if (typeof ref === 'string' && ref.startsWith('header:')) {
+        const refKey = ref.slice(7);
+        const hf = selectedTemplate.headerFields?.find(f => f.type === 'lote_entrante' && (f.id === refKey || f.label === refKey));
+        if (hf) {
+          blockLabel = hf.label;
+          const rawVals = headerData[hf.label];
+          entries = Array.isArray(rawVals) ? rawVals : (rawVals && typeof rawVals === 'object' ? [rawVals] : [{}]);
+        }
+      } else {
+        const leIdx = selectedTemplate.bodyElements?.findIndex(el => String(el.id) === String(ref));
+        if (leIdx !== undefined && leIdx >= 0) {
+          const leEl = selectedTemplate.bodyElements[leIdx];
+          blockLabel = leEl.title || 'Lote Entrante';
+          const rawData = bodyData[leIdx]?.data;
+          entries = Array.isArray(rawData) ? rawData : (rawData && typeof rawData === 'object' ? [rawData] : [{}]);
+        }
+      }
+      if (entries.length === 0) entries = [{}];
+      entries.forEach((entry, entryIdx) => {
+        // Etiqueta: si hay >1 entrada añadir "#N"
+        const entryLabel = entries.length > 1 ? `${blockLabel} #${entryIdx + 1}` : blockLabel;
+        // Valor: blockRef:entryIdx
+        expandedLoteOpts.push({ value: `${ref}:${entryIdx}`, label: entryLabel, blockIdx, color: LOTE_PALETTE[blockIdx % LOTE_PALETTE.length] });
+      });
+    });
+
+    // Determinar bloque del lote asignado a esta fila (para color)
+    const rowLoteOpt = row._loteRef ? expandedLoteOpts.find(o => o.value === row._loteRef) : null;
+    // Backward-compat: si _loteRef no tiene ":entryIdx" (formato viejo = solo blockRef)
+    const rowLoteOptFallback = (!rowLoteOpt && row._loteRef)
+      ? expandedLoteOpts.find(o => {
+          const parts = row._loteRef.split(':');
+          const isLastNumeric = /^\d+$/.test(parts[parts.length - 1]);
+          const base = isLastNumeric ? parts.slice(0, -1).join(':') : row._loteRef;
+          return o.value.startsWith(base + ':');
+        })
+      : null;
+    const activeOpt = rowLoteOpt || rowLoteOptFallback;
+    const rowLoteColor = activeOpt ? activeOpt.color : null;
+
     return (
-      <tr key={rowUniqueKey} style={{ background: (displayNum - 1) % 2 === 0 ? 'white' : '#f9fafb' }}>
+      <tr key={rowUniqueKey} style={{ background: (displayNum - 1) % 2 === 0 ? 'white' : '#f9fafb', borderLeft: rowLoteColor ? `4px solid ${rowLoteColor}` : undefined }}>
         <td style={{ fontWeight: 'bold', color: '#6b7280', textAlign: 'center' }}>{displayNum}</td>
+        
+        {/* 📦 Selector de Lote por fila */}
+        {loteRefs.length > 0 && (
+          <td style={{ padding: '2px 4px', verticalAlign: 'middle' }}>
+            <select
+              value={row._loteRef || ''}
+              onChange={e => handleTableFieldChangeWithAutoSave(elementIndex, capturedRowIndex, '_loteRef', e.target.value)}
+              style={{
+                width: '100%', fontSize: '0.73rem', padding: '2px 4px',
+                border: rowLoteColor ? `2px solid ${rowLoteColor}` : '1px solid #86efac',
+                borderRadius: '4px', background: rowLoteColor ? '#f0fdf4' : 'white',
+                color: rowLoteColor || '#166534', fontWeight: 600, cursor: 'pointer'
+              }}
+            >
+              <option value="">— General —</option>
+              {expandedLoteOpts.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </td>
+        )}
         
         {/* RENDERIZADO DE CELDAS */}
         {(element.columns || []).map((col, colIndex) => {
@@ -8549,14 +9105,63 @@ useEffect(() => {
           }
 
           // 4. CASO NORMAL (Resto de formularios o columnas normales)
+          const tableTemplateForApiCodigo = selectedTemplate?.bodyElements?.[elementIndex];
+          const isApiCodigoTrigger = tableTemplateForApiCodigo?.usaApiPorCodigo && col.label === tableTemplateForApiCodigo?.apiCodigoTriggerCol;
+          const apiCodigoLoadKey = `${elementIndex}-${rowIndex}`;
+          const isApiCodigoLoading = apiCodigoLoadingRows[apiCodigoLoadKey];
+
+          const nextSuggestedCode = nextDetCodigoByTable[elementIndex];
           return (
             <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border">
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <div style={{ flex: 1 }}>
                   {renderField(col, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
                 </div>
+                {isApiCodigoTrigger && (
+                  <button
+                    type="button"
+                    title="Buscar en API por este código"
+                    onClick={() => handleApiPorCodigoLookup(elementIndex, rowIndex, row[resolvedCellName], tableTemplateForApiCodigo)}
+                    disabled={isApiCodigoLoading || !row[resolvedCellName]}
+                    style={{
+                      padding: '4px 8px',
+                      background: isApiCodigoLoading ? '#e5e7eb' : '#a855f7',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: isApiCodigoLoading || !row[resolvedCellName] ? 'not-allowed' : 'pointer',
+                      fontSize: '14px',
+                      flexShrink: 0,
+                      opacity: !row[resolvedCellName] ? 0.5 : 1,
+                    }}
+                  >
+                    {isApiCodigoLoading ? '⏳' : '🔍'}
+                  </button>
+                )}
                 {col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', whiteSpace: 'nowrap', fontWeight: 500 }}>{col.unit}</span>}
               </div>
+              {/* 💡 Sugerencia de siguiente código en secuencia */}
+              {isApiCodigoTrigger && !row[resolvedCellName] && nextSuggestedCode && (
+                <div style={{ marginTop: '3px' }}>
+                  <button
+                    type="button"
+                    title={`Usar siguiente código en secuencia: ${nextSuggestedCode}`}
+                    onClick={() => {
+                      handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, nextSuggestedCode);
+                      handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
+                      const afterNext = getNextSequenceCode([nextSuggestedCode]);
+                      if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
+                    }}
+                    style={{
+                      fontSize: '10px', color: '#0284c7', background: '#e0f2fe',
+                      border: '1px solid #7dd3fc', borderRadius: '4px',
+                      padding: '1px 7px', cursor: 'pointer', whiteSpace: 'nowrap'
+                    }}
+                  >
+                    💡 {nextSuggestedCode}
+                  </button>
+                </div>
+              )}
             </td>
           );
         })}
@@ -8930,6 +9535,105 @@ useEffect(() => {
             );
           }
           
+          // Renderizar lote entrante (sección del cuerpo)
+          if (element.type === 'lote_entrante') {
+            const DEFAULT_LE = [
+              { key: 'lote',          label: 'Lote',             activo: true },
+              { key: 'proceso',       label: 'Proceso Entrante', activo: true },
+              { key: 'clasificacion', label: 'Clasificación',    activo: true },
+              { key: 'tipoProducto',  label: 'Tipo de Producto', activo: true },
+              { key: 'producto',      label: 'Producto',         activo: true },
+            ];
+            const campos = (element.campos || DEFAULT_LE).filter(c => c.activo !== false);
+            const rawData = currentElementData?.data;
+            // Soporta formato antiguo (objeto) y nuevo (array)
+            const entries = Array.isArray(rawData) ? rawData : (typeof rawData === 'object' && rawData !== null ? [rawData] : [{}]);
+            const usaApi = element.usaApi === true;
+
+            const updateEntry = (entryIdx, key, value) => {
+              setBodyData(prev => {
+                const bd = [...prev];
+                const ed = { ...bd[elementIndex] };
+                const newEntries = Array.isArray(ed.data) ? [...ed.data] : [ed.data || {}];
+                newEntries[entryIdx] = { ...newEntries[entryIdx], [key]: value };
+                ed.data = newEntries;
+                bd[elementIndex] = ed;
+                return bd;
+              });
+              setHasUnsavedChanges(true);
+            };
+            const addEntry = () => {
+              const emptyEntry = {};
+              campos.forEach(c => { emptyEntry[c.key] = ''; });
+              setBodyData(prev => {
+                const bd = [...prev];
+                const ed = { ...bd[elementIndex] };
+                ed.data = [...entries, emptyEntry];
+                bd[elementIndex] = ed;
+                return bd;
+              });
+              setHasUnsavedChanges(true);
+            };
+            const removeEntry = (entryIdx) => {
+              if (entries.length <= 1) return;
+              setBodyData(prev => {
+                const bd = [...prev];
+                const ed = { ...bd[elementIndex] };
+                ed.data = entries.filter((_, i) => i !== entryIdx);
+                bd[elementIndex] = ed;
+                return bd;
+              });
+              setHasUnsavedChanges(true);
+            };
+
+            return (
+              <AccordionSection key={element.id} title={element.title || 'Datos de Lote Entrante'} icon="📦"
+                isExpanded={expandedSections[`body_${elementIndex}`] !== false} onToggle={() => toggleBodySection(elementIndex)}
+              >
+                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {usaApi && (
+                    <div style={{ padding: '10px 14px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac', fontSize: '13px', color: '#166534' }}>
+                      📡 Datos completados automáticamente al seleccionar el lote desde el ERP.
+                    </div>
+                  )}
+                  {entries.map((entryVals, entryIdx) => (
+                    <div key={entryIdx} style={{ padding: '12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', position: 'relative' }}>
+                      {entries.length > 1 && (
+                        <button onClick={() => removeEntry(entryIdx)} style={{ position: 'absolute', top: '8px', right: '10px', background: 'transparent', border: 'none', color: '#dc2626', fontSize: '15px', cursor: 'pointer', fontWeight: 700 }} title="Eliminar entrada">✕</button>
+                      )}
+                      {entries.length > 1 && <div style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', marginBottom: '8px' }}>Lote #{entryIdx + 1}</div>}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))', gap: '12px' }}>
+                        {campos.map(campo => (
+                          <div key={campo.key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>{campo.label}</label>
+                            <input type="text" value={entryVals[campo.key] || ''} onChange={(e) => updateEntry(entryIdx, campo.key, e.target.value)}
+                              placeholder={usaApi ? `Desde lote (${campo.label.toLowerCase()})...` : `Ingrese ${campo.label.toLowerCase()}`}
+                              style={{ padding: '7px 10px', border: `1px solid ${usaApi ? '#86efac' : '#d1d5db'}`, borderRadius: '6px', fontSize: '13px',
+                                background: 'white', color: '#111827', cursor: 'text',
+                                fontWeight: entryVals[campo.key] ? 600 : 'normal' }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <button onClick={addEntry} style={{ background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', padding: '7px 16px', fontSize: '13px', cursor: 'pointer', fontWeight: 600 }}>
+                      ➕ Añadir Lote
+                    </button>
+                    <button
+                      onClick={() => guardarLoteEnInventario(entries, campos, element.title || 'Lote Entrante')}
+                      style={{ background: 'linear-gradient(135deg, #0369a1, #0284c7)', color: 'white', border: 'none', borderRadius: '6px', padding: '7px 16px', fontSize: '13px', cursor: 'pointer', fontWeight: 600 }}
+                      title="Enviar los datos de este lote al Inventario de Lotes"
+                    >
+                      💾 Guardar en Inventario
+                    </button>
+                  </div>
+                </div>
+              </AccordionSection>
+            );
+          }
+
           return null;
         })}
         
