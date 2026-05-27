@@ -205,7 +205,7 @@ function CreateTemplate() {
 
   // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' por defecto ---
   const addColumnToTable = (elementIndex) => {
-    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", unit: "" };
+    const newColumn = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", unit: "", includeInSum: true };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: [...el.columns, newColumn] } : el)) }));
   };
   

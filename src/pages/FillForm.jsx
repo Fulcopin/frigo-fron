@@ -17,7 +17,7 @@ import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import authService from "../services/authService";
 import { evaluarFormula as evaluarFormulaEngine, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
 import LoteTrazabilidadPanel from '../components/LoteTrazabilidadPanel';
-import { isTrazaEnabled, addLotes, getLotesDisponibles } from '../hooks/useLoteStore';
+import { isTrazaEnabled, addLote, addLotes, getLotesDisponibles } from '../hooks/useLoteStore';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -242,6 +242,12 @@ function FillForm() {
   const [apiPorIdLoadingTable, setApiPorIdLoadingTable] = useState({});
   // Siguiente código en secuencia por tabla: { [elementIndex]: 'A26135-002-004' }
   const [nextDetCodigoByTable, setNextDetCodigoByTable] = useState({});
+  // 🚫 Deshabilitar auto-lookup por tabla (modo emergencia / alta velocidad)
+  const [disableAutoLookupByTable, setDisableAutoLookupByTable] = useState({});
+  // Input manual de cabId para carga directa sin necesidad de escanear primero
+  const [manualCabIdInputByTable, setManualCabIdInputByTable] = useState({});
+  // 🔢 Filtro de rango por tabla: { [elementIndex]: { from: '007', to: '035' } }
+  const [rangeFilterByTable, setRangeFilterByTable] = useState({});
   const handleTableTrazaChange = (elementIndex, rowIndex, field, value) => {
     setTableTrazaData(prev => ({
       ...prev,
@@ -2814,6 +2820,161 @@ useEffect(() => {
   };
 
   // � Guardar entradas de un bloque lote_entrante en LotesInventario
+  // ============================================================
+  // 📦 GUARDAR RESUMEN DE LOTE desde el encabezado + tablas del form
+  // ============================================================
+  const [savingResumen, setSavingResumen] = useState(false);
+
+  const handleGuardarResumenLote = async () => {
+    setSavingResumen(true);
+    try {
+      // --- 1. Leer datos del encabezado ---
+      // Buscar en headerData el campo que parezca número de lote
+      const hKeys = Object.keys(headerData || {});
+      const loteKey = hKeys.find(k => /lote/i.test(k)) || hKeys.find(k => /numero/i.test(k)) || hKeys[0];
+      const fechaKey = hKeys.find(k => /fecha/i.test(k));
+      const especieKey = hKeys.find(k => /especie/i.test(k));
+
+      const numeroLote = (headerData[loteKey] || '').toString().trim();
+      const fecha = (headerData[fechaKey] || new Date().toISOString().split('T')[0]).toString().split('T')[0];
+      const especie = (headerData[especieKey] || '').toString().trim();
+
+      if (!numeroLote) {
+        alert('No se encontró un número de lote en el encabezado del formulario. Verifica que el campo "Lote" esté lleno.');
+        return;
+      }
+
+      const proceso = selectedTemplate?.nombre || selectedTemplate?.proceso || 'Sin proceso';
+      const templateId = String(selectedTemplate?.templateID || selectedTemplate?.id || '');
+      const formIdNum = id ? Number(id) : null;
+
+      // --- 2. Calcular PesoEntrada: suma de la columna de peso de la primera tabla de cuerpo ---
+      // Se busca la tabla que contenga códigos tipo "A26139-XXX" o la primer tabla del cuerpo
+      let pesoEntrada = 0;
+      let pesoNeto = 0;
+      const productosResumen = []; // [{ producto, peso }]
+
+      const bodyElems = selectedTemplate?.bodyElements || [];
+      const bodyRows = bodyData || [];
+
+      bodyElems.forEach((elem, idx) => {
+        if (elem.type !== 'table') return;
+        const rows = (bodyRows[idx]?.data || []).filter(r => !r?._deleted);
+        if (rows.length === 0) return;
+
+        const cols = elem.columns || [];
+        const colLabels = cols.map(c => (c.label || c.header || '').toLowerCase());
+
+        // Detectar si es tabla de materia prima (tiene columna de código de lote tipo A26139)
+        const hasCodigoLote = rows.some(r =>
+          Object.values(r).some(v => /^[A-Z]{1,2}\d{4,6}-\d{3}-\d{3}$/.test(String(v || '')))
+        );
+
+        // Columna de peso: buscar por nombre
+        const pesoCols = cols.filter(c => {
+          const lbl = (c.label || c.header || '').toLowerCase();
+          return lbl.includes('peso') || lbl.includes('weight') || lbl.includes('lb') || lbl.includes('kg');
+        });
+
+        // Detectar si es tabla de resumen (título o columnas contienen "resumen" o "producto" + "peso")
+        const titleLower = (elem.title || elem.label || '').toLowerCase();
+        const isResumen = titleLower.includes('resumen') || titleLower.includes('produccion') || titleLower.includes('producción') ||
+          (colLabels.some(l => l.includes('producto')) && colLabels.some(l => l.includes('peso')));
+
+        if (isResumen) {
+          // Tabla de resumen producción: sacar productos + pesos
+          const prodCol = cols.find(c => (c.label || c.header || '').toLowerCase().includes('producto'));
+          const pesoCol = pesoCols[0] || cols.find(c => c.includeInSum !== false);
+          rows.forEach(r => {
+            const prod = prodCol ? (r[prodCol.label] || r[prodCol.header] || '') : '';
+            const rawP = pesoCol ? (r[pesoCol.label] || r[pesoCol.header] || r[pesoCol.apiCodigo] || '') : '';
+            const p = parseFloat(String(rawP).replace(',', '.')) || 0;
+            if (p > 0 || prod) productosResumen.push({ producto: String(prod), peso: p });
+            pesoNeto += p;
+          });
+        } else if (hasCodigoLote || pesoEntrada === 0) {
+          // Tabla de materia prima: sumar pesos de entrada
+          const pesoCol = pesoCols[0] || cols.find(c => c.includeInSum !== false);
+          rows.forEach(r => {
+            const rawP = pesoCol ? (r[pesoCol.label] || r[pesoCol.header] || r[pesoCol.apiCodigo] || '') : '';
+            const p = parseFloat(String(rawP).replace(',', '.')) || 0;
+            pesoEntrada += p;
+          });
+        }
+      });
+
+      // Si no encontramos pesoNeto in resumen pero sí pesoEntrada, usar pesoNeto = pesoEntrada
+      if (pesoNeto === 0 && pesoEntrada > 0) pesoNeto = pesoEntrada;
+      const desperdicio = Math.max(0, pesoEntrada - pesoNeto);
+
+      // --- 3. Confirmar con el usuario mostrando el resumen ---
+      const productosStr = productosResumen.length > 0
+        ? productosResumen.map(p => `• ${p.producto || '(sin nombre)'}: ${p.peso.toFixed(2)} lb`).join('\n')
+        : '(No se detectó tabla de resumen — se usará el peso de entrada)';
+
+      const confirmMsg =
+        `📦 GUARDAR RESUMEN DE LOTE\n` +
+        `════════════════════════════\n` +
+        `Lote:         ${numeroLote}\n` +
+        `Fecha:        ${fecha}\n` +
+        `Proceso:      ${proceso}\n` +
+        (especie ? `Especie:      ${especie}\n` : '') +
+        `\nPeso Entrada: ${pesoEntrada.toFixed(2)} lb\n` +
+        `Peso Neto:    ${pesoNeto.toFixed(2)} lb\n` +
+        `Desperdicio:  ${desperdicio.toFixed(2)} lb\n` +
+        `\nProductos generados:\n${productosStr}\n` +
+        `\n¿Guardar en el Inventario de Lotes?`;
+
+      if (!window.confirm(confirmMsg)) return;
+
+      // --- 4. Guardar lote master ---
+      const notasProductos = productosResumen.length > 0
+        ? 'Productos: ' + productosResumen.map(p => `${p.producto} ${p.peso.toFixed(2)}lb`).join(' | ')
+        : '';
+
+      await addLote({
+        lote: numeroLote,
+        proceso,
+        producto: especie || productosResumen[0]?.producto || '',
+        clasificacion: '',
+        pesoEntrada,
+        desperdicio,
+        tipoDesperdicio: desperdicio > 0 ? 'Diferencia proceso' : '',
+        estado: 'disponible',
+        formId: formIdNum,
+        templateId,
+        fecha,
+        notas: notasProductos,
+      });
+
+      // --- 5. Guardar lotes hijo por producto del resumen (si hay más de uno) ---
+      if (productosResumen.length > 1) {
+        await addLotes(
+          productosResumen.map((p, i) => ({
+            lote: `${numeroLote}-P${String(i + 1).padStart(2, '0')}`,
+            proceso,
+            producto: p.producto,
+            clasificacion: '',
+            pesoEntrada: p.peso,
+            desperdicio: 0,
+            estado: 'disponible',
+            lotePadre: numeroLote,
+            formId: formIdNum,
+            templateId,
+            fecha,
+            notas: `Producto del resumen de lote ${numeroLote}`,
+          }))
+        );
+      }
+
+      alert(`✅ Lote "${numeroLote}" guardado correctamente en el Inventario de Lotes.\nPeso Entrada: ${pesoEntrada.toFixed(2)} lb | Peso Neto: ${pesoNeto.toFixed(2)} lb | Desperdicio: ${desperdicio.toFixed(2)} lb`);
+    } catch (err) {
+      alert('❌ Error al guardar el resumen de lote: ' + (err?.message || err));
+    } finally {
+      setSavingResumen(false);
+    }
+  };
+
   const guardarLoteEnInventario = async (lotEntries, campos, blockLabel) => {
     const toSave = (lotEntries || []).filter(e =>
       Object.values(e).some(v => v !== null && v !== undefined && String(v).trim() !== '')
@@ -4154,6 +4315,8 @@ useEffect(() => {
   
   // --- API POR CÓDIGO: buscar datos al ingresar un código en la columna gatillo ---
   const handleApiPorCodigoLookup = async (elementIndex, rowIndex, code, tableTemplate) => {
+    // 🚫 Si el auto-lookup está deshabilitado para esta tabla, no hacer nada
+    if (disableAutoLookupByTable[elementIndex]) return;
     if (!code || !tableTemplate?.apiCodigoUrl) return;
     const loadKey = `${elementIndex}-${rowIndex}`;
     setApiCodigoLoadingRows(prev => ({ ...prev, [loadKey]: true }));
@@ -4236,9 +4399,9 @@ useEffect(() => {
     return prefix + String(num + 1).padStart(padLen, '0');
   };
 
-  // Carga TODAS las filas del movimiento usando el ID de cabecera guardado
-  const handleApiPorIdLoad = async (elementIndex, tableTemplate) => {
-    const cabId = apiCabIdByTable[elementIndex];
+  // Carga TODAS las filas del movimiento usando el ID de cabecera guardado (o provisto manualmente)
+  const handleApiPorIdLoad = async (elementIndex, tableTemplate, overrideCabId) => {
+    const cabId = overrideCabId || apiCabIdByTable[elementIndex];
     if (!cabId || !tableTemplate?.apiPorIdEndpoint) return;
     setApiPorIdLoadingTable(prev => ({ ...prev, [elementIndex]: true }));
     try {
@@ -4253,10 +4416,36 @@ useEffect(() => {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
+      let data = await response.json();
       if (!Array.isArray(data) || data.length === 0) {
         console.warn('📥 API por ID: sin resultados para cabId', cabId);
         return;
+      }
+
+      // 🔢 Aplicar filtro de rango si está definido
+      const range = rangeFilterByTable[elementIndex];
+      if (range?.from || range?.to) {
+        const trigCola = tableTemplate.columns?.find(c => c.label === tableTemplate.apiCodigoTriggerCol);
+        const seqFieldPre = trigCola?.apiCodigo || 'detCodigo';
+        const parseNum = (code) => {
+          if (!code) return null;
+          const m = String(code).match(/(\d+)$/);
+          return m ? parseInt(m[1], 10) : null;
+        };
+        const fromNum = range.from ? parseInt(range.from, 10) : null;
+        const toNum = range.to ? parseInt(range.to, 10) : null;
+        data = data.filter(item => {
+          const num = parseNum(item[seqFieldPre]);
+          if (num === null) return true;
+          if (fromNum !== null && num < fromNum) return false;
+          if (toNum !== null && num > toNum) return false;
+          return true;
+        });
+        console.log(`🔢 Rango ${range.from || '...'}–${range.to || '...'}: ${data.length} filas filtradas`);
+        if (data.length === 0) {
+          alert(`No se encontraron elementos en el rango ${range.from || '...'} – ${range.to || '...'}`);
+          return;
+        }
       }
       // Construir colKeyMap igual que en handleApiPorCodigoLookup
       const cols = tableTemplate.columns || [];
@@ -4271,6 +4460,12 @@ useEffect(() => {
         const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
         colKeyMap.set(ci, seenLbls.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl);
       });
+      // Calcular trigger column y seqField ANTES de construir las filas
+      const triggerCol = cols.find(c => c.label === tableTemplate.apiCodigoTriggerCol);
+      const seqField = triggerCol?.apiCodigo || 'detCodigo';
+      const triggerColIdx = cols.findIndex(c => c.label === tableTemplate.apiCodigoTriggerCol);
+      const triggerColKey = triggerColIdx >= 0 ? colKeyMap.get(triggerColIdx) : null;
+
       // Para cada elemento del array construir una fila
       const newRows = data.map(item => {
         const row = {};
@@ -4281,6 +4476,10 @@ useEffect(() => {
             if (val !== undefined && val !== null) row[key] = String(val);
           }
         });
+        // Asegurar que la columna trigger (código) siempre se populate desde la API
+        if (triggerColKey && item[seqField] != null && !row[triggerColKey]) {
+          row[triggerColKey] = String(item[seqField]);
+        }
         if (tableTemplate.apiCodigoHiddenField && item[tableTemplate.apiCodigoHiddenField] != null) {
           row['_apiCodigoId'] = String(item[tableTemplate.apiCodigoHiddenField]);
         }
@@ -4288,8 +4487,6 @@ useEffect(() => {
         return row;
       });
       // Calcular siguiente código en secuencia
-      const triggerCol = cols.find(c => c.label === tableTemplate.apiCodigoTriggerCol);
-      const seqField = triggerCol?.apiCodigo || 'detCodigo';
       const allCodigos = data.map(item => item[seqField]).filter(Boolean);
       const nextCode = getNextSequenceCode(allCodigos);
       if (nextCode) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: nextCode }));
@@ -6049,6 +6246,22 @@ useEffect(() => {
           <button onClick={handleSaveForm} className="btn-primary" disabled={formSaving || draftSaving}
             style={{ opacity: (formSaving || draftSaving) ? 0.7 : 1, cursor: (formSaving || draftSaving) ? 'wait' : 'pointer' }}>
               {formSaving ? '⏳ Guardando...' : (id ? 'Actualizar' : 'Guardar Formulario')}
+          </button>
+          <button
+            onClick={handleGuardarResumenLote}
+            disabled={savingResumen || formSaving || draftSaving}
+            style={{
+              background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', color: '#fff',
+              border: '2px solid #5b21b6', padding: '8px 16px', borderRadius: '6px',
+              cursor: (savingResumen || formSaving || draftSaving) ? 'wait' : 'pointer',
+              fontSize: '14px', fontWeight: 'bold',
+              opacity: (savingResumen || formSaving || draftSaving) ? 0.7 : 1,
+              boxShadow: '0 2px 8px rgba(124,58,237,0.4)', minHeight: '44px',
+              display: 'inline-flex', alignItems: 'center', gap: '4px'
+            }}
+            title="Guardar el lote del encabezado con los pesos y productos de las tablas en el Inventario de Lotes"
+          >
+            {savingResumen ? '⏳ Guardando...' : '📦 Guardar Resumen Lote'}
           </button>
         </div>
         {autoSaveStatus === 'draft-saved' && (
@@ -8510,22 +8723,108 @@ useEffect(() => {
                     <button onClick={() => restoreTableRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }} title="Restaurar las filas predefinidas de la plantilla">
                       🔄 Restaurar Filas
                     </button>
-                    {/* � Botón de carga masiva por ID de cabecera */}
+                    {/* 📦 Carga masiva por ID de cabecera + toggle disable auto-lookup */}
                     {(() => {
                       const tableTempl = selectedTemplate?.bodyElements?.[elementIndex];
+                      if (!tableTempl?.apiPorIdEndpoint && !tableTempl?.usaApiPorCodigo) return null;
                       const cabId = apiCabIdByTable[elementIndex];
-                      if (!tableTempl?.apiPorIdEndpoint || !cabId) return null;
                       const isLoading = apiPorIdLoadingTable[elementIndex];
+                      const autoDisabled = !!disableAutoLookupByTable[elementIndex];
+                      const manualInput = manualCabIdInputByTable[elementIndex] || '';
+                      const effectiveCabId = cabId || manualInput.trim();
                       return (
-                        <button
-                          onClick={() => handleApiPorIdLoad(elementIndex, tableTempl)}
-                          disabled={isLoading}
-                          className="btn-add-row"
-                          style={{ background: isLoading ? '#e5e7eb' : 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: isLoading ? '#9ca3af' : 'white' }}
-                          title={`Cargar todas las filas del movimiento ID ${cabId} desde la API`}
-                        >
-                          {isLoading ? '⏳ Cargando...' : `📥 Cargar filas (ID: ${cabId})`}
-                        </button>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                          {/* Toggle deshabilitar auto-lookup */}
+                          {tableTempl?.usaApiPorCodigo && (
+                            <button
+                              onClick={() => setDisableAutoLookupByTable(prev => ({ ...prev, [elementIndex]: !prev[elementIndex] }))}
+                              className="btn-add-row"
+                              style={{
+                                background: autoDisabled
+                                  ? 'linear-gradient(135deg, #ef4444, #dc2626)'
+                                  : 'linear-gradient(135deg, #10b981, #059669)',
+                                fontSize: '11px', padding: '3px 8px'
+                              }}
+                              title={autoDisabled ? 'Auto-búsqueda DESHABILITADA — clic para habilitar' : 'Deshabilitar auto-búsqueda por código (modo velocidad)'}
+                            >
+                              {autoDisabled ? '🚫 Auto OFF' : '⚡ Auto ON'}
+                            </button>
+                          )}
+                          {/* Input manual de ID cuando no hay cabId del escaneo */}
+                          {tableTempl?.apiPorIdEndpoint && !cabId && (
+                            <input
+                              type="number"
+                              min="1"
+                              value={manualInput}
+                              onChange={e => setManualCabIdInputByTable(prev => ({ ...prev, [elementIndex]: e.target.value }))}
+                              placeholder="ID movimiento…"
+                              style={{
+                                width: '110px', fontSize: '12px', padding: '3px 6px',
+                                border: '1px solid #0ea5e9', borderRadius: '5px',
+                                outline: 'none'
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && manualInput.trim()) {
+                                  setApiCabIdByTable(prev => ({ ...prev, [elementIndex]: manualInput.trim() }));
+                                  setManualCabIdInputByTable(prev => ({ ...prev, [elementIndex]: '' }));
+                                }
+                              }}
+                            />
+                          )}
+                          {/* 🔢 Filtro de rango Desde / Hasta */}
+                          {tableTempl?.apiPorIdEndpoint && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                              <span style={{ fontSize: '10px', color: '#6b7280', whiteSpace: 'nowrap' }}>Desde</span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={rangeFilterByTable[elementIndex]?.from || ''}
+                                onChange={e => setRangeFilterByTable(prev => ({
+                                  ...prev,
+                                  [elementIndex]: { ...(prev[elementIndex] || {}), from: e.target.value }
+                                }))}
+                                placeholder="1"
+                                style={{ width: '52px', fontSize: '12px', padding: '3px 4px', border: '1px solid #a5b4fc', borderRadius: '4px', outline: 'none' }}
+                              />
+                              <span style={{ fontSize: '10px', color: '#6b7280', whiteSpace: 'nowrap' }}>Hasta</span>
+                              <input
+                                type="number"
+                                min="1"
+                                value={rangeFilterByTable[elementIndex]?.to || ''}
+                                onChange={e => setRangeFilterByTable(prev => ({
+                                  ...prev,
+                                  [elementIndex]: { ...(prev[elementIndex] || {}), to: e.target.value }
+                                }))}
+                                placeholder="300"
+                                style={{ width: '52px', fontSize: '12px', padding: '3px 4px', border: '1px solid #a5b4fc', borderRadius: '4px', outline: 'none' }}
+                              />
+                              {(rangeFilterByTable[elementIndex]?.from || rangeFilterByTable[elementIndex]?.to) && (
+                                <button
+                                  onClick={() => setRangeFilterByTable(prev => ({ ...prev, [elementIndex]: {} }))}
+                                  title="Quitar filtro de rango"
+                                  style={{ fontSize: '10px', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0 2px' }}
+                                >✕</button>
+                              )}
+                            </span>
+                          )}
+                          {/* Botón cargar filas */}
+                          {tableTempl?.apiPorIdEndpoint && effectiveCabId && (
+                            <button
+                              onClick={() => {
+                                if (manualInput.trim() && !cabId) {
+                                  setApiCabIdByTable(prev => ({ ...prev, [elementIndex]: manualInput.trim() }));
+                                }
+                                handleApiPorIdLoad(elementIndex, tableTempl, effectiveCabId);
+                              }}
+                              disabled={isLoading}
+                              className="btn-add-row"
+                              style={{ background: isLoading ? '#e5e7eb' : 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: isLoading ? '#9ca3af' : 'white', fontSize: '11px' }}
+                              title={`Cargar TODAS las filas del movimiento ID ${effectiveCabId} desde la API`}
+                            >
+                              {isLoading ? '⏳ Cargando...' : `📥 Cargar ID: ${effectiveCabId}`}
+                            </button>
+                          )}
+                        </span>
                       );
                     })()}
                     {/* �📦 Botón de Agrupar / Crear Grupo */}
@@ -9110,7 +9409,20 @@ useEffect(() => {
           const apiCodigoLoadKey = `${elementIndex}-${rowIndex}`;
           const isApiCodigoLoading = apiCodigoLoadingRows[apiCodigoLoadKey];
 
-          const nextSuggestedCode = nextDetCodigoByTable[elementIndex];
+          // Calcular sugerencia secuencial por fila: cada fila vacía recibe el código siguiente al de la fila anterior vacía
+          const baseSuggestedCode = nextDetCodigoByTable[elementIndex];
+          let nextSuggestedCode = baseSuggestedCode;
+          if (isApiCodigoTrigger && baseSuggestedCode) {
+            // Contar cuántas filas ANTERIORES a ésta tienen el campo de código vacío
+            const emptyBefore = allRowsForTable.slice(0, rowIndex).filter(r => !r[resolvedCellName] && !r[cellName]).length;
+            if (emptyBefore > 0) {
+              const match = baseSuggestedCode.match(/^(.*?)(\d+)$/);
+              if (match) {
+                const num = parseInt(match[2], 10) + emptyBefore;
+                nextSuggestedCode = match[1] + String(num).padStart(match[2].length, '0');
+              }
+            }
+          }
           return (
             <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border">
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -9140,7 +9452,7 @@ useEffect(() => {
                 )}
                 {col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', whiteSpace: 'nowrap', fontWeight: 500 }}>{col.unit}</span>}
               </div>
-              {/* 💡 Sugerencia de siguiente código en secuencia */}
+              {/* 💡 Sugerencia de siguiente código en secuencia (por fila) */}
               {isApiCodigoTrigger && !row[resolvedCellName] && nextSuggestedCode && (
                 <div style={{ marginTop: '3px' }}>
                   <button
@@ -9149,6 +9461,7 @@ useEffect(() => {
                     onClick={() => {
                       handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, nextSuggestedCode);
                       handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
+                      // Solo avanzar el código base cuando se usa la sugerencia
                       const afterNext = getNextSequenceCode([nextSuggestedCode]);
                       if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
                     }}
@@ -9238,8 +9551,11 @@ useEffect(() => {
 
 {/* 📊 FILA DE TOTALES POR COLUMNA */}
 {(() => {
-  // Solo mostrar si autoSumColumns está activado en la plantilla
-  const autoSumCols = selectedTemplate?.autoSumColumns === true || selectedTemplate?.AutoSumColumns === true;
+        // Mostrar si: autoSumColumns activado A NIVEL DE TEMPLATE,
+  // O al menos una columna tiene includeInSum !== false (undefined = incluido por defecto)
+  const templateCols = element.columns || [];
+  const autoSumCols = selectedTemplate?.autoSumColumns === true || selectedTemplate?.AutoSumColumns === true
+    || templateCols.some(c => c.includeInSum !== false);
   if (!autoSumCols) return null;
 
   const rows = (currentElementData.data || []).filter(r => !r?._deleted);
@@ -9252,38 +9568,38 @@ useEffect(() => {
     <tfoot>
       <tr style={{ backgroundColor: '#eef2ff', fontWeight: 'bold', borderTop: '3px solid #6366f1' }}>
         <td style={{ textAlign: 'center', color: '#4338ca', fontWeight: '800', fontSize: '0.9em', padding: '8px 4px' }}>Σ</td>
-        {(element.columns || []).map((col, colIndex) => {
+        {templateCols.map((col, colIndex) => {
           const cellName = colNameMap.get(colIndex) || col.label || col.header || col.id || `col_${colIndex}`;
           const colLabel = (col.label || col.header || '').toUpperCase();
           const colType = (col.type || '').toLowerCase();
 
-          // Si el usuario marcó explícitamente "No incluir en Σ totales" → siempre mostrar —
+          // Si está explícitamente excluido → siempre mostrar —
           if (col.includeInSum === false) {
             return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
           }
 
-          // Tipos de columna que NUNCA se suman automáticamente (texto, fecha, selector, firma…)
-          // a menos que el usuario los haya activado explícitamente con includeInSum === true
-          const tiposNoNumericos = ['text', 'textarea', 'select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
-          if (tiposNoNumericos.includes(colType) && col.includeInSum !== true) {
+          // Tipos de columna no numéricos: omitir SOLO si están explícitamente excluidos
+          // (undefined y true = incluido; false = excluido)
+          const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
+          if (tiposNoNumericos.includes(colType)) {
             return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
           }
-          
-          // Determinar si esta columna es numérica (solo si no fue explícitamente incluida)
-          const isNumericCol = col.includeInSum === true ||
+
+          // Determinar si esta columna es numérica
+          const isNumericCol = col.includeInSum !== false ||
             colType === 'number' || colType === 'temperature' || colType === 'percentage' || colType === 'calculated' || colType === 'formula' || col.formula ||
             colLabel.includes('PESO') || colLabel.includes('TOTAL') || colLabel.includes('CANTIDAD') ||
             colLabel.includes('VOLUMEN') || colLabel.includes('TEMPERATURA') || colLabel.includes('TEMP');
 
           if (!isNumericCol) {
-            // Para columnas sin tipo definido: solo sumar si TODOS los valores son numéricos != 0
+            // Para columnas sin tipo definido: solo sumar si hay al menos algún valor numérico
             let hasAnyNumber = false;
             let allNumeric = true;
             for (const row of rows) {
               const rawVal = row[cellName];
               if (rawVal === '' || rawVal === null || rawVal === undefined) continue;
               const val = parseFloat(rawVal);
-              if (isNaN(val) || val === 0) { allNumeric = false; break; }
+              if (isNaN(val)) { allNumeric = false; break; }
               hasAnyNumber = true;
             }
             if (!hasAnyNumber || !allNumeric) {
@@ -9325,8 +9641,13 @@ useEffect(() => {
             });
           } else {
             // Columna normal: sumar directamente los valores del row
+            // Intentar también por apiCodigo como fallback si el label no encuentra nada
             rows.forEach(row => {
-              const val = parseFloat(row[cellName]);
+              let rawVal = row[cellName];
+              if ((rawVal === undefined || rawVal === null || rawVal === '') && col.apiCodigo) {
+                rawVal = row[col.apiCodigo];
+              }
+              const val = parseFloat(rawVal);
               if (!isNaN(val)) {
                 columnTotal += val;
                 hasValues = true;
@@ -9835,6 +10156,22 @@ useEffect(() => {
           <button onClick={handleSaveForm} className="btn-primary btn-large" disabled={formSaving || draftSaving}
             style={{ opacity: (formSaving || draftSaving) ? 0.7 : 1, cursor: (formSaving || draftSaving) ? 'wait' : 'pointer' }}>
             {formSaving ? '⏳ Guardando...' : (id ? '💾 Guardar Cambios' : '💾 Guardar Formulario Completo')}
+          </button>
+          <button
+            onClick={handleGuardarResumenLote}
+            disabled={savingResumen || formSaving || draftSaving}
+            style={{
+              background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', color: '#fff',
+              border: '2px solid #5b21b6', padding: '12px 24px', borderRadius: '8px',
+              cursor: (savingResumen || formSaving || draftSaving) ? 'wait' : 'pointer',
+              fontSize: '16px', fontWeight: 'bold',
+              opacity: (savingResumen || formSaving || draftSaving) ? 0.7 : 1,
+              boxShadow: '0 2px 8px rgba(124,58,237,0.4)', minHeight: '44px',
+              display: 'inline-flex', alignItems: 'center', gap: '6px'
+            }}
+            title="Guardar el lote del encabezado con los pesos y productos de las tablas en el Inventario de Lotes"
+          >
+            {savingResumen ? '⏳ Guardando lote...' : '📦 Guardar Resumen Lote'}
           </button>
         </div>
         {autoSaveStatus === 'draft-saved' && (

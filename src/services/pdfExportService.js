@@ -1225,12 +1225,15 @@ const rows = tableData.map((row, rowIndex) => {
             row.map(cell => sanitizeText(cell))
           );
           
-          // 📊 Calcular fila de TOTALES por columna (solo si autoSumColumns está activado)
-          const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true;
+          // 📊 Calcular fila de TOTALES por columna (solo si autoSumColumns está activado o alguna col lo pide)
+          const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true
+            || (section.columns || []).some(c => c.includeInSum !== false);
           let totalsRow = [];
           let hasTotals = false;
           if (showColumnTotals) {
             totalsRow = columns.map((col, colIndex) => {
+              // Respetar includeInSum: si está explícitamente en false → no sumar
+              if (col.includeInSum === false) return '—';
               let columnTotal = 0;
               let hasValues = false;
               const dataRows = sanitizedRows;

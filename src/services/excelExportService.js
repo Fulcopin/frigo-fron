@@ -940,15 +940,22 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
       currentRow++;
     });
 
-    // 📊 FILA DE TOTALES POR COLUMNA (solo si autoSumColumns está activado)
-    const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true;
+    // 📊 FILA DE TOTALES POR COLUMNA (solo si autoSumColumns está activado o alguna col lo pide)
+    const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true
+      || columns.some(c => c.includeInSum !== false);
     if (showColumnTotals && !isEmptyTable) {
       const totalsValues = columns.map((col, colIndex) => {
+        // Respetar includeInSum: si está explícitamente en false → no sumar
+        if (col.includeInSum === false) return { total: 0, hasNum: false };
         let colTotal = 0;
         let hasNum = false;
         dataToRender.forEach(row => {
           const rowKeys = Object.keys(row);
           let value = row[col.label] ?? row[col.name] ?? row[col.header];
+          if (value === undefined || value === null || value === "") {
+            // Fallback por apiCodigo
+            if (col.apiCodigo) value = row[col.apiCodigo];
+          }
           if (value === undefined || value === null || value === "") {
             const suffix = `_col${colIndex}`;
             const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));

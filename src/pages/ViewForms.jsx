@@ -1164,14 +1164,29 @@ function ViewForms() {
                       </tbody>
                       
                       {/* 📊 FILA DE TOTALES POR COLUMNA */}
-                      {tableRows.length > 0 && (correspondingTemplate?.autoSumColumns === true || correspondingTemplate?.AutoSumColumns === true) && (
+                      {tableRows.length > 0 && (
+                        (correspondingTemplate?.autoSumColumns === true || correspondingTemplate?.AutoSumColumns === true)
+                        || (templateElement.columns || []).some(c => c.includeInSum !== false)
+                      ) && (
                         <tfoot>
                           <tr style={{ backgroundColor: '#eef2ff', fontWeight: 'bold', borderTop: '3px solid #6366f1' }}>
                             <td style={{ textAlign: 'center', color: '#4338ca', fontWeight: '800', fontSize: '0.9em', padding: '8px 4px' }}>Σ</td>
                             {templateElement.columns.map((col, colIndex) => {
                               const colLabel = (col.label || col.header || '').toUpperCase();
                               const colId = (col.id || col.name || '').toUpperCase();
-                              
+                              const colType = (col.type || '').toLowerCase();
+
+                              // Respetar exclusiones explícitas
+                              if (col.includeInSum === false) {
+                                return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
+                              }
+
+                              // Tipos no numéricos: excluir siempre (a menos que sean text/textarea con datos numéricos)
+                              const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
+                              if (tiposNoNumericos.includes(colType)) {
+                                return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
+                              }
+
                               // Sumar valores de esta columna en todas las filas
                               let columnTotal = 0;
                               let hasValues = false;
@@ -1183,6 +1198,11 @@ function ViewForms() {
 
                                 // Buscar valor igual que en el renderizado
                                 let cellValue = row[colLabelSearch] ?? row[col.header] ?? row[colIdSearch] ?? row[col.name];
+
+                                // Fallback por apiCodigo (datos cargados desde API externa)
+                                if ((cellValue === undefined || cellValue === null || cellValue === "") && col.apiCodigo) {
+                                  cellValue = row[col.apiCodigo];
+                                }
 
                                 if (cellValue === undefined || cellValue === null || cellValue === "") {
                                   const targetClean = colLabel.replace(/[^A-Z0-9]/g, "");
