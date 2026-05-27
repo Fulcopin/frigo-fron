@@ -248,6 +248,14 @@ function FillForm() {
   const [manualCabIdInputByTable, setManualCabIdInputByTable] = useState({});
   // 🔢 Filtro de rango por tabla: { [elementIndex]: { from: '007', to: '035' } }
   const [rangeFilterByTable, setRangeFilterByTable] = useState({});
+  // 📋 Lista de IDs de recepciones cargados por tabla: { [elementIndex]: string[] }
+  const [multiCabIdsListByTable, setMultiCabIdsListByTable] = useState({});
+  // 🗂️ Pool plano de TODOS los códigos: { [elementIndex]: string[] }
+  const [allCodesPoolByTable, setAllCodesPoolByTable] = useState({});
+  // 🗂️ Códigos POR cabId, para sugerencias por recepción: { [elementIndex]: { [cabId]: string[] } }
+  const [codesPerCabIdByTable, setCodesPerCabIdByTable] = useState({});
+  // 📍 Fila de inicio para carga masiva (1-based): { [elementIndex]: number }
+  const [startRowByTable, setStartRowByTable] = useState({});
   const handleTableTrazaChange = (elementIndex, rowIndex, field, value) => {
     setTableTrazaData(prev => ({
       ...prev,
@@ -4366,8 +4374,47 @@ useEffect(() => {
       }
       // Guardar ID de cabecera para carga masiva (por defecto detCabId)
       const cabIdField = tableTemplate.apiCabIdJsonField || 'detCabId';
-      if (item[cabIdField] != null) {
-        setApiCabIdByTable(prev => ({ ...prev, [elementIndex]: item[cabIdField] }));
+      const foundCabId = item[cabIdField];
+      if (foundCabId != null) {
+        setApiCabIdByTable(prev => ({ ...prev, [elementIndex]: foundCabId }));
+
+        // 🗂️ Si este cabId es nuevo, traer en background TODOS los códigos de esa recepción al pool
+        const cabIdStr = String(foundCabId);
+        setMultiCabIdsListByTable(prev => {
+          const existing = prev[elementIndex] || [];
+          if (existing.includes(cabIdStr)) return prev; // ya lo tenemos
+          // fetch background
+          const seqField = tableTemplate.columns?.find(c => c.label === tableTemplate.apiCodigoTriggerCol)?.apiCodigo || 'detCodigo';
+          let idUrl = tableTemplate.apiPorIdEndpoint;
+          if (idUrl) {
+            if (!idUrl.startsWith('http://') && !idUrl.startsWith('https://')) {
+              idUrl = API_EXTERNAL_BASE_URL.replace(/\/$/, '') + '/' + idUrl.replace(/^\//, '');
+            }
+            ensureApiToken().then(tok =>
+              fetch(idUrl + encodeURIComponent(cabIdStr), { headers: tok ? { 'Authorization': `Bearer ${tok}` } : {} })
+                .then(r => r.ok ? r.json() : [])
+                .then(rows => {
+                  if (!Array.isArray(rows)) return;
+                  const codes = rows.map(r => r[seqField]).filter(Boolean).sort();
+                  // Actualizar pool plano
+                  setAllCodesPoolByTable(pp => {
+                    const ex = pp[elementIndex] || [];
+                    return { ...pp, [elementIndex]: [...new Set([...ex, ...codes])].sort() };
+                  });
+                  // Guardar códigos por cabId
+                  setCodesPerCabIdByTable(pp => ({
+                    ...pp,
+                    [elementIndex]: { ...(pp[elementIndex] || {}), [cabIdStr]: codes }
+                  }));
+                  // Actualizar la sugerencia con el último código de este nuevo cabId
+                  const nextC = getNextSequenceCode(codes);
+                  if (nextC) setNextDetCodigoByTable(pd => ({ ...pd, [elementIndex]: nextC }));
+                })
+                .catch(() => {})
+            );
+          }
+          return { ...prev, [elementIndex]: [...existing, cabIdStr] };
+        });
       }
 
       if (Object.keys(updates).length > 0) {
@@ -4400,7 +4447,7 @@ useEffect(() => {
   };
 
   // Carga TODAS las filas del movimiento usando el ID de cabecera guardado (o provisto manualmente)
-  const handleApiPorIdLoad = async (elementIndex, tableTemplate, overrideCabId) => {
+  const handleApiPorIdLoad = async (elementIndex, tableTemplate, overrideCabId, appendMode = false, startRowOverride = null) => {
     const cabId = overrideCabId || apiCabIdByTable[elementIndex];
     if (!cabId || !tableTemplate?.apiPorIdEndpoint) return;
     setApiPorIdLoadingTable(prev => ({ ...prev, [elementIndex]: true }));
@@ -4490,9 +4537,59 @@ useEffect(() => {
       const allCodigos = data.map(item => item[seqField]).filter(Boolean);
       const nextCode = getNextSequenceCode(allCodigos);
       if (nextCode) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: nextCode }));
-      // Reemplazar filas de la tabla con las cargadas
+
+      // 🗂️ Actualizar pool de códigos con los de esta recepción
+      setAllCodesPoolByTable(prev => {
+        const existing = prev[elementIndex] || [];
+        const merged = [...new Set([...existing, ...allCodigos])].sort();
+        return { ...prev, [elementIndex]: merged };
+      });
+
+      // Guardar códigos por cabId para sugerencias por recepción
+      if (overrideCabId) {
+        const cabIdStr = String(overrideCabId);
+        setCodesPerCabIdByTable(prev => ({
+          ...prev,
+          [elementIndex]: { ...(prev[elementIndex] || {}), [cabIdStr]: [...allCodigos].sort() }
+        }));
+      }
+
+      // 📋 Registrar este ID en la lista de recepciones cargadas
+      if (overrideCabId) {
+        const idStr = String(overrideCabId);
+        setMultiCabIdsListByTable(prev => {
+          const existing = prev[elementIndex] || [];
+          if (!existing.includes(idStr)) return { ...prev, [elementIndex]: [...existing, idStr] };
+          return prev;
+        });
+      }
+
+      // Calcular fila de inicio (0-based)
+      const startRowRaw = startRowOverride ?? startRowByTable[elementIndex];
+      const startRowIdx = startRowRaw ? Math.max(0, parseInt(startRowRaw, 10) - 1) : 0;
+
+      // Insertar filas desde la fila de inicio
       setBodyData(prev => prev.map((element, index) => {
         if (index !== elementIndex) return element;
+        const existing = [...(element.data || [])];
+        if (startRowIdx > 0 || appendMode) {
+          // Rellenar con filas vacías si la tabla tiene menos filas que startRowIdx
+          const emptyRow = {};
+          (tableTemplate.columns || []).forEach(col => {
+            emptyRow[col.label || col.header || col.id || `col_${col}`] = '';
+          });
+          while (existing.length < startRowIdx) existing.push({ ...emptyRow });
+          // Reemplazar desde startRowIdx: mantener filas previas + nuevas + las de después si append
+          const before = existing.slice(0, startRowIdx);
+          if (appendMode && startRowIdx === 0) {
+            // Append puro: poner al final de las filas con datos
+            const withData = existing.filter(r =>
+              Object.values(r).some(v => v !== null && v !== undefined && String(v).trim() !== '')
+            );
+            return { ...element, data: [...withData, ...newRows] };
+          }
+          return { ...element, data: [...before, ...newRows] };
+        }
         return { ...element, data: newRows };
       }));
       setHasUnsavedChanges(true);
@@ -8723,18 +8820,21 @@ useEffect(() => {
                     <button onClick={() => restoreTableRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }} title="Restaurar las filas predefinidas de la plantilla">
                       🔄 Restaurar Filas
                     </button>
-                    {/* 📦 Carga masiva por ID de cabecera + toggle disable auto-lookup */}
+                    {/* 📦 Carga multi-recepción por IDs + toggle auto-lookup */}
                     {(() => {
                       const tableTempl = selectedTemplate?.bodyElements?.[elementIndex];
                       if (!tableTempl?.apiPorIdEndpoint && !tableTempl?.usaApiPorCodigo) return null;
                       const cabId = apiCabIdByTable[elementIndex];
-                      const isLoading = apiPorIdLoadingTable[elementIndex];
+                      const isLoading = !!apiPorIdLoadingTable[elementIndex];
                       const autoDisabled = !!disableAutoLookupByTable[elementIndex];
                       const manualInput = manualCabIdInputByTable[elementIndex] || '';
-                      const effectiveCabId = cabId || manualInput.trim();
+                      const loadedIds = multiCabIdsListByTable[elementIndex] || [];
+                      const poolCodes = allCodesPoolByTable[elementIndex] || [];
+
                       return (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                          {/* Toggle deshabilitar auto-lookup */}
+
+                          {/* Toggle auto-lookup */}
                           {tableTempl?.usaApiPorCodigo && (
                             <button
                               onClick={() => setDisableAutoLookupByTable(prev => ({ ...prev, [elementIndex]: !prev[elementIndex] }))}
@@ -8750,50 +8850,130 @@ useEffect(() => {
                               {autoDisabled ? '🚫 Auto OFF' : '⚡ Auto ON'}
                             </button>
                           )}
-                          {/* Input manual de ID cuando no hay cabId del escaneo */}
-                          {tableTempl?.apiPorIdEndpoint && !cabId && (
-                            <input
-                              type="number"
-                              min="1"
-                              value={manualInput}
-                              onChange={e => setManualCabIdInputByTable(prev => ({ ...prev, [elementIndex]: e.target.value }))}
-                              placeholder="ID movimiento…"
-                              style={{
-                                width: '110px', fontSize: '12px', padding: '3px 6px',
-                                border: '1px solid #0ea5e9', borderRadius: '5px',
-                                outline: 'none'
-                              }}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter' && manualInput.trim()) {
-                                  setApiCabIdByTable(prev => ({ ...prev, [elementIndex]: manualInput.trim() }));
-                                  setManualCabIdInputByTable(prev => ({ ...prev, [elementIndex]: '' }));
-                                }
-                              }}
-                            />
+
+                          {/* Chips de IDs ya cargados */}
+                          {loadedIds.length > 0 && (
+                            <span style={{ display: 'inline-flex', gap: '3px', flexWrap: 'wrap', alignItems: 'center' }}>
+                              {loadedIds.map(lid => (
+                                <span key={lid} style={{
+                                  background: '#dbeafe', color: '#1d4ed8', borderRadius: '12px',
+                                  padding: '2px 6px', fontSize: '11px', fontWeight: 600,
+                                  border: '1px solid #bfdbfe', display: 'inline-flex', alignItems: 'center', gap: '2px'
+                                }}>
+                                  <button
+                                    title={`Cargar ID:${lid} con el rango/fila actuales`}
+                                    onClick={() => handleApiPorIdLoad(elementIndex, tableTempl, lid, true, startRowByTable[elementIndex] || null)}
+                                    disabled={isLoading}
+                                    style={{
+                                      background: isLoading ? '#9ca3af' : '#2563eb', color: '#fff',
+                                      border: 'none', borderRadius: '8px', cursor: isLoading ? 'not-allowed' : 'pointer',
+                                      fontSize: '10px', padding: '1px 5px', lineHeight: 1, fontWeight: 700
+                                    }}
+                                  >▶</button>
+                                  ID:{lid}
+                                  <button
+                                    title="Quitar de la lista (no elimina filas cargadas)"
+                                    onClick={() => setMultiCabIdsListByTable(prev => ({
+                                      ...prev, [elementIndex]: loadedIds.filter(i => i !== lid)
+                                    }))}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '10px', padding: '0', lineHeight: 1 }}
+                                  >✕</button>
+                                </span>
+                              ))}
+                              <span style={{ fontSize: '10px', color: '#6b7280', whiteSpace: 'nowrap' }}>
+                                {poolCodes.length} cód.
+                              </span>
+                            </span>
                           )}
-                          {/* 🔢 Filtro de rango Desde / Hasta */}
+
+                          {/* Input para agregar un nuevo ID de recepción */}
                           {tableTempl?.apiPorIdEndpoint && (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                              <span style={{ fontSize: '10px', color: '#6b7280', whiteSpace: 'nowrap' }}>Desde</span>
                               <input
                                 type="number"
                                 min="1"
+                                value={manualInput}
+                                onChange={e => setManualCabIdInputByTable(prev => ({ ...prev, [elementIndex]: e.target.value }))}
+                                placeholder="ID recepción…"
+                                style={{
+                                  width: '108px', fontSize: '12px', padding: '3px 6px',
+                                  border: '1px solid #0ea5e9', borderRadius: '5px', outline: 'none'
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' && manualInput.trim()) {
+                                    const isAppend = loadedIds.length > 0;
+                                    handleApiPorIdLoad(elementIndex, tableTempl, manualInput.trim(), isAppend, startRowByTable[elementIndex] || null);
+                                    setManualCabIdInputByTable(prev => ({ ...prev, [elementIndex]: '' }));
+                                  }
+                                }}
+                              />
+                              <button
+                                onClick={() => {
+                                  if (!manualInput.trim()) return;
+                                  const isAppend = loadedIds.length > 0;
+                                  handleApiPorIdLoad(elementIndex, tableTempl, manualInput.trim(), isAppend, startRowByTable[elementIndex] || null);
+                                  setManualCabIdInputByTable(prev => ({ ...prev, [elementIndex]: '' }));
+                                }}
+                                disabled={isLoading || !manualInput.trim()}
+                                className="btn-add-row"
+                                style={{
+                                  background: (!isLoading && manualInput.trim())
+                                    ? 'linear-gradient(135deg, #0ea5e9, #0284c7)'
+                                    : '#e5e7eb',
+                                  color: (!isLoading && manualInput.trim()) ? 'white' : '#9ca3af',
+                                  fontSize: '11px'
+                                }}
+                                title={loadedIds.length > 0 ? 'Cargar este ID y añadir filas a las existentes' : 'Cargar filas de este ID'}
+                              >
+                                {isLoading ? '⏳' : loadedIds.length > 0 ? '➕ Añadir ID' : '📥 Cargar'}
+                              </button>
+                            </span>
+                          )}
+
+                          {/* Botón cargar ID detectado por escaneo (si no está ya en la lista) */}
+                          {tableTempl?.apiPorIdEndpoint && cabId && !loadedIds.includes(String(cabId)) && (
+                            <button
+                              onClick={() => handleApiPorIdLoad(elementIndex, tableTempl, cabId, loadedIds.length > 0, startRowByTable[elementIndex] || null)}
+                              disabled={isLoading}
+                              className="btn-add-row"
+                              style={{
+                                background: isLoading ? '#e5e7eb' : 'linear-gradient(135deg, #0ea5e9, #0284c7)',
+                                color: isLoading ? '#9ca3af' : 'white', fontSize: '11px'
+                              }}
+                              title={`Cargar todas las filas del movimiento ID ${cabId}`}
+                            >
+                              {isLoading ? '⏳ Cargando...' : `📥 Cargar ID: ${cabId}`}
+                            </button>
+                          )}
+
+                          {/* 🔢 Filtro de rango Desde / Hasta */}
+                          {tableTempl?.apiPorIdEndpoint && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                              <span style={{ fontSize: '10px', color: '#6b7280', whiteSpace: 'nowrap', fontWeight: 600 }}>↳ Fila</span>
+                              <input
+                                type="number" min="1"
+                                value={startRowByTable[elementIndex] || ''}
+                                onChange={e => setStartRowByTable(prev => ({ ...prev, [elementIndex]: e.target.value }))}
+                                placeholder="1"
+                                title="Fila de inicio donde se insertarán las filas cargadas (1 = primera fila)"
+                                style={{ width: '46px', fontSize: '12px', padding: '3px 4px', border: '1px solid #86efac', borderRadius: '4px', outline: 'none', background: startRowByTable[elementIndex] ? '#f0fdf4' : 'white' }}
+                              />
+                              <span style={{ fontSize: '10px', color: '#6b7280', whiteSpace: 'nowrap' }}>Desde</span>
+                              <input
+                                type="number" min="1"
                                 value={rangeFilterByTable[elementIndex]?.from || ''}
                                 onChange={e => setRangeFilterByTable(prev => ({
-                                  ...prev,
-                                  [elementIndex]: { ...(prev[elementIndex] || {}), from: e.target.value }
+                                  ...prev, [elementIndex]: { ...(prev[elementIndex] || {}), from: e.target.value }
                                 }))}
                                 placeholder="1"
                                 style={{ width: '52px', fontSize: '12px', padding: '3px 4px', border: '1px solid #a5b4fc', borderRadius: '4px', outline: 'none' }}
                               />
                               <span style={{ fontSize: '10px', color: '#6b7280', whiteSpace: 'nowrap' }}>Hasta</span>
                               <input
-                                type="number"
-                                min="1"
+                                type="number" min="1"
                                 value={rangeFilterByTable[elementIndex]?.to || ''}
                                 onChange={e => setRangeFilterByTable(prev => ({
-                                  ...prev,
-                                  [elementIndex]: { ...(prev[elementIndex] || {}), to: e.target.value }
+                                  ...prev, [elementIndex]: { ...(prev[elementIndex] || {}), to: e.target.value }
                                 }))}
                                 placeholder="300"
                                 style={{ width: '52px', fontSize: '12px', padding: '3px 4px', border: '1px solid #a5b4fc', borderRadius: '4px', outline: 'none' }}
@@ -8807,23 +8987,7 @@ useEffect(() => {
                               )}
                             </span>
                           )}
-                          {/* Botón cargar filas */}
-                          {tableTempl?.apiPorIdEndpoint && effectiveCabId && (
-                            <button
-                              onClick={() => {
-                                if (manualInput.trim() && !cabId) {
-                                  setApiCabIdByTable(prev => ({ ...prev, [elementIndex]: manualInput.trim() }));
-                                }
-                                handleApiPorIdLoad(elementIndex, tableTempl, effectiveCabId);
-                              }}
-                              disabled={isLoading}
-                              className="btn-add-row"
-                              style={{ background: isLoading ? '#e5e7eb' : 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: isLoading ? '#9ca3af' : 'white', fontSize: '11px' }}
-                              title={`Cargar TODAS las filas del movimiento ID ${effectiveCabId} desde la API`}
-                            >
-                              {isLoading ? '⏳ Cargando...' : `📥 Cargar ID: ${effectiveCabId}`}
-                            </button>
-                          )}
+
                         </span>
                       );
                     })()}
@@ -9410,10 +9574,15 @@ useEffect(() => {
           const isApiCodigoLoading = apiCodigoLoadingRows[apiCodigoLoadKey];
 
           // Calcular sugerencia secuencial por fila: cada fila vacía recibe el código siguiente al de la fila anterior vacía
+          const pool = (allCodesPoolByTable[elementIndex] || []);
+          const codesInTable = new Set(
+            allRowsForTable.map(r => r[resolvedCellName] || r[cellName]).filter(Boolean)
+          );
+          // Calcula el siguiente código no usado del pool para esta fila vacía
+          // Si hay pool, calcular cuántas filas vacías hay antes que ésta (para avanzar el puntero)
           const baseSuggestedCode = nextDetCodigoByTable[elementIndex];
           let nextSuggestedCode = baseSuggestedCode;
           if (isApiCodigoTrigger && baseSuggestedCode) {
-            // Contar cuántas filas ANTERIORES a ésta tienen el campo de código vacío
             const emptyBefore = allRowsForTable.slice(0, rowIndex).filter(r => !r[resolvedCellName] && !r[cellName]).length;
             if (emptyBefore > 0) {
               const match = baseSuggestedCode.match(/^(.*?)(\d+)$/);
@@ -9423,11 +9592,60 @@ useEffect(() => {
               }
             }
           }
+
+          // Una sugerencia por recepción: el primer código del pool de esa recepción que no esté en la tabla
+          const loadedIds = multiCabIdsListByTable[elementIndex] || [];
+          const perCabIdCodes = codesPerCabIdByTable[elementIndex] || {};
+          // Texto actualmente escrito en la celda, para filtrar chips mientras se escribe
+          const typedForChips = (row[resolvedCellName] || '').toLowerCase();
+
           return (
             <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border">
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <div style={{ flex: 1 }}>
-                  {renderField(col, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
+                  {/* Siempre input con datalist cuando hay pool O es trigger */}
+                  {isApiCodigoTrigger ? (() => {
+                    const typed = row[resolvedCellName] || '';
+                    const datalistId = `pool-${elementIndex}-${rowIndex}`;
+                    // Filtrar: si hay algo escrito, mostrar coincidencias; si vacío, mostrar pool completo
+                    const filtered = pool.length > 0
+                      ? (typed ? pool.filter(c => c.toLowerCase().includes(typed.toLowerCase())) : pool)
+                      : [];
+                    return (
+                      <>
+                        <input
+                          list={filtered.length > 0 ? datalistId : undefined}
+                          value={typed}
+                          onChange={e => {
+                            const v = e.target.value;
+                            handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, v);
+                            // Si coincide exactamente con un código del pool → auto-lookup
+                            if (v && pool.includes(v) && !disableAutoLookupByTable[elementIndex]) {
+                              handleApiPorCodigoLookup(elementIndex, rowIndex, v, tableTemplateForApiCodigo);
+                            }
+                          }}
+                          onBlur={e => {
+                            const v = e.target.value?.trim();
+                            if (v && !disableAutoLookupByTable[elementIndex]) {
+                              handleApiPorCodigoLookup(elementIndex, rowIndex, v, tableTemplateForApiCodigo);
+                            }
+                          }}
+                          placeholder={pool.length > 0 ? `Código… (${pool.length} disponibles)` : 'Código…'}
+                          style={{
+                            width: '100%', padding: '4px 8px',
+                            border: `1px solid ${pool.length > 0 ? '#a78bfa' : '#d1d5db'}`,
+                            borderRadius: '4px', fontSize: '13px', outline: 'none',
+                            background: typed ? '#faf5ff' : 'white'
+                          }}
+                        />
+                        {filtered.length > 0 && (
+                          <datalist id={datalistId}>
+                            {filtered.slice(0, 200).map(c => <option key={c} value={c} />)}
+                          </datalist>
+                        )}
+                      </>
+                    );
+                  })() : renderField(col, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
                 </div>
                 {isApiCodigoTrigger && (
                   <button
@@ -9438,12 +9656,9 @@ useEffect(() => {
                     style={{
                       padding: '4px 8px',
                       background: isApiCodigoLoading ? '#e5e7eb' : '#a855f7',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
+                      color: 'white', border: 'none', borderRadius: '6px',
                       cursor: isApiCodigoLoading || !row[resolvedCellName] ? 'not-allowed' : 'pointer',
-                      fontSize: '14px',
-                      flexShrink: 0,
+                      fontSize: '14px', flexShrink: 0,
                       opacity: !row[resolvedCellName] ? 0.5 : 1,
                     }}
                   >
@@ -9452,8 +9667,66 @@ useEffect(() => {
                 )}
                 {col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', whiteSpace: 'nowrap', fontWeight: 500 }}>{col.unit}</span>}
               </div>
-              {/* 💡 Sugerencia de siguiente código en secuencia (por fila) */}
-              {isApiCodigoTrigger && !row[resolvedCellName] && nextSuggestedCode && (
+
+              {/* 💡 Sugerencias por recepción: una por cabId, filtradas por lo que se escribe */}
+              {isApiCodigoTrigger && !row[resolvedCellName] && loadedIds.length > 0 && (
+                <div style={{ marginTop: '3px', display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+                  {loadedIds.map(lid => {
+                    const lidCodes = perCabIdCodes[lid] || [];
+                    // Candidato: primer código de esta recepción que cumpla:
+                    // 1. No estar ya en la tabla
+                    // 2. Si hay texto escrito → contener ese texto
+                    const candidate = lidCodes.find(c =>
+                      !codesInTable.has(c) &&
+                      (typedForChips === '' || c.toLowerCase().includes(typedForChips))
+                    );
+                    if (!candidate) return null;
+                    return (
+                      <button
+                        key={lid}
+                        type="button"
+                        title={`Usar ${candidate} (recepción ID ${lid})`}
+                        onClick={() => {
+                          handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, candidate);
+                          handleApiPorCodigoLookup(elementIndex, rowIndex, candidate, tableTemplateForApiCodigo);
+                          const afterNext = getNextSequenceCode([candidate]);
+                          if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
+                        }}
+                        style={{
+                          fontSize: '10px', color: '#7c3aed', background: '#ede9fe',
+                          border: '1px solid #c4b5fd', borderRadius: '4px',
+                          padding: '2px 8px', cursor: 'pointer', whiteSpace: 'nowrap',
+                          fontWeight: 600
+                        }}
+                      >
+                        💡 {candidate}
+                      </button>
+                    );
+                  }).filter(Boolean)}
+                  {/* Fallback: sugerencia secuencial si no hay pool por recepción todavía */}
+                  {loadedIds.every(lid => !(perCabIdCodes[lid] || []).length) && nextSuggestedCode && (
+                    <button
+                      type="button"
+                      title={`Usar siguiente código en secuencia: ${nextSuggestedCode}`}
+                      onClick={() => {
+                        handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, nextSuggestedCode);
+                        handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
+                        const afterNext = getNextSequenceCode([nextSuggestedCode]);
+                        if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
+                      }}
+                      style={{
+                        fontSize: '10px', color: '#0284c7', background: '#e0f2fe',
+                        border: '1px solid #7dd3fc', borderRadius: '4px',
+                        padding: '2px 8px', cursor: 'pointer', whiteSpace: 'nowrap'
+                      }}
+                    >
+                      💡 {nextSuggestedCode}
+                    </button>
+                  )}
+                </div>
+              )}
+              {/* Sugerencia secuencial cuando no hay recepciones registradas aún */}
+              {isApiCodigoTrigger && !row[resolvedCellName] && loadedIds.length === 0 && nextSuggestedCode && (
                 <div style={{ marginTop: '3px' }}>
                   <button
                     type="button"
@@ -9461,14 +9734,13 @@ useEffect(() => {
                     onClick={() => {
                       handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, nextSuggestedCode);
                       handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
-                      // Solo avanzar el código base cuando se usa la sugerencia
                       const afterNext = getNextSequenceCode([nextSuggestedCode]);
                       if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
                     }}
                     style={{
                       fontSize: '10px', color: '#0284c7', background: '#e0f2fe',
                       border: '1px solid #7dd3fc', borderRadius: '4px',
-                      padding: '1px 7px', cursor: 'pointer', whiteSpace: 'nowrap'
+                      padding: '2px 8px', cursor: 'pointer', whiteSpace: 'nowrap'
                     }}
                   >
                     💡 {nextSuggestedCode}
