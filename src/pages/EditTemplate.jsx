@@ -7,6 +7,7 @@ import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import { MAPPABLE_API_FIELDS, API_CODIGO_ENDPOINTS, API_CODIGO_JSON_FIELDS } from "../api/apiMappings";
 import UserSelector from "../components/UserSelector";
 import { fetchUsers } from "../services/userService";
+import { isResumenAutoEnabled, setResumenAutoEnabled } from "../hooks/useLoteStore";
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
@@ -38,6 +39,7 @@ function EditTemplate() {
   const [error, setError] = useState(null);
   const [isDraft, setIsDraft] = useState(false);
   const [isObsolete, setIsObsolete] = useState(false);
+  const [resumenAuto, setResumenAuto] = useState(false); // auto-guardar resumen de lote
   const [puestosDisponibles, setPuestosDisponibles] = useState([]);
   const [loadingPuestos, setLoadingPuestos] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
@@ -158,6 +160,8 @@ function EditTemplate() {
         setTemplate(parsedTemplate);
         setIsDraft(data.isDraft || false);
         setIsObsolete(data.isObsolete || false);
+        // Leer configuración de auto-guardado de resumen desde localStorage
+        setResumenAuto(isResumenAutoEnabled(String(data.templateID)));
       } catch (err) {
         setError(err.message);
       } finally {
@@ -623,7 +627,7 @@ function EditTemplate() {
             {template.autoSumColumns && <span style={{ fontSize: '0.85em', color: '#4f46e5', fontWeight: '500' }}>✅ Se mostrará una fila de totales al final de cada tabla</span>}
           </div>
 
-          {/* ✅ NUEVO: Usa API Externa */}
+          {/* ✅ Usa API Externa */}
           <div className="form-group full-width" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', backgroundColor: template.usaApi ? '#eff6ff' : '#f8f9fa', borderRadius: '8px', border: template.usaApi ? '2px solid #3b82f6' : '1px solid #e2e8f0' }}>
             <input 
               type="checkbox" 
@@ -636,6 +640,28 @@ function EditTemplate() {
               📡 Usa API Externa (Cargar datos del ERP)
             </label>
             {template.usaApi && <span style={{ fontSize: '0.85em', color: '#2563eb', fontWeight: '500' }}>✅ Al llenar este formulario se mostrará la pantalla de selección de lotes</span>}
+          </div>
+
+          {/* 📦 Auto-guardar Resumen de Lote */}
+          <div className="form-group full-width" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', backgroundColor: resumenAuto ? '#fefce8' : '#f8f9fa', borderRadius: '8px', border: resumenAuto ? '2px solid #eab308' : '1px solid #e2e8f0' }}>
+            <input
+              type="checkbox"
+              id="resumenAutoCheck"
+              checked={resumenAuto}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setResumenAuto(next);
+                if (template.templateID) setResumenAutoEnabled(String(template.templateID), next);
+              }}
+              style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+            />
+            <label htmlFor="resumenAutoCheck" style={{ cursor: 'pointer', margin: 0, fontWeight: '600', color: resumenAuto ? '#854d0e' : '#4a5568' }}>
+              📦 Auto-guardar Resumen de Lote al guardar formulario
+            </label>
+            {resumenAuto
+              ? <span style={{ fontSize: '0.85em', color: '#92400e', fontWeight: '500' }}>✅ Al guardar, el número de lote y los pesos del formulario se registrarán automáticamente en el Inventario de Lotes</span>
+              : <span style={{ fontSize: '0.85em', color: '#9ca3af' }}>Activa para que cada vez que se guarde este formulario se cree un registro en el Inventario de Lotes</span>
+            }
           </div>
         </div>
       </div>

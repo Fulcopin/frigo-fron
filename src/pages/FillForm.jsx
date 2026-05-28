@@ -17,7 +17,7 @@ import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import authService from "../services/authService";
 import { evaluarFormula as evaluarFormulaEngine, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
 import LoteTrazabilidadPanel from '../components/LoteTrazabilidadPanel';
-import { isTrazaEnabled, addLote, addLotes, getLotesDisponibles } from '../hooks/useLoteStore';
+import { isTrazaEnabled, isResumenAutoEnabled, addLote, addLotes, getLotesDisponibles } from '../hooks/useLoteStore';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -2833,7 +2833,7 @@ useEffect(() => {
   // ============================================================
   const [savingResumen, setSavingResumen] = useState(false);
 
-  const handleGuardarResumenLote = async () => {
+  const handleGuardarResumenLote = async (silent = false, overrideFormId = null) => {
     setSavingResumen(true);
     try {
       // --- 1. Leer datos del encabezado ---
@@ -2847,14 +2847,17 @@ useEffect(() => {
       const fecha = (headerData[fechaKey] || new Date().toISOString().split('T')[0]).toString().split('T')[0];
       const especie = (headerData[especieKey] || '').toString().trim();
 
+      console.log('📦 [RESUMEN] Iniciando guardado. Lote:', numeroLote, '| silent:', silent, '| overrideFormId:', overrideFormId);
+
       if (!numeroLote) {
-        alert('No se encontró un número de lote en el encabezado del formulario. Verifica que el campo "Lote" esté lleno.');
+        if (!silent) alert('No se encontró un número de lote en el encabezado del formulario. Verifica que el campo "Lote" esté lleno.');
+        else console.warn('📦 [RESUMEN] No se encontró número de lote en headerData, claves:', hKeys);
         return;
       }
 
       const proceso = selectedTemplate?.nombre || selectedTemplate?.proceso || 'Sin proceso';
       const templateId = String(selectedTemplate?.templateID || selectedTemplate?.id || '');
-      const formIdNum = id ? Number(id) : null;
+      const formIdNum = overrideFormId ? Number(overrideFormId) : (id ? Number(id) : null);
 
       // --- 2. Calcular PesoEntrada: suma de la columna de peso de la primera tabla de cuerpo ---
       // Se busca la tabla que contenga códigos tipo "A26139-XXX" o la primer tabla del cuerpo
@@ -2933,7 +2936,7 @@ useEffect(() => {
         `\nProductos generados:\n${productosStr}\n` +
         `\n¿Guardar en el Inventario de Lotes?`;
 
-      if (!window.confirm(confirmMsg)) return;
+      if (!silent && !window.confirm(confirmMsg)) return;
 
       // --- 4. Guardar lote master ---
       const notasProductos = productosResumen.length > 0
@@ -2975,9 +2978,11 @@ useEffect(() => {
         );
       }
 
-      alert(`✅ Lote "${numeroLote}" guardado correctamente en el Inventario de Lotes.\nPeso Entrada: ${pesoEntrada.toFixed(2)} lb | Peso Neto: ${pesoNeto.toFixed(2)} lb | Desperdicio: ${desperdicio.toFixed(2)} lb`);
+      if (!silent) alert(`✅ Lote "${numeroLote}" guardado correctamente en el Inventario de Lotes.\nPeso Entrada: ${pesoEntrada.toFixed(2)} lb | Peso Neto: ${pesoNeto.toFixed(2)} lb | Desperdicio: ${desperdicio.toFixed(2)} lb`);
+      else console.log(`📦 [RESUMEN AUTO] Lote "${numeroLote}" guardado automáticamente. Entrada: ${pesoEntrada.toFixed(2)} lb | Neto: ${pesoNeto.toFixed(2)} lb`);
     } catch (err) {
-      alert('❌ Error al guardar el resumen de lote: ' + (err?.message || err));
+      if (!silent) alert('❌ Error al guardar el resumen de lote: ' + (err?.message || err));
+      else console.error('❌ [RESUMEN AUTO] Error al auto-guardar el resumen de lote:', err?.message || err, err);
     } finally {
       setSavingResumen(false);
     }
@@ -5687,7 +5692,14 @@ useEffect(() => {
         }
       }
 
-      // 🗑️ Eliminar borrador de BD si existía
+      // AUTO-GUARDAR RESUMEN DE LOTE si esta configurado en la plantilla
+      if (isResumenAutoEnabled(selectedTemplate?.templateID)) {
+        const newFormId = responseData?.formID || responseData?.id || null;
+        console.log('📦 [RESUMEN] Auto-guardado activado. responseData:', responseData, '| newFormId:', newFormId);
+        await handleGuardarResumenLote(true, newFormId);
+      }
+
+      // �🗑️ Eliminar borrador de BD si existía
       if (currentDraftId) {
         try {
           await fetch(`${API_BASE_URL}/FormDrafts/${currentDraftId}`, { method: 'DELETE' });
@@ -6344,22 +6356,7 @@ useEffect(() => {
             style={{ opacity: (formSaving || draftSaving) ? 0.7 : 1, cursor: (formSaving || draftSaving) ? 'wait' : 'pointer' }}>
               {formSaving ? '⏳ Guardando...' : (id ? 'Actualizar' : 'Guardar Formulario')}
           </button>
-          <button
-            onClick={handleGuardarResumenLote}
-            disabled={savingResumen || formSaving || draftSaving}
-            style={{
-              background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', color: '#fff',
-              border: '2px solid #5b21b6', padding: '8px 16px', borderRadius: '6px',
-              cursor: (savingResumen || formSaving || draftSaving) ? 'wait' : 'pointer',
-              fontSize: '14px', fontWeight: 'bold',
-              opacity: (savingResumen || formSaving || draftSaving) ? 0.7 : 1,
-              boxShadow: '0 2px 8px rgba(124,58,237,0.4)', minHeight: '44px',
-              display: 'inline-flex', alignItems: 'center', gap: '4px'
-            }}
-            title="Guardar el lote del encabezado con los pesos y productos de las tablas en el Inventario de Lotes"
-          >
-            {savingResumen ? '⏳ Guardando...' : '📦 Guardar Resumen Lote'}
-          </button>
+
         </div>
         {autoSaveStatus === 'draft-saved' && (
           <div style={{ 
@@ -10429,22 +10426,7 @@ useEffect(() => {
             style={{ opacity: (formSaving || draftSaving) ? 0.7 : 1, cursor: (formSaving || draftSaving) ? 'wait' : 'pointer' }}>
             {formSaving ? '⏳ Guardando...' : (id ? '💾 Guardar Cambios' : '💾 Guardar Formulario Completo')}
           </button>
-          <button
-            onClick={handleGuardarResumenLote}
-            disabled={savingResumen || formSaving || draftSaving}
-            style={{
-              background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', color: '#fff',
-              border: '2px solid #5b21b6', padding: '12px 24px', borderRadius: '8px',
-              cursor: (savingResumen || formSaving || draftSaving) ? 'wait' : 'pointer',
-              fontSize: '16px', fontWeight: 'bold',
-              opacity: (savingResumen || formSaving || draftSaving) ? 0.7 : 1,
-              boxShadow: '0 2px 8px rgba(124,58,237,0.4)', minHeight: '44px',
-              display: 'inline-flex', alignItems: 'center', gap: '6px'
-            }}
-            title="Guardar el lote del encabezado con los pesos y productos de las tablas en el Inventario de Lotes"
-          >
-            {savingResumen ? '⏳ Guardando lote...' : '📦 Guardar Resumen Lote'}
-          </button>
+
         </div>
         {autoSaveStatus === 'draft-saved' && (
           <div style={{ 

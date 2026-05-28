@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import authService from '../services/authService';
 import { agentQuery, mcpListarTemplates } from '../services/aiService';
-import { isTrazaEnabled, setTrazaEnabled } from '../hooks/useLoteStore';
+import { isTrazaEnabled, setTrazaEnabled, isResumenAutoEnabled, setResumenAutoEnabled } from '../hooks/useLoteStore';
+import { exportFormToPDF, exportMultipleFormsToPDF } from '../services/pdfExportService';
+import { PDFDocument } from 'pdf-lib';
+import { API_BASE_URL } from '../apiConfig';
 import './TrazabilidadConfig.css';
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
@@ -145,6 +148,7 @@ export default function TrazabilidadConfig() {
   const [activePanel, setActivePanel] = useState('list'); // 'list' | 'detail'
   const [mainTab, setMainTab] = useState('formatos'); // 'formatos' | 'lotes'
   const [lotesEnabled, setLotesEnabled] = useState({});
+  const [resumenEnabled, setResumenEnabled] = useState({}); // auto-guardar resumen de lote
 
   // Format form modal
   const [showFormatoModal, setShowFormatoModal] = useState(false);
@@ -168,6 +172,32 @@ export default function TrazabilidadConfig() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importSearch, setImportSearch] = useState('');
   const [importSelection, setImportSelection] = useState(new Set());
+
+  // ── Formularios por Lote (nuevo tab) ─────────────────────────────────────────
+  const [loteSearch, setLoteSearch] = useState('');
+  const [loteResults, setLoteResults] = useState([]); // FilledForms que coinciden
+  const [loteLoading, setLoteLoading] = useState(false);
+  const [loteError, setLoteError] = useState('');
+  const [loteChecked, setLoteChecked] = useState(new Set()); // Set<formID>
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [sortField, setSortField] = useState('createdAt'); // 'createdAt' | 'template' | 'match'
+  const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
+  const [loteFormatoId, setLoteFormatoId] = useState('');
+  const [lotesDisponibles, setLotesDisponibles] = useState([]); // sugerencias de lotes
+  const [loadingLoteSugg, setLoadingLoteSugg] = useState(false);
+
+  // ── Formularios por Fecha (nuevo tab) ────────────────────────────────────────
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [fechaDesde, setFechaDesde] = useState(todayStr);
+  const [fechaHasta, setFechaHasta] = useState(todayStr);
+  const [fechaTemplateId, setFechaTemplateId] = useState('');
+  const [fechaResults, setFechaResults] = useState([]);
+  const [fechaLoading, setFechaLoading] = useState(false);
+  const [fechaError, setFechaError] = useState('');
+  const [fechaChecked, setFechaChecked] = useState(new Set());
+  const [fechaPdfLoading, setFechaPdfLoading] = useState(false);
+  const [fechaSortField, setFechaSortField] = useState('createdAt');
+  const [fechaSortDir, setFechaSortDir] = useState('desc');
 
   // ── AI assistant state ───────────────────────────────────────────────────────
   const [aiOpen, setAiOpen] = useState(false);
@@ -247,14 +277,366 @@ export default function TrazabilidadConfig() {
         setTemplates(arr);
         // Initialize lotesEnabled state from useLoteStore
         const enabled = {};
+        const resumen = {};
         arr.forEach(t => {
           enabled[String(t.templateID)] = isTrazaEnabled(String(t.templateID));
+          resumen[String(t.templateID)] = isResumenAutoEnabled(String(t.templateID));
         });
         setLotesEnabled(enabled);
+        setResumenEnabled(resumen);
       })
       .catch(() => setTemplates([]))
       .finally(() => setLoadingTemplates(false));
   }, []);
+
+  // ── Cargar ejemplos de lotes disponibles ────────────────────────────────────
+  useEffect(() => {
+    if (mainTab !== 'busquedalote' || lotesDisponibles.length > 0) return;
+    setLoadingLoteSugg(true);
+    fetch(`${API_BASE_URL}/Traceability/lotes`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(data => setLotesDisponibles(data?.lotes || []))
+      .catch(() => setLotesDisponibles([]))
+      .finally(() => setLoadingLoteSugg(false));
+  }, [mainTab]);
+
+  // ── Buscar formularios por lote ──────────────────────────────────────────────
+  // Extrae un valor de texto de headerData o bodyData buscando campos que
+  // contengan la palabra "lote" en su clave; devuelve array de strings con coincidencias.
+  const extractLoteValues = (form) => {
+    const vals = [];
+    const addFromObj = (obj) => {
+      if (!obj || typeof obj !== 'object') return;
+      Object.entries(obj).forEach(([k, v]) => {
+        const keyUp = String(k).toUpperCase();
+        if (keyUp.includes('LOTE') || keyUp.includes('BATCH') || keyUp.includes('LOT')) {
+          if (v && String(v).trim()) vals.push(String(v).trim());
+        }
+      });
+    };
+    // headerData
+    const hd = typeof form.headerData === 'string'
+      ? (() => { try { return JSON.parse(form.headerData); } catch { return {}; } })()
+      : (form.headerData || {});
+    addFromObj(hd);
+    // bodyData — puede ser array de tablas o un objeto
+    const bd = typeof form.bodyData === 'string'
+      ? (() => { try { return JSON.parse(form.bodyData); } catch { return {}; } })()
+      : (form.bodyData || {});
+    if (Array.isArray(bd)) {
+      bd.forEach(tabla => {
+        if (Array.isArray(tabla)) tabla.forEach(row => addFromObj(row));
+        else if (tabla && typeof tabla === 'object') {
+          // { columns, rows } format
+          if (Array.isArray(tabla.rows)) tabla.rows.forEach(row => addFromObj(row));
+          else addFromObj(tabla);
+        }
+      });
+    } else {
+      addFromObj(bd);
+    }
+    return vals;
+  };
+
+  const buscarPorLote = useCallback(async () => {
+    const query = loteSearch.trim();
+    setLoteError('');
+    if (!query) { setLoteResults([]); return; }
+    setLoteLoading(true);
+    setLoteChecked(new Set());
+    try {
+      // Construir templateIds permitidos basados en el formato seleccionado
+      let templateIds = null;
+      if (loteFormatoId) {
+        const formatoSeleccionado = formatos.find(f => String(f.id) === String(loteFormatoId));
+        if (formatoSeleccionado) {
+          templateIds = detalles
+            .filter(d => d.formatoId === formatoSeleccionado.id)
+            .sort((a, b) => a.orden - b.orden)
+            .map(d => String(d.templateId))
+            .filter(Boolean);
+        }
+      }
+
+      const resp = await fetch(`${API_BASE_URL}/FilledForms`);
+      if (!resp.ok) throw new Error(`Error ${resp.status}`);
+      const raw = await resp.json();
+      const all = Array.isArray(raw) ? raw : (raw.$values || []);
+
+      const queryLower = query.toLowerCase();
+      const matched = [];
+      for (const form of all) {
+        // Filtrar por templateId si aplica
+        if (templateIds && templateIds.length > 0 && !templateIds.includes(String(form.templateID))) continue;
+
+        const loteVals = extractLoteValues(form);
+        const matchedVals = loteVals.filter(v => v.toLowerCase().includes(queryLower));
+        if (matchedVals.length > 0) {
+          // Enriquecer con nombre y proceso del template
+          const tpl = templates.find(t => String(t.templateID) === String(form.templateID));
+          matched.push({
+            ...form,
+            _matchedLotes: matchedVals,
+            templateNombre: tpl?.nombre || form.templateNombre || '—',
+            templateCodigo: tpl?.codigo || form.templateCodigo || '',
+            _proceso: tpl?.proceso || '—',
+          });
+        }
+      }
+      setLoteResults(matched);
+      if (matched.length === 0) setLoteError(`No se encontraron formularios con el lote "${query}"`);
+    } catch (err) {
+      setLoteError('Error al buscar formularios: ' + err.message);
+      setLoteResults([]);
+    } finally {
+      setLoteLoading(false);
+    }
+  }, [loteSearch, loteFormatoId, formatos, detalles, templates]);
+
+  const toggleLoteCheck = (formID) => {
+    setLoteChecked(prev => {
+      const next = new Set(prev);
+      if (next.has(formID)) next.delete(formID);
+      else next.add(formID);
+      return next;
+    });
+  };
+
+  const toggleAllLoteChecks = () => {
+    if (loteChecked.size === loteResults.length) {
+      setLoteChecked(new Set());
+    } else {
+      setLoteChecked(new Set(loteResults.map(f => f.formID)));
+    }
+  };
+
+  const handleSortLote = (field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('desc'); }
+  };
+
+  // ── Buscar por Fecha ──────────────────────────────────────────────────────────
+  const buscarPorFecha = useCallback(async () => {
+    setFechaError('');
+    setFechaResults([]);
+    setFechaChecked(new Set());
+    if (!fechaDesde || !fechaHasta) { setFechaError('Selecciona un rango de fechas.'); return; }
+    if (fechaDesde > fechaHasta) { setFechaError('La fecha inicio no puede ser mayor a la fecha fin.'); return; }
+    setFechaLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      // Cargar forms y templates en paralelo
+      const [formsResp, tplsResp] = await Promise.all([
+        fetch(`${API_BASE_URL}/FilledForms`, { headers }),
+        fetch(`${API_BASE_URL}/Templates`, { headers }),
+      ]);
+      if (!formsResp.ok) throw new Error(`Error ${formsResp.status} al cargar formularios`);
+
+      const rawForms = await formsResp.json();
+      const allForms = Array.isArray(rawForms) ? rawForms : (rawForms.$values || []);
+
+      // Construir mapa de templates por ID
+      let tplMap = {};
+      if (tplsResp.ok) {
+        const rawTpls = await tplsResp.json();
+        const allTpls = Array.isArray(rawTpls) ? rawTpls : (rawTpls.$values || []);
+        allTpls.forEach(t => {
+          const tid = String(t.templateID ?? t.TemplateID ?? t.id ?? '');
+          if (tid) tplMap[tid] = t;
+        });
+      }
+      // También usar los templates del state como fallback
+      templates.forEach(t => {
+        const tid = String(t.templateID ?? '');
+        if (tid && !tplMap[tid]) tplMap[tid] = t;
+      });
+
+      const desde = new Date(fechaDesde + 'T00:00:00');
+      const hasta = new Date(fechaHasta + 'T23:59:59');
+
+      const matched = allForms
+        .filter(form => {
+          const fDate = new Date(form.createdAt || form.CreatedAt || 0);
+          if (fDate < desde || fDate > hasta) return false;
+          if (fechaTemplateId && String(form.templateID) !== String(fechaTemplateId)) return false;
+          return true;
+        })
+        .map(form => {
+          const tid = String(form.templateID ?? form.TemplateID ?? '');
+          const tpl = tplMap[tid];
+          const lotes = extractLoteValues(form);
+          return {
+            ...form,
+            templateNombre: tpl?.nombre ?? tpl?.Nombre ?? form.templateNombre ?? '—',
+            templateCodigo: tpl?.codigo ?? tpl?.Codigo ?? form.templateCodigo ?? '',
+            _proceso: tpl?.proceso ?? tpl?.Proceso ?? form.proceso ?? '—',
+            _lotes: lotes,
+          };
+        });
+
+      setFechaResults(matched);
+      if (matched.length === 0) setFechaError('No se encontraron formularios en el rango seleccionado.');
+    } catch (err) {
+      setFechaError('Error al buscar formularios: ' + err.message);
+    } finally {
+      setFechaLoading(false);
+    }
+  }, [fechaDesde, fechaHasta, fechaTemplateId, templates]);
+
+  const toggleFechaCheck = (formID) => {
+    setFechaChecked(prev => { const n = new Set(prev); n.has(formID) ? n.delete(formID) : n.add(formID); return n; });
+  };
+  const toggleAllFechaChecks = () => {
+    setFechaChecked(prev => prev.size === fechaResults.length ? new Set() : new Set(fechaResults.map(f => f.formID)));
+  };
+  const handleSortFecha = (field) => {
+    if (fechaSortField === field) setFechaSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setFechaSortField(field); setFechaSortDir('desc'); }
+  };
+  const sortedFechaResults = [...fechaResults].sort((a, b) => {
+    let va, vb;
+    if (fechaSortField === 'template') {
+      va = (a.templateNombre || '').toLowerCase(); vb = (b.templateNombre || '').toLowerCase();
+    } else if (fechaSortField === 'proceso') {
+      va = (a._proceso || '').toLowerCase(); vb = (b._proceso || '').toLowerCase();
+    } else {
+      va = new Date(a.createdAt || 0).getTime(); vb = new Date(b.createdAt || 0).getTime();
+    }
+    if (va < vb) return fechaSortDir === 'asc' ? -1 : 1;
+    if (va > vb) return fechaSortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const exportarPDFFecha = async () => {
+    if (fechaChecked.size === 0) return;
+    setFechaPdfLoading(true);
+    const ids = sortedFechaResults.filter(f => fechaChecked.has(f.formID)).map(f => f.formID);
+    try {
+      const token = localStorage.getItem('token');
+      const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      // Generar cada PDF individualmente (misma lógica que botón PDF por fila)
+      const allPdfBytes = [];
+      for (const fid of ids) {
+        const r = await fetch(`${API_BASE_URL}/FilledForms/${fid}/with-template`, { headers });
+        if (!r.ok) { console.warn(`Form ${fid} no disponible (HTTP ${r.status})`); continue; }
+        const fd = await r.json();
+        const fechaVer = fd.template?.fechaVersion || fd.template?.FechaVersion || null;
+        const formObj = {
+          formID: fd.formID, templateID: fd.templateID,
+          createdAt: fd.createdAt || fd.CreatedAt, fechaVersion: fechaVer,
+          templateCreatedAt: fd.template?.CreatedAt || fd.template?.createdAt || null,
+          tipoProducto: fd.tipoProducto, observaciones: fd.observaciones,
+          templateCodigo: fd.template?.codigo, templateNombre: fd.template?.nombre,
+          version: fd.template?.version,
+          headerData: fd.data?.header, bodyData: fd.data?.body, firmasData: fd.data?.firmas,
+        };
+        const tplObj = {
+          codigo: fd.template?.codigo, nombre: fd.template?.nombre,
+          version: fd.template?.version, fechaVersion: fechaVer,
+          bodyElements: fd.template?.structure?.bodyElements,
+          headerFields: fd.template?.structure?.headerFields,
+          firmas: fd.template?.structure?.firmas,
+        };
+        const result = await exportFormToPDF(formObj, tplObj, { returnBytes: true });
+        if (result?.pdfBytes) allPdfBytes.push(result.pdfBytes);
+      }
+
+      if (allPdfBytes.length === 0) { alert('No se pudieron generar los PDFs seleccionados.'); return; }
+
+      // Combinar todos los PDFs en uno solo usando pdf-lib
+      const mergedPdf = await PDFDocument.create();
+      for (const bytes of allPdfBytes) {
+        const srcDoc = await PDFDocument.load(bytes);
+        const copiedPages = await mergedPdf.copyPages(srcDoc, srcDoc.getPageIndices());
+        copiedPages.forEach(page => mergedPdf.addPage(page));
+      }
+      const mergedBytes = await mergedPdf.save();
+      const blob = new Blob([mergedBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Formularios_Frigolab_${fechaDesde}_${fechaHasta}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Error generando PDF: ' + err.message);
+    } finally {
+      setFechaPdfLoading(false);
+    }
+  };
+
+  const sortedLoteResults = [...loteResults].sort((a, b) => {
+    let va, vb;
+    if (sortField === 'createdAt') {
+      va = new Date(a.createdAt || 0).getTime();
+      vb = new Date(b.createdAt || 0).getTime();
+    } else if (sortField === 'template') {
+      va = (a.templateCodigo || a.templateNombre || '').toLowerCase();
+      vb = (b.templateCodigo || b.templateNombre || '').toLowerCase();
+    } else { // match
+      va = (a._matchedLotes || []).join(',');
+      vb = (b._matchedLotes || []).join(',');
+    }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const exportarPDFSeleccionados = async () => {
+    if (loteChecked.size === 0) return;
+    setPdfLoading(true);
+    // Ordenar los ids en el mismo orden que la tabla (sortedLoteResults)
+    const ids = sortedLoteResults
+      .filter(f => loteChecked.has(f.formID))
+      .map(f => f.formID);
+    try {
+      const formsData = [];
+      const templatesData = [];
+      for (const formID of ids) {
+        const resp = await fetch(`${API_BASE_URL}/FilledForms/${formID}/with-template`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} – form ${formID}`);
+        const fd = await resp.json();
+        const fechaVer = fd.template?.fechaVersion || fd.template?.FechaVersion || null;
+        formsData.push({
+          formID: fd.formID,
+          templateID: fd.templateID,
+          createdAt: fd.createdAt || fd.CreatedAt || fd.created_at,
+          fechaVersion: fechaVer,
+          templateCreatedAt: fd.template?.CreatedAt || fd.template?.createdAt || null,
+          tipoProducto: fd.tipoProducto,
+          observaciones: fd.observaciones,
+          templateCodigo: fd.template?.codigo,
+          templateNombre: fd.template?.nombre,
+          version: fd.template?.version,
+          headerData: fd.data?.header,
+          bodyData: fd.data?.body,
+          firmasData: fd.data?.firmas,
+        });
+        templatesData.push({
+          templateID: fd.templateID,
+          codigo: fd.template?.codigo,
+          nombre: fd.template?.nombre,
+          version: fd.template?.version,
+          fechaVersion: fechaVer,
+          bodyElements: fd.template?.structure?.bodyElements,
+          headerFields: fd.template?.structure?.headerFields,
+          firmas: fd.template?.structure?.firmas,
+        });
+      }
+      // Un solo PDF combinado con todos los formularios
+      await exportMultipleFormsToPDF(formsData, templatesData);
+      alert(`✅ PDF combinado generado con ${formsData.length} formulario(s) (lote: ${loteSearch})`);
+    } catch (err) {
+      alert('Error generando PDF: ' + err.message);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   // ── Persist on change ────────────────────────────────────────────────────────
   const persist = useCallback((fmts, dets) => {
@@ -563,6 +945,8 @@ export default function TrazabilidadConfig() {
         {[
           { key: 'formatos', label: '🔗 Formatos de Trazabilidad' },
           { key: 'lotes', label: '📦 Lotes por Template' },
+          { key: 'busquedalote', label: '🔍 Buscar por Lote' },
+          { key: 'buscadafecha', label: '📅 Buscar por Fecha' },
         ].map(t => (
           <button
             key={t.key}
@@ -584,7 +968,8 @@ export default function TrazabilidadConfig() {
           <div style={{ marginBottom: '16px' }}>
             <h2 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>Habilitar seguimiento de lotes por template</h2>
             <p style={{ margin: 0, color: '#64748b', fontSize: '12px' }}>
-              Al activar un template, el panel &quot;Trazabilidad de Lotes&quot; aparecerá en ese formulario y los lotes generados se guardarán en el inventario automáticamente.
+              Al activar un template, el panel &quot;Trazabilidad de Lotes&quot; aparecerá en ese formulario y los lotes generados se guardarán en el inventario automáticamente. <br />
+              Con <strong>Auto-guardar Resumen</strong> activo, al guardar el formulario se registrará automáticamente un resumen del lote (número, pesos, productos) en el Inventario de Lotes.
             </p>
           </div>
           {loadingTemplates ? (
@@ -599,12 +984,14 @@ export default function TrazabilidadConfig() {
                   <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Template</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Proceso</th>
                   <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Seguimiento de lotes</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Auto-guardar Resumen 📦</th>
                 </tr>
               </thead>
               <tbody>
                 {templates.map(t => {
                   const tid = String(t.templateID);
                   const enabled = !!lotesEnabled[tid];
+                  const resumenAuto = !!resumenEnabled[tid];
                   return (
                     <tr key={tid} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#94a3b8' }}>{t.templateID}</td>
@@ -628,11 +1015,510 @@ export default function TrazabilidadConfig() {
                           {enabled ? '✅ Activado' : '○ Desactivado'}
                         </button>
                       </td>
+                      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                        <button
+                          onClick={() => {
+                            const next = !resumenAuto;
+                            setResumenAutoEnabled(tid, next);
+                            setResumenEnabled(prev => ({ ...prev, [tid]: next }));
+                          }}
+                          title={resumenAuto
+                            ? 'Al guardar el form, se registrará el resumen de lote automáticamente'
+                            : 'Activar auto-guardado de resumen de lote al guardar el formulario'}
+                          style={{
+                            padding: '4px 16px', borderRadius: '20px', fontSize: '12px',
+                            fontWeight: 700, border: 'none', cursor: 'pointer',
+                            background: resumenAuto ? '#fef9c3' : '#f1f5f9',
+                            color: resumenAuto ? '#854d0e' : '#64748b',
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          {resumenAuto ? '📦 Auto-activo' : '○ Manual'}
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+
+      {/* ── BÚSQUEDA POR LOTE TAB ─────────────────────────────────────────────── */}
+      {mainTab === 'busquedalote' && (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px' }}>
+          {/* Título + controles */}
+          <div style={{ marginBottom: '16px' }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>
+              🔍 Formularios de Trazabilidad por Lote
+            </h2>
+            <p style={{ margin: 0, color: '#64748b', fontSize: '12px' }}>
+              Ingresa un código de lote para encontrar todos los formularios que lo contienen, selecciónalos y exporta a PDF.
+            </p>
+          </div>
+
+          {/* Filtro de formato */}
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ flex: '1', minWidth: '200px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase' }}>
+                Filtrar por formato de trazabilidad
+              </label>
+              <select
+                value={loteFormatoId}
+                onChange={e => setLoteFormatoId(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px' }}
+              >
+                <option value="">— Todos los formatos —</option>
+                {formatos.map(f => (
+                  <option key={f.id} value={String(f.id)}>{f.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ flex: '2', minWidth: '240px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase' }}>
+                Código de lote
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  placeholder="Ej. 260511, LOT-001, L-12345…"
+                  value={loteSearch}
+                  onChange={e => setLoteSearch(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && buscarPorLote()}
+                  style={{ flex: 1, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px' }}
+                />
+                <button
+                  onClick={buscarPorLote}
+                  disabled={loteLoading || !loteSearch.trim()}
+                  className="traz-btn-primary"
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  {loteLoading ? '⏳ Buscando…' : '🔍 Buscar'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Chips: lotes disponibles como ejemplos */}
+          {lotesDisponibles.length > 0 && (
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', marginBottom: '6px' }}>
+                💡 Lotes con formularios registrados — haz clic para buscar:
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {lotesDisponibles.slice(0, 20).map(item => (
+                  <button
+                    key={item.lote}
+                    onClick={() => { setLoteSearch(item.lote); setTimeout(buscarPorLote, 50); }}
+                    style={{
+                      background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe',
+                      borderRadius: '20px', padding: '3px 12px', fontSize: '12px',
+                      fontWeight: 700, fontFamily: 'monospace', cursor: 'pointer',
+                      transition: 'background 0.15s'
+                    }}
+                    onMouseOver={e => (e.currentTarget.style.background = '#dbeafe')}
+                    onMouseOut={e => (e.currentTarget.style.background = '#eff6ff')}
+                    title={`${item.count} formulario(s) — ${new Date(item.first_date).toLocaleDateString('es-HN')} a ${new Date(item.last_date).toLocaleDateString('es-HN')}`}
+                  >
+                    {item.lote}
+                    <span style={{ fontWeight: 400, color: '#3b82f6', marginLeft: '4px' }}>×{item.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {loadingLoteSugg && (
+            <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '10px' }}>⏳ Cargando lotes disponibles…</div>
+          )}
+
+          {/* Error */}
+          {loteError && !loteLoading && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '10px 14px', color: '#dc2626', fontSize: '13px', marginBottom: '12px' }}>
+              ⚠️ {loteError}
+            </div>
+          )}
+
+          {/* Resultados */}
+          {sortedLoteResults.length > 0 && (
+            <>
+              {/* Barra de acciones */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>
+                  <strong>{sortedLoteResults.length}</strong> formulario(s) encontrado(s) con el lote <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>{loteSearch}</code>
+                </span>
+                <span style={{ flex: 1 }} />
+                <button
+                  onClick={toggleAllLoteChecks}
+                  className="traz-btn-secondary"
+                  style={{ fontSize: '12px', padding: '5px 12px' }}
+                >
+                  {loteChecked.size === sortedLoteResults.length ? '☐ Deseleccionar todo' : '☑ Seleccionar todo'}
+                </button>
+                <button
+                  onClick={exportarPDFSeleccionados}
+                  disabled={loteChecked.size === 0 || pdfLoading}
+                  className="traz-btn-primary"
+                  style={{ fontSize: '12px', padding: '5px 14px', background: '#dc2626', borderColor: '#dc2626' }}
+                >
+                  {pdfLoading ? '⏳ Generando…' : `📄 PDF (${loteChecked.size} sel.)`}
+                </button>
+              </div>
+
+              {/* Tabla de resultados */}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', width: '36px' }}>
+                        <input
+                          type="checkbox"
+                          checked={loteChecked.size === sortedLoteResults.length && sortedLoteResults.length > 0}
+                          onChange={toggleAllLoteChecks}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </th>
+                      <th
+                        style={{ padding: '8px 10px', textAlign: 'left', cursor: 'pointer', userSelect: 'none', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}
+                        onClick={() => handleSortLote('template')}
+                      >
+                        Formulario {sortField === 'template' ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}
+                      </th>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Proceso</th>
+                      <th
+                        style={{ padding: '8px 10px', textAlign: 'left', cursor: 'pointer', userSelect: 'none', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}
+                        onClick={() => handleSortLote('match')}
+                      >
+                        Lotes encontrados {sortField === 'match' ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}
+                      </th>
+                      <th
+                        style={{ padding: '8px 10px', textAlign: 'left', cursor: 'pointer', userSelect: 'none', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}
+                        onClick={() => handleSortLote('createdAt')}
+                      >
+                        Fecha {sortField === 'createdAt' ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}
+                      </th>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Responsable</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>PDF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedLoteResults.map(form => {
+                      const isChecked = loteChecked.has(form.formID);
+                      const fecha = form.createdAt
+                        ? new Date(form.createdAt).toLocaleString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : '—';
+                      return (
+                        <tr
+                          key={form.formID}
+                          style={{
+                            borderBottom: '1px solid #f1f5f9',
+                            background: isChecked ? '#eff6ff' : 'transparent',
+                            cursor: 'pointer',
+                          }}
+                          onClick={() => toggleLoteCheck(form.formID)}
+                        >
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleLoteCheck(form.formID)}
+                              onClick={e => e.stopPropagation()}
+                              style={{ cursor: 'pointer' }}
+                            />
+                          </td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <div style={{ fontWeight: 600 }}>{form.templateNombre || '—'}</div>
+                            {form.templateCodigo && (
+                              <code style={{ fontSize: '11px', color: '#64748b', background: '#f1f5f9', padding: '1px 5px', borderRadius: '3px' }}>
+                                {form.templateCodigo}
+                              </code>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#475569', fontSize: '12px' }}>{form._proceso || '—'}</td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                              {(form._matchedLotes || []).map((lv, i) => (
+                                <span key={i} style={{
+                                  background: '#dbeafe', color: '#1d4ed8',
+                                  padding: '2px 8px', borderRadius: '12px',
+                                  fontSize: '12px', fontWeight: 700, fontFamily: 'monospace'
+                                }}>{lv}</span>
+                              ))}
+                            </div>
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#475569', fontSize: '12px' }}>{fecha}</td>
+                          <td style={{ padding: '8px 10px', color: '#475569', fontSize: '12px' }}>
+                            {form.creadoPor || form.filledBy || form.createdBy || '—'}
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  const resp = await fetch(`${API_BASE_URL}/FilledForms/${form.formID}/with-template`);
+                                  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                                  const fd = await resp.json();
+                                  const fechaVer = fd.template?.fechaVersion || fd.template?.FechaVersion || null;
+                                  await exportFormToPDF({
+                                    formID: fd.formID, templateID: fd.templateID,
+                                    createdAt: fd.createdAt || fd.CreatedAt,
+                                    fechaVersion: fechaVer,
+                                    templateCreatedAt: fd.template?.CreatedAt || fd.template?.createdAt || null,
+                                    tipoProducto: fd.tipoProducto, observaciones: fd.observaciones,
+                                    templateCodigo: fd.template?.codigo, templateNombre: fd.template?.nombre,
+                                    version: fd.template?.version,
+                                    headerData: fd.data?.header, bodyData: fd.data?.body, firmasData: fd.data?.firmas,
+                                  }, {
+                                    codigo: fd.template?.codigo, nombre: fd.template?.nombre,
+                                    version: fd.template?.version, fechaVersion: fechaVer,
+                                    bodyElements: fd.template?.structure?.bodyElements,
+                                    headerFields: fd.template?.structure?.headerFields,
+                                    firmas: fd.template?.structure?.firmas,
+                                  });
+                                } catch (err) {
+                                  alert('Error generando PDF: ' + err.message);
+                                }
+                              }}
+                              style={{
+                                background: '#dc2626', color: '#fff', border: 'none', borderRadius: '5px',
+                                padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer'
+                              }}
+                            >📄 PDF</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* Estado inicial / vacío */}
+          {!loteLoading && sortedLoteResults.length === 0 && !loteError && (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
+              <div style={{ fontSize: '40px', marginBottom: '10px' }}>🔍</div>
+              <p style={{ margin: 0, fontSize: '14px' }}>Ingresa un código de lote y presiona <strong>Buscar</strong> para ver los formularios relacionados.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── BUSCAR POR FECHA TAB ──────────────────────────────────────────────── */}
+      {mainTab === 'buscadafecha' && (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 700 }}>📅 Formularios por Rango de Fecha</h2>
+            <p style={{ margin: 0, color: '#64748b', fontSize: '12px' }}>
+              Filtra todos los formularios llenados por rango de fecha. Selecciónalos para exportar PDF o armar trazabilidad.
+            </p>
+          </div>
+
+          {/* Controles de filtro */}
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap', alignItems: 'flex-end', background: '#f8fafc', borderRadius: '8px', padding: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase' }}>Desde</label>
+              <input
+                type="date"
+                value={fechaDesde}
+                onChange={e => setFechaDesde(e.target.value)}
+                style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase' }}>Hasta</label>
+              <input
+                type="date"
+                value={fechaHasta}
+                onChange={e => setFechaHasta(e.target.value)}
+                style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: '200px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase' }}>Template (opcional)</label>
+              <select
+                value={fechaTemplateId}
+                onChange={e => setFechaTemplateId(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px' }}
+              >
+                <option value="">— Todos los templates —</option>
+                {templates.map(t => (
+                  <option key={t.templateID} value={String(t.templateID)}>
+                    {t.nombre}{t.proceso ? ` (${t.proceso})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={buscarPorFecha}
+              disabled={fechaLoading}
+              className="traz-btn-primary"
+              style={{ whiteSpace: 'nowrap', padding: '9px 20px' }}
+            >
+              {fechaLoading ? '⏳ Buscando…' : '🔍 Buscar formularios'}
+            </button>
+          </div>
+
+          {/* Atajos rápidos */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', alignSelf: 'center', textTransform: 'uppercase' }}>Rápido:</span>
+            {[
+              { label: 'Hoy', fn: () => { const d = new Date().toISOString().split('T')[0]; setFechaDesde(d); setFechaHasta(d); } },
+              { label: 'Ayer', fn: () => { const d = new Date(); d.setDate(d.getDate() - 1); const s = d.toISOString().split('T')[0]; setFechaDesde(s); setFechaHasta(s); } },
+              { label: 'Últimos 7 días', fn: () => { const h = new Date().toISOString().split('T')[0]; const d = new Date(); d.setDate(d.getDate() - 6); setFechaDesde(d.toISOString().split('T')[0]); setFechaHasta(h); } },
+              { label: 'Este mes', fn: () => { const n = new Date(); setFechaDesde(`${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`); setFechaHasta(n.toISOString().split('T')[0]); } },
+            ].map(({ label, fn }) => (
+              <button key={label} onClick={fn} style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '20px', padding: '4px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Error */}
+          {fechaError && !fechaLoading && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '10px 14px', color: '#dc2626', fontSize: '13px', marginBottom: '12px' }}>
+              ⚠️ {fechaError}
+            </div>
+          )}
+
+          {/* Resultados */}
+          {sortedFechaResults.length > 0 && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '13px', color: '#64748b' }}>
+                  <strong>{sortedFechaResults.length}</strong> formulario(s) — del <strong>{fechaDesde}</strong> al <strong>{fechaHasta}</strong>
+                  {fechaTemplateId && templates.find(t => String(t.templateID) === fechaTemplateId) && (
+                    <> — <span style={{ color: '#1d4ed8' }}>{templates.find(t => String(t.templateID) === fechaTemplateId)?.nombre}</span></>
+                  )}
+                </span>
+                <span style={{ flex: 1 }} />
+                <button onClick={toggleAllFechaChecks} className="traz-btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>
+                  {fechaChecked.size === sortedFechaResults.length ? '☐ Deseleccionar todo' : '☑ Seleccionar todo'}
+                </button>
+                <button
+                  onClick={exportarPDFFecha}
+                  disabled={fechaChecked.size === 0 || fechaPdfLoading}
+                  className="traz-btn-primary"
+                  style={{ fontSize: '12px', padding: '5px 14px', background: '#dc2626', borderColor: '#dc2626', opacity: fechaChecked.size === 0 ? 0.5 : 1 }}
+                >
+                  {fechaPdfLoading ? '⏳ Generando…' : `📄 Exportar PDF (${fechaChecked.size} sel.)`}
+                </button>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', width: '36px' }}>
+                        <input type="checkbox"
+                          checked={fechaChecked.size === sortedFechaResults.length && sortedFechaResults.length > 0}
+                          onChange={toggleAllFechaChecks}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </th>
+                      <th onClick={() => handleSortFecha('createdAt')} style={{ padding: '8px 10px', textAlign: 'left', cursor: 'pointer', userSelect: 'none', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>
+                        Fecha {fechaSortField === 'createdAt' ? (fechaSortDir === 'asc' ? '▲' : '▼') : '↕'}
+                      </th>
+                      <th onClick={() => handleSortFecha('template')} style={{ padding: '8px 10px', textAlign: 'left', cursor: 'pointer', userSelect: 'none', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>
+                        Formulario {fechaSortField === 'template' ? (fechaSortDir === 'asc' ? '▲' : '▼') : '↕'}
+                      </th>
+                      <th onClick={() => handleSortFecha('proceso')} style={{ padding: '8px 10px', textAlign: 'left', cursor: 'pointer', userSelect: 'none', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>
+                        Proceso {fechaSortField === 'proceso' ? (fechaSortDir === 'asc' ? '▲' : '▼') : '↕'}
+                      </th>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Responsable</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Lotes</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>Form ID</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase' }}>PDF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedFechaResults.map(form => {
+                      const isChecked = fechaChecked.has(form.formID);
+                      const fechaStr = form.createdAt
+                        ? new Date(form.createdAt).toLocaleString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : '—';
+                      return (
+                        <tr
+                          key={form.formID}
+                          style={{ borderBottom: '1px solid #f1f5f9', background: isChecked ? '#eff6ff' : 'transparent', cursor: 'pointer' }}
+                          onClick={() => toggleFechaCheck(form.formID)}
+                        >
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <input type="checkbox" checked={isChecked} onChange={() => toggleFechaCheck(form.formID)}
+                              onClick={e => e.stopPropagation()} style={{ cursor: 'pointer' }}
+                            />
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#475569', fontSize: '12px', whiteSpace: 'nowrap' }}>{fechaStr}</td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <div style={{ fontWeight: 600 }}>{form.templateNombre || '—'}</div>
+                            {form.templateCodigo && (
+                              <code style={{ fontSize: '11px', color: '#64748b', background: '#f1f5f9', padding: '1px 5px', borderRadius: '3px' }}>{form.templateCodigo}</code>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#475569', fontSize: '12px' }}>{form._proceso || '—'}</td>
+                          <td style={{ padding: '8px 10px', color: '#475569', fontSize: '12px' }}>{form.creadoPor || form.filledBy || form.createdBy || '—'}</td>
+                          <td style={{ padding: '8px 10px' }}>
+                            {form._lotes && form._lotes.length > 0 ? (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                {form._lotes.slice(0, 4).map((lv, i) => (
+                                  <span key={i} style={{ background: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace' }}>{lv}</span>
+                                ))}
+                                {form._lotes.length > 4 && <span style={{ color: '#94a3b8', fontSize: '11px' }}>+{form._lotes.length - 4}</span>}
+                              </div>
+                            ) : <span style={{ color: '#94a3b8', fontSize: '11px' }}>—</span>}
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <code style={{ fontSize: '11px', color: '#94a3b8', background: '#f1f5f9', padding: '2px 6px', borderRadius: '3px' }}>#{form.formID}</code>
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  const token = localStorage.getItem('token');
+                                  const r = await fetch(`${API_BASE_URL}/FilledForms/${form.formID}/with-template`, {
+                                    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+                                  });
+                                  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                                  const fd = await r.json();
+                                  const fechaVer = fd.template?.fechaVersion || fd.template?.FechaVersion || null;
+                                  await exportFormToPDF({
+                                    formID: fd.formID, templateID: fd.templateID,
+                                    createdAt: fd.createdAt || fd.CreatedAt, fechaVersion: fechaVer,
+                                    templateCreatedAt: fd.template?.CreatedAt || fd.template?.createdAt || null,
+                                    tipoProducto: fd.tipoProducto, observaciones: fd.observaciones,
+                                    templateCodigo: fd.template?.codigo, templateNombre: fd.template?.nombre,
+                                    version: fd.template?.version,
+                                    headerData: fd.data?.header, bodyData: fd.data?.body, firmasData: fd.data?.firmas,
+                                  }, {
+                                    codigo: fd.template?.codigo, nombre: fd.template?.nombre,
+                                    version: fd.template?.version, fechaVersion: fechaVer,
+                                    bodyElements: fd.template?.structure?.bodyElements,
+                                    headerFields: fd.template?.structure?.headerFields,
+                                    firmas: fd.template?.structure?.firmas,
+                                  });
+                                } catch (err) { alert('Error: ' + err.message); }
+                              }}
+                              style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: '5px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                            >📄 PDF</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* Estado inicial vacío */}
+          {!fechaLoading && sortedFechaResults.length === 0 && !fechaError && (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
+              <div style={{ fontSize: '40px', marginBottom: '10px' }}>📅</div>
+              <p style={{ margin: 0, fontSize: '14px' }}>Selecciona un rango de fechas y presiona <strong>Buscar formularios</strong>.</p>
+              <p style={{ margin: '6px 0 0', fontSize: '12px' }}>Usa los atajos rápidos (Hoy, Ayer, Últimos 7 días) para filtrar rápidamente.</p>
+            </div>
           )}
         </div>
       )}

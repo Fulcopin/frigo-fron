@@ -10,6 +10,7 @@
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { PDFDocument } from 'pdf-lib';
 import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
 
@@ -959,7 +960,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
  * 🎯 FUNCIÓN PRINCIPAL: Exportar formulario a PDF
  * Renderiza TODAS las secciones dinámicamente según template.bodyElements
  */
-export const exportFormToPDF = async (form, template) => {
+export const exportFormToPDF = async (form, template, options = {}) => {
   try {
     console.log('📄 Iniciando generación de PDF...', { form, template });
     
@@ -1950,7 +1951,10 @@ const rows = tableData.map((row, rowIndex) => {
     
     console.log('✅ PDF generado exitosamente:', fileName);
     
-    // 7. Descargar PDF
+    // 7. Descargar o devolver bytes según options
+    if (options.returnBytes) {
+      return { success: true, fileName, pdfBytes: doc.output('arraybuffer') };
+    }
     doc.save(fileName);
     
     return { success: true, fileName };

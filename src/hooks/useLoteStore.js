@@ -257,6 +257,19 @@ export function setTrazaEnabled(templateId, enabled) {
   try { localStorage.setItem(TRAZA_KEY, JSON.stringify(config)); } catch { /* quota */ }
 }
 
+/** Verifica si el auto-guardado de resumen de lote está activo para un template. */
+export function isResumenAutoEnabled(templateId) {
+  if (!templateId) return false;
+  return !!getTrazaConfig()[templateId]?.resumenAuto;
+}
+
+/** Activa/desactiva el auto-guardado de resumen de lote para un template. */
+export function setResumenAutoEnabled(templateId, enabled) {
+  const config = getTrazaConfig();
+  config[templateId] = { ...(config[templateId] || {}), resumenAuto: enabled };
+  try { localStorage.setItem(TRAZA_KEY, JSON.stringify(config)); } catch { /* quota */ }
+}
+
 /** Devuelve la config completa de trazabilidad de un template. */
 export function getTrazaTemplate(templateId) {
   return getTrazaConfig()[templateId] || { enabled: false };
@@ -276,6 +289,8 @@ export default {
   getArbol,
   isTrazaEnabled,
   setTrazaEnabled,
+  isResumenAutoEnabled,
+  setResumenAutoEnabled,
   getTrazaTemplate,
   getTrazaConfig,
 };
