@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useParams, useNavigate, useLocation } from "react-router-dom" 
@@ -3575,50 +3575,65 @@ useEffect(() => {
     
     setBodyData(prev => prev.map((element, elementIndex) => {
       if (element.type === 'table' && element.data && element.data.length > 0) {
-        // 🎯 VERIFICAR SI ESTA TABLA TIENE COLUMNAS PESO
+        // 🎯 VERIFICAR SI ESTA TABLA TIENE COLUMNAS AUTO-SUMABLES (PESO O HORA)
         const primeraFila = element.data[0];
         const columnNames = Object.keys(primeraFila);
-        const tienePeso = columnNames.some(key => key.toUpperCase().includes('PESO'));
+        const tieneAutoSuma = columnNames.some(key => {
+          const k = key.toUpperCase();
+          return k.includes('PESO') || k.includes('HORA');
+        });
         
-        // ⚠️ SOLO RECALCULAR SI LA TABLA TIENE COLUMNAS PESO
-        if (!tienePeso) {
-          console.log(`  ⏭️ Tabla ${elementIndex}: SIN columnas PESO - SALTANDO cálculo`);
+        // ⚠️ SOLO RECALCULAR SI LA TABLA TIENE COLUMNAS AUTO-SUMABLES
+        if (!tieneAutoSuma) {
+          console.log(`  ⏭️ Tabla ${elementIndex}: SIN columnas PESO/HORA - SALTANDO cálculo`);
           return element; // No modificar esta tabla
         }
         
-        console.log(`  📊 Tabla ${elementIndex}: CON columnas PESO - Recalculando ${element.data.length} filas`);
+        console.log(`  📊 Tabla ${elementIndex}: CON columnas sumables - Recalculando ${element.data.length} filas`);
         
         const updatedData = element.data.map((row, rowIndex) => {
           const updatedRow = { ...row };
           
-          // Buscar si hay columna TOTAL en esta fila
-          const totalKey = columnNames.find(key => key.toUpperCase().includes('TOTAL'));
+          // Buscar TODAS las columnas TOTAL en esta fila
+          const totalKeys = columnNames.filter(key => key.toUpperCase().includes('TOTAL'));
           
-          if (totalKey) {
-            let total = 0;
-            const pesoColumns = []; // 🔧 Definir array para tracking
-            
-            // Sumar TODAS las columnas PESO
-            columnNames.forEach(key => {
-              const keyUpper = key.toUpperCase();
-              const containsPeso = keyUpper.includes('PESO');
-              const containsTotal = keyUpper.includes('TOTAL');
+          if (totalKeys.length > 0) {
+            totalKeys.forEach(totalKey => {
+              const totalUpper = totalKey.toUpperCase();
+              const isTotalHoras = totalUpper.includes('HORA');
+              const isTotalPeso = totalUpper.includes('PESO') || !isTotalHoras; // Default a PESO
               
-              if (containsPeso && !containsTotal) {
-                const pesoValue = Number.parseFloat(updatedRow[key]);
-                if (!Number.isNaN(pesoValue) && updatedRow[key] !== '' && updatedRow[key] !== null) {
-                  total += pesoValue;
-                  pesoColumns.push(`${key}=${pesoValue}`); // 🔧 Agregar para logging
+              let total = 0;
+              const valuesSummed = []; // 🔧 Para tracking
+              
+              columnNames.forEach(key => {
+                const keyUpper = key.toUpperCase();
+                const isTotalColumn = keyUpper.includes('TOTAL');
+                
+                // Evitar sumar totales entre sí, y filtrar según el tipo de total
+                if (!isTotalColumn && ((isTotalPeso && keyUpper.includes('PESO')) || (isTotalHoras && keyUpper.includes('HORA')))) {
+                  // Excluir promedios u otras métricas que no se suman
+                  if (!keyUpper.includes('PROMEDIO') && !keyUpper.includes('INICIO') && !keyUpper.includes('FIN') && !keyUpper.includes('NETO') && !keyUpper.includes('BRUTO')) {
+                    const cellValue = String(updatedRow[key] || '').trim();
+                    // Evitar sumar horas en formato HH:MM (que parseFloat convierte a número)
+                    if (!cellValue.includes(':')) {
+                      const numValue = Number.parseFloat(cellValue);
+                      if (!Number.isNaN(numValue) && cellValue !== '') {
+                        total += numValue;
+                        valuesSummed.push(`${key}=${numValue}`);
+                      }
+                    }
+                  }
                 }
+              });
+              
+              if (valuesSummed.length > 0) {
+                console.log(`    ✅ Fila ${rowIndex + 1}: ${totalKey} = ${total.toFixed(2)} (${valuesSummed.join(', ')})`);
+              } else {
+                console.log(`    ⚠️ Fila ${rowIndex + 1}: Sin valores para sumar en ${totalKey}`);
               }
+              updatedRow[totalKey] = total.toFixed(2);
             });
-            
-            if (pesoColumns.length > 0) {
-              console.log(`    ✅ Fila ${rowIndex + 1}: ${totalKey} = ${total.toFixed(2)} (${pesoColumns.join(', ')})`);
-            } else {
-              console.log(`    ⚠️ Fila ${rowIndex + 1}: Sin valores para sumar`);
-            }
-            updatedRow[totalKey] = total.toFixed(2);
           }
           
           return updatedRow;
@@ -4270,49 +4285,53 @@ useEffect(() => {
           return { ...element, data: updatedRows };
         }
             
-        // 🎯 VERIFICAR SI ESTA TABLA TIENE COLUMNAS PESO (en la plantilla, NO en el row)
-        const tienePeso = tableTemplate?.columns?.some(col => {
+        // 🎯 VERIFICAR SI ESTA TABLA TIENE COLUMNAS AUTO-SUMABLES (en la plantilla, NO en el row)
+        const tieneAutoSuma = tableTemplate?.columns?.some(col => {
           const colId = (col.id || col.name || '').toUpperCase();
           const colLabel = (col.label || col.header || '').toUpperCase();
-          return colId.includes('PESO') || colLabel.includes('PESO');
+          return colId.includes('PESO') || colLabel.includes('PESO') || colId.includes('HORA') || colLabel.includes('HORA');
         }) || false;
             
-        console.log(`      📊 ¿Tabla tiene columnas PESO? ${tienePeso ? '✅ SÍ' : '⛔ NO'}`);
+        console.log(`      📊 ¿Tabla tiene columnas sumables? ${tieneAutoSuma ? '✅ SÍ' : '⛔ NO'}`);
             
-        // ⚠️ SOLO CALCULAR TOTAL SI LA TABLA TIENE COLUMNAS PESO
-        if (tienePeso) {
-          // 🔢 CALCULAR TOTAL AUTOMÁTICAMENTE
+        // ⚠️ SOLO CALCULAR TOTAL SI LA TABLA TIENE COLUMNAS SUMABLES
+        if (tieneAutoSuma) {
+          // 🔢 CALCULAR TOTALES AUTOMÁTICAMENTE
           const allKeys = Object.keys(editedRow);
-          const totalKey = allKeys.find(key => 
-            key.toUpperCase().includes('TOTAL')
-          );
+          const totalKeys = allKeys.filter(key => key.toUpperCase().includes('TOTAL'));
               
-          if (totalKey) {
-            let total = 0;
-                
-            console.log(`      🧮 Calculando total para columna: "${totalKey}"`);
-                
-            // Sumar TODAS las columnas PESO de esta fila
-            allKeys.forEach(key => {
-              const keyUpper = key.toUpperCase();
-              const containsPeso = keyUpper.includes('PESO');
-              const containsTotal = keyUpper.includes('TOTAL');
-              const cellValue = editedRow[key];
+          if (totalKeys.length > 0) {
+            totalKeys.forEach(totalKey => {
+              const totalUpper = totalKey.toUpperCase();
+              const isTotalHoras = totalUpper.includes('HORA');
+              const isTotalPeso = totalUpper.includes('PESO') || !isTotalHoras; // Default a PESO
+              
+              let total = 0;
+              console.log(`      🧮 Calculando total para columna: "${totalKey}"`);
                   
-              // Sumar si contiene PESO y NO contiene TOTAL
-              if (containsPeso && !containsTotal) {
-                const pesoValue = Number.parseFloat(cellValue);
-                    
-                if (!Number.isNaN(pesoValue) && cellValue !== '' && cellValue !== null && cellValue !== undefined) {
-                  total += pesoValue;
-                  console.log(`         ➕ ${key} = ${pesoValue}`);
-                }
-              }
-            });
+              allKeys.forEach(key => {
+                const keyUpper = key.toUpperCase();
+                const isTotalColumn = keyUpper.includes('TOTAL');
                 
-            // Actualizar el total
-            console.log(`      ✅ TOTAL CALCULADO: ${total.toFixed(2)}`);
-            editedRow[totalKey] = total.toFixed(2);
+                if (!isTotalColumn && ((isTotalPeso && keyUpper.includes('PESO')) || (isTotalHoras && keyUpper.includes('HORA')))) {
+                  if (!keyUpper.includes('PROMEDIO') && !keyUpper.includes('INICIO') && !keyUpper.includes('FIN') && !keyUpper.includes('NETO') && !keyUpper.includes('BRUTO')) {
+                    const cellValue = String(editedRow[key] || '').trim();
+                    // Evitar sumar horas en formato HH:MM
+                    if (!cellValue.includes(':')) {
+                      const numValue = Number.parseFloat(cellValue);
+                      if (!Number.isNaN(numValue) && cellValue !== '') {
+                        total += numValue;
+                        console.log(`         ➕ ${key} = ${numValue}`);
+                      }
+                    }
+                  }
+                }
+              });
+                  
+              // Actualizar el total
+              console.log(`      ✅ TOTAL CALCULADO: ${total.toFixed(2)}`);
+              editedRow[totalKey] = total.toFixed(2);
+            });
             updatedRows[rowIndex] = editedRow;
           } else {
             console.log(`      ⚠️ No se encontró columna TOTAL`);
