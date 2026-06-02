@@ -182,7 +182,7 @@ export default function TrazabilidadConfig() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [sortField, setSortField] = useState('createdAt'); // 'createdAt' | 'template' | 'match'
   const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
-  const [loteFormatoId, setLoteFormatoId] = useState('');
+  const [loteFormatoId, setLoteFormatoId] = useState(() => localStorage.getItem('defaultTrazabilidadFormat') || '');
   const [lotesDisponibles, setLotesDisponibles] = useState([]); // sugerencias de lotes
   const [loadingLoteSugg, setLoadingLoteSugg] = useState(false);
 
@@ -198,6 +198,11 @@ export default function TrazabilidadConfig() {
   const [fechaPdfLoading, setFechaPdfLoading] = useState(false);
   const [fechaSortField, setFechaSortField] = useState('createdAt');
   const [fechaSortDir, setFechaSortDir] = useState('desc');
+  const [fechaFormatoId, setFechaFormatoId] = useState(() => localStorage.getItem('defaultTrazabilidadFormat') || '');
+
+  const [globalTemplateIds, setGlobalTemplateIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('globalTemplateIds') || '[]'); } catch { return []; }
+  });
 
   // ── AI assistant state ───────────────────────────────────────────────────────
   const [aiOpen, setAiOpen] = useState(false);
@@ -270,17 +275,23 @@ export default function TrazabilidadConfig() {
     setDetalles(stored.detalles || []);
   }, []);
 
-  // ── Load templates via MCP listar_templates ─────────────────────────────────
+  // ── Load templates via REST API ─────────────────────────────────
   useEffect(() => {
-    mcpListarTemplates()
-      .then(arr => {
+    const token = localStorage.getItem('token');
+    const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    fetch(`${API_BASE_URL}/Templates`, { headers })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(data => {
+        let arr = Array.isArray(data) ? data : (data.$values || []);
+        // El usuario solo quiere los formularios ('FOR') y evitar basura/llenos
+        const formsOnly = arr.filter(t => (t.codigo || '').toUpperCase().includes('FOR') || (t.nombre || '').toUpperCase().includes('FOR'));
+        arr = formsOnly.length > 0 ? formsOnly : arr;
         setTemplates(arr);
-        // Initialize lotesEnabled state from useLoteStore
         const enabled = {};
         const resumen = {};
         arr.forEach(t => {
-          enabled[String(t.templateID)] = isTrazaEnabled(String(t.templateID));
-          resumen[String(t.templateID)] = isResumenAutoEnabled(String(t.templateID));
+          enabled[String(t.templateID || t.id)] = isTrazaEnabled(String(t.templateID || t.id));
+          resumen[String(t.templateID || t.id)] = isResumenAutoEnabled(String(t.templateID || t.id));
         });
         setLotesEnabled(enabled);
         setResumenEnabled(resumen);
@@ -347,7 +358,9 @@ export default function TrazabilidadConfig() {
     try {
       // Construir templateIds permitidos basados en el formato seleccionado
       let templateIds = null;
-      if (loteFormatoId) {
+      if (loteFormatoId === 'custom') {
+        templateIds = globalTemplateIds;
+      } else if (loteFormatoId) {
         const formatoSeleccionado = formatos.find(f => String(f.id) === String(loteFormatoId));
         if (formatoSeleccionado) {
           templateIds = detalles
@@ -417,7 +430,31 @@ export default function TrazabilidadConfig() {
           });
         }
       }
+      
+      // Inyectar "formularios faltantes" como filas virtuales
+      if (matched.length > 0 && loteFormatoId && loteFormatoId !== 'custom') {
+        const formatoSeleccionado = formatos.find(f => String(f.id) === String(loteFormatoId));
+        if (formatoSeleccionado) {
+          const requiredDetalles = detalles.filter(d => d.formatoId === formatoSeleccionado.id && d.templateId);
+          const foundTemplateIds = new Set(matched.map(r => String(r.templateID ?? r.TemplateID ?? '')));
+          const missing = requiredDetalles.filter(d => !foundTemplateIds.has(String(d.templateId)));
+          missing.forEach(mt => {
+            matched.push({
+              formID: `missing-${mt.id}`,
+              _isMissing: true,
+              templateNombre: mt.nombreDocumento,
+              templateCodigo: mt.codigoDocumento,
+              _proceso: '—',
+              _matchedLotes: [query], // Para que sepamos qué lote falta
+              createdAt: null,
+              creadoPor: '—'
+            });
+          });
+        }
+      }
+
       setLoteResults(matched);
+      setLoteChecked(new Set(matched.filter(m => !m._isMissing).map(m => m.formID)));
       if (matched.length === 0) setLoteError(`No se encontraron formularios con el lote "${query}"`);
     } catch (err) {
       setLoteError('Error al buscar formularios: ' + err.message);
@@ -487,6 +524,20 @@ export default function TrazabilidadConfig() {
         if (tid && !tplMap[tid]) tplMap[tid] = t;
       });
 
+      // Construir templateIds permitidos basados en el formato seleccionado
+      let allowedTemplateIds = null;
+      if (fechaFormatoId === 'custom') {
+        allowedTemplateIds = globalTemplateIds;
+      } else if (fechaFormatoId) {
+        const formatoSeleccionado = formatos.find(f => String(f.id) === String(fechaFormatoId));
+        if (formatoSeleccionado) {
+          allowedTemplateIds = detalles
+            .filter(d => d.formatoId === formatoSeleccionado.id)
+            .map(d => String(d.templateId))
+            .filter(Boolean);
+        }
+      }
+
       const desde = new Date(fechaDesde + 'T00:00:00');
       const hasta = new Date(fechaHasta + 'T23:59:59');
 
@@ -494,7 +545,9 @@ export default function TrazabilidadConfig() {
         .filter(form => {
           const fDate = new Date(form.createdAt || form.CreatedAt || 0);
           if (fDate < desde || fDate > hasta) return false;
-          if (fechaTemplateId && String(form.templateID) !== String(fechaTemplateId)) return false;
+          const tid = String(form.templateID ?? form.TemplateID ?? '');
+          if (fechaTemplateId && tid !== String(fechaTemplateId)) return false;
+          if (allowedTemplateIds && allowedTemplateIds.length > 0 && !allowedTemplateIds.includes(tid)) return false;
           return true;
         })
         .map(form => {
@@ -510,7 +563,30 @@ export default function TrazabilidadConfig() {
           };
         });
 
+      // Inyectar "formularios faltantes" como filas virtuales
+      if (matched.length > 0 && fechaFormatoId && fechaFormatoId !== 'custom') {
+        const formatoSeleccionado = formatos.find(f => String(f.id) === String(fechaFormatoId));
+        if (formatoSeleccionado) {
+          const requiredDetalles = detalles.filter(d => d.formatoId === formatoSeleccionado.id && d.templateId);
+          const foundTemplateIds = new Set(matched.map(r => String(r.templateID ?? r.TemplateID ?? '')));
+          const missing = requiredDetalles.filter(d => !foundTemplateIds.has(String(d.templateId)));
+          missing.forEach(mt => {
+            matched.push({
+              formID: `missing-${mt.id}`,
+              _isMissing: true,
+              templateNombre: mt.nombreDocumento,
+              templateCodigo: mt.codigoDocumento,
+              _proceso: '—',
+              _lotes: [],
+              createdAt: null,
+              creadoPor: '—'
+            });
+          });
+        }
+      }
+
       setFechaResults(matched);
+      setFechaChecked(new Set(matched.filter(m => !m._isMissing).map(m => m.formID)));
       if (matched.length === 0) setFechaError('No se encontraron formularios en el rango seleccionado.');
     } catch (err) {
       setFechaError('Error al buscar formularios: ' + err.message);
@@ -1186,10 +1262,33 @@ export default function TrazabilidadConfig() {
           )}
 
           {/* Resultados */}
-          {sortedLoteResults.length > 0 && (
-            <>
-              {/* Barra de acciones */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
+          {(() => {
+            let missingTemplates = [];
+            if (!loteLoading && loteSearch && sortedLoteResults.length > 0 && loteFormatoId && loteFormatoId !== 'custom') {
+              const formatoSeleccionado = formatos.find(f => String(f.id) === String(loteFormatoId));
+              if (formatoSeleccionado) {
+                const requiredDetalles = detalles.filter(d => d.formatoId === formatoSeleccionado.id && d.templateId);
+                const foundTemplateIds = new Set(sortedLoteResults.map(r => String(r.templateID ?? r.TemplateID ?? '')));
+                missingTemplates = requiredDetalles.filter(d => !foundTemplateIds.has(String(d.templateId)));
+              }
+            }
+
+            return sortedLoteResults.length > 0 ? (
+              <>
+                {missingTemplates.length > 0 && (
+                  <div style={{ background: '#fffbeb', border: '1px solid #f59e0b', borderRadius: '6px', padding: '12px 14px', color: '#b45309', fontSize: '13px', marginBottom: '16px' }}>
+                    <div style={{ fontWeight: 700, marginBottom: '4px' }}>⚠️ Advertencia: Formularios faltantes</div>
+                    <div style={{ marginBottom: '4px' }}>Según el formato seleccionado, faltan los siguientes documentos en la trazabilidad de este lote:</div>
+                    <ul style={{ margin: '0 0 0 20px', padding: 0 }}>
+                      {missingTemplates.map(mt => (
+                        <li key={mt.id}><strong>{mt.nombreDocumento}</strong> {mt.codigoDocumento ? `(${mt.codigoDocumento})` : ''}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                {/* Barra de acciones */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '13px', color: '#64748b' }}>
                   <strong>{sortedLoteResults.length}</strong> formulario(s) encontrado(s) con el lote <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>{loteSearch}</code>
                 </span>
@@ -1253,7 +1352,40 @@ export default function TrazabilidadConfig() {
                       const fecha = form.createdAt
                         ? new Date(form.createdAt).toLocaleString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                         : '—';
-                      return (
+                      return form._isMissing ? (
+                        <tr key={form.formID} style={{ borderBottom: '1px solid #fecaca', background: '#fef2f2' }}>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <input type="checkbox" disabled />
+                          </td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <div style={{ fontWeight: 700, color: '#dc2626' }}>{form.templateNombre || '—'} <span style={{ fontSize: '11px', fontWeight: 'bold' }}>(Faltante)</span></div>
+                            {form.templateCodigo && (
+                              <code style={{ fontSize: '11px', color: '#991b1b', background: '#fee2e2', padding: '1px 5px', borderRadius: '3px' }}>
+                                {form.templateCodigo}
+                              </code>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#ef4444', fontSize: '12px', fontStyle: 'italic' }}>Formulario no llenado</td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                              {(form._matchedLotes || []).map((lv, i) => (
+                                <span key={i} style={{
+                                  background: '#fee2e2', color: '#991b1b',
+                                  padding: '2px 8px', borderRadius: '12px',
+                                  fontSize: '12px', fontWeight: 700, fontFamily: 'monospace'
+                                }}>{lv}</span>
+                              ))}
+                            </div>
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#dc2626', fontSize: '12px', fontWeight: 'bold' }}>⚠️ Pendiente</td>
+                          <td style={{ padding: '8px 10px', color: '#ef4444', fontSize: '12px', fontStyle: 'italic' }}>—</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <button disabled style={{ background: '#f87171', color: '#fff', border: 'none', borderRadius: '5px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'not-allowed', opacity: 0.5 }}>
+                              📄 PDF
+                            </button>
+                          </td>
+                        </tr>
+                      ) : (
                         <tr
                           key={form.formID}
                           style={{
@@ -1340,7 +1472,8 @@ export default function TrazabilidadConfig() {
                 </table>
               </div>
             </>
-          )}
+            ) : null;
+          })()}
 
           {/* Estado inicial / vacío */}
           {!loteLoading && sortedLoteResults.length === 0 && !loteError && (
@@ -1381,6 +1514,21 @@ export default function TrazabilidadConfig() {
                 onChange={e => setFechaHasta(e.target.value)}
                 style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}
               />
+            </div>
+            <div style={{ flex: 1, minWidth: '200px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase' }}>
+                Formato de trazabilidad
+              </label>
+              <select
+                value={fechaFormatoId}
+                onChange={e => setFechaFormatoId(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px' }}
+              >
+                <option value="">— Todos los formatos —</option>
+                {formatos.map(f => (
+                  <option key={f.id} value={String(f.id)}>{f.nombre}</option>
+                ))}
+              </select>
             </div>
             <div style={{ flex: 1, minWidth: '200px' }}>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '4px', textTransform: 'uppercase' }}>Template (opcional)</label>
@@ -1485,7 +1633,33 @@ export default function TrazabilidadConfig() {
                       const fechaStr = form.createdAt
                         ? new Date(form.createdAt).toLocaleString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                         : '—';
-                      return (
+                      return form._isMissing ? (
+                        <tr key={form.formID} style={{ borderBottom: '1px solid #fecaca', background: '#fef2f2' }}>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <input type="checkbox" disabled />
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#ef4444', fontSize: '12px', fontStyle: 'italic', whiteSpace: 'nowrap' }}>—</td>
+                          <td style={{ padding: '8px 10px' }}>
+                            <div style={{ fontWeight: 700, color: '#dc2626' }}>{form.templateNombre || '—'} <span style={{ fontSize: '11px', fontWeight: 'bold' }}>(Faltante)</span></div>
+                            {form.templateCodigo && (
+                              <code style={{ fontSize: '11px', color: '#991b1b', background: '#fee2e2', padding: '1px 5px', borderRadius: '3px' }}>
+                                {form.templateCodigo}
+                              </code>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px 10px', color: '#dc2626', fontSize: '12px', fontWeight: 'bold' }}>⚠️ Pendiente</td>
+                          <td style={{ padding: '8px 10px', color: '#ef4444', fontSize: '12px', fontStyle: 'italic' }}>Formulario no llenado</td>
+                          <td style={{ padding: '8px 10px', color: '#ef4444', fontSize: '12px', fontStyle: 'italic' }}>—</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <code style={{ fontSize: '11px', color: '#ef4444', background: '#fee2e2', padding: '2px 6px', borderRadius: '3px' }}>N/A</code>
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <button disabled style={{ background: '#f87171', color: '#fff', border: 'none', borderRadius: '5px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'not-allowed', opacity: 0.5 }}>
+                              📄 PDF
+                            </button>
+                          </td>
+                        </tr>
+                      ) : (
                         <tr
                           key={form.formID}
                           style={{ borderBottom: '1px solid #f1f5f9', background: isChecked ? '#eff6ff' : 'transparent', cursor: 'pointer' }}
@@ -1646,10 +1820,99 @@ export default function TrazabilidadConfig() {
         {/* ══ RIGHT PANEL: FORMAT DETAILS ═════════════════════════════════════ */}
         <div className={`traz-panel-right ${!selectedFormato ? 'panel-placeholder' : ''} ${activePanel === 'list' && selectedFormato ? 'panel-hidden-mobile' : ''}`}>
           {!selectedFormato ? (
-            <div className="traz-placeholder">
-              <div className="traz-placeholder-icon">👈</div>
-              <h3>Selecciona un formato</h3>
-              <p>Haz clic en un formato de la lista para ver y configurar sus documentos</p>
+            <div className="traz-placeholder" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '30px' }}>
+              <div>
+                <div className="traz-placeholder-icon">👈</div>
+                <h3>Selecciona un formato</h3>
+                <p>Haz clic en un formato de la lista para ver y configurar sus documentos</p>
+              </div>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '500px', textAlign: 'left' }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', color: '#1e293b' }}>⚙️ Configuración Global de Búsqueda</h4>
+                <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748b' }}>
+                  Selecciona el <strong>Formulario / Formato de Trazabilidad</strong> que se aplicará por defecto al hacer la búsqueda por lotes y procesos.
+                </p>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>
+                  Formato predeterminado
+                </label>
+                <select 
+                  value={loteFormatoId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    localStorage.setItem('defaultTrazabilidadFormat', val);
+                    setLoteFormatoId(val);
+                    setFechaFormatoId(val);
+                  }}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', backgroundColor: '#fff', outline: 'none' }}
+                >
+                  <option value="">— Sin formato predeterminado (Buscar en todos) —</option>
+                  <option value="custom">🛠️ Selección personalizada (Elegir formularios manualmente)</option>
+                  {formatos.map(f => (
+                    <option key={f.id} value={f.id}>{f.nombre} ({f.modulo})</option>
+                  ))}
+                </select>
+                <p style={{ marginTop: '12px', fontSize: '11px', color: '#94a3b8', marginBottom: '0' }}>
+                  Este formato será seleccionado automáticamente en las pestañas de "Buscar por Lote" o "Buscar por Fecha".
+                </p>
+
+                {loteFormatoId === 'custom' ? (
+                  <div style={{ marginTop: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#475569', marginBottom: '8px', textTransform: 'uppercase' }}>
+                      Selecciona los formularios para buscar automáticamente:
+                    </div>
+                    {templates.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '250px', overflowY: 'auto', background: '#fff', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                        {templates.map(t => {
+                          const isChecked = globalTemplateIds.includes(String(t.templateID));
+                          return (
+                            <label key={t.templateID} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', padding: '4px' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  const next = e.target.checked 
+                                    ? [...globalTemplateIds, String(t.templateID)]
+                                    : globalTemplateIds.filter(id => id !== String(t.templateID));
+                                  setGlobalTemplateIds(next);
+                                  localStorage.setItem('globalTemplateIds', JSON.stringify(next));
+                                }}
+                                style={{ cursor: 'pointer' }}
+                              />
+                              <span style={{ color: '#334155' }}>{t.nombre}</span>
+                              {t.codigo && <code style={{ fontSize: '10px', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#64748b' }}>{t.codigo}</code>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#94a3b8' }}>Cargando formularios...</div>
+                    )}
+                  </div>
+                ) : loteFormatoId && (
+                  <div style={{ marginTop: '16px', padding: '12px', background: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#475569', marginBottom: '8px', textTransform: 'uppercase' }}>
+                      Formularios incluidos en la búsqueda automática:
+                    </div>
+                    {detalles.filter(d => String(d.formatoId) === String(loteFormatoId)).length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                        {detalles.filter(d => String(d.formatoId) === String(loteFormatoId))
+                           .sort((a, b) => a.orden - b.orden)
+                           .map(d => (
+                          <div key={d.id} style={{ fontSize: '12px', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ color: '#3b82f6' }}>📄</span>
+                            <strong>{d.orden}.</strong> {d.nombreDocumento}
+                            {d.codigoDocumento && <code style={{ fontSize: '10px', background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#64748b' }}>{d.codigoDocumento}</code>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#ef4444', background: '#fef2f2', padding: '8px', borderRadius: '6px', border: '1px solid #fca5a5' }}>
+                        ⚠️ Este formato de trazabilidad aún no tiene formularios configurados. No se incluirá ningún formulario en la búsqueda automática.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <>

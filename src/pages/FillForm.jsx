@@ -9866,6 +9866,15 @@ useEffect(() => {
             return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
           }
 
+          // 🚫 NUNCA sumar identificadores o variables no sumativas por defecto
+          if (
+            colLabel.includes('LOTE') || colLabel.includes('BATCH') ||
+            colLabel.includes('GLASEO') || colLabel.includes('CAPACIDAD') ||
+            colLabel.includes('TEMPERATURA') || colLabel.includes('TEMP')
+          ) {
+            return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
+          }
+
           // Tipos de columna no numéricos: omitir SOLO si están explícitamente excluidos
           // (undefined y true = incluido; false = excluido)
           const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
@@ -9873,26 +9882,14 @@ useEffect(() => {
             return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
           }
 
-          // Determinar si esta columna es numérica
-          const isNumericCol = col.includeInSum !== false ||
-            colType === 'number' || colType === 'temperature' || colType === 'percentage' || colType === 'calculated' || colType === 'formula' || col.formula ||
+          // Solo sumar si es una columna numérica conocida o si fue forzada con includeInSum === true
+          const isNumericCol = col.includeInSum === true ||
+            colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
             colLabel.includes('PESO') || colLabel.includes('TOTAL') || colLabel.includes('CANTIDAD') ||
-            colLabel.includes('VOLUMEN') || colLabel.includes('TEMPERATURA') || colLabel.includes('TEMP');
+            colLabel.includes('VOLUMEN');
 
-          if (!isNumericCol) {
-            // Para columnas sin tipo definido: solo sumar si hay al menos algún valor numérico
-            let hasAnyNumber = false;
-            let allNumeric = true;
-            for (const row of rows) {
-              const rawVal = row[cellName];
-              if (rawVal === '' || rawVal === null || rawVal === undefined) continue;
-              const val = parseFloat(rawVal);
-              if (isNaN(val)) { allNumeric = false; break; }
-              hasAnyNumber = true;
-            }
-            if (!hasAnyNumber || !allNumeric) {
-              return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
-            }
+          if (!isNumericCol && col.includeInSum !== true) {
+            return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280', fontSize: '0.8em' }}>—</td>;
           }
 
           // Sumar todos los valores de esta columna

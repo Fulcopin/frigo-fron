@@ -1181,9 +1181,28 @@ function ViewForms() {
                                 return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
                               }
 
-                              // Tipos no numéricos: excluir siempre (a menos que sean text/textarea con datos numéricos)
+                              // 🚫 NUNCA sumar identificadores o variables no sumativas por defecto
+                              if (
+                                colLabel.includes('LOTE') || colId.includes('LOTE') || colLabel.includes('BATCH') ||
+                                colLabel.includes('GLASEO') || colId.includes('GLASEO') ||
+                                colLabel.includes('CAPACIDAD') || colId.includes('CAPACIDAD') ||
+                                colLabel.includes('TEMPERATURA') || colId.includes('TEMPERATURA') || colLabel.includes('TEMP')
+                              ) {
+                                return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
+                              }
+
                               const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
                               if (tiposNoNumericos.includes(colType)) {
+                                return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
+                              }
+
+                              // Solo sumar si es una columna numérica conocida o si fue forzada con includeInSum === true
+                              const isNumericCol = col.includeInSum === true ||
+                                colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
+                                colLabel.includes('PESO') || colId.includes('PESO') || colLabel.includes('TOTAL') || colId.includes('TOTAL') || 
+                                colLabel.includes('CANTIDAD') || colLabel.includes('VOLUMEN');
+
+                              if (!isNumericCol && col.includeInSum !== true) {
                                 return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
                               }
 

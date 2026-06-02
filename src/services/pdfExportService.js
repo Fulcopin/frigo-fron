@@ -1235,6 +1235,27 @@ const rows = tableData.map((row, rowIndex) => {
             totalsRow = columns.map((col, colIndex) => {
               // Respetar includeInSum: si está explícitamente en false → no sumar
               if (col.includeInSum === false) return '—';
+              
+              // 🚫 NUNCA sumar identificadores o variables no sumativas por defecto
+              const colHeaderUp = (col.header || '').toUpperCase();
+              if (
+                colHeaderUp.includes('LOTE') || colHeaderUp.includes('BATCH') ||
+                colHeaderUp.includes('GLASEO') || colHeaderUp.includes('CAPACIDAD') ||
+                colHeaderUp.includes('TEMPERATURA') || colHeaderUp.includes('TEMP')
+              ) return '—';
+
+              const colType = (col.type || '').toLowerCase();
+              const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
+              if (tiposNoNumericos.includes(colType)) return '—';
+
+              // Solo sumar si es una columna numérica conocida o si fue forzada con includeInSum === true
+              const isNumericCol = col.includeInSum === true ||
+                colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
+                colHeaderUp.includes('PESO') || colHeaderUp.includes('TOTAL') || colHeaderUp.includes('CANTIDAD') ||
+                colHeaderUp.includes('VOLUMEN');
+
+              if (!isNumericCol && col.includeInSum !== true) return '—';
+
               let columnTotal = 0;
               let hasValues = false;
               const dataRows = sanitizedRows;
@@ -1247,7 +1268,8 @@ const rows = tableData.map((row, rowIndex) => {
               });
               return hasValues ? columnTotal.toFixed(2) : '—';
             });
-            hasTotals = totalsRow.some(v => v !== '—');
+            // Mostrar el footer SIEMPRE si autoSumColumns es true, incluso si todo es '—'
+            hasTotals = true;
           }
           
           // 📊 Calcular estilos dinámicos según número de columnas

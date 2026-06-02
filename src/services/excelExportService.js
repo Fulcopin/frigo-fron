@@ -947,6 +947,27 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
       const totalsValues = columns.map((col, colIndex) => {
         // Respetar includeInSum: si está explícitamente en false → no sumar
         if (col.includeInSum === false) return { total: 0, hasNum: false };
+        
+        // 🚫 NUNCA sumar identificadores o variables no sumativas por defecto
+        const colHeaderUp = (col.header || '').toUpperCase();
+        if (
+          colHeaderUp.includes('LOTE') || colHeaderUp.includes('BATCH') ||
+          colHeaderUp.includes('GLASEO') || colHeaderUp.includes('CAPACIDAD') ||
+          colHeaderUp.includes('TEMPERATURA') || colHeaderUp.includes('TEMP')
+        ) return { total: 0, hasNum: false };
+
+        const colType = (col.type || '').toLowerCase();
+        const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
+        if (tiposNoNumericos.includes(colType)) return { total: 0, hasNum: false };
+
+        // Solo sumar si es una columna numérica conocida o si fue forzada con includeInSum === true
+        const isNumericCol = col.includeInSum === true ||
+          colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
+          colHeaderUp.includes('PESO') || colHeaderUp.includes('TOTAL') || colHeaderUp.includes('CANTIDAD') ||
+          colHeaderUp.includes('VOLUMEN');
+
+        if (!isNumericCol && col.includeInSum !== true) return { total: 0, hasNum: false };
+
         let colTotal = 0;
         let hasNum = false;
         dataToRender.forEach(row => {
