@@ -358,28 +358,62 @@ export default function TrazabilidadConfig() {
         }
       }
 
-      const resp = await fetch(`${API_BASE_URL}/FilledForms`);
+      const token = localStorage.getItem('token');
+      const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      const [resp, tplsResp] = await Promise.all([
+        fetch(`${API_BASE_URL}/FilledForms`, { headers }),
+        fetch(`${API_BASE_URL}/Templates`, { headers })
+      ]);
       if (!resp.ok) throw new Error(`Error ${resp.status}`);
       const raw = await resp.json();
       const all = Array.isArray(raw) ? raw : (raw.$values || []);
 
       const queryLower = query.toLowerCase();
       const matched = [];
-      for (const form of all) {
-        // Filtrar por templateId si aplica
-        if (templateIds && templateIds.length > 0 && !templateIds.includes(String(form.templateID))) continue;
+      
+      const searchValues = (obj, q) => {
+        if (!obj) return false;
+        if (typeof obj === 'string') return obj.toLowerCase().includes(q);
+        if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj).toLowerCase().includes(q);
+        if (Array.isArray(obj)) return obj.some(item => searchValues(item, q));
+        if (typeof obj === 'object') return Object.values(obj).some(val => searchValues(val, q));
+        return false;
+      };
 
-        const loteVals = extractLoteValues(form);
-        const matchedVals = loteVals.filter(v => v.toLowerCase().includes(queryLower));
-        if (matchedVals.length > 0) {
+      let tplMap = {};
+      if (tplsResp.ok) {
+        const rawTpls = await tplsResp.json();
+        const allTpls = Array.isArray(rawTpls) ? rawTpls : (rawTpls.$values || []);
+        allTpls.forEach(t => {
+          const tid = String(t.templateID ?? t.TemplateID ?? t.id ?? '');
+          if (tid) tplMap[tid] = t;
+        });
+      }
+      templates.forEach(t => {
+        const tid = String(t.templateID ?? t.TemplateID ?? t.id ?? '');
+        if (tid && !tplMap[tid]) tplMap[tid] = t;
+      });
+
+      for (const form of all) {
+        const tid = String(form.templateID ?? form.TemplateID ?? '');
+        
+        // Filtrar por templateId si aplica
+        if (templateIds && templateIds.length > 0 && !templateIds.includes(tid)) continue;
+
+        const hd = typeof form.headerData === 'string' ? (() => { try { return JSON.parse(form.headerData); } catch { return {}; } })() : (form.headerData || {});
+        const bd = typeof form.bodyData === 'string' ? (() => { try { return JSON.parse(form.bodyData); } catch { return {}; } })() : (form.bodyData || {});
+        
+        if (searchValues(hd, queryLower) || searchValues(bd, queryLower)) {
           // Enriquecer con nombre y proceso del template
-          const tpl = templates.find(t => String(t.templateID) === String(form.templateID));
+          const tpl = tplMap[tid];
           matched.push({
             ...form,
-            _matchedLotes: matchedVals,
-            templateNombre: tpl?.nombre || form.templateNombre || '—',
-            templateCodigo: tpl?.codigo || form.templateCodigo || '',
-            _proceso: tpl?.proceso || '—',
+            createdAt: form.createdAt || form.CreatedAt,
+            _matchedLotes: [query],
+            templateNombre: tpl?.nombre ?? tpl?.Nombre ?? form.templateNombre ?? '—',
+            templateCodigo: tpl?.codigo ?? tpl?.Codigo ?? form.templateCodigo ?? '',
+            _proceso: tpl?.proceso ?? tpl?.Proceso ?? form.proceso ?? '—',
           });
         }
       }
@@ -590,47 +624,58 @@ export default function TrazabilidadConfig() {
   const exportarPDFSeleccionados = async () => {
     if (loteChecked.size === 0) return;
     setPdfLoading(true);
-    // Ordenar los ids en el mismo orden que la tabla (sortedLoteResults)
     const ids = sortedLoteResults
       .filter(f => loteChecked.has(f.formID))
       .map(f => f.formID);
     try {
-      const formsData = [];
-      const templatesData = [];
+      const token = localStorage.getItem('token');
+      const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      const allPdfBytes = [];
       for (const formID of ids) {
-        const resp = await fetch(`${API_BASE_URL}/FilledForms/${formID}/with-template`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status} – form ${formID}`);
+        const resp = await fetch(`${API_BASE_URL}/FilledForms/${formID}/with-template`, { headers });
+        if (!resp.ok) { console.warn(`Form ${formID} no disponible (HTTP ${resp.status})`); continue; }
         const fd = await resp.json();
         const fechaVer = fd.template?.fechaVersion || fd.template?.FechaVersion || null;
-        formsData.push({
-          formID: fd.formID,
-          templateID: fd.templateID,
-          createdAt: fd.createdAt || fd.CreatedAt || fd.created_at,
-          fechaVersion: fechaVer,
+        
+        const formObj = {
+          formID: fd.formID, templateID: fd.templateID,
+          createdAt: fd.createdAt || fd.CreatedAt, fechaVersion: fechaVer,
           templateCreatedAt: fd.template?.CreatedAt || fd.template?.createdAt || null,
-          tipoProducto: fd.tipoProducto,
-          observaciones: fd.observaciones,
-          templateCodigo: fd.template?.codigo,
-          templateNombre: fd.template?.nombre,
+          tipoProducto: fd.tipoProducto, observaciones: fd.observaciones,
+          templateCodigo: fd.template?.codigo, templateNombre: fd.template?.nombre,
           version: fd.template?.version,
-          headerData: fd.data?.header,
-          bodyData: fd.data?.body,
-          firmasData: fd.data?.firmas,
-        });
-        templatesData.push({
-          templateID: fd.templateID,
-          codigo: fd.template?.codigo,
-          nombre: fd.template?.nombre,
-          version: fd.template?.version,
-          fechaVersion: fechaVer,
+          headerData: fd.data?.header, bodyData: fd.data?.body, firmasData: fd.data?.firmas,
+        };
+        const tplObj = {
+          codigo: fd.template?.codigo, nombre: fd.template?.nombre,
+          version: fd.template?.version, fechaVersion: fechaVer,
           bodyElements: fd.template?.structure?.bodyElements,
           headerFields: fd.template?.structure?.headerFields,
           firmas: fd.template?.structure?.firmas,
-        });
+        };
+        const result = await exportFormToPDF(formObj, tplObj, { returnBytes: true });
+        if (result?.pdfBytes) allPdfBytes.push(result.pdfBytes);
       }
-      // Un solo PDF combinado con todos los formularios
-      await exportMultipleFormsToPDF(formsData, templatesData);
-      alert(`✅ PDF combinado generado con ${formsData.length} formulario(s) (lote: ${loteSearch})`);
+
+      if (allPdfBytes.length === 0) { alert('No se pudieron generar los PDFs seleccionados.'); return; }
+
+      const mergedPdf = await PDFDocument.create();
+      for (const bytes of allPdfBytes) {
+        const srcDoc = await PDFDocument.load(bytes);
+        const copiedPages = await mergedPdf.copyPages(srcDoc, srcDoc.getPageIndices());
+        copiedPages.forEach(page => mergedPdf.addPage(page));
+      }
+      const mergedBytes = await mergedPdf.save();
+      const blob = new Blob([mergedBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Trazabilidad_Lote_${loteSearch}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (err) {
       alert('Error generando PDF: ' + err.message);
     } finally {
@@ -1256,7 +1301,9 @@ export default function TrazabilidadConfig() {
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 try {
-                                  const resp = await fetch(`${API_BASE_URL}/FilledForms/${form.formID}/with-template`);
+                                  const token = localStorage.getItem('token');
+                                  const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+                                  const resp = await fetch(`${API_BASE_URL}/FilledForms/${form.formID}/with-template`, { headers });
                                   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                                   const fd = await resp.json();
                                   const fechaVer = fd.template?.fechaVersion || fd.template?.FechaVersion || null;
