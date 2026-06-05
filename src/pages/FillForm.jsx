@@ -9839,12 +9839,17 @@ useEffect(() => {
 
 {/* 📊 FILA DE TOTALES POR COLUMNA */}
 {(() => {
-        // Mostrar si: autoSumColumns activado A NIVEL DE TEMPLATE,
-  // O al menos una columna tiene includeInSum !== false (undefined = incluido por defecto)
   const templateCols = element.columns || [];
-  const autoSumCols = selectedTemplate?.autoSumColumns === true || selectedTemplate?.AutoSumColumns === true
-    || templateCols.some(c => c.includeInSum !== false);
-  if (!autoSumCols) return null;
+  const isTemplateAutoSum = selectedTemplate?.autoSumColumns === true || selectedTemplate?.AutoSumColumns === true;
+  
+  // Mostrar la fila de totales SOLAMENTE si hay al menos una columna que deba sumarse.
+  // Una columna se suma si includeInSum es explícitamente true, 
+  // o si (no es explícitamente false AND autoSumColumns está activado a nivel plantilla).
+  const hasIncludedColumn = templateCols.some(c => 
+    c.includeInSum === true || (isTemplateAutoSum && c.includeInSum !== false)
+  );
+
+  if (!hasIncludedColumn) return null;
 
   const rows = (currentElementData.data || []).filter(r => !r?._deleted);
   if (rows.length === 0) return null;

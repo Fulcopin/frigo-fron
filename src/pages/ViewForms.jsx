@@ -1164,9 +1164,9 @@ function ViewForms() {
                       </tbody>
                       
                       {/* 📊 FILA DE TOTALES POR COLUMNA */}
-                      {tableRows.length > 0 && (
-                        (correspondingTemplate?.autoSumColumns === true || correspondingTemplate?.AutoSumColumns === true)
-                        || (templateElement.columns || []).some(c => c.includeInSum !== false)
+                      {tableRows.length > 0 && (templateElement.columns || []).some(c => 
+                        c.includeInSum === true || 
+                        ((correspondingTemplate?.autoSumColumns === true || correspondingTemplate?.AutoSumColumns === true) && c.includeInSum !== false)
                       ) && (
                         <tfoot>
                           <tr style={{ backgroundColor: '#eef2ff', fontWeight: 'bold', borderTop: '3px solid #6366f1' }}>
