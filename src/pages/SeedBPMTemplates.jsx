@@ -178,7 +178,7 @@ function getBPMTemplate() {
     nombre: "Control de Buenas Prácticas de Manufactura (Personal)",
     version: "2",
     fechaVersion: "2025-03-20T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad",
     cuandoSeUsa: "Durante el ingreso del personal a las salas de proceso",
     quienLoLlena: "Analista de Aseg. de Calidad",
@@ -485,7 +485,7 @@ function getLimpiezaTemplate() {
     nombre: "Control de la Limpieza, Alergenos y Químicos",
     version: "5",
     fechaVersion: "2025-10-17T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Limpieza y Desinfección",
     cuandoSeUsa: "Antes de iniciar las operaciones, post-limpieza",
     quienLoLlena: "Supervisor de Limpieza / Analista de Calidad",
@@ -689,7 +689,7 @@ function getClasificacionPesoTemplate() {
     nombre: "Control de Clasificación, Peso y Dimensiones de Porciones durante el Corte",
     version: "1",
     fechaVersion: "2025-02-10T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Corte y Clasificación",
     cuandoSeUsa: "Durante el proceso de corte y clasificación de porciones",
     quienLoLlena: "Analista de Aseg. De Calidad",
@@ -786,7 +786,7 @@ function getGlaseoInicialTemplate() {
     nombre: "Control de Glaseo Inicial de Productos Congelados (Liberación de Túneles)",
     version: "1",
     fechaVersion: "2025-02-10T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Glaseo",
     cuandoSeUsa: "Durante la liberación de túneles de congelado",
     quienLoLlena: "Analista de Aseg. De Calidad",
@@ -942,7 +942,7 @@ function getGlaseoFinalTemplate() {
     nombre: "Control de Glaseo Final de Productos Congelados (Corte y Clasificación)",
     version: "1",
     fechaVersion: "2025-02-10T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Glaseo Final",
     cuandoSeUsa: "Durante la comprobación del % de glaseo final en productos congelados",
     quienLoLlena: "Analista de Aseg. De Calidad",
@@ -1077,7 +1077,7 @@ function getDetectorMetalTemplate() {
     nombre: "Registro Calibración y Desafío del Detector de Metal (PCC)",
     version: "1",
     fechaVersion: "2025-02-18T00:00:00Z",
-    supervisa: "Jefe de Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Detector de Metales",
     cuandoSeUsa: "Durante cada turno de producción donde se usa detector de metales",
     quienLoLlena: "Analista de Aseg. De Calidad",
@@ -1103,39 +1103,100 @@ function getControlAguaTemplate() {
     { label: "Turno", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "" },
   ]
 
-  // Columnas comunes para cada cuadro de estación (tabla compacta por estación)
-  const estacionColumns = [
-    { label: "SE CAMBIA AGUA", type: "select", required: false, options: ["SI", "NO"], apiMap: "", apiEndpoint: "", formula: "" },
-    { label: "HORA", type: "time", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-    { label: "Vol. lts", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-    { label: "Resid. (F) ppm", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-    { label: "Dosif. ml", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-    { label: "Resid. (F) ppm 2", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-  ]
-
-  const estaciones = [
-    { nombre: "PEDILUVIO (Entrada Principal) - Cloro/Peroxiacético", subtitulo: "CLORO ( ) / PEROXIACÉTICO ( )" },
-    { nombre: "ESTACIÓN Desinf. de Botas (Área Recep. Mat. Prima) - Agua + Peroxiacético", subtitulo: "AGUA + PEROXIACÉTICO" },
-    { nombre: "ESTACIÓN Desinf. de Botas (Área Embarque Contenedores) - Agua + Peroxiacético", subtitulo: "AGUA + PEROXIACÉTICO" },
-    { nombre: "TINA Desinf. Producto Entero (Descarga Mat. Prima) - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
-    { nombre: "Desinf. Producto Entero (Previo Fileteo) TINA 1 - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
-    { nombre: "Desinf. Producto Entero (Previo Fileteo) TINA 2 - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
-    { nombre: "Desinf. Producto Entero (Previo Fileteo) TINA 3 - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
-    { nombre: "Desinf. Producto Entero (Previo Fileteo) TINA 4 - Agua + Hielo + Peroxiacético", subtitulo: "AGUA + HIELO + PEROXIACÉTICO" },
-    { nombre: "ESTACIONES MOVILES Desinf. Guantes, Cuchillos, Mandiles (Proceso Fileteo) - Agua + Peroxiacético", subtitulo: "AGUA + PEROXIACÉTICO" },
-  ]
-
   const bodyElements = []
 
-  // Cada estación es una tabla compacta (cuadrito) con 7 filas
-  estaciones.forEach((est, idx) => {
-    bodyElements.push({
-      id: Date.now() + 500 + idx,
-      type: "table",
-      title: est.nombre,
-      defaultRows: 7,
-      columns: estacionColumns.map(c => ({ ...c })),
-    })
+  // PARTE 1: Recepción y Descarga
+  bodyElements.push({
+    id: Date.now() + 500,
+    type: "tinas",
+    title: "CONTROL DE AGUA - RECEPCIÓN Y DESCARGA",
+    config: {
+      cycles: 7,
+      groups: [
+        {
+          name: "PEDILUVIO",
+          subtitle: "DESINFECCIÓN DE BOTAS (ENTRADA PRINCIPAL) CLORO( ) / PEROXIACÉTICO ( )",
+          count: 1,
+          labels: ["ENTRADA PRINCIPAL"]
+        },
+        {
+          name: "ESTACIÓN",
+          subtitle: "DESINFECCIÓN DE BOTAS",
+          count: 2,
+          labels: ["(ÁREA RECEP. MAT. PRIMA) AGUA + PEROXIACÉTICO", "(ÁREA EMBARQUE DE CONTENEDORES) AGUA + PEROXIACÉTICO"]
+        },
+        {
+          name: "TINA",
+          subtitle: "DESINFECCIÓN PRODUCTO ENTERO (DESCARGA DE MAT. PRIMA) AGUA + HIELO + PEROXIACÉTICO",
+          count: 1,
+          labels: ["DESCARGA DE MAT. PRIMA"]
+        },
+        {
+          name: "DESINFECCIÓN PRODUCTO ENTERO (PREVIO FILETEO)",
+          subtitle: "AGUA + HIELO + PEROXIACÉTICO",
+          count: 4,
+          labels: ["TINA 1", "TINA 2", "TINA 3", "TINA 4"]
+        },
+        {
+          name: "ESTACIONES MOVILES",
+          subtitle: "DESINFECCIÓN GUANTES, CUCHILLOS, MANDILES (PROCESO FILETEO) AGUA + PEROXIACÉTICO",
+          count: 1,
+          labels: ["PROCESO FILETEO"]
+        }
+      ],
+      fields: [
+        { label: "SE CAMBIA AGUA", type: "radio", options: ["SI", "NO"] },
+        { label: "HORA", type: "time" },
+        { label: "Vol.", type: "number", suffix: "lts" },
+        { label: "Resid. (I)", type: "number", suffix: "ppm" },
+        { label: "Dosif.", type: "number", suffix: "ml" },
+        { label: "Resid. (F)", type: "number", suffix: "ppm" }
+      ]
+    }
+  })
+
+  // PARTE 2: Procesos Posteriores
+  bodyElements.push({
+    id: Date.now() + 510,
+    type: "tinas",
+    title: "CONTROL DE AGUA - PROCESOS POSTERIORES",
+    config: {
+      cycles: 7,
+      groups: [
+        {
+          name: "TINAS DESINFECCIÓN DE PRODUCTO (DESPUÉS DE/ ANTES DE:)",
+          subtitle: "AGUA + HIELO + PEROXIACÉTICO",
+          count: 2,
+          labels: ["___ TINA", "___ TINA"]
+        },
+        {
+          name: "TINAS GLASEADO DE PRODUCTO CONGELADO DURANTE PROCESO DE:",
+          subtitle: "AGUA + HIELO + PEROXIACÉTICO",
+          count: 2,
+          labels: ["___ TINA", "___ TINA"]
+        },
+        {
+          name: "ESTACIONES DE ENJUAGUE / DESINFECCIÓN DE PROD. DURANTE PROCESO FRESCO",
+          subtitle: "AGUA + HIELO + CLORO / PEROXIACÉTICO",
+          count: 2,
+          labels: ["TINA 1", "TINA 2"]
+        },
+        {
+          name: "ESTACIONES DE ENJUAGUE / DESINFECCIÓN DE PROD. DURANTE PROCESO CONGELADO",
+          subtitle: "PEROXIACÉTICO / CLORO",
+          count: 2,
+          labels: ["TINA 3", "TINA 4"]
+        }
+      ],
+      fields: [
+        { label: "SE CAMBIA AGUA", type: "radio", options: ["SI", "NO"] },
+        { label: "HORA", type: "time" },
+        { label: "Vol.", type: "number", suffix: "lts" },
+        { label: "Resid. (I)", type: "number", suffix: "ppm" },
+        { label: "Dosif.", type: "number", suffix: "ml" },
+        { label: "Resid. (F)", type: "number", suffix: "ppm" }
+      ]
+    }
   })
 
   // Observaciones
@@ -1199,11 +1260,11 @@ function getControlAguaTemplate() {
   ]
 
   return {
-    codigo: "FOR-CC-18",
-    nombre: "Control del Agua en Proceso (Clorinación y Peroxiacético)",
+    codigo: "FOR-CC-18-B",
+    nombre: "Control del Agua en Proceso (Clorinación y Peroxiacético) - DUPLICADO",
     version: "4",
     fechaVersion: "2025-10-15T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Agua en Proceso",
     cuandoSeUsa: "Durante cada turno de producción para control de agua",
     quienLoLlena: "Analista de Aseg. De Calidad",
@@ -1357,7 +1418,7 @@ function getAlmacenamientoRefrigeradoTemplate() {
     nombre: "Control de Almacenamiento Refrigerado de Producto con CO (Cantidad de Hielo, T°C y Tiempo) PCC",
     version: "1",
     fechaVersion: "2025-02-24T00:00:00Z",
-    supervisa: "Jefe de Aseguram. Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Almacenamiento Refrigerado",
     cuandoSeUsa: "Durante el almacenamiento refrigerado de producto con hielo",
     quienLoLlena: "Operador",
@@ -1505,7 +1566,7 @@ function getInspeccionAreasNoProductivasTemplate() {
     nombre: "Lista de Inspección Sanitaria de Áreas No Productivas",
     version: "2",
     fechaVersion: "2025-04-24T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Inspección Sanitaria",
     cuandoSeUsa: "Para verificar condiciones sanitarias de áreas no productivas",
     quienLoLlena: "Inspector de calidad",
@@ -1599,7 +1660,7 @@ function getLimpiezaTanquesTinasTemplate() {
     nombre: "Registro de Limpieza de Tanques y Tinas",
     version: "1",
     fechaVersion: "2025-04-03T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Limpieza",
     cuandoSeUsa: "Para registrar la limpieza de tanques y tinas de proceso",
     quienLoLlena: "Responsable de la Limpieza",
@@ -1785,7 +1846,7 @@ function getInspeccionSanitariaAreasTemplate() {
     nombre: "Inspección de Condiciones Sanitarias de las Áreas de Proceso (Pre-Operativa y en Cada Cambio de Producto/Lote)",
     version: "5",
     fechaVersion: "2025-10-15T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Inspección Sanitaria",
     cuandoSeUsa: "Pre-operativa y en cada cambio de producto o lote",
     quienLoLlena: "Inspector de Aseg. de Calidad",
@@ -1940,7 +2001,7 @@ function getVerificacionBalanzasTemplate() {
     nombre: "Verificación de Balanzas",
     version: "2",
     fechaVersion: "2025-05-12T00:00:00Z",
-    supervisa: "Jefe de Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Verificación de Equipos",
     cuandoSeUsa: "Para verificar el estado y calibración de las balanzas",
     quienLoLlena: "Aseguramiento de Calidad",
@@ -2015,7 +2076,7 @@ function getEmpaqueFinaTemplate() {
     nombre: "Control de Empaque Final",
     version: "1",
     fechaVersion: "2025-04-14T00:00:00Z",
-    supervisa: "Jefe de Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Empaque Final",
     cuandoSeUsa: "Durante el empaque final de producto congelado",
     quienLoLlena: "Supervisor de Calidad",
@@ -2043,26 +2104,35 @@ function getMonitoreoProductosTerminadosTemplate() {
     { label: "Muestreo #", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "" },
   ]
 
-  // Generar columnas de las 12 bolsas dinámicamente
   const bolsaColumns = []
-  for (let i = 1; i <= 12; i++) {
+  for (let i = 1; i <= 10; i++) {
     bolsaColumns.push(
-      { label: `BOLSA ${i} - Coef. Unid.`, type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: `BOLSA ${i}` },
-      { label: `BOLSA ${i} - P. Bruto Bolsa (lbs)`, type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: `BOLSA ${i}` },
-      { label: `BOLSA ${i} - P. Neto Bolsa (lbs)`, type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "", group: `BOLSA ${i}` },
+      { label: `BOLSA ${i}`, type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" }
     )
   }
 
-  // Generar filas predefinidas (1-12) para la tabla de contenido por bolsa master
-  const contenidoBolsaRows = []
+  const porcionesRows = []
   for (let r = 1; r <= 12; r++) {
-    const row = { "#": r.toString(), "PESO NETO CAJA": "", _rowSpan: {}, _hidden: {} }
-    for (let b = 1; b <= 12; b++) {
-      row[`BOLSA ${b} - Coef. Unid.`] = ""
-      row[`BOLSA ${b} - P. Bruto Bolsa (lbs)`] = ""
-      row[`BOLSA ${b} - P. Neto Bolsa (lbs)`] = ""
+    const row = { "N°": r.toString(), _rowSpan: {}, _hidden: {} }
+    for (let b = 1; b <= 10; b++) {
+      row[`BOLSA ${b}`] = ""
     }
-    contenidoBolsaRows.push(row)
+    porcionesRows.push(row)
+  }
+  
+  // Array de columnas calculadas para MÁXIMOS Y MÍNIMOS
+  const bolsaColumnsCalculadas = []
+  for (let i = 1; i <= 10; i++) {
+    bolsaColumnsCalculadas.push({
+      label: `BOLSA ${i}`,
+      type: "calculated",
+      required: false,
+      options: [],
+      apiMap: "",
+      apiEndpoint: "",
+      // Fila 0 = MÁXIMO, Fila 1 = MÍNIMO, Fila 2 = COEF. UNIF.
+      formula: `_ROW_ == 0 ? ([BOLSA ${i}[max]] ? (([BOLSA ${i}[max]] - [FUNDA VP: PESO UND. (ONZ)]) / (([GLASEO: PORCENTAJE] / 100) + 1)) : "") : (_ROW_ == 1 ? ([BOLSA ${i}[min]] ? (([BOLSA ${i}[min]] - [FUNDA VP: PESO UND. (ONZ)]) / (([GLASEO: PORCENTAJE] / 100) + 1)) : "") : ([BOLSA ${i}[max]] && [BOLSA ${i}[min]] ? (([BOLSA ${i}[max]] - [FUNDA VP: PESO UND. (ONZ)]) / ([BOLSA ${i}[min]] - [FUNDA VP: PESO UND. (ONZ)])) : ""))`
+    })
   }
 
   const bodyElements = [
@@ -2084,46 +2154,119 @@ function getMonitoreoProductosTerminadosTemplate() {
       ],
     },
 
-    // Verificación del Producto / Contenido por Caja - Peso Tara
+    // Peso Tara CAJA
     {
       id: Date.now() + 1101,
       type: "section",
-      title: "Verificación del Producto / Contenido por Caja - Peso Tara Caja (lbs)",
+      title: "Verificación del Producto / Contenido por Caja - Peso Tara",
       fields: [
         { label: "PESO BRUTO CAJA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Peso Caja (Tapa + fondo)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso Caja (Tapa / fondo)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Peso Plástico", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Fundas VP - Peso Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Fundas VP - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Peso total Fundas VP", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Fundas VP - Peso Unid.] * [Fundas VP - Cant.]" },
-        { label: "Bolsas Master - Peso Unid.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Bolsas Master - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "Peso total Bolsas Master", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Bolsas Master - Peso Unid.] * [Bolsas Master - Cant.]" },
-        { label: "GLASEO % - Mín. 4%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "GLASEO % - Máx. 8%", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "GLASEO % - % (Cálculo en base a una bolsa master o 3 lbs de una caja)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        { label: "PESO TOTAL TARA", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Peso Caja (Tapa + fondo)] + [Peso Plástico] + [Peso total Fundas VP] + [Peso total Bolsas Master]" },
-        { label: "Peso Glaseo", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso Plástico - Fundas VP - Peso Unid.", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[FUNDA VP: PESO UND. (ONZ)] / 16" },
+        { label: "Peso Plástico - Fundas VP - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso Plástico - Bolsas Master - Peso Unid.", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[TIPO EMPAQUE - CAJA (LBS)] / [TIPO EMPAQUE - FUNDA MASTER (LBS)]" },
+        { label: "Peso Plástico - Bolsas Master - Cant.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "GLASEO % - Requerido Mín.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "GLASEO % - Requerido Máx.", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "GLASEO % - Cálculo %", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "Peso Glaseo", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "([GLASEO: PORCENTAJE] / 100) * [TIPO EMPAQUE - CAJA (LBS)]" },
+        { label: "Peso total Fundas VP", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Peso Plástico - Fundas VP - Peso Unid.] * [Peso Plástico - Fundas VP - Cant.]" },
+        { label: "Peso total Bolsas Master", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Peso Plástico - Bolsas Master - Peso Unid.] * [Peso Plástico - Bolsas Master - Cant.]" },
+        { label: "PESO TOTAL TARA", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Peso Caja (Tapa / fondo)] + [Peso Plástico] + [Peso total Fundas VP] + [Peso total Bolsas Master] + [Peso Glaseo]" },
+        { label: "PESO NETO CAJA", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[PESO BRUTO CAJA] - [PESO TOTAL TARA]" },
       ],
     },
 
-    // Tabla de Contenido por Bolsa Master - 12 bolsas x 12 filas
+    // INGRESO DE DATOS PORCIONES
     {
       id: Date.now() + 1102,
       type: "table",
-      title: "Contenido por Bolsa Master (Monitoreo de pesos netos de porciones)",
+      title: "INGRESO DE DATOS PORCIONES (Pesos netos en oz)",
       defaultRows: 0,
+      autoSumColumns: true, // Esto creará automáticamente la fila de TOTAL
       columns: [
-        { label: "#", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
-        ...bolsaColumns,
-        { label: "PESO NETO CAJA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "N°", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        ...bolsaColumns
       ],
-      predefinedRows: contenidoBolsaRows,
+      predefinedRows: porcionesRows,
     },
 
-    // Evaluación Física - TABLA horizontal como el Excel
+    // PESOS NETOS PORCIONES (Restando FUNDA VP)
+    {
+      id: Date.now() + 1105,
+      type: "table",
+      title: "PESOS NETOS PORCIONES (Cálculo Automático)",
+      defaultRows: 0,
+      columns: [
+        { label: "N°", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        ...Array.from({ length: 10 }, (_, i) => ({
+          label: `B. NETO ${i + 1}`,
+          type: "calculated",
+          required: false,
+          options: [],
+          apiMap: "",
+          apiEndpoint: "",
+          formula: `[BOLSA ${i + 1}] ? (([BOLSA ${i + 1}] - [FUNDA VP: PESO UND. (ONZ)]) / (([GLASEO: PORCENTAJE] / 100) + 1)) : ""`
+        }))
+      ],
+      predefinedRows: Array.from({ length: 12 }, (_, r) => {
+        const row = { "N°": (r + 1).toString(), _rowSpan: {}, _hidden: {} };
+        for (let b = 1; b <= 10; b++) {
+          row[`B. NETO ${b}`] = "";
+        }
+        return row;
+      }),
+    },
+
+    // Resumen Totales Porciones
+    {
+      id: Date.now() + 1106,
+      type: "section",
+      title: "Resumen Totales",
+      fields: [
+        { label: "Sumatoria Pesos Netos (LBS)", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "( (([BOLSA 1[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 1[count]])) + ([BOLSA 2[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 2[count]])) + ([BOLSA 3[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 3[count]])) + ([BOLSA 4[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 4[count]])) + ([BOLSA 5[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 5[count]])) + ([BOLSA 6[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 6[count]])) + ([BOLSA 7[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 7[count]])) + ([BOLSA 8[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 8[count]])) + ([BOLSA 9[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 9[count]])) + ([BOLSA 10[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 10[count]]))) / (([GLASEO: PORCENTAJE] / 100) + 1) ) / 16" },
+        { label: "PESO NETO CAJA (LBS)", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[PESO BRUTO CAJA] - [PESO TOTAL TARA]" },
+        { label: "PESO BRUTO CAJA (TEÓRICO)", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Sumatoria Pesos Netos (LBS)] + [PESO TOTAL TARA]" },
+      ],
+    },
+
+    // MÁXIMOS Y MÍNIMOS
     {
       id: Date.now() + 1103,
+      type: "table",
+      title: "MÁXIMOS Y MÍNIMOS - PESO NETO",
+      defaultRows: 0,
+      columns: [
+        { label: "Métrica", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        ...bolsaColumnsCalculadas.map(col => ({
+          ...col,
+          formula: col.formula.replace(/\[GLASEO % - Cálculo %\]/g, "[GLASEO: PORCENTAJE]")
+        }))
+      ],
+      predefinedRows: [
+        { "Métrica": "MÁXIMO", "BOLSA 1": "", "BOLSA 2": "", "BOLSA 3": "", "BOLSA 4": "", "BOLSA 5": "", "BOLSA 6": "", "BOLSA 7": "", "BOLSA 8": "", "BOLSA 9": "", "BOLSA 10": "", _rowSpan: {}, _hidden: {} },
+        { "Métrica": "MÍNIMO", "BOLSA 1": "", "BOLSA 2": "", "BOLSA 3": "", "BOLSA 4": "", "BOLSA 5": "", "BOLSA 6": "", "BOLSA 7": "", "BOLSA 8": "", "BOLSA 9": "", "BOLSA 10": "", _rowSpan: {}, _hidden: {} },
+        { "Métrica": "COEF. UNIF.", "BOLSA 1": "", "BOLSA 2": "", "BOLSA 3": "", "BOLSA 4": "", "BOLSA 5": "", "BOLSA 6": "", "BOLSA 7": "", "BOLSA 8": "", "BOLSA 9": "", "BOLSA 10": "", _rowSpan: {}, _hidden: {} },
+      ],
+    },
+    
+    // GLASEO Y FUNDA VP
+    {
+      id: Date.now() + 1104,
+      type: "section",
+      title: "Glaseo y Funda VP",
+      fields: [
+        { label: "GLASEO: PESO C/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "GLASEO: PESO S/GLASEO", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        { label: "GLASEO: PORCENTAJE", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "(([GLASEO: PESO C/GLASEO] - [GLASEO: PESO S/GLASEO]) / [GLASEO: PESO C/GLASEO]) * 100" },
+        { label: "FUNDA VP: PESO UND. (ONZ)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+      ],
+    },
+
+    // Evaluación Física
+    {
+      id: Date.now() + 1105,
       type: "table",
       title: "Evaluación Física",
       defaultRows: 1,
@@ -2143,9 +2286,9 @@ function getMonitoreoProductosTerminadosTemplate() {
       ],
     },
 
-    // Evaluación Organoléptica - TABLA horizontal como el Excel
+    // Evaluación Organoléptica
     {
-      id: Date.now() + 1104,
+      id: Date.now() + 1106,
       type: "table",
       title: "Evaluación Organoléptica",
       defaultRows: 1,
@@ -2158,9 +2301,9 @@ function getMonitoreoProductosTerminadosTemplate() {
       ],
     },
 
-    // Análisis Químico - TABLA horizontal como el Excel
+    // Análisis Químico
     {
-      id: Date.now() + 1105,
+      id: Date.now() + 1107,
       type: "table",
       title: "Análisis Químico",
       defaultRows: 1,
@@ -2174,14 +2317,14 @@ function getMonitoreoProductosTerminadosTemplate() {
 
     // Observación
     {
-      id: Date.now() + 1106,
+      id: Date.now() + 1108,
       type: "observaciones",
       title: "Observación",
     },
 
     // Evidencia Fotográfica (Anexo)
     {
-      id: Date.now() + 1107,
+      id: Date.now() + 1109,
       type: "section",
       title: "Evidencia Fotográfica (Anexo)",
       fields: [
@@ -2216,7 +2359,7 @@ function getMonitoreoProductosTerminadosTemplate() {
     nombre: "Monitoreo-Verificación de Especificaciones de Productos Terminados",
     version: "1",
     fechaVersion: "2025-04-14T00:00:00Z",
-    supervisa: "Jefe Aseg. de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Productos Terminados",
     cuandoSeUsa: "Para monitorear y verificar especificaciones de productos terminados",
     quienLoLlena: "Analista C. Calidad",
@@ -2341,7 +2484,7 @@ function getVerificacionTermometrosTemplate() {
     nombre: "Control / Verificación Diaria de los Termómetros",
     version: "1",
     fechaVersion: "2025-09-11T00:00:00Z",
-    supervisa: "Jefe Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Verificación de Equipos",
     cuandoSeUsa: "Para verificar diariamente la calibración de los termómetros",
     quienLoLlena: "Aseguramiento de Calidad",
@@ -2516,7 +2659,7 @@ function getControlVidriosQuebradizosTemplate() {
     nombre: "Control de la Contaminación con Vidrios y Materiales Quebradizos",
     version: "6",
     fechaVersion: "2025-09-29T00:00:00Z",
-    supervisa: "Aseguramiento De Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Contaminación Física",
     cuandoSeUsa: "Para verificar el estado de vidrios y materiales quebradizos en todas las áreas",
     quienLoLlena: "Analista de Calidad",
@@ -2733,7 +2876,7 @@ function getInspeccionMaterialesEmpaqueTemplate() {
     nombre: "Inspección de Materiales de Empaque Durante la Recepción",
     version: "1",
     fechaVersion: "2025-02-18T00:00:00Z",
-    supervisa: "Aseguramiento de Calidad",
+    supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Recepción de Materiales",
     cuandoSeUsa: "Durante la recepción de materiales de empaque",
     quienLoLlena: "Supervisor Aseg. De Calidad",
@@ -2801,8 +2944,8 @@ function SeedBPMTemplates() {
     },
     {
       key: "control-agua",
-      label: "Control del Agua en Proceso (Clorinación y Peroxiacético)",
-      code: "FOR-CC-18",
+      label: "Control del Agua en Proceso (Clorinación y Peroxiacético) - DUPLICADO",
+      code: "FOR-CC-18-B",
       getData: getControlAguaTemplate,
       icon: "💧",
     },
@@ -2885,21 +3028,48 @@ function SeedBPMTemplates() {
     try {
       const payload = templateDef.getData()
 
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
+      // Comprobar si ya existe una plantilla con este código
+      const allRes = await fetch(`${API_URL}/all`)
+      if (!allRes.ok) throw new Error("No se pudo obtener la lista de plantillas")
+      
+      let allTemplates = await allRes.json()
+      
+      // 🔧 Manejar posible envoltorio JSON ($values, data, etc.)
+      if (!Array.isArray(allTemplates)) {
+        allTemplates = allTemplates.$values || allTemplates.data || allTemplates.value || allTemplates.items || []
+      }
+      
+      const existing = allTemplates.find(t => t.codigo === payload.codigo)
+
+      let response;
+      if (existing) {
+        payload.templateID = existing.templateID
+        response = await fetch(`${API_URL}/${existing.templateID}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+      } else {
+        response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+      }
 
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(`Error ${response.status}: ${errorText}`)
       }
 
-      const result = await response.json()
+      let result = {}
+      if (response.status !== 204) {
+        result = await response.json()
+      }
+      
       setStatus((prev) => ({
         ...prev,
-        [templateDef.key]: { success: true, message: `Plantilla creada exitosamente (ID: ${result.templateID || result.id || "OK"})` },
+        [templateDef.key]: { success: true, message: `Plantilla ${existing ? 'actualizada' : 'creada'} exitosamente (ID: ${result.templateID || existing?.templateID || "OK"})` },
       }))
     } catch (error) {
       setStatus((prev) => ({

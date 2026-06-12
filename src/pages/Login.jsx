@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import authService from '../services/authService';
 import './Login.css';
 
 const Login = () => {
@@ -17,7 +18,8 @@ const Login = () => {
   // Si ya está autenticado, redirigir
   useEffect(() => {
     if (isAuthenticated()) {
-      const from = location.state?.from?.pathname || '/';
+      const defaultPath = '/fill-form';
+      const from = location.state?.from?.pathname && location.state.from.pathname !== '/' ? location.state.from.pathname : defaultPath;
       navigate(from, { replace: true });
     }
   }, [isAuthenticated, navigate, location]);
@@ -36,7 +38,8 @@ const Login = () => {
     const result = await login(username, password);
 
     if (result.success) {
-      const from = location.state?.from?.pathname || '/';
+      const defaultPath = '/fill-form';
+      const from = location.state?.from?.pathname && location.state.from.pathname !== '/' ? location.state.from.pathname : defaultPath;
       navigate(from, { replace: true });
     } else {
       setError(result.error || 'Error al iniciar sesión');

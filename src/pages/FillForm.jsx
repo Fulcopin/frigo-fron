@@ -612,7 +612,15 @@ useEffect(() => {
           bodyElements: typeof template.bodyElements === 'string' ? JSON.parse(template.bodyElements || '[]') : template.bodyElements,
           firmas: typeof template.firmas === 'string' ? JSON.parse(template.firmas || '[]') : template.firmas,
         }));
-        setTemplates(parsedData); 
+
+        // Ordenar las plantillas numéricamente por código (ej: FOR-CC-01 antes que FOR-CC-18)
+        const sortedTemplates = parsedData.sort((a, b) => {
+          const codA = String(a.codigo || '');
+          const codB = String(b.codigo || '');
+          return codA.localeCompare(codB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+
+        setTemplates(sortedTemplates); 
       } catch (err) {
         setError(err.message);
       } finally {
@@ -621,6 +629,43 @@ useEffect(() => {
     };
     fetchTemplates();
   }, [id]);
+
+  const handleDeleteDraft = async (templateIdToDelete) => {
+    if (!templateIdToDelete) {
+      alert("No se pudo identificar la plantilla del borrador.");
+      return;
+    }
+    if (!window.confirm("¿Estás seguro de eliminar el borrador de esta plantilla?")) return;
+    
+    try {
+      // 1. Obtener tódos los borradores activos en el servidor para encontrar el draftID real
+      const resDrafts = await fetch(`${API_BASE_URL}/FormDrafts`);
+      if (!resDrafts.ok) throw new Error(`Error al obtener borradores: ${resDrafts.status}`);
+      
+      const draftsData = await resDrafts.json();
+      const draftsArray = Array.isArray(draftsData) ? draftsData : (draftsData.$values || []);
+      
+      // 2. Encontrar TODOS los borradores correspondientes a esta plantilla
+      const draftsToDelete = draftsArray.filter(d => d.templateID == templateIdToDelete);
+      
+      if (draftsToDelete.length > 0) {
+        // 3. Eliminar cada borrador encontrado en la base de datos (pueden ser múltiples para la misma plantilla)
+        await Promise.all(draftsToDelete.map(async (draft) => {
+            if (draft.draftID) {
+                const res = await fetch(`${API_BASE_URL}/FormDrafts/${draft.draftID}`, { method: "DELETE" });
+                if (!res.ok) console.error(`Error al eliminar borrador ID ${draft.draftID}: ${res.status}`);
+            }
+        }));
+      }
+      
+      // 4. Actualizar la vista de plantillas (removerlo si era un borrador de la lista)
+      setTemplates(prev => prev.filter(t => !(t.isDraft && t.templateID == templateIdToDelete)));
+      
+    } catch (err) {
+      console.error("Error eliminando borrador:", err);
+      alert("Error al eliminar el borrador: " + err.message);
+    }
+  };
 
   // 🎯 NUEVO: Auto-seleccionar plantilla si viene desde Home
   useEffect(() => {
@@ -1243,7 +1288,11 @@ useEffect(() => {
           (template.nombre || "").toLowerCase().includes(searchLower) ||
           (template.codigo || "").toLowerCase().includes(searchLower);
       const matchesProcess = filterProcess === "" || template.proceso === filterProcess;
-      return matchesSearch && matchesProcess;
+      
+      // Ocultar permanentemente la plantilla de prueba for-cc-50
+      const isNotHiddenTest = (template.codigo || "").toLowerCase() !== "for-cc-50";
+      
+      return matchesSearch && matchesProcess && isNotHiddenTest;
     })
     .sort((a, b) =>
       (a.codigo || '').localeCompare(b.codigo || '', 'es', { numeric: true, sensitivity: 'base' })
@@ -3950,23 +3999,32 @@ useEffect(() => {
       if (index !== elementIndex) return element;
       const updatedData = { ...element.data, [fieldLabel]: value };
       
-      // 🧮 Recalcular campos tipo "formula" y "percentage" en esta sección (múltiples pasadas para cascada)
+      // 🧮 Recalcular campos tipo "formula", "calculated" y "percentage" en esta sección (múltiples pasadas para cascada)
       const sectionTemplate = selectedTemplate?.bodyElements?.[elementIndex];
       if (sectionTemplate?.fields) {
+        // Necesitamos crossData para que la fórmula acceda a todas las secciones/tablas
+        const newBodyData = [...prev];
+        newBodyData[elementIndex] = { ...newBodyData[elementIndex], data: updatedData };
+        const crossData = mergeCrossTableRow({}, 0, newBodyData);
+        // Mezclamos updatedData encima de crossData para tener los valores más recientes
+        const mergedRowData = { ...crossData, ...updatedData };
+        
         for (let pass = 0; pass < 3; pass++) {
           sectionTemplate.fields.forEach(field => {
-            if (field.type === 'formula' && field.formula) {
-              const result = evaluarFormula(field.formula, updatedData);
+            if ((field.type === 'formula' || field.type === 'calculated') && field.formula) {
+              const result = evaluarFormula(field.formula, mergedRowData, [], 0);
               if (result !== "") {
                 updatedData[field.label] = result;
+                mergedRowData[field.label] = result; // Actualizar contexto para cascada
                 if (pass === 0) console.log(`🧮 [section-formula] ${field.label} = ${result}`);
               }
             } else if (field.type === 'percentage' && field.formula) {
-              const rawResult = evaluarFormula(field.formula, updatedData);
+              const rawResult = evaluarFormula(field.formula, mergedRowData, [], 0);
               if (rawResult && rawResult !== 'ERR' && rawResult !== '⚠️') {
                 const numVal = Number.parseFloat(rawResult);
                 const percentVal = Number.isNaN(numVal) ? '0.00' : (numVal * 100).toFixed(2);
                 updatedData[field.label] = percentVal;
+                mergedRowData[field.label] = percentVal; // Actualizar contexto para cascada
                 if (pass === 0) console.log(`📊 [section-percentage] ${field.label} = ${percentVal}%`);
               }
             }
@@ -4770,7 +4828,7 @@ useEffect(() => {
                 value={value || ""} 
                 onChange={(e) => onChange(e.target.value)} 
                 required={field.required}
-                className="form-select"
+                className={`form-select ${rowIndex !== null && rowIndex !== undefined ? "table-input-expandable" : ""}`}
                 disabled={field.readonly}
             >
                 <option value="">Seleccione...</option>
@@ -4793,7 +4851,7 @@ useEffect(() => {
                 onChange={(e) => onChange(e.target.value)} 
                 required={field.required}
                 placeholder={isManualMode ? "Escriba manualmente..." : "Sin datos (Escriba manual)"}
-                className="form-input-manual"
+                className={`form-input-manual ${rowIndex !== null && rowIndex !== undefined ? "table-input-expandable" : ""}`}
                 style={{
                     backgroundColor: isManualMode ? '#ffffff' : '#fffbeb',
                     border: '1px solid #3b82f6',
@@ -4809,7 +4867,8 @@ useEffect(() => {
       onChange: (e) => onChange(e.target.value), 
       required: field.required, 
       placeholder: field.placeholder || "",
-      disabled: field.readonly
+      disabled: field.readonly,
+      className: rowIndex !== null && rowIndex !== undefined ? "table-input-expandable" : ""
     };
     
     const fieldLabel = field.label || field.header || "";
@@ -5230,6 +5289,7 @@ useEffect(() => {
                   onChange={handlePercentageChange}
                   required={field.required}
                   placeholder={field.placeholder || "Ej: 20%"}
+                  className={rowIndex !== null && rowIndex !== undefined ? "table-input-expandable" : ""}
                 />
                 {_pctBase && (
                   <span style={{ fontSize: '12px', color: '#065f46', background: '#d1fae5', padding: '3px 8px', borderRadius: '4px', fontWeight: '500' }}>
@@ -5254,6 +5314,7 @@ useEffect(() => {
                   required={field.required}
                   placeholder={field.placeholder || "°C"}
                   style={{ flex: 1, minWidth: 0 }}
+                  className={rowIndex !== null && rowIndex !== undefined ? "table-input-expandable" : ""}
                 />
                 <span style={{ fontSize: '0.75rem', color: '#6b7280', fontWeight: 600, whiteSpace: 'nowrap' }}>°C</span>
               </div>
@@ -5270,6 +5331,7 @@ useEffect(() => {
               onChange={handleNumberChange}
               required={field.required}
               placeholder={field.placeholder || ""}
+              className={rowIndex !== null && rowIndex !== undefined ? "table-input-expandable" : ""}
               onBlur={(e) => {
                 const val = parseFloat(e.target.value);
                 if (shouldBeInteger && !Number.isInteger(val) && !isNaN(val)) onChange(Math.round(val).toString());
@@ -5848,9 +5910,9 @@ useEffect(() => {
             ) : (
                 <div className="template-selection">
                     <div className="templates-grid">
-                        {filteredTemplates.map((template) => (
+                        {filteredTemplates.map((template, idx) => (
                             <div 
-                                key={template.templateID} 
+                                key={template.isDraft ? `draft-${template.templateID}-${idx}` : `pub-${template.templateID}-${idx}`} 
                                 className="template-card" 
                                 onClick={() => handleTemplateSelect(template.templateID)}
                                 style={{
@@ -5891,20 +5953,36 @@ useEffect(() => {
                                 {template.proceso && <p className="template-meta">📂 Proceso: {template.proceso}</p>}
                                 {template.frecuencia && <p className="template-meta">📅 Frecuencia: {template.frecuencia}</p>}
                                 
-                                {/* 🆕 MENSAJE DE BORRADOR */}
+                                {/* 🆕 BOTON DE ELIMINAR BORRADOR */}
                                 {template.isDraft && (
-                                    <p style={{
-                                        marginTop: '8px',
-                                        padding: '6px 10px',
-                                        background: '#fbbf24',
-                                        color: '#78350f',
-                                        borderRadius: '4px',
-                                        fontSize: '12px',
-                                        fontWeight: 'bold',
-                                        textAlign: 'center'
-                                    }}>
-                                        ⚠️ Plantilla en Borrador
-                                    </p>
+                                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteDraft(template.templateID);
+                                            }}
+                                            style={{
+                                                flex: 1,
+                                                padding: '6px 10px',
+                                                background: '#fee2e2',
+                                                color: '#b91c1c',
+                                                border: '1px solid #fca5a5',
+                                                borderRadius: '4px',
+                                                fontSize: '12px',
+                                                fontWeight: 'bold',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                justifyContent: 'center',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                            }}
+                                            title="Eliminar este borrador"
+                                            onMouseOver={(e) => { e.currentTarget.style.background = '#fecaca'; }}
+                                            onMouseOut={(e) => { e.currentTarget.style.background = '#fee2e2'; }}
+                                        >
+                                            <span style={{ fontSize: '14px' }}>🗑️</span> Eliminar Borrador
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         ))}
@@ -8744,10 +8822,26 @@ useEffect(() => {
                   }
 
                   // ✅ Para campos NO-tabla, renderizar normalmente
+                  let displayValue = currentElementData.data[field.label];
+                  if ((field.type === 'calculated' || field.type === 'formula' || field.type === 'percentage') && field.formula) {
+                    const crossData = mergeCrossTableRow({}, 0, bodyData);
+                    const rawResult = evaluarFormula(field.formula, crossData, [], 0);
+                    if (rawResult && rawResult !== 'ERR' && rawResult !== '⚠️') {
+                      if (field.type === 'percentage') {
+                        const numVal = Number.parseFloat(rawResult);
+                        displayValue = Number.isNaN(numVal) ? '0.00' : (numVal * 100).toFixed(2);
+                      } else {
+                        displayValue = rawResult;
+                      }
+                    } else {
+                      displayValue = '0.00';
+                    }
+                  }
+
                   return (
                     <div key={field.label || `section-field-${elementIndex}-${fieldIndex}`} className="form-field">
                       <label>{field.label}{field.required && <span className="required">*</span>}</label>
-                      {renderField(field, currentElementData.data[field.label], value => handleSectionFieldChangeWithAutoSave(elementIndex, field.label, value))}
+                      {renderField(field, displayValue, value => handleSectionFieldChangeWithAutoSave(elementIndex, field.label, value))}
                     </div>
                   );
                 })}
@@ -9559,7 +9653,7 @@ useEffect(() => {
             return (
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border"
                   style={{backgroundColor: '#f0fdf4', textAlign: 'right', fontWeight: 'bold', color: '#166534'}}>
-                {valorCalculado || row[cellName] || '0.00'}{col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '3px' }}>{col.unit}</span>}
+                {valorCalculado === "" ? "" : (valorCalculado || row[cellName] || '')}{col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '3px' }}>{col.unit}</span>}
               </td>
             );
           }
@@ -10036,7 +10130,37 @@ useEffect(() => {
                             background: '#0284c7', color: 'white', padding: '6px 4px',
                             border: '1px solid #024a73', textAlign: 'center', fontSize: '11px', fontWeight: 600
                           }}>
-                            {tina.label}
+                            {tina.label.includes('___') ? (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                <input
+                                  type="text"
+                                  value={tinasData[tina.key]?._customLabel || ''}
+                                  onChange={(e) => {
+                                    setBodyData(prev => {
+                                      const newBodyData = [...prev];
+                                      const elData = { ...newBodyData[elementIndex] };
+                                      const newTinasData = { ...elData.data };
+                                      const newTinaData = { ...(newTinasData[tina.key] || {}) };
+                                      newTinaData._customLabel = e.target.value;
+                                      newTinasData[tina.key] = newTinaData;
+                                      elData.data = newTinasData;
+                                      newBodyData[elementIndex] = elData;
+                                      return newBodyData;
+                                    });
+                                    setHasUnsavedChanges(true);
+                                  }}
+                                  style={{
+                                    width: '35px', padding: '2px 4px', fontSize: '11px',
+                                    textAlign: 'center', border: '1px solid #0ea5e9', borderRadius: '4px',
+                                    color: '#000', background: '#fff'
+                                  }}
+                                  placeholder="#"
+                                />
+                                <span>{tina.label.replace('___', '').trim()}</span>
+                              </div>
+                            ) : (
+                              tina.label
+                            )}
                           </th>
                         ))}
                       </tr>

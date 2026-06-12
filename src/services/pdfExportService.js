@@ -391,7 +391,7 @@ const drawFrigolabHeader = async (doc, templateData) => {
 /**
  * 📋 Dibuja la sección de encabezado del formulario (campos del header)
  */
-const drawHeaderSection = (doc, headerData, startY) => {
+const drawHeaderSection = (doc, headerData, startY, templateData) => {
   let currentY = startY + 5;
   
   const hdrPageW = doc.internal.pageSize.getWidth();
@@ -429,8 +429,16 @@ const drawHeaderSection = (doc, headerData, startY) => {
     return s;
   };
 
-  if (headerData && typeof headerData === 'object') {
-    Object.entries(headerData).forEach(([key, value]) => {
+  const mergedHeader = { ...(headerData || {}) };
+  if (templateData) {
+    if (templateData.proceso) mergedHeader['Proceso'] = templateData.proceso;
+    if (templateData.quienLoLlena) mergedHeader['Quién lo llena'] = templateData.quienLoLlena;
+    if (templateData.supervisa) mergedHeader['Quién supervisa'] = templateData.supervisa;
+    if (templateData.cuandoSeUsa) mergedHeader['Cuándo se usa'] = templateData.cuandoSeUsa;
+  }
+
+  if (mergedHeader && typeof mergedHeader === 'object') {
+    Object.entries(mergedHeader).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
         headerFields.push({
           label: `${key.toUpperCase()}:`,
@@ -984,7 +992,11 @@ export const exportFormToPDF = async (form, template, options = {}) => {
       fechaVersion: template?.fechaVersion ?? form.fechaVersion ?? null,
       templateCreatedAt: form.templateCreatedAt || null,
       headerData: _mergedHD,
-      createdAt: form.createdAt || form.CreatedAt || form.created_at
+      createdAt: form.createdAt || form.CreatedAt || form.created_at,
+      supervisa: template?.supervisa || form.supervisa,
+      quienLoLlena: template?.quienLoLlena || form.quienLoLlena,
+      cuandoSeUsa: template?.cuandoSeUsa || form.cuandoSeUsa,
+      proceso: template?.proceso || form.proceso
     };
     
     console.log('📋 Template Data:', templateData);
@@ -1016,7 +1028,7 @@ export const exportFormToPDF = async (form, template, options = {}) => {
     
     // 2. Dibujar sección de header (Información General)
     console.log('📝 Dibujando información del encabezado...');
-    let currentY = drawHeaderSection(doc, templateData.headerData, 48);
+    let currentY = drawHeaderSection(doc, templateData.headerData, 48, templateData);
     
     // 3. Dibujar TODAS las secciones dinámicas del bodyElements
     console.log('📊 Dibujando secciones dinámicas del cuerpo...');
@@ -2016,7 +2028,11 @@ export const exportMultipleFormsToPDF = async (forms, templates) => {
         nombre: template?.nombre || 'Formulario',
         version: template?.version || 1,
         headerData: _mMergedHD,
-        createdAt: form.createdAt || form.CreatedAt || form.created_at
+        createdAt: form.createdAt || form.CreatedAt || form.created_at,
+        supervisa: template?.supervisa || form.supervisa,
+        quienLoLlena: template?.quienLoLlena || form.quienLoLlena,
+        cuandoSeUsa: template?.cuandoSeUsa || form.cuandoSeUsa,
+        proceso: template?.proceso || form.proceso
       };
       
       const bodyElements = template?.bodyElements || [];
@@ -2024,7 +2040,7 @@ export const exportMultipleFormsToPDF = async (forms, templates) => {
       const firmasData = form.firmasData || {};
       
       await drawFrigolabHeader(doc, templateData);
-      let currentY = drawHeaderSection(doc, templateData.headerData, 60);
+      let currentY = drawHeaderSection(doc, templateData.headerData, 60, templateData);
       
       const ptPgW = doc.internal.pageSize.getWidth();
       const ptContentW = ptPgW - 16;

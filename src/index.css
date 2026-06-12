@@ -78,3 +78,17 @@ select:focus {
   from { transform: scale(0.8); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+
+/* 🔍 Input expandible en tablas al hacer focus */
+.table-input-expandable {
+  transition: min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.table-input-expandable:focus {
+  min-width: 220px !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 4px 15px rgba(3, 91, 141, 0.25) !important;
+  z-index: 50;
+  position: relative;
+  border-color: var(--primary) !important;
+}

@@ -48,6 +48,7 @@ function Home() {
         }));
 
         const sortedTemplates = templatesWithUsage
+          .filter(t => !t.isObsolete)
           .sort((a, b) =>
             (a.codigo || '').localeCompare(b.codigo || '', 'es', { numeric: true, sensitivity: 'base' })
           )

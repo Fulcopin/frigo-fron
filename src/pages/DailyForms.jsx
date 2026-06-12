@@ -25,9 +25,40 @@ function DailyForms() {
   const [showDetails, setShowDetails] = useState(false);
   const [detailedData, setDetailedData] = useState(null);
 
+  // 🆕 Trazabilidad Config
+  const [traceabilityConfig, setTraceabilityConfig] = useState([]);
+  const [showTraceabilityBox, setShowTraceabilityBox] = useState(false);
+
   // Cargar formularios al montar el componente
   useEffect(() => {
     loadAllForms();
+    
+    // Cargar config de trazabilidad
+    try {
+      const stored = localStorage.getItem('frigolab_trazabilidad_config');
+      if (stored) {
+        const config = JSON.parse(stored);
+        if (config.detalles && config.detalles.length > 0) {
+          // Filtrar solo los obligatorios
+          const required = config.detalles.filter(d => d.tipo === 'DATOS_SISTEMA' && d.codigoDocumento);
+          
+          // Eliminar duplicados por código (ya que pueden haber varios formatos)
+          const uniqueRequired = [];
+          const seen = new Set();
+          
+          required.forEach(d => {
+            if (!seen.has(d.codigoDocumento)) {
+              seen.add(d.codigoDocumento);
+              uniqueRequired.push(d);
+            }
+          });
+          
+          setTraceabilityConfig(uniqueRequired);
+        }
+      }
+    } catch (e) {
+      console.error('Error cargando config de trazabilidad', e);
+    }
   }, []);
 
   // Filtrar formularios cuando cambia la fecha o plantilla
@@ -58,8 +89,13 @@ function DailyForms() {
       // Extraer plantillas únicas
       const uniqueTemplates = [...new Set(data.map(f => ({
         id: f.templateID || f.TemplateID,
-        name: f.templateName || f.TemplateName || 'Sin nombre'
-      })).map(t => JSON.stringify(t)))].map(t => JSON.parse(t));
+        name: f.templateName || f.TemplateName || 'Sin nombre',
+        code: f.formCode || f.FormCode || f.codigo || f.Codigo || f.templateCode || ''
+      })).map(t => JSON.stringify(t)))]
+        .map(t => JSON.parse(t))
+        .sort((a, b) => 
+          (a.code || '').localeCompare(b.code || '', 'es', { numeric: true, sensitivity: 'base' })
+        );
       
       console.log('📋 Plantillas únicas encontradas:', uniqueTemplates);
       
@@ -522,7 +558,7 @@ function DailyForms() {
               <option value="all">Todas las plantillas</option>
               {templates.map(t => (
                 <option key={t.id} value={t.id}>
-                  {t.name}
+                  {t.code ? `${t.code} - ` : ''}{t.name}
                 </option>
               ))}
             </select>
@@ -536,6 +572,49 @@ function DailyForms() {
             🔄 {loading ? 'Cargando...' : 'Actualizar'}
           </button>
         </div>
+
+        {/* 🆕 Alerta de Trazabilidad */}
+        {traceabilityConfig.length > 0 && (
+          <div style={{ marginTop: '20px', marginBottom: '20px' }}>
+            <button 
+              onClick={() => setShowTraceabilityBox(!showTraceabilityBox)}
+              style={{
+                background: showTraceabilityBox ? '#ef4444' : '#fef2f2',
+                color: showTraceabilityBox ? 'white' : '#b91c1c',
+                border: '2px solid #ef4444',
+                padding: '10px 15px',
+                borderRadius: '8px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.3s'
+              }}
+            >
+              ⚠️ {showTraceabilityBox ? 'Ocultar Formularios Requeridos' : 'Ver Formularios Obligatorios para Trazabilidad'}
+            </button>
+            
+            {showTraceabilityBox && (
+              <div style={{ marginTop: '10px', border: '2px solid #ef4444', background: '#fef2f2', padding: '15px', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)' }}>
+                <h3 style={{ color: '#b91c1c', marginTop: 0, borderBottom: '1px solid #fca5a5', paddingBottom: '10px' }}>
+                  Configuración Necesaria para Trazabilidad
+                </h3>
+                <p style={{ color: '#991b1b', fontSize: '14px', marginBottom: '15px' }}>
+                  Asegúrate de que se hayan registrado datos en los siguientes formularios durante esta fecha para que la trazabilidad esté completa:
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
+                  {traceabilityConfig.map(d => (
+                    <div key={d.id || d.codigoDocumento} style={{ background: 'white', padding: '10px', borderRadius: '6px', border: '1px solid #fca5a5', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <span style={{ fontWeight: 'bold', color: '#7f1d1d' }}>{d.codigoDocumento}</span>
+                      <span style={{ color: '#991b1b', fontSize: '13px' }}>{d.nombreDocumento}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {filteredForms.length > 0 && (
           <div className="results-header">

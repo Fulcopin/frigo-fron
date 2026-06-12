@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import FormHeader from "../components/FormHeader"
 import VersionIndicator from "../components/VersionIndicator"
@@ -168,6 +168,10 @@ function ViewForms() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
 
+  // 📄 Paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
   // 📧 NUEVO: Estados para enviar formulario por correo
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [emailTo, setEmailTo] = useState("")
@@ -203,17 +207,29 @@ function ViewForms() {
       }));
       
       // CORREGIDO: Parsear bodyData en los formularios llenados
-      const parsedForms = formsArray.map(form => ({
-        ...form,
-        templateNombre: parsedTemplates.find(t => t.templateID === form.templateID)?.nombre || 'Plantilla Desconocida',
-        templateCodigo: parsedTemplates.find(t => t.templateID === form.templateID)?.codigo || 'N/A',
-        headerData: safeParse(form.headerData, {}),
-        bodyData: safeParse(form.bodyData, []),
-        firmasData: safeParse(form.firmasData, {}),
-      }));
+      const parsedForms = formsArray.map(form => {
+        const tpl = parsedTemplates.find(t => t.templateID === form.templateID);
+        const isObsolete = tpl?.isObsolete;
+        const baseNombre = tpl?.nombre || 'Plantilla Desconocida';
+        return {
+          ...form,
+          templateNombre: isObsolete ? `${baseNombre} (OBSOLETA)` : baseNombre,
+          templateCodigo: tpl?.codigo || 'N/A',
+          headerData: safeParse(form.headerData, {}),
+          bodyData: safeParse(form.bodyData, []),
+          firmasData: safeParse(form.firmasData, {}),
+        };
+      });
+
+      // Ordenar las plantillas numéricamente por código (ej: FOR-CC-01 antes que FOR-CC-18)
+      const sortedTemplates = parsedTemplates.sort((a, b) => {
+        const codA = String(a.codigo || '');
+        const codB = String(b.codigo || '');
+        return codA.localeCompare(codB, undefined, { numeric: true, sensitivity: 'base' });
+      });
 
       setForms(parsedForms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-      setTemplates(parsedTemplates); 
+      setTemplates(sortedTemplates); 
     } catch (err) {
       setError(err.message);
     } finally {
@@ -581,15 +597,16 @@ function ViewForms() {
             
             // Mapear rows a columnas correctas
             const mappedRows = tableRows.map(row => {
+              const safeRow = row || {};
               const mapped = {};
               columns.forEach(colLabel => {
                 // Buscar valor con lógica similar a la de renderizado
-                let val = row[colLabel];
+                let val = safeRow[colLabel];
                 if (val === undefined || val === null || val === '') {
-                  const foundKey = Object.keys(row).find(k => 
+                  const foundKey = Object.keys(safeRow).find(k => 
                     k.toUpperCase().replace(/[^A-Z0-9]/g, '') === colLabel.toUpperCase().replace(/[^A-Z0-9]/g, '')
                   );
-                  if (foundKey) val = row[foundKey];
+                  if (foundKey) val = safeRow[foundKey];
                 }
                 mapped[colLabel] = val !== undefined && val !== null ? String(val) : '-';
               });
@@ -685,6 +702,16 @@ function ViewForms() {
     
     return matchesTemplate && matchesDateRange;
   });
+
+  // 📄 Lógica de Paginación
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filteredForms.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredForms.length / itemsPerPage);
+
+  const nextPage = () => setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  const prevPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
+  const goToPage = (page) => setCurrentPage(page);
 
   if (loading) return <div className="view-forms"><h1>Cargando formularios...</h1></div>;
   if (error) return <div className="view-forms"><h1 className="error-message">Error: {error}</h1></div>;
@@ -1074,16 +1101,17 @@ function ViewForms() {
                       </thead>
                       <tbody>
                         {tableRows.map((row, rowIndex) => {
+                          const safeRow = row || {};
                           // Obtener la fila del template para mapear nombres de celdas
                           const templateRow = templateElement.rows ? templateElement.rows[rowIndex] : null;
                           // Pre-calcular fórmulas para permitir encadenamiento entre columnas
-                          const computedRow = buildComputedRow(mergeCrossTableRow(row, rowIndex, selectedForm.bodyData), templateElement.columns || [], tableRows, rowIndex);
+                          const computedRow = buildComputedRow(mergeCrossTableRow(safeRow, rowIndex, selectedForm.bodyData), templateElement.columns || [], tableRows, rowIndex);
                           
                           return (
                             <tr key={`row-${rowIndex}`}>
                               <td>{rowIndex + 1}</td>
                              {templateElement.columns.map((col, colIndex) => {
-                              const rowKeys = Object.keys(row);
+                              const rowKeys = Object.keys(safeRow);
                               // 🔗 Rowspan desde filas predefinidas del template
                               let vfRowSpan = undefined;
                               const vfPredRows = templateElement.predefinedRows || [];
@@ -1104,11 +1132,11 @@ function ViewForms() {
                               // "Termómetro_col2", "Termómetro_col6", etc. La búsqueda por sufijo
                               // es la más precisa porque usa el índice exacto de la columna.
                               const preciseKey = rowKeys.find(k => k.endsWith(`_col${colIndex}`));
-                              let cellValue = preciseKey !== undefined ? row[preciseKey] : undefined;
+                              let cellValue = preciseKey !== undefined ? safeRow[preciseKey] : undefined;
 
                               // 2. 🎯 BÚSQUEDA DIRECTA EXACTA (etiquetas únicas sin sufijo)
                               if (cellValue === undefined || cellValue === null || cellValue === "") {
-                                cellValue = row[colLabel] ?? row[col.header] ?? row[colId] ?? row[col.name];
+                                cellValue = safeRow[colLabel] ?? safeRow[col.header] ?? safeRow[colId] ?? safeRow[col.name];
                               }
 
                               // 3. 🔍 BÚSQUEDA NORMALIZADA (caracteres especiales, acentos, espacios)
@@ -1120,7 +1148,7 @@ function ViewForms() {
                                   // con "TERMÓMETRO_COL2" (diferente grupo) via includes()
                                   return keyClean === targetClean && targetClean !== "";
                                 });
-                                if (foundKey) cellValue = row[foundKey];
+                                if (foundKey) cellValue = safeRow[foundKey];
                               }
 
                               // 4. ⚖️ LÓGICA ESPECÍFICA PARA PESOS/TINAS
@@ -1132,11 +1160,11 @@ function ViewForms() {
                                   const pesoMatch = (colId || colLabel).match(/\d+/);
                                   const pesoNum = pesoMatch ? pesoMatch[0] : '';
                                   const pesoKey = rowKeys.find(k => k.toUpperCase().includes(`PESO${pesoNum}`) && !k.toUpperCase().includes('TOTAL'));
-                                  if (pesoKey) cellValue = row[pesoKey];
+                                  if (pesoKey) cellValue = safeRow[pesoKey];
                                 } 
                                 else if (isTotalColumn) {
                                   const totalKey = rowKeys.find(k => k.toUpperCase().includes('TOTAL'));
-                                  if (totalKey) cellValue = row[totalKey];
+                                  if (totalKey) cellValue = safeRow[totalKey];
                                 }
                               }
 
@@ -1211,16 +1239,17 @@ function ViewForms() {
                               let hasValues = false;
 
                               tableRows.forEach(row => {
-                                const rowKeys = Object.keys(row);
+                                const safeRow = row || {};
+                                const rowKeys = Object.keys(safeRow);
                                 const colLabelSearch = (col.label || col.header || "").trim();
                                 const colIdSearch = (col.id || col.name || "").trim();
 
                                 // Buscar valor igual que en el renderizado
-                                let cellValue = row[colLabelSearch] ?? row[col.header] ?? row[colIdSearch] ?? row[col.name];
+                                let cellValue = safeRow[colLabelSearch] ?? safeRow[col.header] ?? safeRow[colIdSearch] ?? safeRow[col.name];
 
                                 // Fallback por apiCodigo (datos cargados desde API externa)
                                 if ((cellValue === undefined || cellValue === null || cellValue === "") && col.apiCodigo) {
-                                  cellValue = row[col.apiCodigo];
+                                  cellValue = safeRow[col.apiCodigo];
                                 }
 
                                 if (cellValue === undefined || cellValue === null || cellValue === "") {
@@ -1347,11 +1376,17 @@ function ViewForms() {
                           ))}
                         </tr>
                         <tr>
-                          {allTinas.map(tina => (
-                            <th key={tina.key} style={{ background: '#0284c7', color: 'white', textAlign: 'center', fontSize: '11px' }}>
-                              {tina.label}
-                            </th>
-                          ))}
+                          {allTinas.map(tina => {
+                            const customLabel = tinasData[tina.key]?._customLabel;
+                            const displayLabel = tina.label.includes('___')
+                              ? `${customLabel || '___'} ${tina.label.replace('___', '').trim()}`
+                              : tina.label;
+                            return (
+                              <th key={tina.key} style={{ background: '#0284c7', color: 'white', textAlign: 'center', fontSize: '11px' }}>
+                                {displayLabel}
+                              </th>
+                            );
+                          })}
                         </tr>
                       </thead>
                       <tbody>
@@ -1592,7 +1627,7 @@ function ViewForms() {
           <div className="filter-row">
             <div className="filter-group">
               <label>📂 Plantilla:</label>
-              <select value={filterTemplate} onChange={(e) => setFilterTemplate(e.target.value)}>
+              <select value={filterTemplate} onChange={(e) => { setFilterTemplate(e.target.value); setCurrentPage(1); }}>
                 <option value="">Todas las plantillas</option>
                 {templates.map((t) => (
                   <option key={t.templateID} value={t.codigo}>
@@ -1607,7 +1642,7 @@ function ViewForms() {
               <input 
                 type="date" 
                 value={startDate} 
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
                 max={endDate || undefined}
               />
             </div>
@@ -1617,7 +1652,7 @@ function ViewForms() {
               <input 
                 type="date" 
                 value={endDate} 
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
                 min={startDate || undefined}
               />
             </div>
@@ -1628,6 +1663,7 @@ function ViewForms() {
                 setFilterTemplate("");
                 setStartDate("");
                 setEndDate("");
+                setCurrentPage(1);
               }}
               title="Limpiar todos los filtros"
             >
@@ -1651,118 +1687,173 @@ function ViewForms() {
         </div>
       </div>
 
-      {filteredForms.length === 0 ? (
+      {(!filterTemplate && !startDate && !endDate) ? (
+        <div className="empty-state-card" style={{ padding: '40px 20px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', border: '2px dashed #cbd5e1' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+          <h2 style={{ color: '#334155', marginBottom: '8px' }}>Usa los filtros para buscar formularios</h2>
+          <p style={{ color: '#64748b' }}>Selecciona una plantilla o un rango de fechas en la parte superior para mostrar resultados.</p>
+        </div>
+      ) : filteredForms.length === 0 ? (
         <div className="empty-state-card">
-          <p>No hay formularios guardados{filterTemplate || startDate || endDate ? " con los filtros seleccionados" : ""}.</p>
-          {(filterTemplate || startDate || endDate) && (
-            <button 
-              className="btn-secondary" 
-              onClick={() => {
-                setFilterTemplate("");
-                setStartDate("");
-                setEndDate("");
-              }}
-            >
-              Limpiar filtros
-            </button>
-          )}
+          <p>No hay formularios guardados con los filtros seleccionados.</p>
+          <button 
+            className="btn-secondary" 
+            onClick={() => {
+              setFilterTemplate("");
+              setStartDate("");
+              setEndDate("");
+              setCurrentPage(1);
+            }}
+          >
+            Limpiar filtros
+          </button>
         </div>
       ) : (
-        <div className="forms-list">
-          {filteredForms.map((form) => (
-            <div key={form.formID} className="form-card">
-              <div className="form-card-header">
-                <div>
-                  <span className="form-code">{form.templateCodigo}</span>
-                  <h3>{form.templateNombre}</h3>
+        <>
+          <div className="forms-list">
+            {currentItems.map((form) => (
+              <div key={form.formID} className="form-card">
+                <div className="form-card-header">
+                  <div>
+                    <span className="form-code">{form.templateCodigo}</span>
+                    <h3>{form.templateNombre}</h3>
+                  </div>
+                  <div className="form-card-actions">
+                    <button 
+                      onClick={() => viewFormWithVersion(form)} 
+                      className="btn-view"
+                      title="Ver detalles completos"
+                    >
+                      👁️ Ver
+                    </button>
+                    {canEdit && (
+                    <button 
+                      onClick={() => editForm(form.formID)} 
+                      className="btn-edit"
+                      title="Editar este formulario"
+                    >
+                      ✏️ Editar
+                    </button>
+                    )}
+                    <button 
+                      onClick={() => handleExportPDF(form)} 
+                      className="btn-pdf"
+                      title="Exportar a PDF"
+                    >
+                      📄 PDF
+                    </button>
+                    <button 
+                      onClick={() => handleExportExcel(form)} 
+                      className="btn-excel"
+                      title="Exportar a Excel"
+                    >
+                      📊 Excel
+                    </button>
+                    <button 
+                      onClick={() => openEmailModal(form)} 
+                      className="btn-email"
+                      title="Enviar por correo"
+                    >
+                      📧
+                    </button>
+                    <button 
+                      onClick={() => exportToJSON(form)} 
+                      className="btn-export"
+                      title="Exportar a JSON"
+                    >
+                      📥
+                    </button>
+                    {canEdit && (
+                    <button 
+                      onClick={() => duplicateForm(form)} 
+                      className="btn-edit"
+                      title="Duplicar formulario"
+                    >
+                      📋
+                    </button>
+                    )}
+                    {canDelete && (
+                    <button 
+                      onClick={() => deleteForm(form.formID)} 
+                      className="btn-delete"
+                      title="Eliminar formulario"
+                    >
+                      🗑️
+                    </button>
+                    )}
+                  </div>
                 </div>
-                <div className="form-card-actions">
-                  <button 
-                    onClick={() => viewFormWithVersion(form)} 
-                    className="btn-view"
-                    title="Ver detalles completos"
-                  >
-                    👁️ Ver
-                  </button>
-                  {canEdit && (
-                  <button 
-                    onClick={() => editForm(form.formID)} 
-                    className="btn-edit"
-                    title="Editar este formulario"
-                  >
-                    ✏️ Editar
-                  </button>
-                  )}
-                  <button 
-                    onClick={() => handleExportPDF(form)} 
-                    className="btn-pdf"
-                    title="Exportar a PDF"
-                  >
-                    📄 PDF
-                  </button>
-                  <button 
-                    onClick={() => handleExportExcel(form)} 
-                    className="btn-excel"
-                    title="Exportar a Excel"
-                  >
-                    📊 Excel
-                  </button>
-                  <button 
-                    onClick={() => openEmailModal(form)} 
-                    className="btn-email"
-                    title="Enviar por correo"
-                  >
-                    📧
-                  </button>
-                  <button 
-                    onClick={() => exportToJSON(form)} 
-                    className="btn-export"
-                    title="Exportar a JSON"
-                  >
-                    📥
-                  </button>
-                  {canEdit && (
-                  <button 
-                    onClick={() => duplicateForm(form)} 
-                    className="btn-edit"
-                    title="Duplicar formulario"
-                  >
-                    📋
-                  </button>
-                  )}
-                  {canDelete && (
-                  <button 
-                    onClick={() => deleteForm(form.formID)} 
-                    className="btn-delete"
-                    title="Eliminar formulario"
-                  >
-                    🗑️
-                  </button>
+                <div className="form-card-meta">
+                  <span>📅 {new Date(form.createdAt).toLocaleString("es-EC")}</span>
+                  <span>👤 {form.filledBy || 'No registrado'}</span>
+                  {(() => {
+                    const template = templates.find(t => t.templateID === form.templateID);
+                    const proceso = form.proceso || template?.proceso;
+                    return proceso ? <span>🏢 {proceso}</span> : null;
+                  })()}
+                  {(() => {
+                    const template = templates.find(t => t.templateID === form.templateID);
+                    const rawFecha = template?.fechaVersion || template?.FechaVersion;
+                    if (!rawFecha) return null;
+                    const fechaFinal = new Date(rawFecha).toLocaleDateString("es-EC");
+                    return <span>🗓️ v{template?.version || '1'} · {fechaFinal}</span>;
+                  })()}
+                  {form.updatedAt && form.updatedAt !== form.createdAt && (
+                    <span className="updated-badge">🔄 Editado</span>
                   )}
                 </div>
               </div>
-              <div className="form-card-meta">
-                <span>📅 {new Date(form.createdAt).toLocaleString("es-EC")}</span>
-                <span>👤 {form.filledBy || 'No registrado'}</span>
-                {(() => {
-                  const template = templates.find(t => t.templateID === form.templateID);
-                  const proceso = form.proceso || template?.proceso;
-                  return proceso ? <span>🏢 {proceso}</span> : null;
-                })()}
-                {(() => {
-                  const template = templates.find(t => t.templateID === form.templateID);
-                  const rawFecha = template?.fechaVersion || template?.FechaVersion;
-                  if (!rawFecha) return null;
-                  const fechaFinal = new Date(rawFecha).toLocaleDateString("es-EC");
-                  return <span>🗓️ v{template?.version || '1'} · {fechaFinal}</span>;
-                })()}
-                {form.updatedAt && form.updatedAt !== form.createdAt && (
-                  <span className="updated-badge">🔄 Editado</span>
-                )}
+            ))}
+          </div>
+
+          {/* 📄 CONTROLES DE PAGINACIÓN */}
+          {totalPages > 1 && (
+            <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '30px', marginBottom: '20px' }}>
+              <button 
+                onClick={prevPage} 
+                disabled={currentPage === 1}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', background: currentPage === 1 ? '#f1f5f9' : 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', color: currentPage === 1 ? '#94a3b8' : '#334155', fontWeight: 'bold' }}
+              >
+                ← Anterior
+              </button>
+              
+              <div style={{ display: 'flex', gap: '5px' }}>
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  // Mostrar primera, última y algunas cercanas a la actual
+                  .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                  .map((page, index, array) => (
+                    <React.Fragment key={page}>
+                      {index > 0 && page - array[index - 1] > 1 && (
+                        <span style={{ padding: '8px', color: '#64748b' }}>...</span>
+                      )}
+                      <button
+                        onClick={() => goToPage(page)}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          border: page === currentPage ? 'none' : '1px solid #cbd5e1',
+                          background: page === currentPage ? '#0284c7' : 'white',
+                          color: page === currentPage ? 'white' : '#334155',
+                          fontWeight: page === currentPage ? 'bold' : 'normal',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {page}
+                      </button>
+                    </React.Fragment>
+                  ))}
               </div>
+
+              <button 
+                onClick={nextPage} 
+                disabled={currentPage === totalPages}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', background: currentPage === totalPages ? '#f1f5f9' : 'white', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', color: currentPage === totalPages ? '#94a3b8' : '#334155', fontWeight: 'bold' }}
+              >
+                Siguiente →
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
 
       {/* 📧 MODAL: Enviar formulario por correo */}

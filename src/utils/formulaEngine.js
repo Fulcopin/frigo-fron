@@ -44,7 +44,11 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
       .replace(/\s+/g, ' ')
       .trim();
 
-  const rowKeys = Object.keys(rowData).filter(k => k !== 'id' && k !== 'ID' && k !== 'undefined' && k !== '__crossTableSums__');
+  let rowKeys = Object.keys(rowData).filter(k => k !== 'id' && k !== 'ID' && k !== 'undefined' && k !== '__crossTableSums__');
+  if (rowData.__crossTableSums__) {
+    const sumKeys = Object.keys(rowData.__crossTableSums__).filter(k => k !== 'id' && k !== 'ID' && k !== 'undefined');
+    rowKeys = [...new Set([...rowKeys, ...sumKeys])];
+  }
   const normalizedKeyMap = {};
   rowKeys.forEach(k => { normalizedKeyMap[normalizeKey(k)] = k; });
 
@@ -55,7 +59,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
     }
     const normName = normalizeKey(name);
     const matchedKey = normalizedKeyMap[normName];
-    if (matchedKey !== undefined) {
+    if (matchedKey !== undefined && rowData[matchedKey] !== undefined) {
       const v = Number.parseFloat(rowData[matchedKey]);
       return Number.isNaN(v) ? 0 : v;
     }
@@ -75,17 +79,21 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
     const allColNames = rowKeys.sort((a, b) => b.length - a.length);
     let expression = formula;
 
+    // --- PROCESAR _ROW_ ---
+    expression = expression.replace(/_ROW_/gi, String(currentRowIndex));
+
     if (allRows && allRows.length > 0) {
       allColNames.forEach(colName => {
         const escaped = colName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        // --- PROCESAR [*] (SUMA) ---
         const regexStar = new RegExp(escaped + '\\s*\\[\\*?\\]', 'gi');
         expression = expression.replace(regexStar, () => {
           let suma = 0;
           const colExistsInOwnRows = allRows.some(r => r[colName] !== undefined && !r._deleted);
           if (colExistsInOwnRows) {
-            allRows.forEach(r => { if (r._deleted) return; const v = Number.parseFloat(r[colName]); if (!Number.isNaN(v)) suma += v; });
+            allRows.forEach(r => { if (r._deleted || String(r['N°']).toUpperCase() === 'TOTAL' || String(r['#']).toUpperCase() === 'TOTAL') return; const v = Number.parseFloat(r[colName]); if (!Number.isNaN(v)) suma += v; });
           } else {
-            // Columna de otra tabla: usar sumas cross-table precalculadas
             const crossSums = rowData.__crossTableSums__;
             if (crossSums && crossSums[colName] !== undefined) {
               suma = crossSums[colName];
@@ -96,6 +104,39 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
           }
           return String(suma);
         });
+
+        // --- PROCESAR [max] (MÁXIMO) ---
+        const regexMax = new RegExp(escaped + '\\s*\\[max\\]', 'gi');
+        expression = expression.replace(regexMax, () => {
+          const crossMax = rowData.__crossTableMax__;
+          if (crossMax && crossMax[colName] !== undefined) {
+            return String(crossMax[colName]);
+          }
+          // Fallback
+          let m = -Infinity;
+          const colExistsInOwnRows = allRows.some(r => r[colName] !== undefined && !r._deleted);
+          if (colExistsInOwnRows) {
+            allRows.forEach(r => { if (r._deleted || String(r['N°']).toUpperCase() === 'TOTAL' || String(r['#']).toUpperCase() === 'TOTAL' || r['Métrica'] !== undefined) return; const v = Number.parseFloat(r[colName]); if (!Number.isNaN(v)) m = Math.max(m, v); });
+          }
+          return m === -Infinity ? '0' : String(m);
+        });
+
+        // --- PROCESAR [min] (MÍNIMO) ---
+        const regexMin = new RegExp(escaped + '\\s*\\[min\\]', 'gi');
+        expression = expression.replace(regexMin, () => {
+          const crossMin = rowData.__crossTableMin__;
+          if (crossMin && crossMin[colName] !== undefined) {
+            return String(crossMin[colName]);
+          }
+          // Fallback
+          let m = Infinity;
+          const colExistsInOwnRows = allRows.some(r => r[colName] !== undefined && !r._deleted);
+          if (colExistsInOwnRows) {
+            allRows.forEach(r => { if (r._deleted || String(r['N°']).toUpperCase() === 'TOTAL' || String(r['#']).toUpperCase() === 'TOTAL' || r['Métrica'] !== undefined) return; const v = Number.parseFloat(r[colName]); if (!Number.isNaN(v)) m = Math.min(m, v); });
+          }
+          return m === Infinity ? '0' : String(m);
+        });
+
         const regexRow = new RegExp(escaped + '\\s*\\[(\\d+)\\]', 'gi');
         expression = expression.replace(regexRow, (match, rowNum) => {
           const idx = parseInt(rowNum) - 1;
@@ -119,37 +160,74 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
 
     const sanitize = (expr) =>
       expr.replace(/\s/g, '')
-        .replace(/([0-9)])x([0-9(])/gi, '$1*$2') // "x" como multiplicación (convención española)
+        .replace(/\[/g, '(').replace(/\]/g, ')')
+        .replace(/([0-9)])x([0-9(])/gi, '$1*$2') 
         .replace(/\+\+/g, '+').replace(/--/g, '+')
         .replace(/\+-/g, '-').replace(/-\+/g, '-')
         .replace(/\*\+/g, '*').replace(/\/\+/g, '/');
 
     const sanitized = sanitize(expression);
-    if (!/^[0-9.+\-*/()]+$/.test(sanitized)) {
-      // Fallback: normalizar la fórmula (quitar acentos, minúsculas) para resolver diferencias de acentuación
+    if (!/^[0-9.+\-*/()?:<>=&|_!]+$/.test(sanitized)) {
       let expression2 = normalizeKey(formula);
-      if (allRows && allRows.length > 0) {
-        Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
-          const origKey = normalizedKeyMap[normKey];
-          const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const rx = new RegExp(escaped + '\\s*\\[\\*?\\]', 'gi');
-          expression2 = expression2.replace(rx, () => {
-            const colExistsInOwnRows = allRows.some(r => r[origKey] !== undefined && !r._deleted);
-            if (colExistsInOwnRows) {
-              let s = 0;
-              allRows.forEach(r => { if (r._deleted) return; const v = parseFloat(r[origKey]); if (!isNaN(v)) s += v; });
-              return String(s);
-            }
-            // Columna de otra tabla: usar sumas cross-table precalculadas
-            const crossSums = rowData.__crossTableSums__;
-            if (crossSums && crossSums[origKey] !== undefined) return String(crossSums[origKey]);
-            const cv = parseFloat(rowData[origKey]);
-            return String(isNaN(cv) ? 0 : cv);
-          });
-          const rx2 = new RegExp(escaped + '\\s*\\[(\\d+)\\]', 'gi');
-          expression2 = expression2.replace(rx2, (m, n) => { const idx = parseInt(n) - 1; if (idx >= 0 && idx < allRows.length) { const v = parseFloat(allRows[idx][origKey]); return isNaN(v) ? '0' : String(v); } return '0'; });
+      expression2 = expression2.replace(/_row_/gi, String(currentRowIndex));
+      Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
+        const origKey = normalizedKeyMap[normKey];
+        const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const rx = new RegExp(escaped + '\\s*\\[\\*?\\]', 'gi');
+        expression2 = expression2.replace(rx, () => {
+          const colExistsInOwnRows = allRows && allRows.some(r => r[origKey] !== undefined && !r._deleted);
+          if (colExistsInOwnRows) {
+            let s = 0;
+            allRows.forEach(r => { if (r._deleted || String(r['N°']).toUpperCase() === 'TOTAL' || String(r['#']).toUpperCase() === 'TOTAL') return; const v = parseFloat(r[origKey]); if (!isNaN(v)) s += v; });
+            return String(s);
+          }
+          const crossSums = rowData.__crossTableSums__;
+          if (crossSums && crossSums[origKey] !== undefined) return String(crossSums[origKey]);
+          const cv = parseFloat(rowData[origKey]);
+          return String(isNaN(cv) ? 0 : cv);
         });
-      }
+        const rxMax = new RegExp(escaped + '\\s*\\[max\\]', 'gi');
+        expression2 = expression2.replace(rxMax, () => {
+          const crossMax = rowData.__crossTableMax__;
+          if (crossMax && crossMax[origKey] !== undefined) return String(crossMax[origKey]);
+          const colExistsInOwnRows = allRows && allRows.some(r => r[origKey] !== undefined && !r._deleted);
+          if (colExistsInOwnRows) {
+            let m = -Infinity;
+            allRows.forEach(r => { if (r._deleted || String(r['N°']).toUpperCase() === 'TOTAL' || String(r['#']).toUpperCase() === 'TOTAL' || r['Métrica'] !== undefined) return; const v = parseFloat(r[origKey]); if (!isNaN(v)) m = Math.max(m, v); });
+            return m === -Infinity ? '0' : String(m);
+          }
+          const cv = parseFloat(rowData[origKey]);
+          return String(isNaN(cv) ? 0 : cv);
+        });
+        const rxMin = new RegExp(escaped + '\\s*\\[min\\]', 'gi');
+        expression2 = expression2.replace(rxMin, () => {
+          const crossMin = rowData.__crossTableMin__;
+          if (crossMin && crossMin[origKey] !== undefined) return String(crossMin[origKey]);
+          const colExistsInOwnRows = allRows && allRows.some(r => r[origKey] !== undefined && !r._deleted);
+          if (colExistsInOwnRows) {
+            let m = Infinity;
+            allRows.forEach(r => { if (r._deleted || String(r['N°']).toUpperCase() === 'TOTAL' || String(r['#']).toUpperCase() === 'TOTAL' || r['Métrica'] !== undefined) return; const v = parseFloat(r[origKey]); if (!isNaN(v)) m = Math.min(m, v); });
+            return m === Infinity ? '0' : String(m);
+          }
+          const cv = parseFloat(rowData[origKey]);
+          return String(isNaN(cv) ? 0 : cv);
+        });
+        const rxCount = new RegExp(escaped + '\\s*\\[count\\]', 'gi');
+        expression2 = expression2.replace(rxCount, () => {
+          const crossCounts = rowData.__crossTableCounts__;
+          if (crossCounts && crossCounts[origKey] !== undefined) return String(crossCounts[origKey]);
+          const colExistsInOwnRows = allRows && allRows.some(r => r[origKey] !== undefined && !r._deleted);
+          if (colExistsInOwnRows) {
+            let c = 0;
+            allRows.forEach(r => { if (r._deleted || String(r['N°']).toUpperCase() === 'TOTAL' || String(r['#']).toUpperCase() === 'TOTAL' || r['Métrica'] !== undefined) return; const v = parseFloat(r[origKey]); if (!isNaN(v)) c++; });
+            return String(c);
+          }
+          const cv = parseFloat(rowData[origKey]);
+          return String(isNaN(cv) ? 0 : 1);
+        });
+        const rx2 = new RegExp(escaped + '\\s*\\[(\\d+)\\]', 'gi');
+        expression2 = expression2.replace(rx2, (m, n) => { const idx = parseInt(n) - 1; if (allRows && idx >= 0 && idx < allRows.length) { const v = parseFloat(allRows[idx][origKey]); return isNaN(v) ? '0' : String(v); } return '0'; });
+      });
       Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
         const origKey = normalizedKeyMap[normKey];
         const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -157,16 +235,18 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
         expression2 = expression2.replace(rx, () => { const v = getVal(origKey); return v !== null ? String(v) : '0'; });
       });
       const sanitized2 = sanitize(expression2);
-      if (!/^[0-9.+\-*/()]+$/.test(sanitized2)) {
+      if (!/^[0-9.+\-*/()?:<>=&|_!'" ]+$/.test(sanitized2)) {
         console.warn('⚠️ Fórmula sin coincidencia. Fórmula:', formula, '| Expresión normalizada:', expression2, '| Claves:', rowKeys, '| rowData:', JSON.stringify(rowData).slice(0, 500));
         return "⚠️";
       }
       const result2 = new Function(`"use strict"; return (${sanitized2})`)();
+      if (result2 === "") return "";
       if (typeof result2 !== 'number' || !isFinite(result2)) return "0.00";
       return result2.toFixed(2);
     }
 
     const result = new Function(`"use strict"; return (${sanitized})`)();
+    if (result === "") return "";
     if (typeof result !== 'number' || !isFinite(result)) {
       return "0.00";
     }
@@ -273,37 +353,73 @@ export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
 export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
   if (!Array.isArray(allBodyData) || allBodyData.length === 0) return rawRow;
   const merged = {};
-  // Acumulador de sumas de columna a través de TODAS las tablas (para soportar [*] cross-table)
   const crossTableSums = {};
+  const crossTableMax = {};
+  const crossTableMin = {};
+  const crossTableCounts = {};
+  
   allBodyData.forEach(elData => {
     if (!elData) return;
+    
+    // 1. Manejar campos de Sección (Variables globales para toda la plantilla)
+    if (elData.data && typeof elData.data === 'object' && !Array.isArray(elData.data)) {
+      Object.keys(elData.data).forEach(k => {
+        if (typeof k !== 'string' || k.startsWith('_')) return;
+        
+        // Agregar al merged para TODAS las filas
+        if (rawRow[k] === undefined) {
+          merged[k] = elData.data[k];
+        }
+
+        const v = parseFloat(elData.data[k]);
+        if (!isNaN(v)) {
+          crossTableSums[k] = (crossTableSums[k] || 0) + v;
+          crossTableMax[k] = crossTableMax[k] === undefined ? v : Math.max(crossTableMax[k], v);
+          crossTableMin[k] = crossTableMin[k] === undefined ? v : Math.min(crossTableMin[k], v);
+          crossTableCounts[k] = (crossTableCounts[k] || 0) + 1;
+        }
+      });
+      return; // Continuar con el siguiente elemento
+    }
+
+    // 2. Manejar Tablas (Arrays de filas)
     const elRows = Array.isArray(elData.data) ? elData.data
       : Array.isArray(elData.rows) ? elData.rows
       : Array.isArray(elData) ? elData
       : [];
-    // Acumular sumas de TODAS las filas (no eliminadas) de cada tabla
+      
     elRows.forEach(r => {
       if (!r || r._deleted) return;
+      // IMPORTANTE: Ignorar la fila TOTAL para no alterar el MÁXIMO/MÍNIMO real
+      if (String(r['N°']).toUpperCase() === 'TOTAL' || String(r['#']).toUpperCase() === 'TOTAL' || r['Métrica'] !== undefined) return;
+      
       Object.keys(r).forEach(k => {
         if (typeof k !== 'string' || k.startsWith('_')) return;
         const v = parseFloat(r[k]);
-        if (!isNaN(v)) crossTableSums[k] = (crossTableSums[k] || 0) + v;
+        if (!isNaN(v)) {
+          crossTableSums[k] = (crossTableSums[k] || 0) + v;
+          crossTableMax[k] = crossTableMax[k] === undefined ? v : Math.max(crossTableMax[k], v);
+          crossTableMin[k] = crossTableMin[k] === undefined ? v : Math.min(crossTableMin[k], v);
+          crossTableCounts[k] = (crossTableCounts[k] || 0) + 1;
+        }
       });
     });
-    // Solo mezclar claves que NO existan ya en rawRow (para no sobrescribir valores de la tabla actual)
+    
     if (rowIndex < elRows.length && elRows[rowIndex] && typeof elRows[rowIndex] === 'object') {
       const otherRow = elRows[rowIndex];
       Object.keys(otherRow).forEach(k => {
-        if (rawRow[k] === undefined) {
+        if (rawRow[k] === undefined && merged[k] === undefined) {
           merged[k] = otherRow[k];
         }
       });
     }
   });
-  // rawRow tiene prioridad absoluta: sus valores nunca se sobrescriben
+  
   Object.assign(merged, rawRow);
-  // Guardar las sumas cross-table para que evaluarFormula las use en [*]
   merged.__crossTableSums__ = crossTableSums;
+  merged.__crossTableMax__ = crossTableMax;
+  merged.__crossTableMin__ = crossTableMin;
+  merged.__crossTableCounts__ = crossTableCounts;
   return merged;
 };
 

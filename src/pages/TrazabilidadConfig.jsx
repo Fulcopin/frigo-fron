@@ -1570,6 +1570,41 @@ export default function TrazabilidadConfig() {
             ))}
           </div>
 
+          {/* 🆕 Alerta de Trazabilidad (Configuración Necesaria) */}
+          {fechaFormatoId && fechaFormatoId !== 'custom' && (() => {
+            const formatoSeleccionado = formatos.find(f => String(f.id) === String(fechaFormatoId));
+            const requiredDocs = formatoSeleccionado 
+              ? detalles.filter(d => String(d.formatoId) === String(formatoSeleccionado.id) && d.tipo === 'DATOS_SISTEMA' && d.codigoDocumento)
+              : [];
+              
+            if (requiredDocs.length > 0) {
+              return (
+                <div style={{ marginTop: '5px', marginBottom: '15px', border: '2px solid #ef4444', background: '#fef2f2', padding: '15px', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)' }}>
+                  <h3 style={{ color: '#b91c1c', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid #fca5a5', paddingBottom: '10px' }}>
+                    <span style={{ fontSize: '1.2em' }}>⚠️</span> Estos formularios son obligatorios para trazabilidad
+                  </h3>
+                  <p style={{ color: '#991b1b', fontSize: '14px', marginBottom: '15px' }}>
+                    Asegúrate de que se hayan registrado datos en los siguientes formularios para que la trazabilidad de <strong>{formatoSeleccionado.nombre}</strong> esté al 100%:
+                  </p>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {requiredDocs.map(d => (
+                      <div key={d.id} style={{ background: 'white', padding: '10px 15px', borderRadius: '6px', border: '1px solid #fca5a5', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <span style={{ fontWeight: 'bold', color: '#7f1d1d', background: '#fee2e2', padding: '4px 8px', borderRadius: '4px', fontSize: '13px' }}>
+                          {d.codigoDocumento}
+                        </span>
+                        <span style={{ color: '#991b1b', fontSize: '14px', fontWeight: '500' }}>
+                          {d.nombreDocumento}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           {/* Error */}
           {fechaError && !fechaLoading && (
             <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '6px', padding: '10px 14px', color: '#dc2626', fontSize: '13px', marginBottom: '12px' }}>

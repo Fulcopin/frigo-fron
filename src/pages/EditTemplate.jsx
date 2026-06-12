@@ -1549,7 +1549,7 @@ function EditTemplate() {
                   </span>
                 </div>
               </div>
-            )}}
+            )}
             {element.type === 'table' && (
               <div className="body-element-content">
                 <div className="section-header-inner">
@@ -1735,7 +1735,7 @@ function EditTemplate() {
                 </div>
 
                 {/* ─────────── PANEL Σ AUTO-SUMA: selector rápido de columnas ─────────── */}
-                {(template.autoSumColumns) && (element.columns || []).length > 0 && (
+                {(element.columns || []).length > 0 && (
                   <div style={{
                     background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)',
                     border: '2px solid #6366f1',
@@ -1974,8 +1974,8 @@ function EditTemplate() {
                       </div>
                     )}
 
-                    {/* 🧮 UI DE FÓRMULA: Solo si el tipo es 'formula' */}
-                    {column.type === "formula" && (
+                    {/* 🧮 UI DE FÓRMULA: Solo si el tipo es 'formula' o 'calculated' */}
+                    {(column.type === "formula" || column.type === "calculated") && (
                       <div style={{ 
                         width: '100%',
                         marginTop: '25px',
@@ -2004,7 +2004,7 @@ function EditTemplate() {
                             type="text" 
                             value={column.formula || ""}
                             onChange={(e) => updateColumnInTable(elementIndex, colIndex, "formula", e.target.value)}
-                            placeholder="Ej: Peso Neto * Porcentaje / 100"
+                            placeholder="Ej: [Peso Neto] * [Porcentaje] / 100"
                             style={{ 
                               width: '100%',
                               padding: '12px',
@@ -2017,11 +2017,11 @@ function EditTemplate() {
                             }}
                           />
                           <div style={{ marginTop: '10px', fontSize: '12px', color: '#713f12' }}>
-                            <p style={{ margin: '0 0 6px 0' }}>💡 <strong>Operaciones:</strong> <code>+</code> (suma), <code>-</code> (resta), <code>*</code> (multiplicación), <code>/</code> (división)</p>
-                            <p style={{ margin: '0 0 6px 0' }}>📝 <strong>Misma fila:</strong> Usa nombres de columnas. Ej: <code>Peso Bruto - Peso Tara</code></p>
-                            <p style={{ margin: '0 0 6px 0' }}>📊 <strong>Otra fila:</strong> <code>Columna[Nº fila]</code>. Ej: <code>Precio[1] * Cantidad[2]</code></p>
-                            <p style={{ margin: '0 0 6px 0' }}>🔢 <strong>Toda la columna:</strong> <code>Columna[*]</code>. Ej: <code>Peso Neto[*]</code> (suma todas las filas)</p>
-                            <p style={{ margin: '0 0 6px 0' }}>📁 <strong>Paréntesis y números:</strong> <code>(Precio * 2.5) - Descuento</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>💡 <strong>Operaciones:</strong> <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, y condicionales (ej. <code>_ROW_ == 0 ? 10 : 20</code>)</p>
+                            <p style={{ margin: '0 0 6px 0' }}>📝 <strong>Variables Simples:</strong> Escribe el nombre entre corchetes. Ej: <code>[Peso Bruto] - [Peso Tara]</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>📊 <strong>Otra fila:</strong> <code>[Columna[Nº fila]]</code>. Ej: <code>[Precio[1]] * [Cantidad[2]]</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>🔢 <strong>Agregaciones Globales:</strong> Suma: <code>[Columna[*]]</code> | Máximo: <code>[Columna[max]]</code> | Mínimo: <code>[Columna[min]]</code></p>
+                            <p style={{ margin: '0 0 6px 0' }}>📁 <strong>Paréntesis:</strong> <code>([Precio] * 2.5) - [Descuento]</code></p>
                           </div>
                           <div style={{ 
                               marginTop: '12px',

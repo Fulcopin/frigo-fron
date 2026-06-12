@@ -660,6 +660,36 @@ export default function TrazabilidadBusqueda() {
             <p className="tb-guide-tip">💡 La IA recibe el contenido real de los formularios como contexto</p>
           </div>
 
+          {selectedFormato && (
+            <div style={{ marginTop: '20px', border: '2px solid #ef4444', background: '#fef2f2', padding: '15px', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)' }}>
+              <h3 style={{ color: '#b91c1c', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid #fca5a5', paddingBottom: '10px' }}>
+                <span style={{ fontSize: '1.2em' }}>⚠️</span> Configuración Necesaria para Trazabilidad
+              </h3>
+              <p style={{ color: '#991b1b', fontSize: '14px', marginBottom: '15px' }}>
+                Para que la trazabilidad de <strong>{selectedFormato.nombre}</strong> esté al 100%, se necesita obligatoriamente registrar información en los siguientes formularios:
+              </p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {detalles.filter(d => d.tipo === 'DATOS_SISTEMA' && d.codigoDocumento).length > 0 ? (
+                  detalles.filter(d => d.tipo === 'DATOS_SISTEMA' && d.codigoDocumento).map(d => (
+                    <div key={d.id} style={{ background: 'white', padding: '10px 15px', borderRadius: '6px', border: '1px solid #fca5a5', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                      <span style={{ fontWeight: 'bold', color: '#7f1d1d', background: '#fee2e2', padding: '4px 8px', borderRadius: '4px', fontSize: '13px' }}>
+                        {d.codigoDocumento}
+                      </span>
+                      <span style={{ color: '#991b1b', fontSize: '14px', fontWeight: '500' }}>
+                        {d.nombreDocumento}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ color: '#991b1b', fontStyle: 'italic', padding: '10px', background: 'white', borderRadius: '6px', border: '1px dashed #fca5a5' }}>
+                    No hay formularios configurados como obligatorios para este formato.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="tb-lotes-list-container" style={{ marginTop: '30px', background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
             <h3 style={{ borderBottom: '2px solid #0056b3', paddingBottom: '10px', color: '#0056b3' }}>
               📦 Lotes Recientes Registrados

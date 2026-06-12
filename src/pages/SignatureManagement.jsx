@@ -587,9 +587,11 @@ export default function SignatureManagement() {
   // Obtener áreas y plantillas únicas para filtros
   const uniqueAreas = [...new Set(pendingForms.map(f => f.area).filter(Boolean))];
   const uniqueTemplates = Object.values(pendingForms.reduce((acc, f) => {
-    if (!acc[f.templateId]) acc[f.templateId] = { id: f.templateId, name: f.templateName };
+    if (!acc[f.templateId]) acc[f.templateId] = { id: f.templateId, name: f.templateName, code: f.formCode };
     return acc;
-  }, {}));
+  }, {})).sort((a, b) => 
+    (a.code || '').localeCompare(b.code || '', 'es', { numeric: true, sensitivity: 'base' })
+  );
 
   if (loading) {
     return (
@@ -729,7 +731,9 @@ export default function SignatureManagement() {
           >
             <option value="">Todas las Plantillas</option>
             {uniqueTemplates.map(template => (
-              <option key={template.id} value={template.id}>{template.name}</option>
+              <option key={template.id} value={template.id}>
+                {template.code && template.code !== 'N/A' ? `${template.code} - ` : ''}{template.name}
+              </option>
             ))}
           </select>
         </div>

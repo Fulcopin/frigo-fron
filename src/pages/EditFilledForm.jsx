@@ -451,7 +451,9 @@ function EditFilledForm() {
   };
 
   // Renderizar campo según su tipo
-  const renderField = (field, value, onChange, disabled = false) => {
+  const renderField = (field, value, onChange, disabled = false, rowIndex = null) => {
+    const isTableContext = rowIndex !== null && rowIndex !== undefined;
+    const tableInputClass = isTableContext ? "table-input-expandable" : "";
     switch (field.type) {
       case "date":
         return (
@@ -461,6 +463,7 @@ function EditFilledForm() {
             onChange={(e) => onChange(e.target.value)}
             required={field.required}
             disabled={disabled}
+            className={tableInputClass}
           />
         );
       case "time":
@@ -471,6 +474,7 @@ function EditFilledForm() {
             onChange={(e) => onChange(e.target.value)}
             required={field.required}
             disabled={disabled}
+            className={tableInputClass}
           />
         );
       case "datetime":
@@ -481,6 +485,7 @@ function EditFilledForm() {
             onChange={(e) => onChange(e.target.value)}
             required={field.required}
             disabled={disabled}
+            className={tableInputClass}
           />
         );
       case "number":
@@ -493,6 +498,7 @@ function EditFilledForm() {
             required={field.required}
             placeholder={field.type === "temperature" ? "°C" : ""}
             disabled={disabled}
+            className={tableInputClass}
           />
         );
       case "percentage": {
@@ -530,6 +536,7 @@ function EditFilledForm() {
               required={field.required}
               placeholder={field.placeholder || "Ej: 20%"}
               disabled={disabled}
+              className={tableInputClass}
             />
             {_pctBase && (
               <span style={{ fontSize: '12px', color: '#065f46', background: '#d1fae5', padding: '3px 8px', borderRadius: '4px', fontWeight: '500' }}>
@@ -548,6 +555,7 @@ function EditFilledForm() {
             onChange={(e) => onChange(e.target.value)}
             required={field.required}
             disabled={disabled}
+            className={tableInputClass}
           >
             <option value="">Seleccione...</option>
             {field.options?.map((option, index) => (
@@ -572,6 +580,7 @@ function EditFilledForm() {
             onChange={(e) => onChange(e.target.value)}
             required={field.required}
             disabled={disabled}
+            className={tableInputClass}
           />
         );
     }
@@ -839,7 +848,9 @@ Template: ${template?.nombre}
               renderField(
                 column,
                 row[cellName],
-                (value) => updateTableCell(elementIndex, rowIndex, cellName, value)
+                (value) => updateTableCell(elementIndex, rowIndex, cellName, value),
+                false,
+                rowIndex
               )
             )}
           </td>

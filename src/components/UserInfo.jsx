@@ -8,13 +8,14 @@ const UserInfo = () => {
   if (!user) return null;
 
   const getRoleBadge = (rol) => {
+    const normalizedRole = (rol || '').toLowerCase();
     const badges = {
-     
+      admin: { icon: '👑', text: 'Administrador', color: '#e53e3e' },
       supervisor: { icon: '👔', text: 'Supervisor', color: '#ed8936' },
       trabajador: { icon: '👷', text: 'Trabajador', color: '#48bb78' },
-      operador: { icon: '�', text: 'Operador', color: '#48bb78' },
+      operador: { icon: '🧑‍🔧', text: 'Operador', color: '#48bb78' },
     };
-    return badges[rol] || { icon: '👤', text: rol, color: '#718096' };
+    return badges[normalizedRole] || { icon: '👤', text: rol || 'Usuario', color: '#718096' };
   };
 
   const badge = getRoleBadge(user.rol);
@@ -25,7 +26,9 @@ const UserInfo = () => {
         <span className="avatar-icon">{badge.icon}</span>
       </div>
       <div className="user-details">
-        <span className="user-name">{user.nombre || user.username}</span>
+        <span className="user-name">
+          {(user.nombre || user.username || '').replace(/-Adm$/i, '').trim()}
+        </span>
         <span 
           className="user-role" 
           style={{ backgroundColor: badge.color }}

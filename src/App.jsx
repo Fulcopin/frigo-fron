@@ -60,7 +60,7 @@ function Navigation() {
   const isAdminOrSupervisor = userRole === 'admin' || userRole === 'supervisor'
 
   const navLinks = [
-    { to: "/", icon: "🏠", label: "Inicio", show: true },
+    { to: "/", icon: "🏠", label: "Inicio", show: false }, // Oculto por solicitud
     { to: "/fill-form", icon: "📝", label: "Llenar Formulario", show: true },
     { to: "/my-drafts", icon: "📋", label: "Mis Borradores", show: true },
     { to: "/view-forms", icon: "👁️", label: "Ver Formularios", show: true },
@@ -69,7 +69,7 @@ function Navigation() {
     { to: "/manage-templates", icon: "⚙️", label: "Administrar Plantillas", show: isAdminOrSupervisor },
     { divider: true, label: "Firmas", show: true },
     { to: "/signatures", icon: "✍️", label: "Firmas Pendientes", show: true },
-    { to: "/signatures?tab=timing", icon: "⏱️", label: "Tiempos y Rechazos", show: true },
+    { to: "/signatures?tab=timing", icon: "⏱️", label: "Tiempos y Rechazos", show: false }, // Oculto por solicitud
     { to: "/my-signature", icon: "🖊️", label: "Mi Firma", show: true },
     { to: "/catalogo-firmas", icon: "📋", label: "Catálogo Firmas", show: isAdminOrSupervisor },
     { divider: true, label: "Administración", show: isAdminOrSupervisor },
@@ -105,6 +105,7 @@ function Navigation() {
             <span className="menu-icon">
               <span /><span /><span />
             </span>
+            <span className="menu-text">Menú</span>
           </button>
           <div className="topbar-brand">
             <span className="topbar-logo">🐟</span>

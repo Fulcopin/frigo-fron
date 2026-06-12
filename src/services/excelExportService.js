@@ -386,11 +386,19 @@ const createFrigolabHeader = async (worksheet, templateData, logoBase64, maxCols
 /**
  * 📝 Crea la sección de información general (header) - DINÁMICA
  */
-const createHeaderSection = (worksheet, headerData, startRow, maxCols = 8) => {
+const createHeaderSection = (worksheet, headerData, startRow, maxCols = 8, templateData) => {
   let currentRow = startRow;
   
+  const mergedHeader = { ...(headerData || {}) };
+  if (templateData) {
+    if (templateData.proceso) mergedHeader['Proceso'] = templateData.proceso;
+    if (templateData.quienLoLlena) mergedHeader['Quién lo llena'] = templateData.quienLoLlena;
+    if (templateData.supervisa) mergedHeader['Quién supervisa'] = templateData.supervisa;
+    if (templateData.cuandoSeUsa) mergedHeader['Cuándo se usa'] = templateData.cuandoSeUsa;
+  }
+
   // Si no hay datos de header, saltar
-  if (!headerData || Object.keys(headerData).length === 0) {
+  if (!mergedHeader || Object.keys(mergedHeader).length === 0) {
     return currentRow;
   }
   
@@ -403,7 +411,7 @@ const createHeaderSection = (worksheet, headerData, startRow, maxCols = 8) => {
   currentRow++;
   
   // Renderizar TODOS los campos del header dinámicamente en 2 columnas
-  const entries = Object.entries(headerData);
+  const entries = Object.entries(mergedHeader);
   
   for (let i = 0; i < entries.length; i++) {
     const [key, value] = entries[i];
@@ -1336,7 +1344,11 @@ export const exportFormToExcel = async (form, template) => {
       fechaVersion: template?.fechaVersion || template?.FechaVersion || form.fechaVersion || null,
       templateCreatedAt: form.templateCreatedAt || null,
       headerData: mergedHeaderData,
-      createdAt: form.createdAt || form.CreatedAt || form.created_at
+      createdAt: form.createdAt || form.CreatedAt || form.created_at,
+      supervisa: template?.supervisa || form.supervisa,
+      quienLoLlena: template?.quienLoLlena || form.quienLoLlena,
+      cuandoSeUsa: template?.cuandoSeUsa || form.cuandoSeUsa,
+      proceso: template?.proceso || form.proceso
     };
     
     const bodyElements = Array.isArray(template?.bodyElements) ? template.bodyElements : [];
@@ -1368,7 +1380,7 @@ export const exportFormToExcel = async (form, template) => {
     let currentRow = await createFrigolabHeader(worksheet, templateData, logoBase64, maxCols);
     
     // 2. Crear sección de header (Información General)
-    currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow, maxCols);
+    currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow, maxCols, templateData);
     
     // 3. Crear TODAS las tablas del cuerpo
     const bodyResult = await createBodyTable(worksheet, bodyData, bodyElements, currentRow, template, maxCols);
@@ -1458,14 +1470,18 @@ export const exportMultipleFormsToExcel = async (forms, templates) => {
         version: template?.version || 1,
         fechaVersion: template?.fechaVersion || template?.FechaVersion || form.fechaVersion || null,
         headerData: form.headerData || {},
-        createdAt: form.createdAt || form.CreatedAt || form.created_at
+        createdAt: form.createdAt || form.CreatedAt || form.created_at,
+        supervisa: template?.supervisa || form.supervisa,
+        quienLoLlena: template?.quienLoLlena || form.quienLoLlena,
+        cuandoSeUsa: template?.cuandoSeUsa || form.cuandoSeUsa,
+        proceso: template?.proceso || form.proceso
       };
       
       const bodyData = form.bodyData || [];
       const firmasData = normalizeFirmasData(form.firmasData || {});
       
       let currentRow = await createFrigolabHeader(worksheet, templateData, logoBase64, maxCols);
-      currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow, maxCols);
+      currentRow = createHeaderSection(worksheet, templateData.headerData, currentRow, maxCols, templateData);
       const bodyResult = await createBodyTable(worksheet, bodyData, bodyElements, currentRow, template, maxCols);
       currentRow = (typeof bodyResult === 'number' && !isNaN(bodyResult)) ? bodyResult : currentRow + 2;
       await createSignaturesSection(worksheet, firmasData, currentRow, maxCols);

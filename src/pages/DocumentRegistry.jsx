@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import authService from '../services/authService';
 import { API_BASE_URL } from '../apiConfig';
+import * as XLSX from 'xlsx';
 import './DocumentRegistry.css';
 
 export default function DocumentRegistry() {
@@ -15,7 +16,14 @@ export default function DocumentRegistry() {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
+  const [documentLocations, setDocumentLocations] = useState(() => {
+    try {
+      const saved = localStorage.getItem('frigolab_document_locations');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
   const [showHidden, setShowHidden] = useState(false);
+  const [showObsolete, setShowObsolete] = useState(false);
 
   const currentUser = authService.getCurrentUser();
   const isAdmin = currentUser?.rol === 'admin' || currentUser?.rol === 'supervisor';
@@ -24,10 +32,14 @@ export default function DocumentRegistry() {
     loadTemplates();
   }, []);
 
-  // Persistir IDs ocultos
+  // Persistir IDs ocultos y ubicaciones
   useEffect(() => {
     localStorage.setItem('frigolab_hidden_documents', JSON.stringify(hiddenIds));
   }, [hiddenIds]);
+
+  useEffect(() => {
+    localStorage.setItem('frigolab_document_locations', JSON.stringify(documentLocations));
+  }, [documentLocations]);
 
   const loadTemplates = async () => {
     try {
@@ -69,9 +81,60 @@ export default function DocumentRegistry() {
   // Procesos únicos para filtro
   const uniqueProcesos = [...new Set(templates.map(t => t.proceso).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
+  const handleLocationChange = (templateId, value) => {
+    setDocumentLocations(prev => ({
+      ...prev,
+      [templateId]: value
+    }));
+  };
+
+  const handleExportExcel = () => {
+    const ws_data = [
+      ["REGISTRO DE DOCUMENTOS - FRIGOLAB SAN MATEO"],
+      ["Fecha de Exportación:", new Date().toLocaleDateString('es-ES')],
+      [""],
+      ["#", "Nombre de Documento", "Código", "Versión", "Fecha", "Ubicación donde está", "Estado"]
+    ];
+
+    displayedTemplates.forEach((template, index) => {
+      ws_data.push([
+        index + 1,
+        template.nombre || '-',
+        template.codigo || '-',
+        template.version || '-',
+        formatDate(template.fechaVersion),
+        documentLocations[template.templateID] || '',
+        template.isObsolete ? 'Obsoleto' : 'Activo'
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    
+    // Estilos básicos para el encabezado
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }, // Título principal
+      { s: { r: 1, c: 1 }, e: { r: 1, c: 2 } }  // Fecha
+    ];
+    
+    // Ajustar ancho de columnas
+    ws['!cols'] = [
+      { wch: 5 },  // #
+      { wch: 50 }, // Nombre
+      { wch: 15 }, // Código
+      { wch: 10 }, // Versión
+      { wch: 15 }, // Fecha
+      { wch: 30 }, // Ubicación
+      { wch: 15 }  // Estado
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Documentos");
+    XLSX.writeFile(wb, "Registro_Documentos.xlsx");
+  };
+
   // Filtrado
   const filteredTemplates = templates.filter(t => {
-    if (t.isObsolete) return false; // nunca mostrar obsoletas
+    if (t.isObsolete && !showObsolete) return false;
     const matchesSearch =
       (t.nombre || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (t.codigo || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -151,8 +214,19 @@ export default function DocumentRegistry() {
           ))}
         </select>
 
+        <button onClick={handleExportExcel} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          📊 Exportar a Excel
+        </button>
+
         {isAdmin && (
           <>
+            <button
+              onClick={() => setShowObsolete(!showObsolete)}
+              className={`btn-toggle-hidden ${showObsolete ? 'active' : ''}`}
+              style={{ backgroundColor: showObsolete ? '#ef4444' : '#f3f4f6', color: showObsolete ? 'white' : '#374151' }}
+            >
+              {showObsolete ? '🚫 Ocultar obsoletos' : '👀 Mostrar obsoletos'}
+            </button>
             <button
               onClick={() => setShowHidden(!showHidden)}
               className={`btn-toggle-hidden ${showHidden ? 'active' : ''}`}
@@ -179,7 +253,7 @@ export default function DocumentRegistry() {
               <th className="col-code">Código</th>
               <th className="col-version">Versión</th>
               <th className="col-date">Fecha</th>
-              <th className="col-location">Copia Controlada / Ubicación</th>
+              <th className="col-location">Ubicación donde está</th>
               {isAdmin && <th className="col-actions">Visibilidad</th>}
             </tr>
           </thead>
@@ -199,11 +273,26 @@ export default function DocumentRegistry() {
                     className={isHidden ? 'row-hidden' : ''}
                   >
                     <td className="col-num">{index + 1}</td>
-                    <td className="col-name">{template.nombre || '-'}</td>
+                    <td className="col-name">
+                      {template.nombre || '-'}
+                      {template.isObsolete && <span style={{ marginLeft: '8px', fontSize: '11px', backgroundColor: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>OBSOLETO</span>}
+                    </td>
                     <td className="col-code">{template.codigo || '-'}</td>
                     <td className="col-version">{template.version || '-'}</td>
                     <td className="col-date">{formatDate(template.fechaVersion)}</td>
-                    <td className="col-location">No</td>
+                    <td className="col-location">
+                      {isAdmin ? (
+                        <input 
+                          type="text" 
+                          value={documentLocations[template.templateID] || ''} 
+                          onChange={(e) => handleLocationChange(template.templateID, e.target.value)}
+                          placeholder="Ej: Gerencia"
+                          style={{ width: '100%', padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px' }}
+                        />
+                      ) : (
+                        documentLocations[template.templateID] || '-'
+                      )}
+                    </td>
                     {isAdmin && (
                       <td className="col-actions">
                         <button
