@@ -9,7 +9,7 @@
  *   "Columna[*]"     → SUMA de toda la columna
  *   sum(A, B, C)     → suma (compatibilidad legacy)
  */
-export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex = -1) => {
+export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex = -1, format = true) => {
   if (!formula || typeof formula !== 'string' || !formula.trim()) return "";
   if (!rowData) return "";
 
@@ -33,8 +33,8 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
     const innerResult = evaluarFormula(percentMatch[1], rowData, allRows, currentRowIndex);
     if (innerResult === "" || innerResult === "ERR" || innerResult === "⚠️") return innerResult;
     const numVal = Number.parseFloat(innerResult);
-    if (Number.isNaN(numVal)) return "0.00";
-    return (numVal * 100).toFixed(2);
+    if (Number.isNaN(numVal)) return format ? "0.00" : "0";
+    return format ? (numVal * 100).toFixed(2) : String(numVal * 100);
   }
 
   const normalizeKey = (s) =>
@@ -73,7 +73,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
         const val = getVal(n);
         return acc + (val !== null ? val : 0);
       }, 0);
-      return total === 0 ? "0.00" : total.toFixed(2);
+      return format ? (total === 0 ? "0.00" : total.toFixed(2)) : String(total);
     }
 
     const allColNames = rowKeys.sort((a, b) => b.length - a.length);
@@ -241,16 +241,16 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
       }
       const result2 = new Function(`"use strict"; return (${sanitized2})`)();
       if (result2 === "") return "";
-      if (typeof result2 !== 'number' || !isFinite(result2)) return "0.00";
-      return result2.toFixed(2);
+      if (typeof result2 !== 'number' || !isFinite(result2)) return format ? "0.00" : "0";
+      return format ? result2.toFixed(2) : String(result2);
     }
 
     const result = new Function(`"use strict"; return (${sanitized})`)();
     if (result === "") return "";
     if (typeof result !== 'number' || !isFinite(result)) {
-      return "0.00";
+      return format ? "0.00" : "0";
     }
-    return result.toFixed(2);
+    return format ? result.toFixed(2) : String(result);
   } catch (e) {
     console.warn('⚠️ Error evaluando fórmula:', formula, e.message, '| Expresión:', expression);
     return "ERR";
@@ -465,11 +465,11 @@ export const buildComputedRow = (row, templateCols, allRows = [], rowIndex = -1)
       // Resolver alias para grupos y etiquetas duplicadas, usando computedRow que ya tiene
       // los resultados de las fórmulas anteriores calculados
       const rowAlias = buildGroupedRowAlias(computedRow, templateCols, ci);
-      let result = evaluarFormula(col.formula, rowAlias, allRows, rowIndex);
+      let result = evaluarFormula(col.formula, rowAlias, allRows, rowIndex, false);
 
       if (colType === 'percentage' && result && result !== 'ERR' && result !== '⚠️') {
         const numVal = parseFloat(result);
-        result = isNaN(numVal) ? '0.00' : (numVal * 100).toFixed(2);
+        result = isNaN(numVal) ? '0' : String(numVal * 100);
       }
 
       if (result && result !== '⚠️' && result !== 'ERR') {

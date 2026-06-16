@@ -2160,7 +2160,6 @@ function getMonitoreoProductosTerminadosTemplate() {
       type: "section",
       title: "Verificación del Producto / Contenido por Caja - Peso Tara",
       fields: [
-        { label: "PESO BRUTO CAJA", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Peso Caja (Tapa / fondo)", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Peso Plástico", type: "number", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
         { label: "Peso Plástico - Fundas VP - Peso Unid.", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[FUNDA VP: PESO UND. (ONZ)] / 16" },
@@ -2174,7 +2173,7 @@ function getMonitoreoProductosTerminadosTemplate() {
         { label: "Peso total Fundas VP", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Peso Plástico - Fundas VP - Peso Unid.] * [Peso Plástico - Fundas VP - Cant.]" },
         { label: "Peso total Bolsas Master", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Peso Plástico - Bolsas Master - Peso Unid.] * [Peso Plástico - Bolsas Master - Cant.]" },
         { label: "PESO TOTAL TARA", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Peso Caja (Tapa / fondo)] + [Peso Plástico] + [Peso total Fundas VP] + [Peso total Bolsas Master] + [Peso Glaseo]" },
-        { label: "PESO NETO CAJA", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[PESO BRUTO CAJA] - [PESO TOTAL TARA]" },
+        { label: "PESO BRUTO CAJA", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[TIPO EMPAQUE - CAJA (LBS)] + [PESO TOTAL TARA]" },
       ],
     },
 
@@ -2226,8 +2225,33 @@ function getMonitoreoProductosTerminadosTemplate() {
       title: "Resumen Totales",
       fields: [
         { label: "Sumatoria Pesos Netos (LBS)", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "( (([BOLSA 1[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 1[count]])) + ([BOLSA 2[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 2[count]])) + ([BOLSA 3[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 3[count]])) + ([BOLSA 4[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 4[count]])) + ([BOLSA 5[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 5[count]])) + ([BOLSA 6[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 6[count]])) + ([BOLSA 7[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 7[count]])) + ([BOLSA 8[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 8[count]])) + ([BOLSA 9[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 9[count]])) + ([BOLSA 10[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA 10[count]]))) / (([GLASEO: PORCENTAJE] / 100) + 1) ) / 16" },
-        { label: "PESO NETO CAJA (LBS)", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[PESO BRUTO CAJA] - [PESO TOTAL TARA]" },
+        { label: "PESO NETO CAJA (LBS)", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Sumatoria Pesos Netos (LBS)]" },
         { label: "PESO BRUTO CAJA (TEÓRICO)", type: "calculated", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "[Sumatoria Pesos Netos (LBS)] + [PESO TOTAL TARA]" },
+      ],
+    },
+
+    // CONTENIDO POR BOLSA MASTER
+    {
+      id: Date.now() + 1107,
+      type: "table",
+      title: "Contenido por Bolsa Master (Monitoreo de pesos netos de porciones)",
+      defaultRows: 0,
+      columns: [
+        { label: "Métrica", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" },
+        ...Array.from({ length: 10 }, (_, i) => ({
+          label: `B. ${i + 1}`,
+          type: "calculated",
+          required: false,
+          options: [],
+          apiMap: "",
+          apiEndpoint: "",
+          formula: `_ROW_ == 0 ? ([BOLSA ${i + 1}[max]] && [BOLSA ${i + 1}[min]] ? (([BOLSA ${i + 1}[max]] - [FUNDA VP: PESO UND. (ONZ)]) / ([BOLSA ${i + 1}[min]] - [FUNDA VP: PESO UND. (ONZ)])) : "") : (_ROW_ == 1 ? ( (([BOLSA ${i + 1}[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA ${i + 1}[count]])) / (([GLASEO: PORCENTAJE] / 100) + 1)) / 16 ) + [Peso Plástico - Bolsas Master - Peso Unid.] : ( (([BOLSA ${i + 1}[*]] - ([FUNDA VP: PESO UND. (ONZ)] * [BOLSA ${i + 1}[count]])) / (([GLASEO: PORCENTAJE] / 100) + 1)) / 16 ))`
+        }))
+      ],
+      predefinedRows: [
+        { "Métrica": "Coef. Unif.", "B. 1": "", "B. 2": "", "B. 3": "", "B. 4": "", "B. 5": "", "B. 6": "", "B. 7": "", "B. 8": "", "B. 9": "", "B. 10": "", _rowSpan: {}, _hidden: {} },
+        { "Métrica": "P. Bruto Bolsa (lbs)", "B. 1": "", "B. 2": "", "B. 3": "", "B. 4": "", "B. 5": "", "B. 6": "", "B. 7": "", "B. 8": "", "B. 9": "", "B. 10": "", _rowSpan: {}, _hidden: {} },
+        { "Métrica": "P. Neto Bolsa (lbs)", "B. 1": "", "B. 2": "", "B. 3": "", "B. 4": "", "B. 5": "", "B. 6": "", "B. 7": "", "B. 8": "", "B. 9": "", "B. 10": "", _rowSpan: {}, _hidden: {} },
       ],
     },
 
