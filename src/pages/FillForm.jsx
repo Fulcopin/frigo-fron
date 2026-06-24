@@ -9,6 +9,7 @@ import SignatureUploader from "../components/SignatureUploader"
 import UserSelector from "../components/UserSelector"
 import ScrollButton from "../components/ScrollButton"
 import EspecieProductoSelector from "../components/EspecieProductoSelector"
+import ProductoAutocomplete from "../components/ProductoAutocomplete"
 import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import { fetchUsers, filterUsersByPuesto, canUserSignForPuesto } from "../services/userService"
 import "./FillForm.css"
@@ -169,6 +170,7 @@ function FillForm() {
     especies: [],
     pesqueros: [],
     productos: [],
+    insumos: [],
     proveedores: [],
     configuraciones: [],
     configuracionesFrigo: [],
@@ -321,6 +323,7 @@ function FillForm() {
       console.log(`   🚢 Pesqueros: ${apiCatalogData.pesqueros?.length || 0}`);
       console.log(`   🐟 Especies: ${apiCatalogData.especies?.length || 0}`);
       console.log(`   📦 Productos: ${apiCatalogData.productos?.length || 0}`);
+      console.log(`   🛒 Insumos: ${apiCatalogData.insumos?.length || 0}`);
       console.log(`   🚗 Choferes: ${apiCatalogData.choferes?.length || 0}`);
       console.log(`   ⚖️ Balanzas: ${apiCatalogData.balanzas?.length || 0}`);
       console.log(`   ⚙️ Configuraciones: ${apiCatalogData.configuraciones?.length || 0}`);
@@ -572,6 +575,7 @@ useEffect(() => {
         especies: apiCatalogData.especies.length,
         pesqueros: apiCatalogData.pesqueros.length,
         productos: apiCatalogData.productos.length,
+        insumos: apiCatalogData.insumos.length,
         proveedores: apiCatalogData.proveedores.length,
         configuraciones: apiCatalogData.configuraciones.length,
         configuracionesFrigo: apiCatalogData.configuracionesFrigo.length
@@ -1521,6 +1525,7 @@ useEffect(() => {
       loadApiCatalog('Especies', 'especies', 'Especies'),
       loadApiCatalog('Pesqueros', 'pesqueros', 'Pesqueros'),
       loadApiCatalog('Productos', 'productos', 'Productos'),
+      loadApiCatalog('Insumos', 'insumos', 'Insumos'),
       loadApiCatalog('Proveedores', 'proveedores', 'Proveedores'),
       loadApiCatalog('Configuraciones', 'configuraciones', 'Configuraciones'),
       loadEspeciesUnion(),
@@ -4221,7 +4226,27 @@ useEffect(() => {
         });
         
         // 🔥 PRIMERO: Construir las filas con el valor editado
-        let baseRow = { ...(element.data[rowIndex] || {}), [columnLabel]: value };
+        let baseRow = { ...(element.data[rowIndex] || {}) };
+
+        if (value && typeof value === 'object' && value.isProductUpdate) {
+          // Autocompletado bidireccional desde ProductoAutocomplete
+          baseRow[columnLabel] = value.selectedValue;
+          
+          // Actualizar la otra columna (código o nombre)
+          cols.forEach((col, ci) => {
+            const colKey = colKeyMap.get(ci);
+            const isCodigo = (colKey || '').toUpperCase().includes('CODIGO') || (colKey || '').toUpperCase().includes('CÓDIGO');
+            const isProducto = !isCodigo && (colKey || '').toUpperCase().includes('PRODUCTO');
+            
+            if (isCodigo && value.codigoErp !== undefined) {
+              baseRow[colKey] = value.codigoErp;
+            } else if (isProducto && value.nombreProducto !== undefined) {
+              baseRow[colKey] = value.nombreProducto;
+            }
+          });
+        } else {
+          baseRow[columnLabel] = value;
+        }
 
         // 🆕 AUTO-RELLENO POR apiMap: si la columna que cambió tiene apiMap y hay datos en apiDetailsData,
         // buscar el registro coincidente y rellenar automáticamente el resto de columnas apiMap de la fila.
@@ -4698,23 +4723,37 @@ useEffect(() => {
     // Usamos spread [...] para crear una copia y no mutar el objeto original
     let options = Array.isArray(field.options) ? [...field.options] : [];
 
-    // 3a. SELECTOR ESPECIE → PRODUCTO (tipo especial en cascada)
-    // Se activa para columnas con apiEndpoint PRODUCTOS_POR_ESPECIE o PRODUCTOS
+    // 3a. SELECTOR PRODUCTO (bidireccional por API externa)
+    // Se activa para columnas con apiEndpoint PRODUCTOS_POR_ESPECIE, PRODUCTOS o PRODUCTOS_POR_CODIGO
+    const isCodigoCol = (field.label || '').toUpperCase().includes('CODIGO') || (field.label || '').toUpperCase().includes('CÓDIGO');
+    const isProductoCol = (field.label || '').toUpperCase() === 'PRODUCTO' || (field.label || '').toUpperCase() === 'PRODUCTOS';
+    
     if (
       field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_ESPECIE' ||
-      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS'
+      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS' ||
+      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_CODIGO' ||
+      ((isCodigoCol || isProductoCol) && !field.apiEndpoint)
     ) {
+      const isCodigo = isCodigoCol;
       return (
-        <EspecieProductoSelector
+        <ProductoAutocomplete
           value={value || ''}
           onChange={onChange}
-          especiesData={
-            especiesUnionData.length > 0
-              ? especiesUnionData
-              : apiCatalogData.especies || []
-          }
-          productosData={apiCatalogData.productos || []}
+          searchType={isCodigo ? 'codigoErp' : 'nombreProducto'}
           getToken={ensureApiToken}
+          placeholder={isCodigo ? 'Buscar por código...' : 'Buscar producto...'}
+          onSelect={(product) => {
+            if (rowIndex !== null) {
+              onChange({
+                isProductUpdate: true,
+                selectedValue: isCodigo ? product.codigoErp : product.nombreProducto,
+                codigoErp: product.codigoErp,
+                nombreProducto: product.nombreProducto
+              });
+            } else {
+              onChange(isCodigo ? product.codigoErp : product.nombreProducto);
+            }
+          }}
         />
       );
     }
@@ -4728,6 +4767,7 @@ useEffect(() => {
           'ESPECIES': { catalog: 'especies', field: 'nombreEs' },
           'PESQUEROS': { catalog: 'pesqueros', field: 'nombre' },
           'PRODUCTOS': { catalog: 'productos', field: 'nombreEs' },
+          'INSUMOS': { catalog: 'insumos', field: 'nombre' },
           'PROVEEDORES': { catalog: 'proveedores', field: 'nombre', secondaryField: 'apellido' },
           'CONFIGURACIONES': { catalog: 'configuraciones', field: 'descripcion' },
           'CONFIGURACIONES_FRIGO': { catalog: 'configuracionesFrigo', field: 'descripcion' },
@@ -4751,7 +4791,8 @@ useEffect(() => {
           if (mapping.secondaryField) {
              catalogOptions = catalogData.map(item => `${item[mapping.field] || ''} ${item[mapping.secondaryField] || ''}`.trim()).filter(Boolean);
           } else {
-             catalogOptions = catalogData.map(item => item[mapping.field]).filter(Boolean);
+             // 🆕 Soporte para campos alternativos si el principal no existe (útil para INSUMOS)
+             catalogOptions = catalogData.map(item => item[mapping.field] || item['descripcion'] || item['nombreEs']).filter(Boolean);
           }
           
           if (catalogOptions.length > 0) {
@@ -8891,6 +8932,26 @@ useEffect(() => {
                 isExpanded={expandedSections[`body_${elementIndex}`] !== false}
                 onToggle={() => toggleBodySection(elementIndex)}
               >
+                {/* 👁️ TOGGLE VISIBILIDAD */}
+                <div style={{ padding: '8px 12px', background: currentElementData.data._isHidden ? '#fee2e2' : '#f0fdf4', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: currentElementData.data._isHidden ? '#dc2626' : '#16a34a' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={!currentElementData.data._isHidden} 
+                      onChange={(e) => {
+                        setBodyData(prev => {
+                          const newBodyData = [...prev];
+                          const elData = { ...newBodyData[elementIndex] };
+                          elData.data = { ...elData.data, _isHidden: !e.target.checked };
+                          newBodyData[elementIndex] = elData;
+                          return newBodyData;
+                        });
+                        setHasUnsavedChanges(true);
+                      }} 
+                    />
+                    {currentElementData.data._isHidden ? '🚫 Tabla Oculta (No se mostrará en PDF/Excel/Ver)' : '👁️ Tabla Visible (Incluida en Reportes)'}
+                  </label>
+                </div>
                 {/* 📦 Banners de lotes vinculados a esta tabla */}
                 {loteBannerList.length > 0 && (
                   <div style={{ margin: '0 0 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -10108,6 +10169,26 @@ useEffect(() => {
                 isExpanded={expandedSections[`body_${elementIndex}`] !== false}
                 onToggle={() => toggleBodySection(elementIndex)}
               >
+                {/* 👁️ TOGGLE VISIBILIDAD */}
+                <div style={{ padding: '8px 12px', background: tinasData._isHidden ? '#fee2e2' : '#f0fdf4', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: tinasData._isHidden ? '#dc2626' : '#16a34a' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={!tinasData._isHidden} 
+                      onChange={(e) => {
+                        setBodyData(prev => {
+                          const newBodyData = [...prev];
+                          const elData = { ...newBodyData[elementIndex] };
+                          elData.data = { ...elData.data, _isHidden: !e.target.checked };
+                          newBodyData[elementIndex] = elData;
+                          return newBodyData;
+                        });
+                        setHasUnsavedChanges(true);
+                      }} 
+                    />
+                    {tinasData._isHidden ? '🚫 Tabla Oculta (No se mostrará en PDF/Excel/Ver)' : '👁️ Tabla Visible (Incluida en Reportes)'}
+                  </label>
+                </div>
                 <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: `${totalTinas * 200}px` }}>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
@@ -10118,8 +10199,115 @@ useEffect(() => {
                             background: '#035b8d', color: 'white', padding: '8px 6px',
                             border: '1px solid #024a73', textAlign: 'center', fontWeight: 700, fontSize: '12px'
                           }}>
-                            {g.name}
-                            {g.subtitle && <div style={{ fontSize: '10px', fontWeight: 400, opacity: 0.85, marginTop: '2px' }}>{g.subtitle}</div>}
+                            {g.name && g.name.includes('___') ? (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                <input
+                                  type="text"
+                                  value={tinasData[`g${gIdx}_customName`] || ''}
+                                  onChange={(e) => {
+                                    setBodyData(prev => {
+                                      const newBodyData = [...prev];
+                                      const elData = { ...newBodyData[elementIndex] };
+                                      const newTinasData = { ...elData.data };
+                                      newTinasData[`g${gIdx}_customName`] = e.target.value;
+                                      elData.data = newTinasData;
+                                      newBodyData[elementIndex] = elData;
+                                      return newBodyData;
+                                    });
+                                    setHasUnsavedChanges(true);
+                                  }}
+                                  style={{
+                                    width: '35px', padding: '2px 4px', fontSize: '11px',
+                                    textAlign: 'center', border: '1px solid #0ea5e9', borderRadius: '4px',
+                                    color: '#000', background: '#fff'
+                                  }}
+                                  placeholder="#"
+                                />
+                                <span>{g.name.replace('___', '').trim()}</span>
+                              </div>
+                            ) : (
+                              g.name
+                            )}
+                            {g.subtitle && (
+                              <div style={{ fontSize: '10px', fontWeight: 400, opacity: 0.85, marginTop: '4px', whiteSpace: 'pre-wrap' }}>
+                                {g.subtitle.split(/(___SELECT_CLORO_PEROX___|___SELECT_ANTES_DESPUES___|___INPUT___)/).map((part, idx) => {
+                                  if (part === '___SELECT_CLORO_PEROX___') {
+                                    return (
+                                      <select
+                                        key={idx}
+                                        value={tinasData[`g${gIdx}_subtitle`] || ''}
+                                        onChange={(e) => {
+                                          setBodyData(prev => {
+                                            const newBodyData = [...prev];
+                                            const elData = { ...newBodyData[elementIndex] };
+                                            const newTinasData = { ...elData.data };
+                                            newTinasData[`g${gIdx}_subtitle`] = e.target.value;
+                                            elData.data = newTinasData;
+                                            newBodyData[elementIndex] = elData;
+                                            return newBodyData;
+                                          });
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        style={{ color: '#000', padding: '2px', borderRadius: '4px', border: '1px solid #ccc', background: 'white', margin: '0 4px', fontSize: '10px' }}
+                                      >
+                                        <option value="">(Químico)</option>
+                                        <option value="CLORO">CLORO</option>
+                                        <option value="PEROXIACÉTICO">PEROXIACÉTICO</option>
+                                      </select>
+                                    );
+                                  }
+                                  if (part === '___SELECT_ANTES_DESPUES___') {
+                                    return (
+                                      <select
+                                        key={idx}
+                                        value={tinasData[`g${gIdx}_subtitle_antes`] || ''}
+                                        onChange={(e) => {
+                                          setBodyData(prev => {
+                                            const newBodyData = [...prev];
+                                            const elData = { ...newBodyData[elementIndex] };
+                                            const newTinasData = { ...elData.data };
+                                            newTinasData[`g${gIdx}_subtitle_antes`] = e.target.value;
+                                            elData.data = newTinasData;
+                                            newBodyData[elementIndex] = elData;
+                                            return newBodyData;
+                                          });
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        style={{ color: '#000', padding: '2px', borderRadius: '4px', border: '1px solid #ccc', background: 'white', margin: '0 4px', fontSize: '10px' }}
+                                      >
+                                        <option value="">(Antes / Después)</option>
+                                        <option value="DESPUÉS DE:">DESPUÉS DE:</option>
+                                        <option value="ANTES DE:">ANTES DE:</option>
+                                      </select>
+                                    );
+                                  }
+                                  if (part === '___INPUT___') {
+                                    return (
+                                      <input
+                                        key={idx}
+                                        type="text"
+                                        value={tinasData[`g${gIdx}_subtitle_input`] || ''}
+                                        onChange={(e) => {
+                                          setBodyData(prev => {
+                                            const newBodyData = [...prev];
+                                            const elData = { ...newBodyData[elementIndex] };
+                                            const newTinasData = { ...elData.data };
+                                            newTinasData[`g${gIdx}_subtitle_input`] = e.target.value;
+                                            elData.data = newTinasData;
+                                            newBodyData[elementIndex] = elData;
+                                            return newBodyData;
+                                          });
+                                          setHasUnsavedChanges(true);
+                                        }}
+                                        style={{ color: '#000', padding: '2px 4px', borderRadius: '4px', border: '1px solid #ccc', background: 'white', margin: '0 4px', fontSize: '10px', width: '100px' }}
+                                        placeholder="Escribir..."
+                                      />
+                                    );
+                                  }
+                                  return <span key={idx}>{part}</span>;
+                                })}
+                              </div>
+                            )}
                           </th>
                         ))}
                       </tr>
@@ -10180,18 +10368,15 @@ useEffect(() => {
                                     <label style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '2px' }}>
                                       {field.label}{field.suffix ? ` (${field.suffix})` : ''}
                                     </label>
-                                    {field.type === 'siNo' ? (
+                                    {field.type === 'siNo' || field.type === 'radio' ? (
                                       <div style={{ display: 'flex', gap: '8px' }}>
-                                        <label style={{ fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                          <input type="radio" name={`${element.id}-${tina.key}-${cycleIdx}-${field.label}`}
-                                            checked={cycleData[field.label] === 'SI'} onChange={() => handleTinaFieldChange(tina.key, cycleIdx, field.label, 'SI')}
-                                          /> SI
-                                        </label>
-                                        <label style={{ fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                          <input type="radio" name={`${element.id}-${tina.key}-${cycleIdx}-${field.label}`}
-                                            checked={cycleData[field.label] === 'NO'} onChange={() => handleTinaFieldChange(tina.key, cycleIdx, field.label, 'NO')}
-                                          /> NO
-                                        </label>
+                                        {(field.options || ['SI', 'NO']).map(opt => (
+                                          <label key={opt} style={{ fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                            <input type="radio" name={`${element.id}-${tina.key}-${cycleIdx}-${field.label}`}
+                                              checked={cycleData[field.label] === opt} onChange={() => handleTinaFieldChange(tina.key, cycleIdx, field.label, opt)}
+                                            /> {opt}
+                                          </label>
+                                        ))}
                                       </div>
                                     ) : field.type === 'time' ? (
                                       <input type="time" value={cycleData[field.label] || ''}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import consumptionService from '../services/consumptionService';
 import { Link } from 'react-router-dom';
 import './ConsumptionDashboard.css';
@@ -11,6 +11,8 @@ export default function ConsumptionDashboard() {
   const [exporting, setExporting] = useState(false);
   // selectedSections: { "formID-secIdx": true/false }
   const [selectedSections, setSelectedSections] = useState({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
 
   const [filters, setFilters] = useState({
     startDate: getDefaultStartDate(),
@@ -112,36 +114,31 @@ export default function ConsumptionDashboard() {
     return Object.values(selectedSections).filter(Boolean).length;
   };
 
-  const handleExportSelected = async () => {
-    const sectionsToExport = [];
-    (allSectionsData?.forms || []).forEach(form => {
-      (form.sections || []).forEach((section, secIdx) => {
-        if (selectedSections[`${form.formID}-${secIdx}`]) {
-          sectionsToExport.push({
-            formID: form.formID,
-            templateName: form.templateName,
-            templateCode: form.templateCode,
-            area: form.area,
-            filledBy: form.filledBy,
-            createdAt: new Date(form.createdAt).toLocaleDateString('es-ES'),
-            sectionTitle: section.sectionTitle,
-            sectionType: section.sectionType,
-            columns: section.columns || [],
-            rows: section.rows || [],
-          });
-        }
-      });
-    });
-
-    if (sectionsToExport.length === 0) {
-      alert('⚠️ Selecciona al menos una sección para exportar');
+  const handleExportSelected = () => {
+    if (consolidatedInsumos.length === 0) {
+      alert('⚠️ No hay datos para exportar en este resumen');
       return;
     }
 
     try {
       setExporting(true);
-      await consumptionService.exportSelectedSectionsToExcel(sectionsToExport);
-      alert(`✅ Se exportaron ${sectionsToExport.length} secciones a Excel`);
+      // Basic CSV export
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "CÓDIGO DEL FORMULARIO,FECHA REGISTRADA,FORMULARIO,CREADO POR,INSUMO,CANTIDAD,UNIDAD DE MEDIDA\n";
+      consolidatedInsumos.forEach(row => {
+        const fecha = new Date(row.createdAt).toLocaleDateString('es-ES');
+        const rowStr = `"${row.templateCode}","${fecha}","${row.templateName}","${row.filledBy}","${row.producto}",${row.cantidad},"${row.unidad}"`;
+        csvContent += rowStr + "\r\n";
+      });
+      
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `Resumen_Consumos_Insumos_${filters.startDate}_al_${filters.endDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
     } catch (error) {
       console.error('Error al exportar:', error);
       alert('❌ Error al exportar: ' + error.message);
@@ -149,6 +146,64 @@ export default function ConsumptionDashboard() {
       setExporting(false);
     }
   };
+
+  const consolidatedInsumos = useMemo(() => {
+    if (!allSectionsData || !allSectionsData.forms) return [];
+    
+    const rowsList = [];
+
+    allSectionsData.forms.forEach(form => {
+      (form.sections || []).forEach(section => {
+        const title = (section.sectionTitle || '').toUpperCase();
+        // Filtrar solo las tablas llamadas Insumos o Materiales de Empaque
+        if (section.sectionType === 'table' && (title.includes('INSUMO') || title.includes('EMPAQUE') || title.includes('MATERIAL'))) {
+          const cols = section.columns || [];
+          
+          const prodColIdx = cols.findIndex(c => /PRODUCTO|ITEM|DESCRIPCI[OÓ]N|ART[IÍ]CULO|INSUMO|MATERIAL/i.test(c));
+          const cantColIdx = cols.findIndex(c => /CANTIDAD|USADO|CONSUMO|KILOS|LIBRAS/i.test(c) && !/MERMA/i.test(c));
+          const unitColIdx = cols.findIndex(c => /UNIDAD|MEDIDA|U\.M/i.test(c));
+
+          if (prodColIdx === -1 && cantColIdx === -1) return;
+
+          (section.rows || []).forEach(row => {
+            const rowKeys = Object.keys(row);
+            
+            const getVal = (idx) => {
+               if (idx === -1) return null;
+               const colName = cols[idx];
+               if (row[colName] !== undefined && row[colName] !== null) return row[colName];
+               
+               const matchKey = rowKeys.find(k => k.toLowerCase() === colName.toLowerCase() || k.toLowerCase().includes(colName.toLowerCase()) || colName.toLowerCase().includes(k.toLowerCase()));
+               if (matchKey && row[matchKey] !== undefined) return row[matchKey];
+               
+               return row[rowKeys[idx]];
+            };
+
+            let prodName = getVal(prodColIdx) || 'Desconocido';
+            let qtyStr = getVal(cantColIdx);
+            let qty = parseFloat(qtyStr) || 0;
+            let unit = getVal(unitColIdx) || '';
+
+            if (!prodName || prodName === 'Desconocido' || prodName.toString().trim() === '') return;
+            
+            rowsList.push({
+              formID: form.formID,
+              templateCode: form.templateCode || 'N/A',
+              templateName: form.templateName,
+              createdAt: form.createdAt,
+              filledBy: form.filledBy || 'Desconocido',
+              producto: prodName,
+              cantidad: qty,
+              unidad: unit,
+            });
+          });
+        }
+      });
+    });
+
+    // Ordenar por fecha de creación descendente
+    return rowsList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [allSectionsData]);
 
   if (loading && !allSectionsData) {
     return (
@@ -179,14 +234,14 @@ export default function ConsumptionDashboard() {
         <div className="header-actions">
           <button
             onClick={handleExportSelected}
-            disabled={exporting || getSelectedCount() === 0}
+            disabled={exporting || consolidatedInsumos.length === 0}
             className="btn-primary"
             style={{
-              opacity: getSelectedCount() === 0 ? 0.5 : 1,
-              cursor: getSelectedCount() === 0 ? 'not-allowed' : 'pointer',
+              opacity: consolidatedInsumos.length === 0 ? 0.5 : 1,
+              cursor: consolidatedInsumos.length === 0 ? 'not-allowed' : 'pointer',
             }}
           >
-            {exporting ? '⏳ Exportando...' : `📥 Exportar a Excel (${getSelectedCount()})`}
+            {exporting ? '⏳ Exportando...' : `📥 Exportar Resumen a CSV`}
           </button>
           <Link to="/" className="btn-secondary">
             ← Volver al Inicio
@@ -283,216 +338,83 @@ export default function ConsumptionDashboard() {
               </div>
             </div>
 
-            {/* Barra de selección */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px',
-              padding: '12px 16px', background: '#f8fafc', borderRadius: '8px',
-              border: '1px solid #e2e8f0'
-            }}>
-              <span style={{ fontSize: '14px', color: '#475569', fontWeight: '500' }}>
-                ✅ {getSelectedCount()} secciones seleccionadas
-              </span>
-              <button
-                onClick={selectAll}
-                style={{
-                  padding: '6px 14px', fontSize: '13px', background: '#3b82f6', color: 'white',
-                  border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500'
-                }}
-              >
-                Seleccionar todo
-              </button>
-              <button
-                onClick={deselectAll}
-                style={{
-                  padding: '6px 14px', fontSize: '13px', background: '#ef4444', color: 'white',
-                  border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500'
-                }}
-              >
-                Deseleccionar todo
-              </button>
-            </div>
-
-            {/* Lista de formularios con sus secciones */}
-            <div className="forms-list">
-              {(allSectionsData.forms || []).map((form) => (
-                <div key={form.formID} style={{
-                  background: 'white', border: '1px solid #e5e7eb', borderRadius: '10px',
-                  marginBottom: '14px', overflow: 'hidden',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                }}>
-                  {/* Cabecera del formulario */}
-                  <div
-                    onClick={() => toggleFormExpand(form.formID)}
-                    style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '14px 20px', cursor: 'pointer',
-                      background: expandedForms[form.formID] ? '#f0f4ff' : 'white',
-                      borderBottom: expandedForms[form.formID] ? '1px solid #e5e7eb' : 'none'
-                    }}
-                  >
-                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <input
-                        type="checkbox"
-                        checked={(form.sections || []).length > 0 && (form.sections || []).every((_, idx) => selectedSections[`${form.formID}-${idx}`])}
-                        onChange={(e) => toggleFormSelect(form, e)}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#3b82f6' }}
-                        title="Seleccionar todas las secciones de este formulario"
-                      />
-                      <span style={{ fontWeight: '700', color: '#1e40af', fontSize: '15px' }}>
-                        📄 {form.templateName}
-                      </span>
-                      {form.templateCode && (
-                        <span style={{
-                          background: '#f0f0f0', color: '#4b5563', padding: '2px 8px',
-                          borderRadius: '4px', fontSize: '11px', fontFamily: 'monospace'
-                        }}>
-                          {form.templateCode}
-                        </span>
-                      )}
-                      <span style={{ fontSize: '13px', color: '#6b7280' }}>🏢 {form.area}</span>
-                      <span style={{ fontSize: '13px', color: '#6b7280' }}>👤 {form.filledBy}</span>
-                      <span style={{ fontSize: '13px', color: '#6b7280' }}>
-                        📅 {new Date(form.createdAt).toLocaleDateString('es-ES')}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <span style={{
-                        background: '#e0e7ff', color: '#3730a3', padding: '4px 10px',
-                        borderRadius: '20px', fontSize: '12px', fontWeight: '600'
-                      }}>
-                        {form.totalSections || (form.sections || []).length} secciones
-                      </span>
-                      <span style={{ fontSize: '18px', transition: 'transform 0.2s',
-                        transform: expandedForms[form.formID] ? 'rotate(180deg)' : 'rotate(0)'
-                      }}>▼</span>
-                    </div>
+            <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+              <div style={{ padding: '16px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '20px' }}>📦</span>
+                <h2 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Resumen General de Insumos y Materiales</h2>
+                <span style={{ marginLeft: 'auto', background: '#dbeafe', color: '#1e40af', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
+                  {consolidatedInsumos.length} ítems
+                </span>
+              </div>
+              <div style={{ overflowX: 'auto', padding: '0' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ background: '#f1f5f9' }}>
+                      <th style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>#</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CÓDIGO DEL FORMULARIO</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>FECHA REGISTRADA</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>FORMULARIO</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CREADO POR</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>INSUMO</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'right', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CANTIDAD</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>UNIDAD DE MEDIDA</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {consolidatedInsumos.length === 0 ? (
+                      <tr>
+                        <td colSpan="8" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                          No se detectaron tablas de "Insumos" o "Materiales de Empaque" en los formularios de este rango de fechas.
+                        </td>
+                      </tr>
+                    ) : (
+                      consolidatedInsumos.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((item, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? 'white' : '#fafbfc' }}>
+                          <td style={{ padding: '10px 14px', textAlign: 'center', color: '#94a3b8', fontWeight: '500' }}>{(currentPage - 1) * itemsPerPage + idx + 1}</td>
+                          <td style={{ padding: '10px 14px', color: '#475569', fontWeight: '600', fontFamily: 'monospace' }}>
+                            {item.templateCode}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: '#475569', fontWeight: '500' }}>
+                            {new Date(item.createdAt).toLocaleDateString('es-ES')}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: '#1e40af', fontWeight: '600' }}>
+                            {item.templateName}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: '#64748b', fontWeight: '500' }}>{item.filledBy}</td>
+                          <td style={{ padding: '10px 14px', color: '#1e293b', fontWeight: '600' }}>{item.producto}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', color: '#166534', fontWeight: '700' }}>{formatNumber(item.cantidad)}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'center', color: '#475569', fontWeight: '500' }}>{item.unidad || '-'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Pagination Controls */}
+              {consolidatedInsumos.length > itemsPerPage && (
+                <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                  <span style={{ fontSize: '14px', color: '#64748b' }}>
+                    Mostrando {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, consolidatedInsumos.length)} de {consolidatedInsumos.length}
+                  </span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button 
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      style={{ padding: '6px 12px', border: '1px solid #cbd5e1', background: currentPage === 1 ? '#f1f5f9' : 'white', borderRadius: '6px', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', color: '#475569' }}
+                    >
+                      Anterior
+                    </button>
+                    <button 
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(consolidatedInsumos.length / itemsPerPage)))}
+                      disabled={currentPage === Math.ceil(consolidatedInsumos.length / itemsPerPage)}
+                      style={{ padding: '6px 12px', border: '1px solid #cbd5e1', background: currentPage === Math.ceil(consolidatedInsumos.length / itemsPerPage) ? '#f1f5f9' : 'white', borderRadius: '6px', cursor: currentPage === Math.ceil(consolidatedInsumos.length / itemsPerPage) ? 'not-allowed' : 'pointer', color: '#475569' }}
+                    >
+                      Siguiente
+                    </button>
                   </div>
-
-                  {/* Contenido expandido: secciones */}
-                  {expandedForms[form.formID] && (
-                    <div style={{ padding: '16px 20px' }}>
-                      {(form.sections || []).map((section, secIdx) => (
-                        <div key={`${form.formID}-sec-${secIdx}`} style={{
-                          marginBottom: '18px', border: '1px solid #e2e8f0', borderRadius: '8px',
-                          overflow: 'hidden'
-                        }}>
-                          {/* Cabecera de sección */}
-                          <div style={{
-                            display: 'flex', alignItems: 'center', gap: '10px',
-                            padding: '10px 14px',
-                            background: selectedSections[`${form.formID}-${secIdx}`]
-                              ? '#dbeafe'
-                              : section.sectionType === 'table' ? '#eef2ff' :
-                                section.sectionType === 'observaciones' ? '#fef3c7' : '#f0fdf4',
-                            borderBottom: '1px solid #e2e8f0',
-                            cursor: 'pointer',
-                            border: selectedSections[`${form.formID}-${secIdx}`] ? '2px solid #3b82f6' : 'none',
-                            borderRadius: selectedSections[`${form.formID}-${secIdx}`] ? '6px' : '0',
-                          }}
-                            onClick={() => toggleSectionExpand(`${form.formID}-${secIdx}`)}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!!selectedSections[`${form.formID}-${secIdx}`]}
-                              onChange={(e) => toggleSectionSelect(form.formID, secIdx, e)}
-                              onClick={(e) => e.stopPropagation()}
-                              style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#3b82f6' }}
-                              title="Seleccionar esta sección para exportar"
-                            />
-                            <span style={{ fontSize: '16px' }}>
-                              {section.sectionType === 'table' ? '📊' : section.sectionType === 'observaciones' ? '📝' : '📋'}
-                            </span>
-                            <span style={{ fontWeight: '600', color: '#1e293b', fontSize: '14px', flex: 1 }}>
-                              {section.sectionTitle || `Sección ${secIdx + 1}`}
-                            </span>
-                            <span style={{
-                              background: section.sectionType === 'table' ? '#c7d2fe' : '#d1fae5',
-                              color: section.sectionType === 'table' ? '#3730a3' : '#065f46',
-                              padding: '2px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600'
-                            }}>
-                              {section.sectionType} • {section.rowCount || 0} {section.rowCount === 1 ? 'fila' : 'filas'}
-                            </span>
-                            <span style={{ fontSize: '14px', transition: 'transform 0.2s',
-                              transform: expandedSections[`${form.formID}-${secIdx}`] !== false ? 'rotate(180deg)' : 'rotate(0)'
-                            }}>▼</span>
-                          </div>
-
-                          {/* Tabla de datos */}
-                          {expandedSections[`${form.formID}-${secIdx}`] !== false && (
-                            <div style={{ overflowX: 'auto' }}>
-                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                                <thead>
-                                  <tr style={{ background: '#f8fafc' }}>
-                                    <th style={{
-                                      padding: '7px 10px', textAlign: 'center', borderBottom: '2px solid #e2e8f0',
-                                      fontWeight: '600', fontSize: '11px', color: '#94a3b8', width: '40px'
-                                    }}>#</th>
-                                    {(section.columns || []).map((col, cIdx) => (
-                                      <th key={cIdx} style={{
-                                        padding: '7px 10px', textAlign: 'left',
-                                        borderBottom: '2px solid #e2e8f0', fontWeight: '600',
-                                        fontSize: '12px', color: '#475569', whiteSpace: 'nowrap'
-                                      }}>
-                                        {col}
-                                      </th>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(section.rows || []).map((row, rIdx) => (
-                                    <tr key={rIdx} style={{
-                                      borderBottom: '1px solid #f1f5f9',
-                                      background: rIdx % 2 === 0 ? 'white' : '#fafbfc'
-                                    }}>
-                                      <td style={{
-                                        padding: '6px 10px', textAlign: 'center',
-                                        color: '#94a3b8', fontSize: '12px', fontWeight: '500'
-                                      }}>{rIdx + 1}</td>
-                                      {(section.columns || []).map((col, cIdx) => {
-                                        const rowKeys = Object.keys(row);
-                                        let cellValue = row[col];
-                                        if (cellValue === undefined || cellValue === null) {
-                                          const matchKey = rowKeys.find(k =>
-                                            k.toLowerCase() === col.toLowerCase() ||
-                                            k.toLowerCase().includes(col.toLowerCase()) ||
-                                            col.toLowerCase().includes(k.toLowerCase())
-                                          );
-                                          if (matchKey) cellValue = row[matchKey];
-                                        }
-                                        if (cellValue === undefined || cellValue === null) {
-                                          cellValue = row[rowKeys[cIdx]] ?? '';
-                                        }
-
-                                        const displayValue = cellValue !== undefined && cellValue !== null && cellValue !== ''
-                                          ? String(cellValue) : '-';
-                                        const isNumber = !isNaN(cellValue) && cellValue !== '' && cellValue !== null && cellValue !== '-';
-
-                                        return (
-                                          <td key={cIdx} style={{
-                                            padding: '6px 10px',
-                                            textAlign: isNumber ? 'right' : 'left',
-                                            fontWeight: isNumber ? '600' : '400',
-                                            color: isNumber ? '#1e40af' : '#374151',
-                                            whiteSpace: section.sectionType === 'observaciones' ? 'pre-wrap' : 'nowrap',
-                                            maxWidth: section.sectionType === 'observaciones' ? '500px' : 'none'
-                                          }}>
-                                            {isNumber ? formatNumber(Number(cellValue)) : displayValue}
-                                          </td>
-                                        );
-                                      })}
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
-              ))}
+              )}
             </div>
           </>
         )}
@@ -503,13 +425,11 @@ export default function ConsumptionDashboard() {
 
 // Funciones auxiliares
 function getDefaultStartDate() {
-  const date = new Date();
-  date.setDate(date.getDate() - 30);
-  return date.toISOString().split('T')[0];
+  return ''; // Por defecto no filtrar por fecha de inicio para traer todos los registros
 }
 
 function getDefaultEndDate() {
-  return new Date().toISOString().split('T')[0];
+  return ''; // Por defecto no filtrar por fecha de fin para traer todos
 }
 
 function formatNumber(num) {

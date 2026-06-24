@@ -476,6 +476,17 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
   // Recorrer cada sección (tabla) definida en bodyElements
   for (let index = 0; index < bodyElements.length; index++) {
     const section = bodyElements[index];
+    
+    // 👁️ Verificar si la sección está oculta
+    let _elementData = null;
+    if (Array.isArray(bodyData)) {
+      _elementData = bodyData.find(bd => bd && (bd.id === section.id || String(bd.id) === String(section.id))) || bodyData[index];
+    } else if (typeof bodyData === 'object' && bodyData !== null) {
+      _elementData = bodyData[section.name || section.id || `section_${index}`];
+    }
+    const isHidden = _elementData && (_elementData.data?._isHidden || _elementData.rows?._isHidden || _elementData._isHidden);
+    if (isHidden) continue;
+
     console.log(`📋 Excel - Procesando seccion ${index + 1}:`, section.title);
 
     // ── NOTA ESTÁTICA ──────────────────────────────────────────────
@@ -715,12 +726,31 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
 
         // Row: Group headers (merged)
         let colOffset = 2; // Start at column 2 (col 1 = label)
-        groups.forEach(g => {
+        groups.forEach((g, gIdx) => {
           if (g.count > 1) {
             safeMergeCells(worksheet, currentRow, colOffset, currentRow, colOffset + g.count - 1);
           }
           const groupCell = worksheet.getCell(currentRow, colOffset);
-          groupCell.value = g.name || '';
+          let groupText = g.name || '';
+          if (groupText.includes('___')) {
+            const customName = tinasData[`g${gIdx}_customName`] || '___';
+            groupText = groupText.replace('___', customName);
+          }
+          let subtitleText = g.subtitle || '';
+          if (subtitleText.includes('___SELECT_CLORO_PEROX___')) {
+            const selection = tinasData[`g${gIdx}_subtitle`] || '(Sin Seleccionar)';
+            subtitleText = subtitleText.replace('___SELECT_CLORO_PEROX___', selection);
+          }
+          if (subtitleText.includes('___SELECT_ANTES_DESPUES___')) {
+             const selection = tinasData[`g${gIdx}_subtitle_antes`] || '(Sin Seleccionar)';
+             subtitleText = subtitleText.replace('___SELECT_ANTES_DESPUES___', selection);
+          }
+          if (subtitleText.includes('___INPUT___')) {
+             const selection = tinasData[`g${gIdx}_subtitle_input`] || '________________';
+             subtitleText = subtitleText.replace('___INPUT___', selection);
+          }
+          if (subtitleText) groupText += `\n${subtitleText}`;
+          groupCell.value = groupText;
           applyHeaderStyle(groupCell);
           colOffset += g.count;
         });

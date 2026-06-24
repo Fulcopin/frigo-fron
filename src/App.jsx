@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react-router-dom"
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from "react-router-dom"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
 import Login from "./pages/Login"
 import ProtectedRoute from "./components/ProtectedRoute"
@@ -37,6 +37,7 @@ function Navigation() {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { logout, isAuthenticated } = useAuth()
+  const navigate = useNavigate()
   
   const currentUser = authService.getCurrentUser()
   const userRole = currentUser?.rol || ''
@@ -60,7 +61,7 @@ function Navigation() {
   const isAdminOrSupervisor = userRole === 'admin' || userRole === 'supervisor'
 
   const navLinks = [
-    { to: "/", icon: "🏠", label: "Inicio", show: false }, // Oculto por solicitud
+    { to: "/", icon: "🏠", label: "Inicio", show: true },
     { to: "/fill-form", icon: "📝", label: "Llenar Formulario", show: true },
     { to: "/my-drafts", icon: "📋", label: "Mis Borradores", show: true },
     { to: "/view-forms", icon: "👁️", label: "Ver Formularios", show: true },
@@ -76,12 +77,12 @@ function Navigation() {
     { to: "/dashboard-erp", icon: "📊", label: "Descargar Datos", show: isAdminOrSupervisor },
     { to: "/alerts", icon: "🔔", label: "Alertas", show: isAdminOrSupervisor },
     { to: "/consumptions", icon: "📊", label: "Consumos", show: isAdminOrSupervisor },
-    { to: "/session-history", icon: "⏱️", label: "Tiempos", show: isAdminOrSupervisor },
+    { to: "/session-history", icon: "⏱️", label: "Tiempos", show: false }, // Oculto por solicitud
     { divider: true, label: "Documentos", show: true },
     { to: "/document-registry", icon: "📄", label: "Lista de Documentos", show: true },
     { to: "/seed-bpm-templates", icon: "🧤", label: "Crear Plantillas BPM", show: isAdminOrSupervisor },
     { divider: true, label: "Trazabilidad", show: true },
-    { to: "/trazabilidad", icon: "🔍", label: "Consultar Trazabilidad", show: true },
+    { to: "/trazabilidad", icon: "🔍", label: "Consultar Trazabilidad", show: false }, // Oculto en sidebar, accesible en Home
     { to: "/trazabilidad-config", icon: "🔗", label: "Config. Trazabilidad", show: isAdminOrSupervisor },
     { to: "/mass-balance", icon: "⚖️", label: "Balance de Masas", show: true },
     { to: "/lotes-inventario", icon: "📦", label: "Inventario de Lotes", show: true },
@@ -116,6 +117,20 @@ function Navigation() {
           <span className="topbar-page">{getPageName(location.pathname)}</span>
         </div>
         <div className="topbar-right">
+          <button 
+            onClick={() => navigate('/')} 
+            style={{ background: '#3b82f6', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginRight: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}
+            title="Ir al Inicio"
+          >
+            🏠 Inicio
+          </button>
+          <button 
+            onClick={() => navigate('/trazabilidad')} 
+            style={{ background: '#0ea5e9', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginRight: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}
+            title="Buscar Lotes Rápido"
+          >
+            🔍 Trazabilidad
+          </button>
           <SessionTimer />
           <UserInfo />
           <button onClick={handleLogout} className="topbar-logout" title="Cerrar sesión">

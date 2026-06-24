@@ -1115,7 +1115,7 @@ function getControlAguaTemplate() {
       groups: [
         {
           name: "PEDILUVIO",
-          subtitle: "DESINFECCIÓN DE BOTAS (ENTRADA PRINCIPAL) CLORO( ) / PEROXIACÉTICO ( )",
+          subtitle: "DESINFECCIÓN DE BOTAS (ENTRADA PRINCIPAL) ___SELECT_CLORO_PEROX___",
           count: 1,
           labels: ["ENTRADA PRINCIPAL"]
         },
@@ -1137,12 +1137,7 @@ function getControlAguaTemplate() {
           count: 4,
           labels: ["TINA 1", "TINA 2", "TINA 3", "TINA 4"]
         },
-        {
-          name: "ESTACIONES MOVILES",
-          subtitle: "DESINFECCIÓN GUANTES, CUCHILLOS, MANDILES (PROCESO FILETEO) AGUA + PEROXIACÉTICO",
-          count: 1,
-          labels: ["PROCESO FILETEO"]
-        }
+
       ],
       fields: [
         { label: "SE CAMBIA AGUA", type: "radio", options: ["SI", "NO"] },
@@ -1150,6 +1145,29 @@ function getControlAguaTemplate() {
         { label: "Vol.", type: "number", suffix: "lts" },
         { label: "Resid. (I)", type: "number", suffix: "ppm" },
         { label: "Dosif.", type: "number", suffix: "ml" },
+        { label: "Resid. (F)", type: "number", suffix: "ppm" }
+      ]
+    }
+  })
+
+  // PARTE 1.5: Estaciones Móviles
+  bodyElements.push({
+    id: Date.now() + 505,
+    type: "tinas",
+    title: "CONTROL DE AGUA - ESTACIONES MÓVILES",
+    config: {
+      cycles: 7,
+      groups: [
+        {
+          name: "___ ESTACIONES MOVILES",
+          subtitle: "DESINFECCIÓN GUANTES, CUCHILLOS, MANDILES (PROCESO FILETEO) AGUA + PEROXIACÉTICO",
+          count: 1,
+          labels: ["PROCESO FILETEO"]
+        }
+      ],
+      fields: [
+        { label: "SE CAMBIA AGUA A LAS ESTACIONES Y SE DOSIFICAN", type: "radio", options: ["SI", "NO"] },
+        { label: "HORA", type: "time" },
         { label: "Resid. (F)", type: "number", suffix: "ppm" }
       ]
     }
@@ -1164,26 +1182,26 @@ function getControlAguaTemplate() {
       cycles: 7,
       groups: [
         {
-          name: "TINAS DESINFECCIÓN DE PRODUCTO (DESPUÉS DE/ ANTES DE:)",
-          subtitle: "AGUA + HIELO + PEROXIACÉTICO",
+          name: "TINAS DESINFECCIÓN DE PRODUCTO",
+          subtitle: "___SELECT_ANTES_DESPUES___ ___INPUT___\nAGUA + HIELO + PEROXIACÉTICO",
           count: 2,
           labels: ["___ TINA", "___ TINA"]
         },
         {
-          name: "TINAS GLASEADO DE PRODUCTO CONGELADO DURANTE PROCESO DE:",
-          subtitle: "AGUA + HIELO + PEROXIACÉTICO",
+          name: "TINAS GLASEADO DE PRODUCTO CONGELADO",
+          subtitle: "DURANTE PROCESO DE: ___INPUT___\nAGUA + HIELO + PEROXIACÉTICO",
           count: 2,
           labels: ["___ TINA", "___ TINA"]
         },
         {
           name: "ESTACIONES DE ENJUAGUE / DESINFECCIÓN DE PROD. DURANTE PROCESO FRESCO",
-          subtitle: "AGUA + HIELO + CLORO / PEROXIACÉTICO",
+          subtitle: "AGUA + HIELO + ___SELECT_CLORO_PEROX___",
           count: 2,
           labels: ["TINA 1", "TINA 2"]
         },
         {
           name: "ESTACIONES DE ENJUAGUE / DESINFECCIÓN DE PROD. DURANTE PROCESO CONGELADO",
-          subtitle: "PEROXIACÉTICO / CLORO",
+          subtitle: "AGUA + HIELO + ___SELECT_CLORO_PEROX___",
           count: 2,
           labels: ["TINA 3", "TINA 4"]
         }

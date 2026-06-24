@@ -543,8 +543,24 @@ export default function TrazabilidadConfig() {
 
       const matched = allForms
         .filter(form => {
-          const fDate = new Date(form.createdAt || form.CreatedAt || 0);
+          let formDateStr = null;
+          try {
+            const hd = typeof form.headerData === 'string' ? JSON.parse(form.headerData) : (form.headerData || {});
+            const dataObj = typeof form.data === 'string' ? JSON.parse(form.data) : (form.data || {});
+            const header = hd.FECHA ? hd : (dataObj.header || dataObj.Header || hd || {});
+            formDateStr = header['FECHA'] || header['Fecha'] || header['fecha'] || null;
+          } catch(e) {}
+
+          let fDate;
+          if (formDateStr) {
+            fDate = new Date(formDateStr + 'T00:00:00');
+            if (isNaN(fDate.getTime())) fDate = new Date(form.createdAt || form.CreatedAt || 0);
+          } else {
+            fDate = new Date(form.createdAt || form.CreatedAt || 0);
+          }
+
           if (fDate < desde || fDate > hasta) return false;
+          
           const tid = String(form.templateID ?? form.TemplateID ?? '');
           if (fechaTemplateId && tid !== String(fechaTemplateId)) return false;
           if (allowedTemplateIds && allowedTemplateIds.length > 0 && !allowedTemplateIds.includes(tid)) return false;
@@ -554,8 +570,23 @@ export default function TrazabilidadConfig() {
           const tid = String(form.templateID ?? form.TemplateID ?? '');
           const tpl = tplMap[tid];
           const lotes = extractLoteValues(form);
+          
+          let formDateStr = null;
+          try {
+            const hd = typeof form.headerData === 'string' ? JSON.parse(form.headerData) : (form.headerData || {});
+            const dataObj = typeof form.data === 'string' ? JSON.parse(form.data) : (form.data || {});
+            const header = hd.FECHA ? hd : (dataObj.header || dataObj.Header || hd || {});
+            formDateStr = header['FECHA'] || header['Fecha'] || header['fecha'] || null;
+          } catch(e) {}
+          let displayDate = form.createdAt || form.CreatedAt;
+          if (formDateStr) {
+            const pd = new Date(formDateStr + 'T00:00:00');
+            if (!isNaN(pd.getTime())) displayDate = pd.toISOString();
+          }
+
           return {
             ...form,
+            _displayDate: displayDate,
             templateNombre: tpl?.nombre ?? tpl?.Nombre ?? form.templateNombre ?? '—',
             templateCodigo: tpl?.codigo ?? tpl?.Codigo ?? form.templateCodigo ?? '',
             _proceso: tpl?.proceso ?? tpl?.Proceso ?? form.proceso ?? '—',
@@ -1665,8 +1696,8 @@ export default function TrazabilidadConfig() {
                   <tbody>
                     {sortedFechaResults.map(form => {
                       const isChecked = fechaChecked.has(form.formID);
-                      const fechaStr = form.createdAt
-                        ? new Date(form.createdAt).toLocaleString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                      const fechaStr = form._displayDate
+                        ? new Date(form._displayDate).toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric' })
                         : '—';
                       return form._isMissing ? (
                         <tr key={form.formID} style={{ borderBottom: '1px solid #fecaca', background: '#fef2f2' }}>

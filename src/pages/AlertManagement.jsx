@@ -166,20 +166,58 @@ export default function AlertManagement() {
           setActiveAlerts([]);
         } else {
           console.log('📧 Cargando alertas para:', userEmail);
+          const userName = (currentUser?.nombre || currentUser?.username || '').toLowerCase().trim();
+          let allUserAlerts = [];
           
+          // A) Traer alertas reales del backend (ej. para SGI/Supervisores)
           const alertsResponse = await fetch(`${API_BASE_URL}/Alerts/active`);
           if (alertsResponse.ok) {
             const alertsData = await alertsResponse.json();
             const alerts = Array.isArray(alertsData) ? alertsData : alertsData.$values || [];
             
-            // ✅ Filtrar solo alertas para este usuario
             const userAlerts = alerts.filter(alert => 
               alert.targetEmail && alert.targetEmail.toLowerCase() === userEmail.toLowerCase()
             );
-            
-            console.log(`✅ Alertas filtradas: ${userAlerts.length} de ${alerts.length} totales`);
-            setActiveAlerts(userAlerts);
+            allUserAlerts = [...userAlerts];
           }
+
+          // B) Traer Formularios Llenos para buscar firmas pendientes REALES del usuario actual
+          const formsResponse = await fetch(`${API_BASE_URL}/FilledForms`);
+          if (formsResponse.ok) {
+            let formsData = await formsResponse.json();
+            const allForms = Array.isArray(formsData) ? formsData : formsData.$values || [];
+            
+            allForms.forEach(form => {
+              let firmasData = form.firmasData;
+              if (!firmasData) return;
+              if (typeof firmasData === 'string') {
+                try { firmasData = JSON.parse(firmasData); } catch { return; }
+              }
+              
+              Object.entries(firmasData).forEach(([puesto, data]) => {
+                if (data && data.nombre && data.nombre.toLowerCase().trim() === userName) {
+                  const yaFirmado = !!(data.firma && (data.firma.url || data.firma.base64));
+                  if (!yaFirmado) {
+                    allUserAlerts.push({
+                      id: `virt-sig-${form.formID}-${puesto}`,
+                      type: 'pending_signature',
+                      priority: 'high',
+                      title: `Firma pendiente: ${form.templateNombre || form.templateCodigo}`,
+                      message: `Tienes pendiente firmar como "${puesto}" en este formulario.`,
+                      createdDate: form.createdAt || new Date().toISOString(),
+                      formCode: form.templateCodigo,
+                      formId: form.formID,
+                      targetEmail: userEmail,
+                      formName: form.templateNombre
+                    });
+                  }
+                }
+              });
+            });
+          }
+          
+          console.log(`✅ Alertas totales combinadas: ${allUserAlerts.length}`);
+          setActiveAlerts(allUserAlerts);
         }
       } catch (error) {
         console.error('Error cargando alertas:', error);
@@ -249,6 +287,7 @@ export default function AlertManagement() {
         id: alertConfig.id || 0,
         enableMissingFormAlerts: alertConfig.enableMissingFormAlerts ?? true,
         dailyCheckTime: alertConfig.dailyCheckTime || '18:00',
+        summaryFrequencyDays: alertConfig.summaryFrequencyDays || 3,
         missingFormRecipients: JSON.stringify(
           Array.isArray(alertConfig.missingFormRecipients) 
             ? alertConfig.missingFormRecipients.filter(e => e && e.trim()) 
@@ -411,7 +450,48 @@ export default function AlertManagement() {
                 <p>Todo está al día, no hay registros pendientes ni firmas por realizar</p>
               </div>
             ) : (
-              <div className="alerts-grid">
+              <>
+                {/* NUEVO: Resumen Conglomerado para Gerencia / Usuario */}
+                <div className="alerts-summary-card" style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                  <h3 style={{ margin: '0 0 14px 0', color: '#0f172a', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    📊 Resumen de Pendientes para {currentUser?.nombre || currentUser?.username}
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
+                    {Object.entries(
+                      activeAlerts.reduce((acc, alert) => {
+                        const typeLabel = alert.type === 'missing_form' ? 'Llenados Faltantes' : 
+                                          alert.type === 'pending_signature' ? 'Firmas Pendientes' : 'Alertas';
+                        const formIdentifier = alert.formCode || (alert.title && alert.title.split(' - ')[1]) || 'General';
+                        const groupKey = `${typeLabel}: ${formIdentifier}`;
+                        acc[groupKey] = (acc[groupKey] || 0) + 1;
+                        return acc;
+                      }, {})
+                    ).map(([key, count]) => {
+                      const [type, form] = key.split(': ');
+                      return (
+                        <div key={key} style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', borderLeft: `4px solid ${type.includes('Firmas') ? '#f59e0b' : '#3b82f6'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{type}</span>
+                            <span style={{ fontSize: '0.9rem', color: '#334155', fontWeight: '600' }}>{form}</span>
+                          </div>
+                          <span style={{ background: type.includes('Firmas') ? '#fef3c7' : '#eff6ff', color: type.includes('Firmas') ? '#b45309' : '#1d4ed8', padding: '4px 10px', borderRadius: '999px', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                            {count}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                      Estos resúmenes se envían por correo según la frecuencia configurada.
+                    </span>
+                    <span style={{ fontSize: '0.95rem', color: '#334155', fontWeight: '600' }}>
+                      Total Acumulado: <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '1.2rem', marginLeft: '6px' }}>{activeAlerts.length}</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="alerts-grid">
                 {activeAlerts.map(alert => (
                   <div key={alert.id} className={`alert-card ${alert.priority}`}>
                     <div className="alert-header">
@@ -437,7 +517,7 @@ export default function AlertManagement() {
                         <div className="alert-detail">
                           <span className="detail-label">📅 Fecha:</span>
                           <span className="detail-value">
-                            {new Date(alert.createdDate).toLocaleString('es-ES')}
+                            {new Date(alert.createdDate).toLocaleDateString('es-ES')} - {new Date(alert.createdDate).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                         
@@ -468,6 +548,7 @@ export default function AlertManagement() {
                   </div>
                 ))}
               </div>
+              </>
             )}
           </div>
         )}
@@ -499,7 +580,28 @@ export default function AlertManagement() {
                     </div>
 
                     <div className="config-item">
-                      <label className="form-label">Hora de verificación diaria:</label>
+                      <label className="form-label">Frecuencia de envío de correos (Resumen):</label>
+                      <select
+                        value={alertConfig.summaryFrequencyDays || 1}
+                        onChange={(e) => {
+                          const newConfig = { ...alertConfig, summaryFrequencyDays: parseInt(e.target.value) };
+                          setAlertConfig(newConfig);
+                        }}
+                        className="form-input"
+                      >
+                        <option value={1}>Diario (1 vez al día)</option>
+                        <option value={2}>Cada 2 días</option>
+                        <option value={3}>Cada 3 días (Recomendado)</option>
+                        <option value={5}>Cada 5 días</option>
+                        <option value={7}>Semanal (Cada 7 días)</option>
+                      </select>
+                      <p className="config-description" style={{ marginTop: '5px' }}>
+                        Define cada cuántos días se enviará el resumen acumulado a los correos registrados.
+                      </p>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="form-label">Hora de verificación automática:</label>
                       <input
                         type="time"
                         value={alertConfig.dailyCheckTime || '18:00'}

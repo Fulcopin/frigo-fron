@@ -29,6 +29,7 @@ export const MAPPABLE_API_FIELDS = {
     { value: "ESPECIES", label: "🐟 Especies (Catálogo)" },
     { value: "PESQUEROS", label: "🚢 Pesqueros (Catálogo)" },
     { value: "PRODUCTOS", label: "📦 Productos (Catálogo)" },
+    { value: "INSUMOS", label: "🛒 Insumos (Catálogo)" },
     { value: "PRODUCTOS_POR_ESPECIE", label: "🐟📦 Especie → Productos (selector en cascada)" },
     { value: "PROVEEDORES", label: "🏢 Proveedores (Catálogo)" },
     { value: "CONFIGURACIONES", label: "⚙️ Configuraciones (Catálogo)" },

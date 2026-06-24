@@ -635,16 +635,7 @@ const drawBodyTable = (doc, bodyData, bodyElements, startY) => {
       font: 'helvetica'
     },
     didDrawPage: () => {
-      const pgCount = doc.internal.getNumberOfPages();
-      const curPg = doc.internal.getCurrentPageInfo().pageNumber;
-      doc.setFontSize(7);
-      doc.setTextColor(130, 130, 130);
-      doc.text(
-        `Pag. ${curPg} / ${pgCount}`,
-        doc.internal.pageSize.getWidth() / 2,
-        doc.internal.pageSize.getHeight() - 8,
-        { align: 'center' }
-      );
+      // Paginación movida al final del documento
     }
   });
   
@@ -1050,6 +1041,12 @@ export const exportFormToPDF = async (form, template, options = {}) => {
     
     for (let index = 0; index < bodyElements.length; index++) {
       const section = bodyElements[index];
+      
+      // 👁️ Verificar si la sección está oculta
+      const _elementData = getSectionBodyData(section, index);
+      const isHidden = _elementData && (_elementData.data?._isHidden || _elementData.rows?._isHidden || _elementData._isHidden);
+      if (isHidden) continue;
+      
       console.log(`📌 Sección ${index + 1}:`, section);
       
       // Verificar si hay espacio, si no, agregar nueva página
@@ -1245,28 +1242,31 @@ const rows = tableData.map((row, rowIndex) => {
           let hasTotals = false;
           if (showColumnTotals) {
             totalsRow = columns.map((col, colIndex) => {
-              // Respetar includeInSum: si está explícitamente en false → no sumar
-              if (col.includeInSum === false) return '—';
-              
-              // 🚫 NUNCA sumar identificadores o variables no sumativas por defecto
-              const colHeaderUp = (col.header || '').toUpperCase();
-              if (
-                colHeaderUp.includes('LOTE') || colHeaderUp.includes('BATCH') ||
-                colHeaderUp.includes('GLASEO') || colHeaderUp.includes('CAPACIDAD') ||
-                colHeaderUp.includes('TEMPERATURA') || colHeaderUp.includes('TEMP')
-              ) return '—';
+              // Respetar explícitamente includeInSum = true (sobreescribe reglas por defecto)
+              if (col.includeInSum === true) {
+                // Proceder a sumar sin restricciones heurísticas
+              } else if (col.includeInSum === false) {
+                return '—';
+              } else {
+                // 🚫 Heurísticas para columnas no definidas explícitamente
+                const colHeaderUp = (col.header || '').toUpperCase();
+                if (
+                  colHeaderUp.includes('LOTE') || colHeaderUp.includes('BATCH') ||
+                  colHeaderUp.includes('GLASEO') || colHeaderUp.includes('CAPACIDAD') ||
+                  colHeaderUp.includes('TEMPERATURA') || colHeaderUp.includes('TEMP')
+                ) return '—';
 
-              const colType = (col.type || '').toLowerCase();
-              const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
-              if (tiposNoNumericos.includes(colType)) return '—';
+                const colType = (col.type || '').toLowerCase();
+                const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
+                if (tiposNoNumericos.includes(colType)) return '—';
 
-              // Solo sumar si es una columna numérica conocida o si fue forzada con includeInSum === true
-              const isNumericCol = col.includeInSum === true ||
-                colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
-                colHeaderUp.includes('PESO') || colHeaderUp.includes('TOTAL') || colHeaderUp.includes('CANTIDAD') ||
-                colHeaderUp.includes('VOLUMEN');
+                // Solo sumar si es una columna numérica conocida
+                const isNumericCol = colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
+                  colHeaderUp.includes('PESO') || colHeaderUp.includes('TOTAL') || colHeaderUp.includes('CANTIDAD') ||
+                  colHeaderUp.includes('VOLUMEN');
 
-              if (!isNumericCol && col.includeInSum !== true) return '—';
+                if (!isNumericCol) return '—';
+              }
 
               let columnTotal = 0;
               let hasValues = false;
@@ -1426,17 +1426,7 @@ const rows = tableData.map((row, rowIndex) => {
               }
             },
             didDrawPage: () => {
-              // Pie de página
-              const pgCount = doc.internal.getNumberOfPages();
-              const curPg = doc.internal.getCurrentPageInfo().pageNumber;
-              doc.setFontSize(7);
-              doc.setTextColor(130, 130, 130);
-              doc.text(
-                `Pag. ${curPg} / ${pgCount}`,
-                doc.internal.pageSize.getWidth() / 2,
-                doc.internal.pageSize.getHeight() - 8,
-                { align: 'center' }
-              );
+              // Paginación movida al final del documento
             }
           });
           
@@ -1864,9 +1854,28 @@ const rows = tableData.map((row, rowIndex) => {
           const head = [];
           // Row 1: Group headers (merged via colSpan emulation — repeated text)
           const groupRow = ['Ciclo'];
-          groups.forEach(g => {
+          groups.forEach((g, gIdx) => {
+            let subtitleText = g.subtitle || '';
+            if (subtitleText.includes('___SELECT_CLORO_PEROX___')) {
+               const selection = tinasData[`g${gIdx}_subtitle`] || '(Sin Seleccionar)';
+               subtitleText = subtitleText.replace('___SELECT_CLORO_PEROX___', selection);
+            }
+            if (subtitleText.includes('___SELECT_ANTES_DESPUES___')) {
+               const selection = tinasData[`g${gIdx}_subtitle_antes`] || '(Sin Seleccionar)';
+               subtitleText = subtitleText.replace('___SELECT_ANTES_DESPUES___', selection);
+            }
+            if (subtitleText.includes('___INPUT___')) {
+               const selection = tinasData[`g${gIdx}_subtitle_input`] || '________________';
+               subtitleText = subtitleText.replace('___INPUT___', selection);
+            }
+            let groupName = g.name || '';
+            if (groupName.includes('___')) {
+               const customName = tinasData[`g${gIdx}_customName`] || '___';
+               groupName = groupName.replace('___', customName);
+            }
+            const groupText = subtitleText ? `${groupName}\n${subtitleText}` : groupName;
             for (let i = 0; i < g.count; i++) {
-              groupRow.push(sanitizeText(g.name || ''));
+              groupRow.push(sanitizeText(groupText));
             }
           });
           // Row 2: Tina labels
@@ -1982,6 +1991,28 @@ const rows = tableData.map((row, rowIndex) => {
     // 6. Generar nombre del archivo
     const timestamp = new Date(form.createdAt || Date.now()).toISOString().split('T')[0];
     const fileName = `${templateData.codigo}_${timestamp}_Form${form.formID || ''}.pdf`;
+    
+    // 🆕 Agregar Paginación Global y Marca de Agua a todas las páginas
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(130, 130, 130);
+      
+      const formIdentifier = form.formID ? `#${form.formID}` : 'N/A';
+      const formCode = templateData.codigo || templateData.nombre || 'N/A';
+      const docDate = form.createdAt ? new Date(form.createdAt).toLocaleDateString('es-ES') : timestamp;
+      
+      const watermarkText = `Página ${i} de ${totalPages} | ID: ${formIdentifier} | Doc: ${formCode} | Fecha: ${docDate}`;
+      
+      doc.text(
+        watermarkText,
+        doc.internal.pageSize.getWidth() / 2,
+        doc.internal.pageSize.getHeight() - 8,
+        { align: 'center' }
+      );
+    }
     
     console.log('✅ PDF generado exitosamente:', fileName);
     

@@ -178,6 +178,9 @@ function ViewForms() {
   const [sendingEmail, setSendingEmail] = useState(false)
   const [emailFormTarget, setEmailFormTarget] = useState(null)
 
+  // ⚡ NUEVO: Estado para vista previa rápida
+  const [previewForm, setPreviewForm] = useState(null)
+
   // 🔐 Estado para firmas interactivas en vista
   const [viewFirmasData, setViewFirmasData] = useState({})
   const [savingSignature, setSavingSignature] = useState(false)
@@ -815,7 +818,7 @@ function ViewForms() {
               <FormHeader 
                 title={selectedForm.templateNombre} 
                 code={selectedForm.templateCodigo} 
-                version={correspondingTemplate?.version || "1"} 
+                version={selectedFormVersionInfo?.currentVersion || selectedForm.version || correspondingTemplate?.version || "1"} 
                 date={fechaFinal}
                 tipoProducto={selectedForm.tipoProducto} // 🦐🐟 NUEVO: Pasar tipo de producto
               />
@@ -935,6 +938,11 @@ function ViewForms() {
               elementData = savedBodyData[elementIndex] ?? null;
             }
             
+            // 👁️ Ocultar si está marcado como hidden
+            if (elementData?.data?._isHidden) {
+              return null;
+            }
+
             // Renderizar una SECCIÓN
             if (templateElement.type === 'section') {
               // 🔧 FIX: Soportar tanto elementData.data como elementData.rows para secciones
@@ -1192,9 +1200,9 @@ function ViewForms() {
                       </tbody>
                       
                       {/* 📊 FILA DE TOTALES POR COLUMNA */}
-                      {tableRows.length > 0 && (templateElement.columns || []).some(c => 
-                        c.includeInSum === true || 
-                        ((correspondingTemplate?.autoSumColumns === true || correspondingTemplate?.AutoSumColumns === true) && c.includeInSum !== false)
+                      {tableRows.length > 0 && (
+                        (correspondingTemplate?.autoSumColumns === true || correspondingTemplate?.AutoSumColumns === true) || 
+                        (templateElement.columns || []).some(c => c.includeInSum !== false)
                       ) && (
                         <tfoot>
                           <tr style={{ backgroundColor: '#eef2ff', fontWeight: 'bold', borderTop: '3px solid #6366f1' }}>
@@ -1205,33 +1213,34 @@ function ViewForms() {
                               const colType = (col.type || '').toLowerCase();
 
                               // Respetar exclusiones explícitas
-                              if (col.includeInSum === false) {
+                              if (col.includeInSum === true) {
+                                // Proceder a sumar sin restricciones heurísticas
+                              } else if (col.includeInSum === false) {
                                 return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
-                              }
+                              } else {
+                                // 🚫 NUNCA sumar identificadores o variables no sumativas por defecto
+                                if (
+                                  colLabel.includes('LOTE') || colId.includes('LOTE') || colLabel.includes('BATCH') ||
+                                  colLabel.includes('GLASEO') || colId.includes('GLASEO') ||
+                                  colLabel.includes('CAPACIDAD') || colId.includes('CAPACIDAD') ||
+                                  colLabel.includes('TEMPERATURA') || colId.includes('TEMPERATURA') || colLabel.includes('TEMP')
+                                ) {
+                                  return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
+                                }
 
-                              // 🚫 NUNCA sumar identificadores o variables no sumativas por defecto
-                              if (
-                                colLabel.includes('LOTE') || colId.includes('LOTE') || colLabel.includes('BATCH') ||
-                                colLabel.includes('GLASEO') || colId.includes('GLASEO') ||
-                                colLabel.includes('CAPACIDAD') || colId.includes('CAPACIDAD') ||
-                                colLabel.includes('TEMPERATURA') || colId.includes('TEMPERATURA') || colLabel.includes('TEMP')
-                              ) {
-                                return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
-                              }
+                                const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
+                                if (tiposNoNumericos.includes(colType)) {
+                                  return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
+                                }
 
-                              const tiposNoNumericos = ['select', 'multiselect', 'date', 'time', 'datetime', 'signature', 'image', 'checkbox', 'radio', 'label', 'nota'];
-                              if (tiposNoNumericos.includes(colType)) {
-                                return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
-                              }
+                                // Solo sumar si es una columna numérica conocida
+                                const isNumericCol = colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
+                                  colLabel.includes('PESO') || colId.includes('PESO') || colLabel.includes('TOTAL') || colId.includes('TOTAL') || 
+                                  colLabel.includes('CANTIDAD') || colLabel.includes('VOLUMEN');
 
-                              // Solo sumar si es una columna numérica conocida o si fue forzada con includeInSum === true
-                              const isNumericCol = col.includeInSum === true ||
-                                colType === 'number' || colType === 'calculated' || colType === 'formula' || col.formula ||
-                                colLabel.includes('PESO') || colId.includes('PESO') || colLabel.includes('TOTAL') || colId.includes('TOTAL') || 
-                                colLabel.includes('CANTIDAD') || colLabel.includes('VOLUMEN');
-
-                              if (!isNumericCol && col.includeInSum !== true) {
-                                return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
+                                if (!isNumericCol) {
+                                  return <td key={`total-${colIndex}`} style={{ padding: '8px 4px', textAlign: 'center', color: '#6b7280' }}>—</td>;
+                                }
                               }
 
                               // Sumar valores de esta columna en todas las filas
@@ -1370,8 +1379,27 @@ function ViewForms() {
                           <th rowSpan={2} style={{ background: '#035b8d', color: 'white', minWidth: '120px' }}>Ciclo / Campo</th>
                           {groups.map((g, gIdx) => (
                             <th key={gIdx} colSpan={g.count} style={{ background: '#035b8d', color: 'white', textAlign: 'center' }}>
-                              {g.name}
-                              {g.subtitle && <div style={{ fontSize: '10px', fontWeight: 400, opacity: 0.85 }}>{g.subtitle}</div>}
+                              {g.name && g.name.includes('___') ? (
+                                <span><strong>{tinasData[`g${gIdx}_customName`] || '___'}</strong> {g.name.replace('___', '').trim()}</span>
+                              ) : (
+                                g.name
+                              )}
+                              {g.subtitle && (
+                                <div style={{ fontSize: '10px', fontWeight: 400, opacity: 0.85, whiteSpace: 'pre-wrap' }}>
+                                  {g.subtitle.split(/(___SELECT_CLORO_PEROX___|___SELECT_ANTES_DESPUES___|___INPUT___)/).map((part, idx) => {
+                                    if (part === '___SELECT_CLORO_PEROX___') {
+                                      return <strong key={idx}>{tinasData[`g${gIdx}_subtitle`] || '(Sin Seleccionar)'}</strong>;
+                                    }
+                                    if (part === '___SELECT_ANTES_DESPUES___') {
+                                      return <strong key={idx}>{tinasData[`g${gIdx}_subtitle_antes`] || '(Sin Seleccionar)'}</strong>;
+                                    }
+                                    if (part === '___INPUT___') {
+                                      return <strong key={idx}><u>{tinasData[`g${gIdx}_subtitle_input`] || '________________'}</u></strong>;
+                                    }
+                                    return <span key={idx}>{part}</span>;
+                                  })}
+                                </div>
+                              )}
                             </th>
                           ))}
                         </tr>
@@ -1720,6 +1748,14 @@ function ViewForms() {
                   </div>
                   <div className="form-card-actions">
                     <button 
+                      onClick={() => setPreviewForm(form)} 
+                      className="btn-view"
+                      title="Vista Rápida"
+                      style={{ background: '#f59e0b', color: 'white', marginRight: '4px' }}
+                    >
+                      ⚡ Rápida
+                    </button>
+                    <button 
                       onClick={() => viewFormWithVersion(form)} 
                       className="btn-view"
                       title="Ver detalles completos"
@@ -1906,6 +1942,49 @@ function ViewForms() {
                 disabled={sendingEmail || !emailTo}
               >
                 {sendingEmail ? '⏳ Enviando...' : '📧 Enviar Correo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⚡ MODAL: Vista rápida de cabecera */}
+      {previewForm && (
+        <div className="email-modal-overlay" onClick={() => setPreviewForm(null)}>
+          <div className="email-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', width: '90%' }}>
+            <div className="email-modal-header" style={{ background: '#f59e0b' }}>
+              <h3>⚡ Vista Rápida - {previewForm.templateCodigo}</h3>
+              <button className="email-modal-close" onClick={() => setPreviewForm(null)}>✕</button>
+            </div>
+            <div className="email-modal-body" style={{ maxHeight: '65vh', overflowY: 'auto', padding: '20px' }}>
+              <h4 style={{ marginBottom: '15px', color: '#1e293b', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px', fontSize: '1.1rem' }}>
+                {previewForm.templateNombre}
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                <div style={{ background: '#f1f5f9', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <strong style={{ display: 'block', fontSize: '11px', color: '#475569', textTransform: 'uppercase', marginBottom: '4px' }}>👤 Creado por</strong>
+                  <span style={{ color: '#0f172a', fontWeight: '600', fontSize: '14px' }}>{previewForm.filledBy || 'Desconocido'}</span>
+                </div>
+                <div style={{ background: '#f1f5f9', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <strong style={{ display: 'block', fontSize: '11px', color: '#475569', textTransform: 'uppercase', marginBottom: '4px' }}>📅 Fecha de Creación</strong>
+                  <span style={{ color: '#0f172a', fontWeight: '600', fontSize: '14px' }}>{new Date(previewForm.createdAt).toLocaleString('es-EC')}</span>
+                </div>
+                {previewForm.headerData && Object.entries(previewForm.headerData).map(([key, value]) => {
+                  if (typeof value === 'object') return null; // Saltar objetos complejos
+                  if (key.includes('_')) return null; // Omitir IDs internos
+                  return (
+                    <div key={key} style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <strong style={{ display: 'block', fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>{key.replace(/([A-Z])/g, ' $1').trim()}</strong>
+                      <span style={{ color: '#1e40af', fontWeight: '600', fontSize: '14px' }}>{value || '-'}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="email-modal-footer">
+              <button className="btn-secondary" onClick={() => setPreviewForm(null)}>Cancelar</button>
+              <button className="btn-primary" onClick={() => { viewFormWithVersion(previewForm); setPreviewForm(null); }}>
+                👁️ Ver Formulario Completo
               </button>
             </div>
           </div>

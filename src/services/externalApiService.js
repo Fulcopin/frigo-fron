@@ -144,6 +144,17 @@ export const getProductos = async () => {
 };
 
 /**
+ * Obtener lista de insumos
+ * @returns {Promise<Array>} Lista de insumos
+ */
+export const getInsumos = async () => {
+  console.log('🛒 Obteniendo insumos...');
+  const data = await fetchAuthenticatedData('/Insumos');
+  console.log(`✅ ${data.length} insumos obtenidos`);
+  return data;
+};
+
+/**
  * Obtener lista de proveedores
  * @returns {Promise<Array>} Lista de proveedores
  */
@@ -193,6 +204,7 @@ export const API_ENDPOINTS = {
   ESPECIES: '/Especies',
   PESQUEROS: '/Pesqueros',
   PRODUCTOS: '/Productos',
+  INSUMOS: '/Insumos',
   PROVEEDORES: '/Proveedores',
   CONFIGURACIONES: '/Configuraciones',
   CONFIGURACIONES_FRIGO: '/Configuraciones?filter=FRIGO',
@@ -226,6 +238,7 @@ export default {
   getEspecies,
   getPesqueros,
   getProductos,
+  getInsumos,
   getProveedores,
   getConfiguraciones,
   getConfiguracionesFrigo,

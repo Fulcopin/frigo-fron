@@ -46,6 +46,7 @@ function EditTemplate() {
   const [catalogoFirmas, setCatalogoFirmas] = useState([]);
   const [apiToken, setApiToken] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [updateSummary, setUpdateSummary] = useState('');
 
   // ✅ Todos los tipos de campo (igual que CreateTemplate)
   const fieldTypes = [
@@ -350,6 +351,7 @@ function EditTemplate() {
       ...template, 
       isDraft: isDraft,
       isObsolete: isObsolete,
+      updateSummary: updateSummary,
       headerFields: JSON.stringify(template.headerFields), 
       bodyElements: JSON.stringify(template.bodyElements), 
       firmas: JSON.stringify(template.firmas) 
@@ -2543,6 +2545,24 @@ function EditTemplate() {
           </div>
         ))}
         {template.firmas.length === 0 && <p className="empty-state">No hay firmas definidas.</p>}
+      </div>
+
+      {/* ===== RESUMEN DE ACTUALIZACIÓN ===== */}
+      <div className="form-section">
+        <h2 className="section-title">📢 Resumen de Actualización y Alerta</h2>
+        <div className="form-group" style={{ marginBottom: '0' }}>
+          <label style={{ fontWeight: '600', color: '#1e40af', marginBottom: '8px', display: 'block' }}>¿Hubo cambios importantes que deseas notificar?</label>
+          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>
+            Si llenas este cuadro de texto, se enviará una alerta a todos los usuarios indicando qué cambió, la fecha y la hora de actualización. 
+            Si lo dejas en blanco, la actualización será silenciosa y <strong>no</strong> generará correos de alerta innecesarios.
+          </p>
+          <textarea
+            value={updateSummary}
+            onChange={(e) => setUpdateSummary(e.target.value)}
+            placeholder="Ejemplo: Se agregó la columna 'Temperatura' en el cuerpo principal y se eliminó la fila 2."
+            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', minHeight: '80px', resize: 'vertical' }}
+          />
+        </div>
       </div>
 
       {/* ===== ACCIONES FINALES ===== */}
