@@ -377,7 +377,10 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 2.5rem;
+  padding: 1.25rem 0.75rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
@@ -546,7 +549,6 @@
   overflow-wrap: break-word;
   text-align: center;
   min-width: 70px;
-  max-width: 220px;
 }
 
 .view-data-table tbody tr:nth-child(even) td {

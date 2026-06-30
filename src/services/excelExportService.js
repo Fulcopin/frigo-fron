@@ -393,7 +393,7 @@ const createHeaderSection = (worksheet, headerData, startRow, maxCols = 8, templ
   if (templateData) {
     if (templateData.proceso) mergedHeader['Proceso'] = templateData.proceso;
     if (templateData.quienLoLlena) mergedHeader['Quién lo llena'] = templateData.quienLoLlena;
-    if (templateData.supervisa) mergedHeader['Quién supervisa'] = templateData.supervisa;
+    if (templateData.supervisa) mergedHeader['Proceso - Productivo'] = templateData.supervisa;
     if (templateData.cuandoSeUsa) mergedHeader['Cuándo se usa'] = templateData.cuandoSeUsa;
   }
 
@@ -559,7 +559,12 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
         return lower.includes('cloudinary.com') || lower.includes('res.cloudinary') || lower.startsWith('data:image/') || /\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i.test(val);
       };
       
-      const entries = Object.entries(sectionFieldData).filter(([k]) => k !== 'id' && k !== 'type');
+      const hiddenFieldsMap = Array.isArray(bodyData) && bodyData[index] ? bodyData[index].hiddenFields || {} : {};
+      
+      const entries = Object.entries(sectionFieldData).filter(([k]) => {
+        const def = section.fields.find(f => f.label === k);
+        return k !== 'id' && k !== 'type' && !hiddenFieldsMap[k] && !(def && def.isHidden);
+      });
       
       if (entries.length > 0) {
         let fieldIdx = 0;
@@ -628,6 +633,7 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
         if (section.fields && section.fields.length > 0) {
           for (let fi = 0; fi < section.fields.length; fi++) {
             const field = section.fields[fi];
+            if (hiddenFieldsMap[field.label] || field.isHidden) continue;
             const isAlt = fi % 2 === 1;
             
             safeMergeCells(worksheet, currentRow, 1, currentRow, 2);
@@ -818,7 +824,12 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     }
     
     // Encabezados de columnas (usar label de las columnas)
-    const columns = section.columns || [];
+    const hiddenColsMap = Array.isArray(bodyData) && bodyData[index] ? bodyData[index].hiddenColumns || {} : {};
+    const columns = (section.columns || []).map((col, originalIndex) => ({
+      ...col,
+      originalIndex,
+      isHidden: hiddenColsMap[col.label || col.name || col.header] === true || col.isHidden === true
+    })).filter(c => !c.isHidden);
     
     // ✅ FIX: continue en lugar de return para no salir de la función completa
     if (!columns || columns.length === 0) {
@@ -894,11 +905,11 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     // Filas de datos — FILTRAR filas completamente vacías (solo en formato lleno)
     const isRowEmpty = (row) => {
       const rowKeys = Object.keys(row);
-      return columns.every((col, colIndex) => {
+      return columns.every((col) => {
         let v = row[col.label] ?? row[col.name] ?? row[col.header] ?? '';
         // También revisar clave con sufijo _colN (tablas con encabezados agrupados)
         if (String(v).trim() === '') {
-          const suffixKey = rowKeys.find(k => k.endsWith(`_col${colIndex}`));
+          const suffixKey = rowKeys.find(k => k.endsWith(`_col${col.originalIndex}`));
           if (suffixKey) v = row[suffixKey] ?? '';
         }
         return String(v).trim() === '';
@@ -934,7 +945,7 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
 
         // 2. 🎯 RESCATE: Si está vacío, buscar por índice (_colX)
         if (value === undefined || value === null || value === "") {
-          const suffix = `_col${colIndex}`;
+          const suffix = `_col${col.originalIndex}`;
           const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
           if (keyWithSuffix) {
             value = row[keyWithSuffix];
@@ -947,7 +958,7 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
         // 3. 🧮 Columna tipo "formula": recalcular con computedRow (encadenamiento habilitado)
         const colType = (col.type || '').toLowerCase();
         if ((colType === 'formula' || colType === 'calculated') && col.formula) {
-          const rowAlias = buildGroupedRowAlias(computedRowXl, columns, colIndex);
+          const rowAlias = buildGroupedRowAlias(computedRowXl, columns, col.originalIndex);
           const calculado = evaluarFormula(col.formula, rowAlias, dataToRender, rowIndex);
           if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
             value = calculado;

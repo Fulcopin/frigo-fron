@@ -898,6 +898,15 @@ function ViewForms() {
                         </div>
                       );
                     });
+                  const supervisaVal = correspondingTemplate?.supervisa || selectedForm?.supervisa;
+                  if (supervisaVal) {
+                    extraItems.push(
+                      <div key="supervisa" className="data-item">
+                        <span className="data-label">Proceso - Productivo:</span>
+                        <div className="data-value">{supervisaVal}</div>
+                      </div>
+                    );
+                  }
                   return [...items, ...extraItems];
                 })()}
               </div>
@@ -918,6 +927,12 @@ function ViewForms() {
                       </div>
                     );
                   })}
+                {(correspondingTemplate?.supervisa || selectedForm?.supervisa) && (
+                  <div className="data-item">
+                    <span className="data-label">Proceso - Productivo:</span>
+                    <div className="data-value">{correspondingTemplate?.supervisa || selectedForm?.supervisa}</div>
+                  </div>
+                )}
               </div>
             </div>
           ) : null}
@@ -952,6 +967,7 @@ function ViewForms() {
                   <h3>{templateElement.title}</h3>
                   <div className="data-grid">
                     {templateElement.fields?.map((fieldDef) => {
+                      if (elementData?.hiddenFields?.[fieldDef.label || fieldDef.name] || fieldDef.isHidden) return null;
                       // Nota estática: mostrar como advertencia, no como dato llenado
                       if (fieldDef.type === 'nota') {
                         const texto = fieldDef.staticContent || '';
@@ -1076,7 +1092,9 @@ function ViewForms() {
               }
               
               {
-                const vfGroupedCols = processColumnGroups(templateElement.columns);
+                const hiddenColsMap = elementData?.hiddenColumns || {};
+                const visibleColumns = (templateElement.columns || []).map((col, originalIndex) => ({...col, originalIndex})).filter(c => !hiddenColsMap[c.label || c.name || c.header] && !c.isHidden);
+                const vfGroupedCols = processColumnGroups(visibleColumns);
                 return (
                 <div key={templateElement.id} className="data-section">
                   <h3>{templateElement.title}</h3>
@@ -1118,13 +1136,13 @@ function ViewForms() {
                           return (
                             <tr key={`row-${rowIndex}`}>
                               <td>{rowIndex + 1}</td>
-                             {templateElement.columns.map((col, colIndex) => {
+                             {visibleColumns.map((col) => {
                               const rowKeys = Object.keys(safeRow);
                               // 🔗 Rowspan desde filas predefinidas del template
                               let vfRowSpan = undefined;
                               const vfPredRows = templateElement.predefinedRows || [];
                               if (vfPredRows.length > 0 && rowIndex < vfPredRows.length) {
-                                const vfColKey = (col.label || col.header || col.name || col.id || `col_${colIndex}`).trim();
+                                const vfColKey = (col.label || col.header || col.name || col.id || `col_${col.originalIndex}`).trim();
                                 const vfPredRow = vfPredRows[rowIndex];
                                 if (vfPredRow._hidden?.[vfColKey]) return null;
                                 const vfSpan = vfPredRow._rowSpan?.[vfColKey] || 1;
@@ -1139,7 +1157,7 @@ function ViewForms() {
                               // Para tablas agrupadas con etiquetas duplicadas, FillForm guarda
                               // "Termómetro_col2", "Termómetro_col6", etc. La búsqueda por sufijo
                               // es la más precisa porque usa el índice exacto de la columna.
-                              const preciseKey = rowKeys.find(k => k.endsWith(`_col${colIndex}`));
+                              const preciseKey = rowKeys.find(k => k.endsWith(`_col${col.originalIndex}`));
                               let cellValue = preciseKey !== undefined ? safeRow[preciseKey] : undefined;
 
                               // 2. 🎯 BÚSQUEDA DIRECTA EXACTA (etiquetas únicas sin sufijo)
@@ -1178,7 +1196,7 @@ function ViewForms() {
 
                               // 5. 🧮 Columnas de fórmula: recalcular con computedRow (encadenamiento habilitado)
                               if ((col.type === 'formula' || col.type === 'calculated') && col.formula) {
-                                const rowAlias = buildGroupedRowAlias(computedRow, templateElement.columns, colIndex);
+                                const rowAlias = buildGroupedRowAlias(computedRow, templateElement.columns, col.originalIndex);
                                 const calculado = evaluarFormula(col.formula, rowAlias, tableRows, rowIndex);
                                 if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
                                   cellValue = calculado;
@@ -1186,7 +1204,7 @@ function ViewForms() {
                               }
 
                               return (
-                                <td key={`cell-${rowIndex}-${colIndex}`} rowSpan={vfRowSpan || undefined} style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: templateElement.columns.length > 12 ? '60px' : templateElement.columns.length > 8 ? '75px' : '100px' }}>
+                                <td key={`cell-${rowIndex}-${col.originalIndex}`} rowSpan={vfRowSpan || undefined} style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: templateElement.columns.length > 12 ? '60px' : templateElement.columns.length > 8 ? '75px' : '100px' }}>
                                   {renderCellValue(cellValue, col.type)}{col.unit && cellValue !== undefined && cellValue !== null && cellValue !== '' && cellValue !== '-' ? <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '2px' }}>{col.unit}</span> : null}
                                 </td>
                               );
@@ -1207,7 +1225,7 @@ function ViewForms() {
                         <tfoot>
                           <tr style={{ backgroundColor: '#eef2ff', fontWeight: 'bold', borderTop: '3px solid #6366f1' }}>
                             <td style={{ textAlign: 'center', color: '#4338ca', fontWeight: '800', fontSize: '0.9em', padding: '8px 4px' }}>Σ</td>
-                            {templateElement.columns.map((col, colIndex) => {
+                            {visibleColumns.map((col, colIndex) => {
                               const colLabel = (col.label || col.header || '').toUpperCase();
                               const colId = (col.id || col.name || '').toUpperCase();
                               const colType = (col.type || '').toLowerCase();
@@ -1497,7 +1515,9 @@ function ViewForms() {
                     );
 
                     // El usuario puede firmar si: es su slot O es reemplazo, Y aún no ha firmado
-                    const canSignHere = (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado;
+                    const hoursElapsedView = (new Date() - new Date(formData?.createdAt || formData?.createdDate || new Date())) / (1000 * 60 * 60);
+                    const isTimeLockedView = hoursElapsedView > 36 && !formData?.headerData?.unlocked36h;
+                    const canSignHere = (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && !isTimeLockedView;
                     
                     console.log(`🔐 [${puesto}] Validación de firma:`, {
                       nombreAsignado,
@@ -1608,6 +1628,16 @@ function ViewForms() {
                               currentUser={currentUser}
                               canSign={true}
                             />
+                          ) : (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && ((new Date() - new Date(formData?.createdAt || formData?.createdDate || new Date())) / (1000 * 60 * 60)) > 36 && !formData?.headerData?.unlocked36h ? (
+                            <div style={{ padding: '12px', background: '#fef2f2', border: '1px dashed #ef4444', borderRadius: '8px', textAlign: 'center', margin: '8px 0' }}>
+                              <span style={{ fontSize: '18px' }}>🔒</span>
+                              <p style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '12px', margin: '4px 0 0 0' }}>
+                                Bloqueado (&gt;36h)
+                              </p>
+                              <p style={{ color: '#7f1d1d', fontSize: '10px', margin: '2px 0 0 0' }}>
+                                Un Administrador debe habilitarlo en Supervisión General
+                              </p>
+                            </div>
                           ) : (
                             <p style={{ fontStyle: 'italic', color: '#6b7280' }}>(Sin firma digital)</p>
                           )}

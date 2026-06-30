@@ -21,10 +21,10 @@ function EditTemplate() {
     nombre: "",
     version: "1",
     fechaVersion: null,
-    supervisa: "",
+    supervisa: "Proceso - Productivo",
     proceso: "",
-    cuandoSeUsa: "",
-    quienLoLlena: "",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "",
     isMasterForm: false,
     autoSumColumns: false,
@@ -574,7 +574,7 @@ function EditTemplate() {
             </small>
           </div>
           <div className="form-group full-width"><label>Nombre del Registro *</label><input type="text" value={template.nombre} onChange={(e) => handleInputChange("nombre", e.target.value)} placeholder="Ej: CONTROL DE TEMPERATURA DE TÚNELES"/></div>
-          <div className="form-group full-width"><label>Quién Supervisa</label><input type="text" value={template.supervisa} onChange={(e) => handleInputChange("supervisa", e.target.value)} placeholder="Ej: Jefe de Producción, Supervisor de Calidad"/></div>
+          <div className="form-group full-width"><label>Proceso - Productivo</label><input type="text" value={template.supervisa} onChange={(e) => handleInputChange("supervisa", e.target.value)} placeholder="Ej: Jefe de Producción, Supervisor de Calidad"/></div>
           <div className="form-group"><label>Proceso</label><input type="text" value={template.proceso} onChange={(e) => handleInputChange("proceso", e.target.value)} placeholder="Ej: Producción, Calidad, Recepción"/></div>
           <div className="form-group"><label>Cuándo se usa</label><input type="text" value={template.cuandoSeUsa} onChange={(e) => handleInputChange("cuandoSeUsa", e.target.value)} placeholder="Ej: Posterior a congelación"/></div>
           <div className="form-group"><label>Quién lo llena</label><input type="text" value={template.quienLoLlena} onChange={(e) => handleInputChange("quienLoLlena", e.target.value)} placeholder="Ej: Asistente de Cámara"/></div>
@@ -818,6 +818,9 @@ function EditTemplate() {
                     <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem', cursor: 'pointer' }}>
                       <input type="checkbox" checked={field.required || false} onChange={(e) => updateHeaderField(index, "required", e.target.checked)} />Requerido
                     </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem', cursor: 'pointer', color: '#dc2626', fontWeight: 'bold' }}>
+                      <input type="checkbox" checked={field.isHidden || false} onChange={(e) => updateHeaderField(index, "isHidden", e.target.checked)} />🚫 Oculto
+                    </label>
                     <button onClick={() => moveHeaderField(index, -1)} className="btn-move-up" disabled={index === 0} title="Mover arriba">⬆️</button>
                     <button onClick={() => moveHeaderField(index, 1)} className="btn-move-down" disabled={index === template.headerFields.length - 1} title="Mover abajo">⬇️</button>
                     <button onClick={() => removeHeaderField(index)} className="btn-remove" title="Eliminar campo">🗑️</button>
@@ -854,7 +857,11 @@ function EditTemplate() {
                   {MAPPABLE_API_FIELDS.catalogs.map(apiField => (<option key={apiField.value} value={apiField.value}>{apiField.label}</option>))}
                 </select>
               </div>
-              <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required || false} onChange={(e) => updateHeaderField(index, "required", e.target.checked)}/>Requerido</label></div>
+              <div className="form-group checkbox-group">
+                <label><input type="checkbox" checked={field.required || false} onChange={(e) => updateHeaderField(index, "required", e.target.checked)}/>Requerido</label>
+                <label style={{ color: '#dc2626', fontWeight: 'bold' }}><input type="checkbox" checked={field.isHidden || false} onChange={(e) => updateHeaderField(index, "isHidden", e.target.checked)}/>🚫 Oculto</label>
+              </div>
+              <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateHeaderField(index, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
               <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                 <button onClick={() => moveHeaderField(index, -1)} className="btn-move-up" disabled={index === 0} title="Mover arriba">⬆️</button>
                 <button onClick={() => moveHeaderField(index, 1)} className="btn-move-down" disabled={index === template.headerFields.length - 1} title="Mover abajo">⬇️</button>
@@ -887,7 +894,10 @@ function EditTemplate() {
           <div key={element.id || elementIndex} className="body-element-container">
             <div className="body-element-header">
               <input type="text" value={element.title} onChange={(e) => updateBodyElement(elementIndex, 'title', e.target.value)} className="section-title-input" placeholder="Título del bloque"/>
-              <div style={{ display: 'flex', gap: '4px' }}>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem', cursor: 'pointer', color: '#dc2626', fontWeight: 'bold', marginRight: '10px' }}>
+                  <input type="checkbox" checked={element.isHidden || false} onChange={(e) => updateBodyElement(elementIndex, "isHidden", e.target.checked)} />🚫 Oculto
+                </label>
                 <button onClick={() => moveBodyElement(elementIndex, -1)} className="btn-move-up" disabled={elementIndex === 0} title="Mover arriba">⬆️</button>
                 <button onClick={() => moveBodyElement(elementIndex, 1)} className="btn-move-down" disabled={elementIndex === template.bodyElements.length - 1} title="Mover abajo">⬇️</button>
                 <button onClick={() => removeBodyElement(elementIndex)} className="btn-remove" title="Eliminar bloque">🗑️</button>
@@ -1053,6 +1063,9 @@ function EditTemplate() {
                             <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem', cursor: 'pointer' }}>
                               <input type="checkbox" checked={field.required || false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)} />Requerido
                             </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem', cursor: 'pointer', color: '#dc2626', fontWeight: 'bold' }}>
+                              <input type="checkbox" checked={field.isHidden || false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "isHidden", e.target.checked)} />🚫 Oculto
+                            </label>
                             <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, -1)} className="btn-move-up" disabled={fieldIndex === 0} title="Mover arriba">⬆️</button>
                             <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, 1)} className="btn-move-down" disabled={fieldIndex === (element.fields || []).length - 1} title="Mover abajo">⬇️</button>
                             <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
@@ -1111,7 +1124,11 @@ function EditTemplate() {
                           ))}
                         </select>
                       </div>
-                      <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required || false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)}/>Requerido</label></div>
+                      <div className="form-group checkbox-group">
+                        <label><input type="checkbox" checked={field.required || false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)}/>Requerido</label>
+                        <label style={{ color: '#dc2626', fontWeight: 'bold' }}><input type="checkbox" checked={field.isHidden || false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "isHidden", e.target.checked)}/>🚫 Oculto</label>
+                      </div>
+                      <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                         <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, -1)} className="btn-move-up" disabled={fieldIndex === 0} title="Mover arriba">⬆️</button>
                         <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, 1)} className="btn-move-down" disabled={fieldIndex === (element.fields || []).length - 1} title="Mover abajo">⬇️</button>
@@ -1929,6 +1946,7 @@ function EditTemplate() {
                       )}
 
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={column.required || false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "required", e.target.checked)}/>Requerido</label></div>
+                      <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={column.usaApiAutocomplete !== false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
 
                       {/* 📊 INCLUIR EN AUTO-SUMA */}
                       <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: column.includeInSum === false ? '#fff7ed' : '#f0fdf4', border: `1px solid ${column.includeInSum === false ? '#fb923c' : '#86efac'}`, borderRadius: '6px' }}>
@@ -1945,6 +1963,9 @@ function EditTemplate() {
                       </div>
                       
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem', cursor: 'pointer', color: '#dc2626', fontWeight: 'bold', marginRight: '10px' }}>
+                          <input type="checkbox" checked={column.isHidden || false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "isHidden", e.target.checked)} />🚫 Oculto
+                        </label>
                         <button onClick={() => moveColumn(elementIndex, colIndex, -1)} className="btn-move-up" disabled={colIndex === 0} title="Mover izquierda">⬆️</button>
                         <button onClick={() => moveColumn(elementIndex, colIndex, 1)} className="btn-move-down" disabled={colIndex === (element.columns?.length || 0) - 1} title="Mover derecha">⬇️</button>
                         <button onClick={() => removeColumnFromTable(elementIndex, colIndex)} className="btn-remove" title="Eliminar columna">🗑️</button>

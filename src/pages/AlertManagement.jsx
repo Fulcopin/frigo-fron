@@ -33,6 +33,7 @@ export default function AlertManagement() {
   const [testEmail, setTestEmail] = useState('');
   const [configSaved, setConfigSaved] = useState(false);
   const [loadingFirmantes, setLoadingFirmantes] = useState(false);
+  const [triggeringSummary, setTriggeringSummary] = useState(false);
 
   const currentUser = authService.getCurrentUser();
   const isSGI = currentUser?.rol === 'admin' || currentUser?.rol === 'sgi' || currentUser?.rol === 'supervisor';
@@ -352,6 +353,31 @@ export default function AlertManagement() {
       alert('❌ No se pudo conectar con el servidor.\nVerifica que el backend esté corriendo en ' + API_BASE_URL);
     }
     setTestEmail('');
+  };
+
+  const handleTriggerConsolidatedSummary = async () => {
+    if (!window.confirm('¿Deseas enviar ahora mismo el correo consolidado de firmas pendientes y formularios no realizados a todos los jefes y usuarios?')) {
+      return;
+    }
+    try {
+      setTriggeringSummary(true);
+      const response = await fetch(`${API_BASE_URL}/Alerts/trigger-summary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        alert('✅ ' + (data.message || 'Resumen consolidado enviado exitosamente a todos los jefes de calidad y producción.'));
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        alert('❌ Error al enviar el resumen consolidado: ' + (errorData.message || 'Error en el servidor'));
+      }
+    } catch (error) {
+      console.error('Error enviando resumen consolidado:', error);
+      alert('❌ Error de conexión con el servidor.');
+    } finally {
+      setTriggeringSummary(false);
+    }
   };
 
   if (loading) {
@@ -780,6 +806,22 @@ export default function AlertManagement() {
                   </button>
                 </div>
               )}
+
+              {/* Sección de Resumen Consolidado Gerencial */}
+              <div className="test-section" style={{ borderLeft: '4px solid #f59e0b', background: '#fffbeb' }}>
+                <h3 style={{ color: '#b45309' }}>🚀 Envío Consolidado Gerencial (Jefes de Calidad y Producción)</h3>
+                <p style={{ color: '#78350f', fontSize: '14px', marginBottom: '15px' }}>
+                  Este botón envía inmediatamente el <strong>resumen consolidado de las 7:30 AM / Semanal</strong> a todos los jefes de calidad, producción y usuarios que tengan firmas pendientes o formularios faltantes según su periodicidad (diaria, semanal, mensual).
+                </p>
+                <button
+                  onClick={handleTriggerConsolidatedSummary}
+                  disabled={triggeringSummary}
+                  className="btn-primary"
+                  style={{ background: '#d97706', borderColor: '#b45309', padding: '12px 24px', fontSize: '15px' }}
+                >
+                  {triggeringSummary ? '⏳ Enviando Resúmenes Consolidados...' : '📤 Enviar Ahora Resumen Consolidado por Correo'}
+                </button>
+              </div>
 
               {/* Sección de Prueba */}
               <div className="test-section">

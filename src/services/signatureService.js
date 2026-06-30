@@ -49,6 +49,7 @@ const signatureService = {
           signedDate: signatureData.signedDate || toLocalISOString(),
           comments: signatureData.comments || '',
           signerNombre: signatureData.signerNombre || '',
+          targetPuesto: signatureData.targetPuesto || null,
         }),
       });
       
@@ -81,6 +82,7 @@ const signatureService = {
           signedDate: signatureData.signedDate || toLocalISOString(),
           comments: signatureData.comments || '',
           signerNombre: signatureData.signerNombre || '',
+          targetPuesto: signatureData.targetPuesto || null,
         }),
       });
       
@@ -92,6 +94,34 @@ const signatureService = {
       return await response.json();
     } catch (error) {
       console.error('Error en signMultipleForms:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Habilitar múltiples formularios bloqueados (>36h) para que puedan ser firmados
+   */
+  async unlockMultipleForms(formIds, unlockedBy) {
+    try {
+      const response = await fetch(`${API_URL_SIGNATURES}/unlock-multiple`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          formIds: formIds,
+          unlockedBy: unlockedBy || 'Admin'
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al habilitar los formularios');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error en unlockMultipleForms:', error);
       throw error;
     }
   },

@@ -132,6 +132,7 @@ export default function SignatureManagement() {
           hasSignatureImages, // Si el formulario YA tiene firmas PNG dentro
           status: form.isRejected ? 'rejected' : form.isSigned ? 'signed' : 'pending',
           signed: form.isSigned || false,
+          unlocked36h: form.unlocked36h || false,
           firmasData: firmasDataParsed, // ✅ Agregar FirmasData parseado para filtrado
           templateFirmas: templateFirmasParsed, // ✅ Firmas del template con reemplazos/suplentes
         };
@@ -201,14 +202,50 @@ export default function SignatureManagement() {
       alert('Por favor selecciona al menos un formulario para firmar');
       return;
     }
+    const lockedSelected = pendingForms.filter(f => selectedForms.includes(f.id)).filter(f => {
+      const h = (new Date() - new Date(f.createdDate)) / (1000 * 60 * 60);
+      return h > 36 && !f.unlocked36h;
+    });
+    if (lockedSelected.length > 0) {
+      alert(`🔒 Has seleccionado ${lockedSelected.length} formulario(s) con más de 36 horas de antigüedad que están bloqueados. Un Administrador debe habilitarlos en Supervisión General antes de poder firmar.`);
+      return;
+    }
     setIsMassive(massive);
     setSignatureTab('upload');
     setSignatureImage('');
     setShowSignatureModal(true);
   };
 
+  // ✅ Habilitar formularios para firma (sobreescribir bloqueo de 36 horas)
+  const handleUnlockSelected = async () => {
+    if (selectedForms.length === 0) return;
+    if (!window.confirm(`¿Estás seguro de habilitar ${selectedForms.length} formulario(s) para que puedan ser firmados omitiendo el bloqueo de 36 horas?`)) {
+      return;
+    }
+    try {
+      setLoading(true);
+      await signatureService.unlockMultipleForms(selectedForms, currentUser?.email || currentUser?.nombre || 'SGI');
+      alert(`✅ Se han habilitado ${selectedForms.length} formulario(s) exitosamente. Ahora los usuarios correspondientes pueden firmar.`);
+      setSelectedForms([]);
+      await loadData();
+    } catch (error) {
+      console.error('Error al habilitar:', error);
+      alert('❌ Error al habilitar formularios: ' + (error.message || 'Error desconocido'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Función para cargar el formulario completo y mostrar contrato
   const openContractPreview = async (formId) => {
+    const formToCheck = pendingForms.find(f => f.id === formId);
+    if (formToCheck) {
+      const h = (new Date() - new Date(formToCheck.createdDate)) / (1000 * 60 * 60);
+      if (h > 36 && !formToCheck.unlocked36h) {
+        alert('🔒 Este registro tiene más de 36 horas de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.');
+        return;
+      }
+    }
     try {
       setContractLoading(true);
       setShowContractPreview(true);
@@ -578,10 +615,11 @@ export default function SignatureManagement() {
     // ✅ Excluir formularios rechazados
     const isNotRejected = !form.isRejected;
     
-    // ✅ NUEVO FILTRO: Solo mostrar formularios donde el usuario está asignado para firmar
-    const isAssignedToUser = isUserAssignedToSign(form);
+    // Si estamos en la pestaña de Administración (admin_all), mostrar todo lo pendiente
+    // Si estamos en la pestaña normal (pending), mostrar solo los asignados específicamente a este usuario
+    const isAssigned = mainTab === 'admin_all' ? true : isUserAssignedToSign(form);
     
-    return matchesSearch && matchesArea && matchesTemplate && isAssignedToUser && isNotRejected;
+    return matchesSearch && matchesArea && matchesTemplate && isAssigned && isNotRejected;
   });
 
   // Obtener áreas y plantillas únicas para filtros
@@ -677,8 +715,27 @@ export default function SignatureManagement() {
               transition: 'all 0.2s'
             }}
           >
-            📝 Firmas Pendientes
+            📝 Mis Firmas Pendientes
           </button>
+          {isSGI && (
+            <button
+              onClick={() => setMainTab('admin_all')}
+              style={{
+                flex: 1,
+                padding: '12px 20px',
+                border: 'none',
+                borderLeft: '1px solid #e5e7eb',
+                background: mainTab === 'admin_all' ? 'linear-gradient(135deg, #10b981, #059669)' : '#f8fafc',
+                color: mainTab === 'admin_all' ? '#fff' : '#64748b',
+                fontWeight: mainTab === 'admin_all' ? 700 : 500,
+                fontSize: '0.95rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              🛡️ Supervisión General (Admin)
+            </button>
+          )}
           <button
             onClick={() => { setMainTab('timing'); loadTimingReport(); }}
             style={{
@@ -700,7 +757,7 @@ export default function SignatureManagement() {
       )}
 
       {/* === PESTAÑA: FIRMAS PENDIENTES === */}
-      {mainTab === 'pending' && (
+      {(mainTab === 'pending' || mainTab === 'admin_all') && (
         <>
       {/* Controles y Filtros */}
       <div className="controls-section">
@@ -747,6 +804,17 @@ export default function SignatureManagement() {
             {selectedForms.length === filteredForms.length ? '☑️ Deseleccionar Todo' : '☐ Seleccionar Todo'}
           </button>
           
+          {isSGI && mainTab === 'admin_all' && (
+            <button
+              onClick={handleUnlockSelected}
+              className="btn-secondary"
+              style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+              disabled={selectedForms.length === 0}
+            >
+              🔓 Habilitar Validación (&gt;36h) ({selectedForms.length})
+            </button>
+          )}
+
           <button
             onClick={() => openSignatureModal(true)}
             className="btn-primary"
@@ -826,15 +894,32 @@ export default function SignatureManagement() {
                 </div>
 
                 <div className="form-card-actions">
-                  <button
-                    onClick={() => {
-                      setSelectedForms([form.id]);
-                      openContractPreview(form.id);
-                    }}
-                    className="btn-sign"
-                  >
-                    ✍️ Firmar
-                  </button>
+                  {(() => {
+                    const hoursElapsedCard = (new Date() - new Date(form.createdDate)) / (1000 * 60 * 60);
+                    const isTimeLockedCard = hoursElapsedCard > 36 && !form.unlocked36h;
+                    if (isTimeLockedCard) {
+                      return (
+                        <button
+                          onClick={() => alert('🔒 Este registro tiene más de 36 horas de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.')}
+                          className="btn-sign"
+                          style={{ backgroundColor: '#9ca3af', cursor: 'not-allowed' }}
+                        >
+                          🔒 Bloqueado (&gt;36h)
+                        </button>
+                      );
+                    }
+                    return (
+                      <button
+                        onClick={() => {
+                          setSelectedForms([form.id]);
+                          openContractPreview(form.id);
+                        }}
+                        className="btn-sign"
+                      >
+                        {form.unlocked36h ? '🔓 Firmar (Habilitado)' : '✍️ Firmar'}
+                      </button>
+                    );
+                  })()}
                   
                   
 
@@ -1259,6 +1344,11 @@ export default function SignatureManagement() {
                           <strong>Área:</strong> {contractFormData.area}
                         </div>
                       )}
+                      {(contractTemplate?.supervisa || contractFormData?.supervisa) && (
+                        <div style={{ fontSize: '1rem' }}>
+                          <strong>Proceso - Productivo:</strong> {contractTemplate?.supervisa || contractFormData?.supervisa}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1306,15 +1396,120 @@ export default function SignatureManagement() {
                         }}>
                           <h4 style={{ margin: '0 0 10px 0', color: '#374151' }}>📋 {templateElement.title}</h4>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
-                            {Object.entries(sectionData).map(([key, value]) => (
-                              <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
-                                <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
-                                {value && typeof value === 'string' && (value.startsWith('https://res.cloudinary.com') || value.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(value))
-                                  ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} />
-                                  : <span style={{ color: '#111827' }}>{value || '-'}</span>
-                                }
-                              </div>
-                            ))}
+                            {Object.entries(sectionData).map(([key, value]) => {
+                              const displayValue = Array.isArray(value) ? value.join(', ') : (typeof value === 'boolean' ? (value ? 'Sí' : 'No') : value);
+                              const isImage = value && typeof value === 'string' && (value.startsWith('https://res.cloudinary.com') || value.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(value));
+                              return (
+                                <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
+                                  <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
+                                  {isImage
+                                    ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} />
+                                    : <span style={{ color: '#111827' }}>{displayValue || '-'}</span>
+                                  }
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Renderizar NOTA ESTÁTICA
+                    if (templateElement.type === 'nota_estatica') {
+                      return (
+                        <div key={templateElement.id || elementIndex} style={{
+                          margin: '10px 0',
+                          border: '1.5px solid #92400e',
+                          borderLeft: '5px solid #d97706',
+                          borderRadius: '4px',
+                          background: '#fffbeb',
+                          padding: '12px 16px',
+                          fontSize: '0.9rem',
+                          color: '#1c1917',
+                          lineHeight: '1.6'
+                        }}>
+                          {templateElement.imagen && (
+                            <img src={templateElement.imagen} alt="Nota" style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', marginBottom: '10px', display: 'block' }} />
+                          )}
+                          <div dangerouslySetInnerHTML={{ __html: templateElement.texto ? templateElement.texto.replace(/\n/g, '<br/>') : '' }} />
+                        </div>
+                      );
+                    }
+
+                    // Renderizar TINAS
+                    if (templateElement.type === 'tinas') {
+                      const config = templateElement.config || {};
+                      const groups = config.groups || [];
+                      const fields = config.fields || [];
+                      const cycles = config.cycles || 3;
+                      const tinasData = (elementData && elementData.data) ? elementData.data : {};
+                      
+                      const allTinas = groups.flatMap((g, gIdx) =>
+                        Array.from({ length: g.count }, (_, tIdx) => ({
+                          key: `g${gIdx}_t${tIdx}`,
+                          label: (g.labels || [])[tIdx] || `TINA ${tIdx + 1}`,
+                          groupName: g.name || `Grupo ${gIdx + 1}`,
+                          groupIdx: gIdx,
+                          count: g.count
+                        }))
+                      );
+                      
+                      return (
+                        <div key={templateElement.id || elementIndex} style={{
+                          background: 'white',
+                          borderRadius: '12px',
+                          padding: '1.2rem',
+                          marginBottom: '1rem',
+                          border: '1px solid #e5e7eb',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                          overflow: 'auto'
+                        }}>
+                          <h4 style={{ margin: '0 0 10px 0', color: '#374151' }}>🧊 {templateElement.title || 'Control de Tinas'}</h4>
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                              <thead>
+                                <tr>
+                                  <th rowSpan={2} style={{ background: '#035b8d', color: 'white', minWidth: '120px', padding: '8px', border: '1px solid #e5e7eb' }}>Ciclo / Campo</th>
+                                  {groups.map((g, gIdx) => (
+                                    <th key={gIdx} colSpan={g.count} style={{ background: '#035b8d', color: 'white', textAlign: 'center', padding: '8px', border: '1px solid #e5e7eb' }}>
+                                      {g.name && g.name.includes('___') ? (
+                                        <span><strong>{tinasData[`g${gIdx}_customName`] || '___'}</strong> {g.name.replace('___', '').trim()}</span>
+                                      ) : g.name}
+                                    </th>
+                                  ))}
+                                </tr>
+                                <tr>
+                                  {allTinas.map(tina => {
+                                    const customLabel = tinasData[tina.key]?._customLabel;
+                                    const displayLabel = tina.label.includes('___') ? `${customLabel || '___'} ${tina.label.replace('___', '').trim()}` : tina.label;
+                                    return (
+                                      <th key={tina.key} style={{ background: '#0284c7', color: 'white', textAlign: 'center', padding: '6px', border: '1px solid #e5e7eb' }}>
+                                        {displayLabel}
+                                      </th>
+                                    );
+                                  })}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Array.from({ length: cycles }).map((_, cycleIdx) =>
+                                  fields.map((field, fi) => (
+                                    <tr key={`${cycleIdx}-${fi}`} style={{ background: (cycleIdx * fields.length + fi) % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                                      <td style={{ padding: '6px', border: '1px solid #e5e7eb', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                        C{cycleIdx + 1} - {field.label}{field.suffix ? ` (${field.suffix})` : ''}
+                                      </td>
+                                      {allTinas.map(tina => {
+                                        const val = tinasData[tina.key]?.[cycleIdx]?.[field.label];
+                                        return (
+                                          <td key={`${tina.key}-${cycleIdx}-${fi}`} style={{ padding: '6px', border: '1px solid #e5e7eb', textAlign: 'center' }}>
+                                            {Array.isArray(val) ? val.join(', ') : (typeof val === 'boolean' ? (val ? 'Sí' : 'No') : val || '-')}
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       );
@@ -1378,12 +1573,13 @@ export default function SignatureManagement() {
                                         if (foundKey) cellValue = row[foundKey];
                                       }
 
-                                      const isImageValue = cellValue && typeof cellValue === 'string' && (cellValue.startsWith('https://res.cloudinary.com') || cellValue.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(cellValue));
+                                      const displayValue = Array.isArray(cellValue) ? cellValue.join(', ') : (typeof cellValue === 'boolean' ? (cellValue ? 'Sí' : 'No') : cellValue);
+                                      const isImageValue = displayValue && typeof displayValue === 'string' && (displayValue.startsWith('https://res.cloudinary.com') || displayValue.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(displayValue));
                                       return (
                                         <td key={colIndex} style={{ padding: '8px', border: '1px solid #e5e7eb', textAlign: 'center' }}>
                                           {isImageValue
-                                            ? <img src={cellValue} alt="img" style={{ maxWidth: '80px', maxHeight: '80px', objectFit: 'contain', borderRadius: '4px' }} />
-                                            : (cellValue !== undefined && cellValue !== null && cellValue !== '' ? String(cellValue) : '-')
+                                            ? <img src={displayValue} alt="img" style={{ maxWidth: '80px', maxHeight: '80px', objectFit: 'contain', borderRadius: '4px' }} />
+                                            : (displayValue !== undefined && displayValue !== null && displayValue !== '' ? String(displayValue) : '-')
                                           }
                                         </td>
                                       );
@@ -1392,6 +1588,19 @@ export default function SignatureManagement() {
                                 ))}
                                 {tableRows.length === 0 && (
                                   <tr><td colSpan={(templateElement.columns?.length || 0) + 1} style={{ padding: '12px', textAlign: 'center', color: '#6b7280' }}>No hay datos</td></tr>
+                                )}
+                                {templateElement.mostrarTotales && tableRows.length > 0 && (
+                                  <tr style={{ background: '#dbeafe', fontWeight: 'bold' }}>
+                                    <td style={{ padding: '8px', border: '1px solid #e5e7eb', textAlign: 'center' }}>Total</td>
+                                    {templateElement.columns?.map((col, colIndex) => {
+                                      const isColNumber = tableRows.some(r => typeof r[col.label || col.header] === 'number');
+                                      if (isColNumber || (col.type === 'number' || col.type === 'formula')) {
+                                        const total = tableRows.reduce((sum, r) => sum + (Number(r[col.label || col.header] || r[col.id || col.name]) || 0), 0);
+                                        return <td key={colIndex} style={{ padding: '8px', border: '1px solid #e5e7eb', textAlign: 'center' }}>{total % 1 !== 0 ? total.toFixed(2) : total}</td>;
+                                      }
+                                      return <td key={colIndex} style={{ padding: '8px', border: '1px solid #e5e7eb', textAlign: 'center' }}>-</td>;
+                                    })}
+                                  </tr>
                                 )}
                               </tbody>
                             </table>

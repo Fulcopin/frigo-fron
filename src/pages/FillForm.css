@@ -116,9 +116,11 @@ body {
 }
 
 .fill-form {
+  width: 100%;
   max-width: 100%;
   margin: 0;
-  padding: 1rem;
+  padding: 0.25rem;
+  box-sizing: border-box;
   touch-action: pan-y pinch-zoom;
   scroll-behavior: auto !important;
   overflow-anchor: none !important;
@@ -368,11 +370,11 @@ body {
   background: white;
   border: none;
   border-radius: 0;
-  padding: 1.5rem;
-  margin: 0 1rem 2rem 1rem;
+  padding: 1.25rem 0.75rem;
+  margin: 0 0 2rem 0;
   padding-bottom: 50vh; 
-  width: calc(100% - 2rem);
-  max-width: calc(100% - 2rem);
+  width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
   overflow: visible; /* ✅ Permite scroll con mouse/trackpad */
   position: relative;
@@ -762,10 +764,9 @@ body {
   overflow-wrap: break-word;
 }
 
-/* Evitar que las celdas se compriman demasiado */
+/* Permitir que las celdas y la tabla se expandan y ocupen todo el ancho disponible en pantalla */
 .data-table th, .data-table td {
-  min-width: 80px;
-  max-width: 200px;
+  min-width: 85px;
   word-break: break-word;
   overflow-wrap: break-word;
 }

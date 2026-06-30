@@ -66,7 +66,18 @@ const ProductoAutocomplete = ({
       const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
-        const list = data.$values || (Array.isArray(data) ? data : []);
+        let list = data.$values || (Array.isArray(data) ? data : []);
+        
+        // --- IMPROVEMENT: Exact Match Priority ---
+        // Si se busca por código y hay un match EXACTO, solo mostramos ese.
+        // Esto evita mostrar cientos de resultados cuando el usuario ya digitó el código completo.
+        if (searchType === 'codigoErp') {
+          const exactMatch = list.find(p => p.codigoErp?.toUpperCase() === term.toUpperCase());
+          if (exactMatch) {
+            list = [exactMatch];
+          }
+        }
+        
         setResults(list);
       } else {
         setResults([]);

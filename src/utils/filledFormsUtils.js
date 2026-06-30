@@ -193,7 +193,16 @@ function processBodyData(bodyDataString) {
           // Si es un objeto pero no tiene .rows ni .type, podría ser una fila directa
           else {
             console.log(`🔄 Item ${index} parece ser una fila directa, envolviéndola`);
-            return { rows: [item] };
+            // Extraer metadatos para mantenerlos en la raíz y no enterrarlos en la fila
+            const rootProps = {};
+            const rowData = { ...item };
+            
+            if (rowData.hiddenFields !== undefined) { rootProps.hiddenFields = rowData.hiddenFields; delete rowData.hiddenFields; }
+            if (rowData.hiddenColumns !== undefined) { rootProps.hiddenColumns = rowData.hiddenColumns; delete rowData.hiddenColumns; }
+            if (rowData._isHidden !== undefined) { rootProps._isHidden = rowData._isHidden; delete rowData._isHidden; }
+            if (rowData.id !== undefined) { rootProps.id = rowData.id; delete rowData.id; }
+            
+            return { ...rootProps, rows: [rowData] };
           }
         }
         return { rows: [] };
@@ -210,7 +219,15 @@ function processBodyData(bodyDataString) {
         return [parsed];
       } else {
         console.log('🔄 Objeto único sin .rows, tratándolo como una fila');
-        return [{ rows: [parsed] }];
+        const rootProps = {};
+        const rowData = { ...parsed };
+        
+        if (rowData.hiddenFields !== undefined) { rootProps.hiddenFields = rowData.hiddenFields; delete rowData.hiddenFields; }
+        if (rowData.hiddenColumns !== undefined) { rootProps.hiddenColumns = rowData.hiddenColumns; delete rowData.hiddenColumns; }
+        if (rowData._isHidden !== undefined) { rootProps._isHidden = rowData._isHidden; delete rowData._isHidden; }
+        if (rowData.id !== undefined) { rootProps.id = rowData.id; delete rowData.id; }
+        
+        return [{ ...rootProps, rows: [rowData] }];
       }
     }
     

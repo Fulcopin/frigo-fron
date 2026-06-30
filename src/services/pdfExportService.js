@@ -433,7 +433,7 @@ const drawHeaderSection = (doc, headerData, startY, templateData) => {
   if (templateData) {
     if (templateData.proceso) mergedHeader['Proceso'] = templateData.proceso;
     if (templateData.quienLoLlena) mergedHeader['Quién lo llena'] = templateData.quienLoLlena;
-    if (templateData.supervisa) mergedHeader['Quién supervisa'] = templateData.supervisa;
+    if (templateData.supervisa) mergedHeader['Proceso - Productivo'] = templateData.supervisa;
     if (templateData.cuandoSeUsa) mergedHeader['Cuándo se usa'] = templateData.cuandoSeUsa;
   }
 
@@ -1158,14 +1158,18 @@ export const exportFormToPDF = async (form, template, options = {}) => {
         if (tableData.length > 0) {
           // Las columnas usan 'label' como nombre (ej: "LOTE DE PROCESO")
           // Los datos también usan 'label' como key: { "LOTE DE PROCESO": "jnd" }
+          const hiddenColsMap = _elementData?.hiddenColumns || {};
+          const isHiddenCol = (c) => hiddenColsMap[c.label || c.name || c.header] === true || c.isHidden === true;
           const columns = section.columns.map((col, colIndex) => ({
+            originalIndex: colIndex,
             header: sanitizeText(col.label || col.name || 'Columna'),
             dataKey: col.label || col.name || col.id || `col_${colIndex}`,
             type: (col.type || '').toLowerCase(),
             formula: col.formula || '',
             group: col.group || null,
-            unit: col.unit || ''
-          }));
+            unit: col.unit || '',
+            isHidden: isHiddenCol(col)
+          })).filter(c => !c.isHidden);
           
           console.log(`📋 Columnas de "${sectionTitle}":`, columns.map(c => c.header));
           console.log(`📋 Primera fila de datos:`, tableData[0]);
@@ -1192,7 +1196,7 @@ const rows = tableData.map((row, rowIndex) => {
     
     // 3. Si sigue vacío, búsqueda por índice (por si el nombre cambió a _col7)
     if (!value || value === "") {
-      const suffix = `_col${colIndex}`;
+      const suffix = `_col${col.originalIndex}`;
       const keyWithSuffix = rowKeys.find(k => k.endsWith(suffix));
       if (keyWithSuffix) value = row[keyWithSuffix];
     }
@@ -1200,7 +1204,7 @@ const rows = tableData.map((row, rowIndex) => {
     // 4. 🧮 Columna tipo "formula": recalcular con computedRow (encadenamiento habilitado)
     const colType = (col.type || '').toLowerCase();
     if ((colType === 'formula' || colType === 'calculated') && col.formula) {
-      const rowAlias = buildGroupedRowAlias(computedRowPdf, section.columns, colIndex);
+      const rowAlias = buildGroupedRowAlias(computedRowPdf, section.columns, col.originalIndex);
       const calculado = evaluarFormula(col.formula, rowAlias, tableData, rowIndex);
       if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
         value = calculado;
@@ -1470,7 +1474,11 @@ const rows = tableData.map((row, rowIndex) => {
         const boxFields = []; // label largo → caja morada (valor > 60 chars o textarea sin valor)
         let hasRendered = false;
 
+        const hiddenFieldsMap = _elementData?.hiddenFields || {};
+        
         for (const fieldDef of templateFields) {
+          if (hiddenFieldsMap[fieldDef.label || fieldDef.name] === true || fieldDef.isHidden === true) continue;
+          
           const fieldType = (fieldDef.type || 'text').toLowerCase();
           const fieldLabel = fieldDef.label || '';
 

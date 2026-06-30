@@ -11,6 +11,7 @@ import authService from "../services/authService"
 import "./FillForm.css" // Reutilizamos los estilos de FillForm
 import { loadFormForEdit, updateFilledForm, autosaveForm } from "../utils/filledFormsUtils"
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
+import ProductoAutocomplete from "../components/ProductoAutocomplete"
 
 // Configuración para autoguardado
 const AUTOSAVE_INTERVAL = 30000; // 30 segundos
@@ -38,6 +39,7 @@ function EditFilledForm() {
   // Estados para autoguardado
   const [autoSaveStatus, setAutoSaveStatus] = useState('') // 'saving', 'saved', 'error'
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [globalUseProductApi, setGlobalUseProductApi] = useState(true); // 🌐 Toggle para activar/desactivar la API de productos
 
   // Estados para usuarios y firmas
   const [allUsers, setAllUsers] = useState([]);
@@ -187,12 +189,51 @@ function EditFilledForm() {
                 // CASO 2: Si es un objeto con formato legacy {id, type, data}
                 else if (bodyDataCopy[index].data && Array.isArray(bodyDataCopy[index].data)) {
                   console.log(`🔄 Caso 2: Formato legacy con .data -> {rows: data}`);
-                  bodyDataCopy[index] = { rows: bodyDataCopy[index].data };
+                  const rootProps = {};
+                  const oldData = bodyDataCopy[index];
+                  if (oldData.hiddenFields) rootProps.hiddenFields = oldData.hiddenFields;
+                  if (oldData.hiddenColumns) rootProps.hiddenColumns = oldData.hiddenColumns;
+                  if (oldData._isHidden !== undefined) rootProps._isHidden = oldData._isHidden;
+                  
+                  bodyDataCopy[index] = { ...rootProps, rows: oldData.data };
                 }
-                // CASO 3: Si es un objeto que parece ser una fila directa
+                // CASO 3: Si es un objeto que parece ser una fila directa, O es un array transformado a objeto por error
                 else if (typeof bodyDataCopy[index] === 'object' && !Array.isArray(bodyDataCopy[index])) {
-                  console.log(`🔄 Caso 3: Objeto directo -> {rows: [objeto]}`);
-                  bodyDataCopy[index] = { rows: [bodyDataCopy[index]] };
+                  // Revisar si el objeto fue envenenado (índices numéricos como llaves)
+                  const keys = Object.keys(bodyDataCopy[index]);
+                  const hasNumericKeys = keys.some(k => !isNaN(parseInt(k)) && k === String(parseInt(k)));
+                  
+                  if (hasNumericKeys) {
+                    console.log(`🔄 Caso 3.5: Arreglo convertido en objeto detectado -> {rows: array}`);
+                    const extractedRows = [];
+                    keys.forEach(k => {
+                      if (!isNaN(parseInt(k)) && k === String(parseInt(k))) {
+                        extractedRows[parseInt(k)] = bodyDataCopy[index][k];
+                      }
+                    });
+                    
+                    const rootProps = {};
+                    const oldData = bodyDataCopy[index];
+                    if (oldData.hiddenFields) rootProps.hiddenFields = oldData.hiddenFields;
+                    if (oldData.hiddenColumns) rootProps.hiddenColumns = oldData.hiddenColumns;
+                    if (oldData._isHidden !== undefined) rootProps._isHidden = oldData._isHidden;
+                    
+                    bodyDataCopy[index] = { 
+                      ...rootProps,
+                      rows: extractedRows.filter(Boolean)
+                    };
+                  } else {
+                    console.log(`🔄 Caso 3: Objeto directo -> {rows: [objeto]}`);
+                    const rootProps = {};
+                    const rowData = { ...bodyDataCopy[index] };
+                    
+                    if (rowData.hiddenFields !== undefined) { rootProps.hiddenFields = rowData.hiddenFields; delete rowData.hiddenFields; }
+                    if (rowData.hiddenColumns !== undefined) { rootProps.hiddenColumns = rowData.hiddenColumns; delete rowData.hiddenColumns; }
+                    if (rowData._isHidden !== undefined) { rootProps._isHidden = rowData._isHidden; delete rowData._isHidden; }
+                    if (rowData.id !== undefined) { rootProps.id = rowData.id; delete rowData.id; }
+                    
+                    bodyDataCopy[index] = { ...rootProps, rows: [rowData] };
+                  }
                 }
                 // CASO 4: Fallback
                 else {
@@ -454,6 +495,43 @@ function EditFilledForm() {
   const renderField = (field, value, onChange, disabled = false, rowIndex = null) => {
     const isTableContext = rowIndex !== null && rowIndex !== undefined;
     const tableInputClass = isTableContext ? "table-input-expandable" : "";
+
+    // 3a. SELECTOR PRODUCTO (bidireccional por API externa)
+    const isCodigoCol = (field.label || '').toUpperCase().includes('CODIGO') || (field.label || '').toUpperCase().includes('CÓDIGO');
+    const isProductoCol = (field.label || '').toUpperCase() === 'PRODUCTO' || (field.label || '').toUpperCase() === 'PRODUCTOS';
+    
+    if (
+      globalUseProductApi &&
+      field.usaApiAutocomplete !== false &&
+      (field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_ESPECIE' ||
+      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS' ||
+      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_CODIGO' ||
+      ((isCodigoCol || isProductoCol) && !field.apiEndpoint))
+    ) {
+      const isCodigo = isCodigoCol;
+      return (
+        <ProductoAutocomplete
+          value={value || ''}
+          onChange={onChange}
+          searchType={isCodigo ? 'codigoErp' : 'nombreProducto'}
+          getToken={ensureApiToken}
+          placeholder={isCodigo ? 'Buscar por código...' : 'Buscar producto...'}
+          onSelect={(product) => {
+            if (rowIndex !== null) {
+              onChange({
+                isProductUpdate: true,
+                selectedValue: isCodigo ? product.codigoErp : product.nombreProducto,
+                codigoErp: product.codigoErp,
+                nombreProducto: product.nombreProducto
+              });
+            } else {
+              onChange(isCodigo ? product.codigoErp : product.nombreProducto);
+            }
+          }}
+        />
+      );
+    }
+
     switch (field.type) {
       case "date":
         return (
@@ -629,6 +707,22 @@ Template: ${template?.nombre}
       <div className="page-header">
         <h1>Editar Formulario: {template?.nombre}</h1>
         <div className="header-actions">
+          <label style={{ 
+            display: 'flex', alignItems: 'center', gap: '6px', 
+            background: globalUseProductApi ? '#eff6ff' : '#fee2e2', 
+            color: globalUseProductApi ? '#1d4ed8' : '#dc2626',
+            padding: '8px 12px', borderRadius: '6px', cursor: 'pointer',
+            fontSize: '13px', fontWeight: 'bold', border: `1px solid ${globalUseProductApi ? '#bfdbfe' : '#fecaca'}`,
+            marginRight: '8px'
+          }} title="Activa o desactiva la búsqueda de productos online en este formulario">
+            <input 
+              type="checkbox" 
+              checked={globalUseProductApi} 
+              onChange={(e) => setGlobalUseProductApi(e.target.checked)} 
+              style={{ margin: 0 }}
+            />
+            {globalUseProductApi ? '🌐 API Productos: ON' : '🚫 API Productos: OFF'}
+          </label>
           <div className="autosave-status">
             {autoSaveStatus === 'saving' && <span className="status-saving">💾 Guardando...</span>}
             {autoSaveStatus === 'saved' && <span className="status-saved">✅ Autoguardado</span>}
@@ -769,12 +863,35 @@ Template: ${template?.nombre}
                     }
                     return (
                       <div key={fieldIndex} className="field-group">
-                        <label>{field.label}{field.required && " *"}</label>
+                        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span>{field.label || field.name}{field.required && " *"}</span>
+                          <span style={{ fontSize: '10px', color: formData.bodyData[elementIndex]?.hiddenFields?.[field.label || field.name] ? '#dc2626' : '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'normal', background: formData.bodyData[elementIndex]?.hiddenFields?.[field.label || field.name] ? '#fee2e2' : 'transparent', padding: '2px 6px', borderRadius: '4px' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={formData.bodyData[elementIndex]?.hiddenFields?.[field.label || field.name] || false}
+                              onChange={(e) => {
+                                setFormData(prev => {
+                                  const newBodyData = [...prev.bodyData];
+                                  if (!newBodyData[elementIndex]) newBodyData[elementIndex] = { type: 'section', data: {} };
+                                  if (!newBodyData[elementIndex].hiddenFields) newBodyData[elementIndex].hiddenFields = {};
+                                  newBodyData[elementIndex].hiddenFields = {
+                                    ...newBodyData[elementIndex].hiddenFields,
+                                    [field.label || field.name]: e.target.checked
+                                  };
+                                  return { ...prev, bodyData: newBodyData };
+                                });
+                                setHasUnsavedChanges(true);
+                              }}
+                              style={{ margin: 0, cursor: 'pointer' }}
+                            />
+                            🚫 Ocultar Campo
+                          </span>
+                        </label>
                         {renderField(
                           field,
                           // Section data stored under .data (same format as FillForm)
-                          formData.bodyData[elementIndex]?.data?.[field.label] ?? formData.bodyData[elementIndex]?.[field.label],
-                          (value) => updateSectionField(elementIndex, field.label, value)
+                          formData.bodyData[elementIndex]?.data?.[field.label || field.name] ?? formData.bodyData[elementIndex]?.[field.label || field.name],
+                          (value) => updateSectionField(elementIndex, field.label || field.name, value)
                         )}
                       </div>
                     );
@@ -782,6 +899,31 @@ Template: ${template?.nombre}
                 </div>
               )}
 
+              {element.type === "table" && (
+                <div style={{ padding: '8px 12px', background: formData.bodyData[elementIndex]?._isHidden ? '#fee2e2' : '#f0fdf4', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', borderTopLeftRadius: '6px', borderTopRightRadius: '6px', marginBottom: '10px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: formData.bodyData[elementIndex]?._isHidden ? '#dc2626' : '#16a34a' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={!formData.bodyData[elementIndex]?._isHidden} 
+                      onChange={(e) => {
+                        setFormData(prev => {
+                          const newBodyData = [...prev.bodyData];
+                          if (!newBodyData[elementIndex]) {
+                            newBodyData[elementIndex] = { rows: [] };
+                          }
+                          newBodyData[elementIndex] = {
+                            ...newBodyData[elementIndex],
+                            _isHidden: !e.target.checked
+                          };
+                          return { ...prev, bodyData: newBodyData };
+                        });
+                        setHasUnsavedChanges(true);
+                      }} 
+                    />
+                    {formData.bodyData[elementIndex]?._isHidden ? '🚫 Tabla Oculta (No se mostrará en PDF/Excel/Ver)' : '👁️ Tabla Visible (Incluida en Reportes)'}
+                  </label>
+                </div>
+              )}
               {element.type === "table" && (
                 <div className="table-wrapper" style={{ overflowX: 'auto', maxWidth: '100%' }}>
                   <div className="table-actions" style={{ marginBottom: '0.5rem' }}>
@@ -797,9 +939,36 @@ Template: ${template?.nombre}
                   <table className="data-table">
                     <thead>
                       <tr>
-                        {element.columns?.map((column, colIndex) => (
-                          <th key={colIndex}>{column.label}{column.required && " *"}</th>
-                        ))}
+                        {element.columns?.map((column, colIndex) => {
+                          const colKey = column.label || column.name || column.header;
+                          return (
+                          <th key={colIndex}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                              <span>{colKey}{column.required && " *"}</span>
+                              <label style={{ fontSize: '9px', color: formData.bodyData[elementIndex]?.hiddenColumns?.[colKey] ? '#dc2626' : '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 'normal', background: formData.bodyData[elementIndex]?.hiddenColumns?.[colKey] ? '#fee2e2' : '#f3f4f6', padding: '2px 6px', borderRadius: '4px' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={formData.bodyData[elementIndex]?.hiddenColumns?.[colKey] || false}
+                                  onChange={(e) => {
+                                    setFormData(prev => {
+                                      const newBodyData = [...prev.bodyData];
+                                      if (!newBodyData[elementIndex]) newBodyData[elementIndex] = { rows: [] };
+                                      if (!newBodyData[elementIndex].hiddenColumns) newBodyData[elementIndex].hiddenColumns = {};
+                                      newBodyData[elementIndex].hiddenColumns = {
+                                        ...newBodyData[elementIndex].hiddenColumns,
+                                        [colKey]: e.target.checked
+                                      };
+                                      return { ...prev, bodyData: newBodyData };
+                                    });
+                                    setHasUnsavedChanges(true);
+                                  }}
+                                  style={{ margin: 0, cursor: 'pointer' }}
+                                />
+                                🚫 Ocultar Col.
+                              </label>
+                            </div>
+                          </th>
+                        )})}
                         <th>Acciones</th>
                       </tr>
                     </thead>

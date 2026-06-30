@@ -16,10 +16,10 @@ function CreateTemplate() {
     nombre: "",
     version: "1",
     fechaVersion: null, // ✅ NUEVO: Fecha efectiva de la versión
-    supervisa: "",
+    supervisa: "Proceso - Productivo",
     proceso: "",
-    cuandoSeUsa: "",
-    quienLoLlena: "",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "", // ✅ NUEVO: Frecuencia de llenado
     isMasterForm: false, // ✅ Auto-suma de FILAS (PESO → TOTAL por fila)
     autoSumColumns: false, // ✅ Auto-suma de COLUMNAS (totales al pie de tabla)
@@ -396,7 +396,7 @@ function CreateTemplate() {
             </small>
           </div>
           <div className="form-group full-width"><label>Nombre del Registro *</label><input type="text" value={template.nombre} onChange={(e) => handleInputChange("nombre", e.target.value)} placeholder="Ej: CONTROL DE TEMPERATURA DE TÚNELES"/></div>
-          <div className="form-group full-width"><label>Quién Supervisa</label><input type="text" value={template.supervisa} onChange={(e) => handleInputChange("supervisa", e.target.value)} placeholder="Ej: Jefe de Producción, Supervisor de Calidad"/></div>
+          <div className="form-group full-width"><label>Proceso - Productivo</label><input type="text" value={template.supervisa} onChange={(e) => handleInputChange("supervisa", e.target.value)} placeholder="Ej: Jefe de Producción, Supervisor de Calidad"/></div>
           <div className="form-group"><label>Proceso</label><input type="text" value={template.proceso} onChange={(e) => handleInputChange("proceso", e.target.value)} placeholder="Ej: Producción, Calidad, Recepción"/></div>
           <div className="form-group"><label>Cuándo se usa</label><input type="text" value={template.cuandoSeUsa} onChange={(e) => handleInputChange("cuandoSeUsa", e.target.value)} placeholder="Ej: Posterior a congelación"/></div>
           <div className="form-group"><label>Quién lo llena</label><input type="text" value={template.quienLoLlena} onChange={(e) => handleInputChange("quienLoLlena", e.target.value)} placeholder="Ej: Asistente de Cámara"/></div>
@@ -671,6 +671,7 @@ function CreateTemplate() {
                 </select>
               </div>
               <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required} onChange={(e) => updateHeaderField(index, "required", e.target.checked)}/>Requerido</label></div>
+              <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateHeaderField(index, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
               <button onClick={() => removeHeaderField(index)} className="btn-remove" title="Eliminar campo">🗑️</button>
             </div>
             )}
@@ -1070,6 +1071,7 @@ function CreateTemplate() {
                         </select>
                       </div>
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)}/>Requerido</label></div>
+                      <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
                       <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
                     </div>
                     )}
@@ -2031,6 +2033,7 @@ function CreateTemplate() {
                       )}
 
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={column.required} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "required", e.target.checked)}/>Requerido</label></div>
+                      <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={column.usaApiAutocomplete !== false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
                       <button onClick={() => removeColumnFromTable(elementIndex, colIndex)} className="btn-remove" title="Eliminar columna">🗑️</button>
                     </div>
                     

@@ -3,9 +3,11 @@
    ==================================== */
 
 .signature-management {
-  padding: 2rem;
-  max-width: 1400px;
-  margin: 0 auto;
+  padding: 1rem;
+  max-width: 100%;
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
 }
 
 /* Header */

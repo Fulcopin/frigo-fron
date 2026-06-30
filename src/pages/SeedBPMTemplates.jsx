@@ -180,8 +180,8 @@ function getBPMTemplate() {
     fechaVersion: "2025-03-20T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad",
-    cuandoSeUsa: "Durante el ingreso del personal a las salas de proceso",
-    quienLoLlena: "Analista de Aseg. de Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Diaria",
     isMasterForm: false,
     autoSumColumns: false,
@@ -487,8 +487,8 @@ function getLimpiezaTemplate() {
     fechaVersion: "2025-10-17T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Limpieza y Desinfección",
-    cuandoSeUsa: "Antes de iniciar las operaciones, post-limpieza",
-    quienLoLlena: "Supervisor de Limpieza / Analista de Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Diaria",
     isMasterForm: false,
     autoSumColumns: false,
@@ -691,8 +691,8 @@ function getClasificacionPesoTemplate() {
     fechaVersion: "2025-02-10T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Corte y Clasificación",
-    cuandoSeUsa: "Durante el proceso de corte y clasificación de porciones",
-    quienLoLlena: "Analista de Aseg. De Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Por turno",
     isMasterForm: false,
     autoSumColumns: false,
@@ -788,8 +788,8 @@ function getGlaseoInicialTemplate() {
     fechaVersion: "2025-02-10T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Glaseo",
-    cuandoSeUsa: "Durante la liberación de túneles de congelado",
-    quienLoLlena: "Analista de Aseg. De Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Por lote / liberación de túnel",
     isMasterForm: false,
     autoSumColumns: false,
@@ -944,8 +944,8 @@ function getGlaseoFinalTemplate() {
     fechaVersion: "2025-02-10T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Glaseo Final",
-    cuandoSeUsa: "Durante la comprobación del % de glaseo final en productos congelados",
-    quienLoLlena: "Analista de Aseg. De Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Por lote",
     isMasterForm: false,
     autoSumColumns: false,
@@ -1079,8 +1079,8 @@ function getDetectorMetalTemplate() {
     fechaVersion: "2025-02-18T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Detector de Metales",
-    cuandoSeUsa: "Durante cada turno de producción donde se usa detector de metales",
-    quienLoLlena: "Analista de Aseg. De Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Por turno",
     isMasterForm: false,
     autoSumColumns: false,
@@ -1105,11 +1105,11 @@ function getControlAguaTemplate() {
 
   const bodyElements = []
 
-  // PARTE 1: Recepción y Descarga
+  // PARTE 1: Recepción y Descarga + Estaciones Móviles
   bodyElements.push({
     id: Date.now() + 500,
     type: "tinas",
-    title: "CONTROL DE AGUA - RECEPCIÓN Y DESCARGA",
+    title: "CONTROL DE AGUA - RECEPCIÓN, DESCARGA Y ESTACIONES MÓVILES",
     config: {
       cycles: 7,
       groups: [
@@ -1122,8 +1122,8 @@ function getControlAguaTemplate() {
         {
           name: "ESTACIÓN",
           subtitle: "DESINFECCIÓN DE BOTAS",
-          count: 2,
-          labels: ["(ÁREA RECEP. MAT. PRIMA) AGUA + PEROXIACÉTICO", "(ÁREA EMBARQUE DE CONTENEDORES) AGUA + PEROXIACÉTICO"]
+          count: 3,
+          labels: ["(ÁREA RECEP. MAT. PRIMA) AGUA + PEROXIACÉTICO", "(ÁREA SILO DE HIELO) AGUA + PEROXIACÉTICO", "(ÁREA EMBARQUE DE CONTENEDORES) AGUA + PEROXIACÉTICO"]
         },
         {
           name: "TINA",
@@ -1134,30 +1134,9 @@ function getControlAguaTemplate() {
         {
           name: "DESINFECCIÓN PRODUCTO ENTERO (PREVIO FILETEO)",
           subtitle: "AGUA + HIELO + PEROXIACÉTICO",
-          count: 4,
-          labels: ["TINA 1", "TINA 2", "TINA 3", "TINA 4"]
+          count: 3,
+          labels: ["TINA 1", "TINA 2", "TINA 3"]
         },
-
-      ],
-      fields: [
-        { label: "SE CAMBIA AGUA", type: "radio", options: ["SI", "NO"] },
-        { label: "HORA", type: "time" },
-        { label: "Vol.", type: "number", suffix: "lts" },
-        { label: "Resid. (I)", type: "number", suffix: "ppm" },
-        { label: "Dosif.", type: "number", suffix: "ml" },
-        { label: "Resid. (F)", type: "number", suffix: "ppm" }
-      ]
-    }
-  })
-
-  // PARTE 1.5: Estaciones Móviles
-  bodyElements.push({
-    id: Date.now() + 505,
-    type: "tinas",
-    title: "CONTROL DE AGUA - ESTACIONES MÓVILES",
-    config: {
-      cycles: 7,
-      groups: [
         {
           name: "___ ESTACIONES MOVILES",
           subtitle: "DESINFECCIÓN GUANTES, CUCHILLOS, MANDILES (PROCESO FILETEO) AGUA + PEROXIACÉTICO",
@@ -1166,8 +1145,11 @@ function getControlAguaTemplate() {
         }
       ],
       fields: [
-        { label: "SE CAMBIA AGUA A LAS ESTACIONES Y SE DOSIFICAN", type: "radio", options: ["SI", "NO"] },
+        { label: "SE CAMBIA AGUA", type: "radio", options: ["SI", "NO"] },
         { label: "HORA", type: "time" },
+        { label: "Vol.", type: "number", suffix: "lts" },
+        { label: "Resid. (I)", type: "number", suffix: "ppm" },
+        { label: "Dosif.", type: "number", suffix: "ml" },
         { label: "Resid. (F)", type: "number", suffix: "ppm" }
       ]
     }
@@ -1184,26 +1166,50 @@ function getControlAguaTemplate() {
         {
           name: "TINAS DESINFECCIÓN DE PRODUCTO",
           subtitle: "___SELECT_ANTES_DESPUES___ ___INPUT___\nAGUA + HIELO + PEROXIACÉTICO",
-          count: 2,
-          labels: ["___ TINA", "___ TINA"]
+          count: 1,
+          labels: ["___ TINA"]
+        },
+        {
+          name: "TINAS DESINFECCIÓN DE PRODUCTO",
+          subtitle: "___SELECT_ANTES_DESPUES___ ___INPUT___\nAGUA + HIELO + PEROXIACÉTICO",
+          count: 1,
+          labels: ["___ TINA"]
         },
         {
           name: "TINAS GLASEADO DE PRODUCTO CONGELADO",
           subtitle: "DURANTE PROCESO DE: ___INPUT___\nAGUA + HIELO + PEROXIACÉTICO",
-          count: 2,
-          labels: ["___ TINA", "___ TINA"]
+          count: 1,
+          labels: ["___ TINA"]
+        },
+        {
+          name: "TINAS GLASEADO DE PRODUCTO CONGELADO",
+          subtitle: "DURANTE PROCESO DE: ___INPUT___\nAGUA + HIELO + PEROXIACÉTICO",
+          count: 1,
+          labels: ["___ TINA"]
         },
         {
           name: "ESTACIONES DE ENJUAGUE / DESINFECCIÓN DE PROD. DURANTE PROCESO FRESCO",
           subtitle: "AGUA + HIELO + ___SELECT_CLORO_PEROX___",
-          count: 2,
-          labels: ["TINA 1", "TINA 2"]
+          count: 1,
+          labels: ["TINA 1"]
+        },
+        {
+          name: "ESTACIONES DE ENJUAGUE / DESINFECCIÓN DE PROD. DURANTE PROCESO FRESCO",
+          subtitle: "AGUA + HIELO + ___SELECT_CLORO_PEROX___",
+          count: 1,
+          labels: ["TINA 2"]
         },
         {
           name: "ESTACIONES DE ENJUAGUE / DESINFECCIÓN DE PROD. DURANTE PROCESO CONGELADO",
           subtitle: "AGUA + HIELO + ___SELECT_CLORO_PEROX___",
-          count: 2,
-          labels: ["TINA 3", "TINA 4"]
+          count: 1,
+          labels: ["TINA 3"]
+        },
+        {
+          name: "ESTACIONES DE ENJUAGUE / DESINFECCIÓN DE PROD. DURANTE PROCESO CONGELADO",
+          subtitle: "AGUA + HIELO + ___SELECT_CLORO_PEROX___",
+          count: 1,
+          labels: ["TINA 4"]
         }
       ],
       fields: [
@@ -1284,8 +1290,8 @@ function getControlAguaTemplate() {
     fechaVersion: "2025-10-15T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Agua en Proceso",
-    cuandoSeUsa: "Durante cada turno de producción para control de agua",
-    quienLoLlena: "Analista de Aseg. De Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Por turno",
     isMasterForm: false,
     autoSumColumns: false,
@@ -1438,8 +1444,8 @@ function getAlmacenamientoRefrigeradoTemplate() {
     fechaVersion: "2025-02-24T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Almacenamiento Refrigerado",
-    cuandoSeUsa: "Durante el almacenamiento refrigerado de producto con hielo",
-    quienLoLlena: "Operador",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Diaria / por lote",
     isMasterForm: false,
     autoSumColumns: false,
@@ -1586,8 +1592,8 @@ function getInspeccionAreasNoProductivasTemplate() {
     fechaVersion: "2025-04-24T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Inspección Sanitaria",
-    cuandoSeUsa: "Para verificar condiciones sanitarias de áreas no productivas",
-    quienLoLlena: "Inspector de calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Periódica",
     isMasterForm: false,
     autoSumColumns: false,
@@ -1680,8 +1686,8 @@ function getLimpiezaTanquesTinasTemplate() {
     fechaVersion: "2025-04-03T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Limpieza",
-    cuandoSeUsa: "Para registrar la limpieza de tanques y tinas de proceso",
-    quienLoLlena: "Responsable de la Limpieza",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Diaria",
     isMasterForm: false,
     autoSumColumns: false,
@@ -1866,8 +1872,8 @@ function getInspeccionSanitariaAreasTemplate() {
     fechaVersion: "2025-10-15T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Inspección Sanitaria",
-    cuandoSeUsa: "Pre-operativa y en cada cambio de producto o lote",
-    quienLoLlena: "Inspector de Aseg. de Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Diaria / por cambio",
     isMasterForm: false,
     autoSumColumns: false,
@@ -2021,8 +2027,8 @@ function getVerificacionBalanzasTemplate() {
     fechaVersion: "2025-05-12T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Verificación de Equipos",
-    cuandoSeUsa: "Para verificar el estado y calibración de las balanzas",
-    quienLoLlena: "Aseguramiento de Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Diaria",
     isMasterForm: false,
     autoSumColumns: false,
@@ -2096,8 +2102,8 @@ function getEmpaqueFinaTemplate() {
     fechaVersion: "2025-04-14T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Empaque Final",
-    cuandoSeUsa: "Durante el empaque final de producto congelado",
-    quienLoLlena: "Supervisor de Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Por lote",
     isMasterForm: false,
     autoSumColumns: true,
@@ -2403,8 +2409,8 @@ function getMonitoreoProductosTerminadosTemplate() {
     fechaVersion: "2025-04-14T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Productos Terminados",
-    cuandoSeUsa: "Para monitorear y verificar especificaciones de productos terminados",
-    quienLoLlena: "Analista C. Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Por muestreo",
     isMasterForm: false,
     autoSumColumns: false,
@@ -2528,8 +2534,8 @@ function getVerificacionTermometrosTemplate() {
     fechaVersion: "2025-09-11T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Verificación de Equipos",
-    cuandoSeUsa: "Para verificar diariamente la calibración de los termómetros",
-    quienLoLlena: "Aseguramiento de Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Diaria",
     isMasterForm: false,
     autoSumColumns: false,
@@ -2703,8 +2709,8 @@ function getControlVidriosQuebradizosTemplate() {
     fechaVersion: "2025-09-29T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Contaminación Física",
-    cuandoSeUsa: "Para verificar el estado de vidrios y materiales quebradizos en todas las áreas",
-    quienLoLlena: "Analista de Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Periódica",
     isMasterForm: false,
     autoSumColumns: false,
@@ -2920,8 +2926,8 @@ function getInspeccionMaterialesEmpaqueTemplate() {
     fechaVersion: "2025-02-18T00:00:00Z",
     supervisa: "Proceso - Productivo",
     proceso: "Control de Calidad - Recepción de Materiales",
-    cuandoSeUsa: "Durante la recepción de materiales de empaque",
-    quienLoLlena: "Supervisor Aseg. De Calidad",
+    cuandoSeUsa: "Proceso - Productivo",
+    quienLoLlena: "Proceso - Productivo",
     frecuencia: "Por recepción",
     isMasterForm: false,
     autoSumColumns: false,

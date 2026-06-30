@@ -98,6 +98,7 @@ function FillForm() {
   const [formSaving, setFormSaving] = useState(false) // 💾 Estado de guardado de formulario
   const [currentDraftId, setCurrentDraftId] = useState(null) // ID del borrador actual
   const [showDraftSuccess, setShowDraftSuccess] = useState(false) // 🔔 Overlay de borrador guardado
+  const [globalUseProductApi, setGlobalUseProductApi] = useState(true); // 🌐 Toggle para activar/desactivar la API de productos
 
   // Estado para verificar si el usuario revisó el documento antes de firmar
   const [hasReviewedDocument, setHasReviewedDocument] = useState(false);
@@ -4729,10 +4730,12 @@ useEffect(() => {
     const isProductoCol = (field.label || '').toUpperCase() === 'PRODUCTO' || (field.label || '').toUpperCase() === 'PRODUCTOS';
     
     if (
-      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_ESPECIE' ||
+      globalUseProductApi &&
+      field.usaApiAutocomplete !== false &&
+      (field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_ESPECIE' ||
       field.apiEndpoint?.toUpperCase() === 'PRODUCTOS' ||
       field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_CODIGO' ||
-      ((isCodigoCol || isProductoCol) && !field.apiEndpoint)
+      ((isCodigoCol || isProductoCol) && !field.apiEndpoint))
     ) {
       const isCodigo = isCodigoCol;
       return (
@@ -6474,6 +6477,22 @@ useEffect(() => {
         </h1>
         
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <label style={{ 
+            display: 'flex', alignItems: 'center', gap: '6px', 
+            background: globalUseProductApi ? '#eff6ff' : '#fee2e2', 
+            color: globalUseProductApi ? '#1d4ed8' : '#dc2626',
+            padding: '8px 12px', borderRadius: '6px', cursor: 'pointer',
+            fontSize: '13px', fontWeight: 'bold', border: `1px solid ${globalUseProductApi ? '#bfdbfe' : '#fecaca'}`,
+            marginRight: '8px'
+          }} title="Activa o desactiva la búsqueda de productos online en este formulario">
+            <input 
+              type="checkbox" 
+              checked={globalUseProductApi} 
+              onChange={(e) => setGlobalUseProductApi(e.target.checked)} 
+              style={{ margin: 0 }}
+            />
+            {globalUseProductApi ? '🌐 API Productos: ON' : '🚫 API Productos: OFF'}
+          </label>
           {!id && (
             <button 
               onClick={handleSaveDraft} 
@@ -8933,23 +8952,23 @@ useEffect(() => {
                 onToggle={() => toggleBodySection(elementIndex)}
               >
                 {/* 👁️ TOGGLE VISIBILIDAD */}
-                <div style={{ padding: '8px 12px', background: currentElementData.data._isHidden ? '#fee2e2' : '#f0fdf4', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: currentElementData.data._isHidden ? '#dc2626' : '#16a34a' }}>
+                <div style={{ padding: '8px 12px', background: currentElementData._isHidden ? '#fee2e2' : '#f0fdf4', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: currentElementData._isHidden ? '#dc2626' : '#16a34a' }}>
                     <input 
                       type="checkbox" 
-                      checked={!currentElementData.data._isHidden} 
+                      checked={!currentElementData._isHidden} 
                       onChange={(e) => {
                         setBodyData(prev => {
                           const newBodyData = [...prev];
                           const elData = { ...newBodyData[elementIndex] };
-                          elData.data = { ...elData.data, _isHidden: !e.target.checked };
+                          elData._isHidden = !e.target.checked;
                           newBodyData[elementIndex] = elData;
                           return newBodyData;
                         });
                         setHasUnsavedChanges(true);
                       }} 
                     />
-                    {currentElementData.data._isHidden ? '🚫 Tabla Oculta (No se mostrará en PDF/Excel/Ver)' : '👁️ Tabla Visible (Incluida en Reportes)'}
+                    {currentElementData._isHidden ? '🚫 Tabla Oculta (No se mostrará en PDF/Excel/Ver)' : '👁️ Tabla Visible (Incluida en Reportes)'}
                   </label>
                 </div>
                 {/* 📦 Banners de lotes vinculados a esta tabla */}
@@ -10170,23 +10189,23 @@ useEffect(() => {
                 onToggle={() => toggleBodySection(elementIndex)}
               >
                 {/* 👁️ TOGGLE VISIBILIDAD */}
-                <div style={{ padding: '8px 12px', background: tinasData._isHidden ? '#fee2e2' : '#f0fdf4', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: tinasData._isHidden ? '#dc2626' : '#16a34a' }}>
+                <div style={{ padding: '8px 12px', background: currentElementData._isHidden ? '#fee2e2' : '#f0fdf4', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: currentElementData._isHidden ? '#dc2626' : '#16a34a' }}>
                     <input 
                       type="checkbox" 
-                      checked={!tinasData._isHidden} 
+                      checked={!currentElementData._isHidden} 
                       onChange={(e) => {
                         setBodyData(prev => {
                           const newBodyData = [...prev];
                           const elData = { ...newBodyData[elementIndex] };
-                          elData.data = { ...elData.data, _isHidden: !e.target.checked };
+                          elData._isHidden = !e.target.checked;
                           newBodyData[elementIndex] = elData;
                           return newBodyData;
                         });
                         setHasUnsavedChanges(true);
                       }} 
                     />
-                    {tinasData._isHidden ? '🚫 Tabla Oculta (No se mostrará en PDF/Excel/Ver)' : '👁️ Tabla Visible (Incluida en Reportes)'}
+                    {currentElementData._isHidden ? '🚫 Tabla Oculta (No se mostrará en PDF/Excel/Ver)' : '👁️ Tabla Visible (Incluida en Reportes)'}
                   </label>
                 </div>
                 <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
