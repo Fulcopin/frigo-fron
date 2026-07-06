@@ -462,6 +462,8 @@ const drawHeaderSection = (doc, headerData, startY, templateData) => {
 
   if (mergedHeader && typeof mergedHeader === 'object') {
     Object.entries(mergedHeader).forEach(([key, value]) => {
+      // 🔒 Ocultar campos técnicos de desbloqueo (unlocked36h, unlockedBy, unlockedAt)
+      if (String(key).toLowerCase().startsWith('unlock')) return;
       if (value !== undefined && value !== null && value !== '') {
         headerFields.push({
           label: `${key.toUpperCase()}:`,

@@ -14,6 +14,7 @@ import "./ViewForms.css"
 import { API_BASE_URL } from "../apiConfig"; 
 import authService from "../services/authService";
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
+import { businessHoursBetween } from "../utils/dateUtils";
 //const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
 //const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -209,6 +210,22 @@ function ViewForms() {
   // 🔐 Estado para firmas interactivas en vista
   const [viewFirmasData, setViewFirmasData] = useState({})
   const [savingSignature, setSavingSignature] = useState(false)
+  // 🔒 Umbral de horas para bloqueo (configurable por admin en Gestión de Alertas). Fallback 36.
+  const [lockThreshold, setLockThreshold] = useState(36)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/Alerts/config`);
+        if (res.ok) {
+          const cfg = await res.json();
+          if (cfg?.lockThresholdHours > 0) setLockThreshold(cfg.lockThresholdHours);
+        }
+      } catch {
+        // Silencioso: se mantiene el fallback de 36h
+      }
+    })();
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -922,7 +939,7 @@ function ViewForms() {
                   });
                   // Also render any extra fields stored in headerData but not in template definition
                   const extraItems = Object.entries(selectedForm.headerData || {})
-                    .filter(([key, val]) => val && !renderedKeys.has(key))
+                    .filter(([key, val]) => val && !renderedKeys.has(key) && !String(key).toLowerCase().startsWith('unlock'))
                     .map(([key, val], i) => {
                       const displayValue = renderCellValue(val, 'text');
                       const isImg = typeof val === 'string' && isImageUrl(val);
@@ -951,7 +968,7 @@ function ViewForms() {
               <h3>Información General</h3>
               <div className="data-grid">
                 {Object.entries(selectedForm.headerData)
-                  .filter(([, val]) => val)
+                  .filter(([key, val]) => val && !String(key).toLowerCase().startsWith('unlock'))
                   .map(([key, val], i) => {
                     const displayValue = renderCellValue(val, 'text');
                     const isImg = typeof val === 'string' && isImageUrl(val);
@@ -1571,8 +1588,8 @@ function ViewForms() {
                     );
 
                     // El usuario puede firmar si: es su slot O es reemplazo, Y aún no ha firmado
-                    const hoursElapsedView = (new Date() - new Date(selectedForm?.createdAt || selectedForm?.createdDate || new Date())) / (1000 * 60 * 60);
-                    const isTimeLockedView = hoursElapsedView > 36 && !selectedForm?.headerData?.unlocked36h;
+                    const hoursElapsedView = businessHoursBetween(selectedForm?.createdAt || selectedForm?.createdDate || new Date(), new Date());
+                    const isTimeLockedView = hoursElapsedView > lockThreshold && !selectedForm?.headerData?.unlocked36h;
                     const canSignHere = (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && !isTimeLockedView;
                     
                     console.log(`🔐 [${puesto}] Validación de firma:`, {
@@ -1684,11 +1701,11 @@ function ViewForms() {
                               currentUser={currentUser}
                               canSign={true}
                             />
-                          ) : (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && ((new Date() - new Date(selectedForm?.createdAt || selectedForm?.createdDate || new Date())) / (1000 * 60 * 60)) > 36 && !selectedForm?.headerData?.unlocked36h ? (
+                          ) : (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && businessHoursBetween(selectedForm?.createdAt || selectedForm?.createdDate || new Date(), new Date()) > lockThreshold && !selectedForm?.headerData?.unlocked36h ? (
                             <div style={{ padding: '12px', background: '#fef2f2', border: '1px dashed #ef4444', borderRadius: '8px', textAlign: 'center', margin: '8px 0' }}>
                               <span style={{ fontSize: '18px' }}>🔒</span>
                               <p style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '12px', margin: '4px 0 0 0' }}>
-                                Bloqueado (&gt;36h)
+                                Bloqueado (&gt;{lockThreshold}h)
                               </p>
                               <p style={{ color: '#7f1d1d', fontSize: '10px', margin: '2px 0 0 0' }}>
                                 Un Administrador debe habilitarlo en Supervisión General
@@ -2060,6 +2077,7 @@ function ViewForms() {
                 {previewForm.headerData && Object.entries(previewForm.headerData).map(([key, value]) => {
                   if (typeof value === 'object') return null; // Saltar objetos complejos
                   if (key.includes('_')) return null; // Omitir IDs internos
+                  if (String(key).toLowerCase().startsWith('unlock')) return null; // Ocultar campos técnicos de desbloqueo
                   return (
                     <div key={key} style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                       <strong style={{ display: 'block', fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>{key.replace(/([A-Z])/g, ' $1').trim()}</strong>

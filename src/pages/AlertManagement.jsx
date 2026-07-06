@@ -15,6 +15,7 @@ const DEFAULT_CONFIG = {
   enableTemplateChangeAlerts: false,
   dailyCheckTime: '18:00',
   signatureAlertDelay: 24,
+  lockThresholdHours: 36,
   missingFormRecipients: [],
   signatureRecipients: [],
   templateChangeRecipients: [],
@@ -310,6 +311,7 @@ export default function AlertManagement() {
             ? alertConfig.templateChangeRecipients.filter(e => e && e.trim())
             : []
         ),
+        lockThresholdHours: parseInt(alertConfig.lockThresholdHours) || 36,
         senderEmail: alertConfig.senderEmail || '',
         senderName: alertConfig.senderName || 'Frigolab Alertas',
       };
@@ -708,6 +710,26 @@ export default function AlertManagement() {
                         max="168"
                         className="form-input"
                       />
+                    </div>
+
+                    <div className="config-item">
+                      <label className="form-label">🔒 Horas para bloqueo de firma:</label>
+                      <input
+                        type="number"
+                        value={alertConfig.lockThresholdHours ?? 36}
+                        onChange={(e) => {
+                          const newConfig = { ...alertConfig, lockThresholdHours: parseInt(e.target.value) };
+                          setAlertConfig(newConfig);
+                        }}
+                        min="1"
+                        max="720"
+                        className="form-input"
+                      />
+                      <p className="config-description">
+                        Tras estas horas <strong>hábiles</strong> desde la creación (no se cuentan sábados ni
+                        domingos), el formulario se bloquea para firma y un Administrador debe habilitarlo en
+                        Supervisión General. Por defecto 36.
+                      </p>
                     </div>
 
                     <div className="config-item">

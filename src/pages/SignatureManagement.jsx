@@ -3,7 +3,7 @@ import signatureService from '../services/signatureService';
 import authService from '../services/authService';
 import { Link, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../apiConfig';
-import { toLocalISOString } from '../utils/dateUtils';
+import { toLocalISOString, businessHoursBetween } from '../utils/dateUtils';
 import './SignatureManagement.css';
 
 export default function SignatureManagement() {
@@ -57,13 +57,29 @@ export default function SignatureManagement() {
   const currentUser = authService.getCurrentUser();
   const isSGI = currentUser?.rol === 'admin' || currentUser?.rol === 'sgi';
 
+  // 🔒 Umbral de horas para bloqueo (configurable por admin en Gestión de Alertas). Fallback 36.
+  const [lockThreshold, setLockThreshold] = useState(36);
+
   useEffect(() => {
     loadData();
+    loadLockThreshold();
     // Si la URL tiene ?tab=timing, cargar el reporte de tiempos automáticamente
     if (initialTab === 'timing') {
       loadTimingReport();
     }
   }, []);
+
+  const loadLockThreshold = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/Alerts/config`);
+      if (res.ok) {
+        const cfg = await res.json();
+        if (cfg?.lockThresholdHours > 0) setLockThreshold(cfg.lockThresholdHours);
+      }
+    } catch {
+      // Silencioso: si falla, se mantiene el fallback de 36h
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -208,8 +224,8 @@ export default function SignatureManagement() {
       return;
     }
     const lockedSelected = pendingForms.filter(f => selectedForms.includes(f.id)).filter(f => {
-      const h = (new Date() - new Date(f.createdDate)) / (1000 * 60 * 60);
-      return h > 36 && !f.unlocked36h;
+      const h = businessHoursBetween(f.createdDate, new Date());
+      return h > lockThreshold && !f.unlocked36h;
     });
     if (lockedSelected.length > 0) {
       alert(`🔒 Has seleccionado ${lockedSelected.length} formulario(s) con más de 36 horas de antigüedad que están bloqueados. Un Administrador debe habilitarlos en Supervisión General antes de poder firmar.`);
@@ -245,9 +261,9 @@ export default function SignatureManagement() {
   const openContractPreview = async (formId) => {
     const formToCheck = pendingForms.find(f => f.id === formId);
     if (formToCheck) {
-      const h = (new Date() - new Date(formToCheck.createdDate)) / (1000 * 60 * 60);
-      if (h > 36 && !formToCheck.unlocked36h) {
-        alert('🔒 Este registro tiene más de 36 horas de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.');
+      const h = businessHoursBetween(formToCheck.createdDate, new Date());
+      if (h > lockThreshold && !formToCheck.unlocked36h) {
+        alert(`🔒 Este registro superó las ${lockThreshold} horas hábiles de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.`);
         return;
       }
     }
@@ -422,6 +438,8 @@ export default function SignatureManagement() {
       };
 
       if (isMassive) {
+        // En masivo cada formulario puede tener un puesto distinto para el usuario;
+        // el backend resuelve el puesto por titular (corregido). No se envía targetPuesto único.
         await signatureService.signMultipleForms(selectedForms, signatureData);
         alert(`✅ ${selectedForms.length} formularios firmados exitosamente`);
         // Actualización optimista del dashboard
@@ -434,7 +452,11 @@ export default function SignatureManagement() {
         }));
         setSelectedForms([]);
       } else {
-        await signatureService.signForm(selectedForms[0], signatureData);
+        // 🎯 Firma individual: resolver el puesto exacto del usuario para que el backend
+        // no adivine (evita el desplazamiento a un reemplazo equivocado).
+        const formToSign = pendingForms.find(f => f.id === selectedForms[0]);
+        const targetPuesto = formToSign ? resolveTargetPuesto(formToSign) : null;
+        await signatureService.signForm(selectedForms[0], { ...signatureData, targetPuesto });
         alert('✅ Formulario firmado exitosamente');
         // Actualización optimista del dashboard
         setStats(prev => ({
@@ -593,7 +615,7 @@ export default function SignatureManagement() {
 
       // ✅ Verificar si el usuario es SUPLENTE (reemplazo) para este puesto
       if (form.templateFirmas && Array.isArray(form.templateFirmas)) {
-        const templateFirma = form.templateFirmas.find(tf => 
+        const templateFirma = form.templateFirmas.find(tf =>
           tf.puesto?.toLowerCase().trim() === puesto.toLowerCase().trim()
         );
         if (templateFirma?.reemplazos && Array.isArray(templateFirma.reemplazos)) {
@@ -608,6 +630,46 @@ export default function SignatureManagement() {
     }
 
     return false;
+  };
+
+  // 🎯 Devuelve el PUESTO exacto que debe firmar el usuario actual en este formulario.
+  // Prioriza el puesto donde el usuario es TITULAR (sin firmar); solo si no es titular de
+  // ninguno, devuelve el puesto donde es reemplazo. Así el backend no tiene que "adivinar"
+  // y la firma nunca se desplaza a un reemplazo equivocado.
+  const resolveTargetPuesto = (form) => {
+    if (!currentUser || !form?.firmasData) return null;
+    const userEmail = currentUser.email?.toLowerCase();
+    const userNombre = currentUser.nombre?.toLowerCase().trim();
+
+    const slotSinFirmar = (firmaInfo) => !(firmaInfo?.firma?.url || firmaInfo?.firma?.base64);
+
+    // 1ª pasada: TITULAR por nombre/email
+    for (const [puesto, firmaInfo] of Object.entries(form.firmasData)) {
+      if (!firmaInfo || typeof firmaInfo !== 'object' || !slotSinFirmar(firmaInfo)) continue;
+      const emailAsignado = firmaInfo.email?.toLowerCase();
+      const nombreAsignado = firmaInfo.nombre?.toLowerCase().trim();
+      if (userNombre && nombreAsignado && nombreAsignado === userNombre) return puesto;
+      if (userEmail && emailAsignado && emailAsignado === userEmail) return puesto;
+      if (userEmail && nombreAsignado && nombreAsignado.includes('@') && nombreAsignado === userEmail) return puesto;
+    }
+
+    // 2ª pasada: REEMPLAZO (solo si no fue titular de ninguno)
+    for (const [puesto, firmaInfo] of Object.entries(form.firmasData)) {
+      if (!firmaInfo || typeof firmaInfo !== 'object' || !slotSinFirmar(firmaInfo)) continue;
+      if (form.templateFirmas && Array.isArray(form.templateFirmas)) {
+        const templateFirma = form.templateFirmas.find(tf =>
+          tf.puesto?.toLowerCase().trim() === puesto.toLowerCase().trim()
+        );
+        if (templateFirma?.reemplazos && Array.isArray(templateFirma.reemplazos)) {
+          for (const reemplazo of templateFirma.reemplazos) {
+            const reemplazoNombre = reemplazo?.toLowerCase().trim();
+            if (reemplazoNombre && userNombre && reemplazoNombre === userNombre) return puesto;
+          }
+        }
+      }
+    }
+
+    return null;
   };
 
   // Filtrado de formularios
@@ -848,7 +910,7 @@ export default function SignatureManagement() {
               style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
               disabled={selectedForms.length === 0}
             >
-              🔓 Habilitar Validación (&gt;36h) ({selectedForms.length})
+              🔓 Habilitar Validación (&gt;{lockThreshold}h) ({selectedForms.length})
             </button>
           )}
 
@@ -978,16 +1040,16 @@ export default function SignatureManagement() {
 
                             <div className="form-card-actions">
                               {(() => {
-                                const hoursElapsedCard = (new Date() - new Date(form.createdDate)) / (1000 * 60 * 60);
-                                const isTimeLockedCard = hoursElapsedCard > 36 && !form.unlocked36h;
+                                const hoursElapsedCard = businessHoursBetween(form.createdDate, new Date());
+                                const isTimeLockedCard = hoursElapsedCard > lockThreshold && !form.unlocked36h;
                                 if (isTimeLockedCard) {
                                   return (
                                     <button
-                                      onClick={() => alert('🔒 Este registro tiene más de 36 horas de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.')}
+                                      onClick={() => alert(`🔒 Este registro superó las ${lockThreshold} horas hábiles de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.`)}
                                       className="btn-sign"
                                       style={{ backgroundColor: '#9ca3af', cursor: 'not-allowed' }}
                                     >
-                                      🔒 Bloqueado (&gt;36h)
+                                      🔒 Bloqueado (&gt;{lockThreshold}h)
                                     </button>
                                   );
                                 }
@@ -2172,15 +2234,14 @@ export default function SignatureManagement() {
 }
 
 // Función auxiliar para calcular tiempo pendiente
+// Usa horas HÁBILES (excluye sábados y domingos) para ser consistente con el bloqueo.
 function calculatePendingTime(createdDate) {
-  const now = new Date();
-  const created = new Date(createdDate);
-  const diffMs = now - created;
+  const bizHours = businessHoursBetween(createdDate, new Date());
 
   // Guard against server clock skew / negative values
-  if (diffMs <= 0) return '< 1 minuto';
+  if (bizHours <= 0) return '< 1 minuto';
 
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffHours = Math.floor(bizHours);
   const diffDays = Math.floor(diffHours / 24);
 
   if (diffDays > 0) {
@@ -2188,7 +2249,7 @@ function calculatePendingTime(createdDate) {
   } else if (diffHours > 0) {
     return `${diffHours} hora${diffHours > 1 ? 's' : ''}`;
   } else {
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffMinutes = Math.floor(bizHours * 60);
     return diffMinutes > 0 ? `${diffMinutes} minuto${diffMinutes > 1 ? 's' : ''}` : '< 1 minuto';
   }
 }

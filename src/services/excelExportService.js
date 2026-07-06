@@ -411,8 +411,9 @@ const createHeaderSection = (worksheet, headerData, startRow, maxCols = 8, templ
   currentRow++;
   
   // Renderizar TODOS los campos del header dinámicamente en 2 columnas
-  const entries = Object.entries(mergedHeader);
-  
+  // 🔒 Ocultar campos técnicos de desbloqueo (unlocked36h, unlockedBy, unlockedAt)
+  const entries = Object.entries(mergedHeader).filter(([key]) => !String(key).toLowerCase().startsWith('unlock'));
+
   for (let i = 0; i < entries.length; i++) {
     const [key, value] = entries[i];
     const isAlt = i % 2 === 1;
