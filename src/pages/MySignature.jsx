@@ -14,6 +14,10 @@ const MySignature = () => {
   const [persistenceInfo, setPersistenceInfo] = useState(null); // 'cloudinary' | 'local'
   const fileInputRef = useRef();
 
+  // 🔑 PIN de firma (para firmar desde la pantalla del operador)
+  const [pin, setPin] = useState('');
+  const [pinLoading, setPinLoading] = useState(false);
+
   useEffect(() => {
     const user = authService.getCurrentUser();
     setCurrentUser(user);
@@ -244,6 +248,40 @@ const MySignature = () => {
     }
   };
 
+  // 🔑 Guardar/actualizar el PIN personal de firma
+  const handleSavePin = async () => {
+    const clean = (pin || '').trim();
+    if (clean.length < 4) {
+      setMessage({ type: 'error', text: '⚠️ El PIN debe tener al menos 4 dígitos' });
+      return;
+    }
+    setPinLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/CatalogoFirmas/set-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombreCompleto: currentUser?.nombre || currentUser?.username || '',
+          correo: currentUser?.email || '',
+          pin: clean
+        })
+      });
+      if (res.ok) {
+        setPin('');
+        setMessage({ type: 'success', text: '✅ PIN guardado. Ya puedes firmar con tu PIN desde la pantalla del operador.' });
+        setTimeout(() => setMessage({ type: '', text: '' }), 6000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setMessage({ type: 'error', text: '❌ ' + (err.message || 'No se pudo guardar el PIN') });
+      }
+    } catch (err) {
+      console.error('Error al guardar PIN:', err);
+      setMessage({ type: 'error', text: '❌ Error al guardar el PIN. Verifica la conexión.' });
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
   // Actualizar firma (seleccionar nueva imagen)
   const handleUpdate = () => {
     fileInputRef.current.click();
@@ -434,6 +472,34 @@ const MySignature = () => {
             </div>
           </div>
         )}
+
+        {/* 🔑 PIN de firma */}
+        <div className="signature-upload-section" style={{ marginTop: '20px' }}>
+          <div className="section-header">
+            <h2>🔑 PIN de Firma</h2>
+            <p>Configura un PIN (mínimo 4 dígitos) para poder firmar formularios desde la pantalla del operador sin iniciar sesión.</p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginTop: '10px' }}>
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="new-password"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="Ej: 1234"
+              style={{
+                padding: '10px 14px', border: '1px solid #cbd5e1', borderRadius: '8px',
+                fontSize: '18px', letterSpacing: '4px', width: '160px', textAlign: 'center'
+              }}
+            />
+            <button onClick={handleSavePin} className="btn-save" disabled={pinLoading}>
+              {pinLoading ? '⏳ Guardando...' : '💾 Guardar PIN'}
+            </button>
+          </div>
+          <p style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
+            🔒 Tu PIN se guarda cifrado y nunca se muestra. Si lo olvidas, simplemente configúralo de nuevo aquí.
+          </p>
+        </div>
 
         {/* Guía de uso */}
         <div className="usage-guide">

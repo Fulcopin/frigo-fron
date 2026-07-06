@@ -17,6 +17,7 @@ import "./FillForm.tablet.css"  // 📱 Estilos optimizados para tablets
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import authService from "../services/authService";
 import { evaluarFormula as evaluarFormulaEngine, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
+import { toLocalISOString } from "../utils/dateUtils";
 import LoteTrazabilidadPanel from '../components/LoteTrazabilidadPanel';
 import { isTrazaEnabled, isResumenAutoEnabled, addLote, addLotes, getLotesDisponibles } from '../hooks/useLoteStore';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
@@ -83,7 +84,11 @@ function FillForm() {
   const [headerData, setHeaderData] = useState({})
   const [bodyData, setBodyData] = useState([]); 
   const [firmasData, setFirmasData] = useState({})
-  
+  // 🔑 Estados para firma por PIN (por puesto)
+  const [pinInputByPuesto, setPinInputByPuesto] = useState({})
+  const [pinLoadingByPuesto, setPinLoadingByPuesto] = useState({})
+  const [pinOpenByPuesto, setPinOpenByPuesto] = useState({})
+
   // 👥 Estados para usuarios de la API
   const [allUsers, setAllUsers] = useState([]) // Todos los usuarios de la API
   const [catalogoFirmas, setCatalogoFirmas] = useState([]) // 📋 Firmas del catálogo
@@ -3614,6 +3619,40 @@ useEffect(() => {
     
     setFirmasData(prev => ({...prev, [puesto]: updatedFirmaData}));
     setHasUnsavedChanges(true);
+  };
+
+  // 🔑 Firma por PIN: verifica el PIN del asignado y adjunta su firma guardada a este slot.
+  const handleFirmarConPin = async (puesto, nombreAsignado) => {
+    const pin = (pinInputByPuesto[puesto] || '').trim();
+    if (pin.length < 4) {
+      alert('⚠️ Ingresa el PIN (mínimo 4 dígitos).');
+      return;
+    }
+    setPinLoadingByPuesto(prev => ({ ...prev, [puesto]: true }));
+    try {
+      const res = await fetch(`${API_BASE_URL}/CatalogoFirmas/verify-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: nombreAsignado, pin })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert('❌ ' + (data.message || 'No se pudo validar el PIN.'));
+        return;
+      }
+      // Adjuntar la firma verificada al slot (mismo shape que una firma guardada de Cloudinary)
+      handleFirmaUpdate(puesto, {
+        nombre: nombreAsignado,
+        firma: { url: data.firmaImageUrl, provider: 'cloudinary', uploaded_at: toLocalISOString() }
+      });
+      setPinInputByPuesto(prev => ({ ...prev, [puesto]: '' }));
+      setPinOpenByPuesto(prev => ({ ...prev, [puesto]: false }));
+    } catch (err) {
+      console.error('Error al firmar con PIN:', err);
+      alert('❌ Error al validar el PIN. Verifica la conexión.');
+    } finally {
+      setPinLoadingByPuesto(prev => ({ ...prev, [puesto]: false }));
+    }
   };
 
   // 🆕 FUNCIÓN PARA RECALCULAR TOTALES DE TODAS LAS FILAS
@@ -10891,6 +10930,29 @@ useEffect(() => {
                             currentUser={currentUser}
                             canSign={true}
                           />
+                        ) : (firmasData[firma.puesto]?.firma?.url || firmasData[firma.puesto]?.firma?.base64) ? (
+                          // ✅ Ya firmado por PIN: mostrar la firma aplicada (solo lectura)
+                          <div style={{
+                            padding: '16px', textAlign: 'center', background: '#f0fdf4',
+                            border: '2px solid #86efac', borderRadius: '8px', marginTop: '10px'
+                          }}>
+                            <img
+                              src={firmasData[firma.puesto].firma.url || firmasData[firma.puesto].firma.base64}
+                              alt={`Firma de ${nombreAsignado}`}
+                              style={{ maxHeight: '90px', maxWidth: '100%', objectFit: 'contain' }}
+                            />
+                            <p style={{ color: '#166534', fontWeight: 'bold', fontSize: '12px', margin: '8px 0 0 0' }}>
+                              ✅ Firmado por {nombreAsignado} (con PIN)
+                              {firmasData[firma.puesto]?.fecha ? ` — ${firmasData[firma.puesto].fecha} ${firmasData[firma.puesto].hora || ''}` : ''}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleFirmaUpdate(firma.puesto, { nombre: nombreAsignado, firma: null })}
+                              style={{ marginTop: '8px', background: 'none', border: 'none', color: '#dc2626', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+                            >
+                              Quitar firma
+                            </button>
+                          </div>
                         ) : (
                           <div style={{
                             padding: '20px',
@@ -10907,6 +10969,60 @@ useEffect(() => {
                             <p style={{ color: '#4b5563', fontSize: '12px', margin: '0 0 12px 0' }}>
                               Asignado a <strong>{nombreAsignado}</strong>
                             </p>
+
+                            {!pinOpenByPuesto[firma.puesto] ? (
+                              <button
+                                type="button"
+                                onClick={() => setPinOpenByPuesto(prev => ({ ...prev, [firma.puesto]: true }))}
+                                style={{
+                                  background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white',
+                                  border: 'none', borderRadius: '8px', padding: '8px 14px', fontSize: '13px',
+                                  fontWeight: 'bold', cursor: 'pointer'
+                                }}
+                              >
+                                🔑 Firmar con PIN
+                              </button>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>
+                                  Pide a <strong>{nombreAsignado}</strong> que ingrese su PIN:
+                                </p>
+                                <input
+                                  type="password"
+                                  inputMode="numeric"
+                                  autoComplete="off"
+                                  value={pinInputByPuesto[firma.puesto] || ''}
+                                  onChange={(e) => setPinInputByPuesto(prev => ({ ...prev, [firma.puesto]: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') handleFirmarConPin(firma.puesto, nombreAsignado); }}
+                                  placeholder="PIN"
+                                  style={{
+                                    padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: '8px',
+                                    fontSize: '16px', letterSpacing: '4px', width: '130px', textAlign: 'center'
+                                  }}
+                                />
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleFirmarConPin(firma.puesto, nombreAsignado)}
+                                    disabled={pinLoadingByPuesto[firma.puesto]}
+                                    style={{
+                                      background: pinLoadingByPuesto[firma.puesto] ? '#9ca3af' : '#10b981', color: 'white',
+                                      border: 'none', borderRadius: '8px', padding: '8px 14px', fontSize: '13px',
+                                      fontWeight: 'bold', cursor: pinLoadingByPuesto[firma.puesto] ? 'not-allowed' : 'pointer'
+                                    }}
+                                  >
+                                    {pinLoadingByPuesto[firma.puesto] ? '⏳...' : '✅ Aplicar firma'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setPinOpenByPuesto(prev => ({ ...prev, [firma.puesto]: false })); setPinInputByPuesto(prev => ({ ...prev, [firma.puesto]: '' })); }}
+                                    style={{ background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '8px', padding: '8px 14px', fontSize: '13px', cursor: 'pointer' }}
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
