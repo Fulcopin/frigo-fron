@@ -16,6 +16,7 @@ export const API_ENDPOINTS = {
   // API Principal
   templates: `${API_BASE_URL}/Templates`,
   filledForms: `${API_BASE_URL}/FilledForms`,
+  tickets: `${API_BASE_URL}/Tickets`,
   
   // API Externa
   auth: `${API_EXTERNAL_BASE_URL}/Auth`,

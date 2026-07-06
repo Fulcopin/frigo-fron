@@ -1003,15 +1003,55 @@ Template: ${template?.nombre}
         const tableTienePeso = element.columns?.some(c => (c.id || c.label || '').toUpperCase().includes('PESO'));
         const isTotalColumn = tableTienePeso && colLabelUpper.includes('TOTAL') && !colLabelUpper.includes('PESO');
 
+        // 🔒 FOR-PD-04 (Fileteo V2): los datos de las tablas CONTROL / MATERIALES DE
+        // EMPAQUE E INSUMOS no deben poder editarse manualmente al editar un formulario
+        // ya guardado — evita discrepancias de peso como la reportada (variación de 3 lb).
+        // Se bloquea la tabla completa (sin depender de apiCodigo/apiMap por columna, ya
+        // que muchas veces esos campos son de texto libre). El código/insumo de búsqueda
+        // queda siempre editable, y Admin/Supervisor pueden seguir corrigiendo si hace falta.
+        const esFileteoV2 = (template?.codigo || '').toUpperCase().includes('PD-04');
+        const tableTitleUpper = (element.title || '').trim().toUpperCase();
+        const esTablaBloqueablePorApi = esFileteoV2
+          || element.usaApiPorCodigo
+          || !!element.apiPorIdEndpoint
+          || tableTitleUpper === 'CONTROL'
+          || tableTitleUpper.includes('MATERIALES')
+          || tableTitleUpper.includes('EMPAQUE')
+          || tableTitleUpper.includes('INSUMO')
+          || tableTitleUpper.includes('MATERIA')
+          || tableTitleUpper.includes('RECEPCION')
+          || tableTitleUpper.includes('RECEPCIÓN')
+          || tableTitleUpper.includes('FILETEO')
+          || tableTitleUpper.includes('DETALLE')
+          || tableTitleUpper.includes('CODIGO')
+          || tableTitleUpper.includes('CÓDIGO')
+          || tableTitleUpper.includes('PRODUCTO');
+        const esColumnaCodigoOBusqueda = colLabelUpper.includes('CODIGO') || colLabelUpper.includes('CÓDIGO') || colLabelUpper === 'PRODUCTO' || colLabelUpper === 'PRODUCTOS' || colLabelUpper.includes('INSUMO');
+        const isApiCodigoTrigger = element.usaApiPorCodigo && colLabelUpper === (element.apiCodigoTriggerCol || '').trim().toUpperCase();
+        const tieneValorEnCelda = !!row[cellName];
+        const isLockedByRecepcionApi = esTablaBloqueablePorApi
+          && !isApiCodigoTrigger
+          && !esColumnaCodigoOBusqueda
+          && tieneValorEnCelda;
+
         return (
           <td key={colIndex}>
             {isTotalColumn ? (
-              <input 
-                type="text" 
-                value={row[cellName] || '0.00'} 
-                readOnly 
+              <input
+                type="text"
+                value={row[cellName] || '0.00'}
+                readOnly
                 className="total-readonly"
                 style={{ backgroundColor: '#f0fdf4', fontWeight: 'bold', cursor: 'not-allowed', border: '1px solid #bbf7d0' }}
+              />
+            ) : isLockedByRecepcionApi ? (
+              <input
+                type="text"
+                value={row[cellName] || ''}
+                readOnly
+                disabled
+                title="Dato cargado desde la API de recepción — no editable"
+                style={{ backgroundColor: '#f3f4f6', color: '#374151', cursor: 'not-allowed', border: '1px solid #d1d5db' }}
               />
             ) : (
               renderField(
@@ -1177,8 +1217,8 @@ Template: ${template?.nombre}
                         )}
                         {!isAdmin && (firmaObj?.fecha || firmaObj?.hora) && (
                           <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#4b5563' }}>
-                            {firmaObj?.fecha && <span>📅 {new Date(firmaObj.fecha + 'T00:00:00').toLocaleDateString('es-EC')}</span>}
-                            {firmaObj?.hora && <span>🕐 {firmaObj.hora}</span>}
+                            {firmaObj?.fecha && firmaObj.fecha !== '-' && <span>📅 {new Date(firmaObj.fecha + 'T00:00:00').toLocaleDateString('es-EC')}</span>}
+                            {firmaObj?.hora && firmaObj.hora !== '-' && <span>🕐 {firmaObj.hora}</span>}
                           </div>
                         )}
                       </div>

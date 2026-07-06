@@ -12,10 +12,12 @@ const ALERT_HISTORY_KEY = 'frigolab_alert_history';
 const DEFAULT_CONFIG = {
   enableMissingFormAlerts: true,
   enableSignatureAlerts: true,
+  enableTemplateChangeAlerts: false,
   dailyCheckTime: '18:00',
   signatureAlertDelay: 24,
   missingFormRecipients: [],
   signatureRecipients: [],
+  templateChangeRecipients: [],
   senderEmail: '',
   senderPassword: '',
   senderName: 'Frigolab Alertas',
@@ -148,6 +150,7 @@ export default function AlertManagement() {
           const parsed = { ...configData };
           parsed.missingFormRecipients = parseRecipientsToArray(configData.missingFormRecipients);
           parsed.signatureRecipients = parseRecipientsToArray(configData.signatureRecipients);
+          parsed.templateChangeRecipients = parseRecipientsToArray(configData.templateChangeRecipients);
           setAlertConfig(parsed);
         } else {
           const savedConfig = localStorage.getItem(ALERT_CONFIG_KEY);
@@ -297,8 +300,14 @@ export default function AlertManagement() {
         enableSignatureAlerts: alertConfig.enableSignatureAlerts ?? true,
         signatureAlertDelay: alertConfig.signatureAlertDelay || 24,
         signatureRecipients: JSON.stringify(
-          Array.isArray(alertConfig.signatureRecipients) 
-            ? alertConfig.signatureRecipients.filter(e => e && e.trim()) 
+          Array.isArray(alertConfig.signatureRecipients)
+            ? alertConfig.signatureRecipients.filter(e => e && e.trim())
+            : []
+        ),
+        enableTemplateChangeAlerts: alertConfig.enableTemplateChangeAlerts ?? false,
+        templateChangeRecipients: JSON.stringify(
+          Array.isArray(alertConfig.templateChangeRecipients)
+            ? alertConfig.templateChangeRecipients.filter(e => e && e.trim())
             : []
         ),
         senderEmail: alertConfig.senderEmail || '',
@@ -726,6 +735,44 @@ export default function AlertManagement() {
                           {loadingFirmantes ? '⏳ Cargando...' : '📥 Cargar emails de firmantes'}
                         </button>
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="config-group">
+                    <h3>🗂️ Alertas de Cambios en Plantillas</h3>
+                    <div className="config-item">
+                      <label className="config-label">
+                        <input
+                          type="checkbox"
+                          checked={alertConfig.enableTemplateChangeAlerts}
+                          onChange={(e) => {
+                            const newConfig = { ...alertConfig, enableTemplateChangeAlerts: e.target.checked };
+                            setAlertConfig(newConfig);
+                          }}
+                        />
+                        <span>Activar alertas de cambios en plantillas</span>
+                      </label>
+                      <p className="config-description">
+                        Envía UN correo resumen diario (mismo horario del chequeo general) con las plantillas
+                        que cambiaron de versión en las últimas 24 horas. No se envía un correo por cada
+                        guardado, para no saturar la bandeja de entrada.
+                      </p>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="form-label">Destinatarios:</label>
+                      <input
+                        type="text"
+                        value={safeJoinEmails(alertConfig.templateChangeRecipients)}
+                        onChange={(e) => {
+                          const emails = e.target.value.split(',').map(email => email.trim());
+                          const newConfig = { ...alertConfig, templateChangeRecipients: emails };
+                          setAlertConfig(newConfig);
+                        }}
+                        placeholder="supervisor@ejemplo.com, sgi@ejemplo.com"
+                        className="form-input"
+                      />
+                      <p className="help-text" style={{ margin: '5px 0 0' }}>Separa múltiples emails con comas</p>
                     </div>
                   </div>
 

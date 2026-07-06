@@ -123,13 +123,38 @@ const renderCellValue = (value, fieldType) => {
   return strVal;
 };
 
+// Error boundary para proteger el renderizado de secciones y evitar pantalla blanca
+class FormSectionErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("❌ Error en sección del formulario ViewForms:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '16px', background: '#fef2f2', border: '1.5px solid #ef4444', borderRadius: '8px', margin: '12px 0', color: '#991b1b' }}>
+          <h4 style={{ margin: '0 0 8px 0', fontWeight: 'bold' }}>⚠️ Error al renderizar esta sección ({this.props.sectionTitle || 'Sección'})</h4>
+          <p style={{ margin: 0, fontSize: '13px' }}>{this.state.error?.message || 'Error desconocido al procesar datos del formulario'}</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // Igual que en FillForm: agrupa columnas consecutivas por su propiedad `group`
 const processColumnGroups = (columns = []) => {
-  if (!columns.length) return [];
+  if (!Array.isArray(columns) || !columns.length) return [];
   const result = [];
   const namedGroups = {};
   columns.forEach((col) => {
-    const groupName = col.group || '';
+    const groupName = col && col.group ? String(col.group).trim() : '';
     if (!groupName) {
       result.push({ groupName: '', columns: [col] });
     } else {
@@ -732,32 +757,38 @@ function ViewForms() {
       console.log('📸 Usando snapshot de template (versión histórica)');
       const snapshot = selectedFormVersionInfo.templateSnapshot;
 
+      const rawSnapshotBe = Array.isArray(snapshot?.bodyElements) ? snapshot.bodyElements : (typeof snapshot?.bodyElements === 'string' ? safeParse(snapshot.bodyElements, []) : []);
+      const rawCurrentBe = Array.isArray(currentTemplate?.bodyElements) ? currentTemplate.bodyElements : (typeof currentTemplate?.bodyElements === 'string' ? safeParse(currentTemplate.bodyElements, []) : []);
+
       // 🔧 FIX: Fusionar campos 'nota' del template actual en las secciones del snapshot
       // Los campos nota son estáticos (no dependen de datos guardados) y pueden haberse añadido
       // al template después de que el formulario fue llenado.
-      const mergedBodyElements = (snapshot?.bodyElements || []).map((snapshotEl, idx) => {
-        if (snapshotEl.type !== 'section') return snapshotEl;
-        const currentEl = (currentTemplate?.bodyElements || []).find(
-          el => el.type === 'section' && (el.id === snapshotEl.id || el.title === snapshotEl.title)
-        ) || currentTemplate?.bodyElements?.[idx];
+      const mergedBodyElements = rawSnapshotBe.map((snapshotEl, idx) => {
+        if (snapshotEl?.type !== 'section') return snapshotEl;
+        const currentEl = rawCurrentBe.find(
+          el => el?.type === 'section' && (el.id === snapshotEl.id || el.title === snapshotEl.title)
+        ) || rawCurrentBe?.[idx];
         if (!currentEl || currentEl.type !== 'section') return snapshotEl;
         // Agregar campos nota del template actual que no existen en el snapshot
-        const existingLabels = new Set((snapshotEl.fields || []).map(f => f.label));
-        const notaFieldsToAdd = (currentEl.fields || []).filter(
-          f => f.type === 'nota' && !existingLabels.has(f.label)
+        const rawSnapshotFields = Array.isArray(snapshotEl.fields) ? snapshotEl.fields : (typeof snapshotEl.fields === 'string' ? safeParse(snapshotEl.fields, []) : []);
+        const rawCurrentFields = Array.isArray(currentEl.fields) ? currentEl.fields : (typeof currentEl.fields === 'string' ? safeParse(currentEl.fields, []) : []);
+        const existingLabels = new Set(rawSnapshotFields.map(f => f?.label));
+        const notaFieldsToAdd = rawCurrentFields.filter(
+          f => f?.type === 'nota' && !existingLabels.has(f.label)
         );
-        if (notaFieldsToAdd.length === 0) return snapshotEl;
-        return { ...snapshotEl, fields: [...(snapshotEl.fields || []), ...notaFieldsToAdd] };
+        if (notaFieldsToAdd.length === 0) return { ...snapshotEl, fields: rawSnapshotFields };
+        return { ...snapshotEl, fields: [...rawSnapshotFields, ...notaFieldsToAdd] };
       });
+
+      const rawCurrentHf = Array.isArray(currentTemplate?.headerFields) ? currentTemplate.headerFields : (typeof currentTemplate?.headerFields === 'string' ? safeParse(currentTemplate.headerFields, []) : []);
+      const rawSnapshotHf = Array.isArray(snapshot?.headerFields) ? snapshot.headerFields : (typeof snapshot?.headerFields === 'string' ? safeParse(snapshot.headerFields, []) : []);
 
       correspondingTemplate = {
         ...snapshot,
         // Usar bodyElements fusionados para mostrar campos nota añadidos después
         bodyElements: mergedBodyElements,
         // Usar headerFields del template actual si tiene más campos (p.ej. campos con defaultValue añadidos después)
-        headerFields: (currentTemplate?.headerFields?.length ?? 0) >= (snapshot?.headerFields?.length ?? 0)
-          ? (currentTemplate?.headerFields ?? snapshot?.headerFields ?? [])
-          : (snapshot?.headerFields ?? []),
+        headerFields: rawCurrentHf.length >= rawSnapshotHf.length ? rawCurrentHf : rawSnapshotHf,
         // Siempre usar fechaVersion del template actual (es la fecha de versión registrada en la plantilla)
         fechaVersion: currentTemplate?.fechaVersion || snapshot?.fechaVersion || null,
       };
@@ -768,6 +799,7 @@ function ViewForms() {
     }
 
     return (
+      <FormSectionErrorBoundary sectionTitle="Visor Completo de Formulario">
       <div className="view-forms">
         <div className="form-viewer-header">
           <button onClick={() => setSelectedForm(null)} className="btn-back">← Volver a la lista</button>
@@ -775,7 +807,7 @@ function ViewForms() {
             <button onClick={printForm} className="btn-secondary">🖨️ Imprimir</button>
             {(() => {
               // Verificar si todas las firmas requeridas están completas
-              const requiredFirmas = correspondingTemplate?.firmas || [];
+              const requiredFirmas = Array.isArray(correspondingTemplate?.firmas) ? correspondingTemplate.firmas : (typeof correspondingTemplate?.firmas === 'string' ? safeParse(correspondingTemplate.firmas, []) : []);
               const firmasData = selectedForm?.firmasData || {};
               const allSigned = requiredFirmas.length === 0 || requiredFirmas.every(f => {
                 const d = firmasData[f.puesto];
@@ -807,6 +839,7 @@ function ViewForms() {
             )}
           </div>
         </div>
+        <FormSectionErrorBoundary sectionTitle="Documento Principal">
         <div className="form-viewer-document">
           {(() => {
             // 📅 FECHA: Usar fechaVersion del template (fecha de versión de la plantilla)
@@ -834,7 +867,9 @@ function ViewForms() {
           )}
           
           {/* Campos del Header usando el template */}
-          {correspondingTemplate && correspondingTemplate.headerFields && correspondingTemplate.headerFields.length > 0 ? (
+          {(() => {
+            const rawHf = Array.isArray(correspondingTemplate?.headerFields) ? correspondingTemplate.headerFields : (typeof correspondingTemplate?.headerFields === 'string' ? safeParse(correspondingTemplate.headerFields, []) : []);
+            return rawHf.length > 0 ? (
             <div className="data-section">
               <h3>Información General</h3>
               <div className="data-grid">
@@ -842,10 +877,10 @@ function ViewForms() {
                   const normalizeString = (str) => str?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
                   // Render all template-defined fields
                   const renderedKeys = new Set();
-                  const items = correspondingTemplate.headerFields.map((field, index) => {
-                    let value = selectedForm.headerData[field.label] 
-                             || selectedForm.headerData[field.name] 
-                             || selectedForm.headerData[field.id];
+                  const items = rawHf.map((field, index) => {
+                    let value = selectedForm.headerData?.[field.label] 
+                             || selectedForm.headerData?.[field.name] 
+                             || selectedForm.headerData?.[field.id];
                     
                     if (!value) {
                       const normalizedFieldLabel = normalizeString(field.label);
@@ -935,39 +970,45 @@ function ViewForms() {
                 )}
               </div>
             </div>
-          ) : null}
+          ) : null;
+          })()}
 
           {/* --- NUEVO: RENDERIZADO DEL CUERPO DINÁMICO --- */}
-          {correspondingTemplate && selectedForm.bodyData && Array.isArray(selectedForm.bodyData) && correspondingTemplate.bodyElements && correspondingTemplate.bodyElements.map((templateElement, elementIndex) => {
-            if (!templateElement) return null;
-            // Buscar el dato correspondiente por ID primero (robusto ante re-ordenamiento), luego por índice
-            let elementData = null;
-            const savedBodyData = Array.isArray(selectedForm.bodyData) ? selectedForm.bodyData : [];
-            if (templateElement.id !== undefined && templateElement.id !== null) {
-              const byId = savedBodyData.find(bd =>
-                bd !== null && bd !== undefined &&
-                (bd.id === templateElement.id || String(bd.id) === String(templateElement.id))
-              );
-              elementData = byId !== undefined ? byId : (savedBodyData[elementIndex] ?? null);
-            } else {
-              elementData = savedBodyData[elementIndex] ?? null;
-            }
-            
-            // 👁️ Ocultar si está marcado como hidden
-            if (elementData?.data?._isHidden) {
-              return null;
-            }
+          {(() => {
+            const rawBodyElements = Array.isArray(correspondingTemplate?.bodyElements) ? correspondingTemplate.bodyElements : (typeof correspondingTemplate?.bodyElements === 'string' ? safeParse(correspondingTemplate.bodyElements, []) : []);
+            const savedBodyData = Array.isArray(selectedForm?.bodyData) ? selectedForm.bodyData : (typeof selectedForm?.bodyData === 'string' ? safeParse(selectedForm.bodyData, []) : []);
+            if (!rawBodyElements.length) return null;
 
-            // Renderizar una SECCIÓN
-            if (templateElement.type === 'section') {
-              // 🔧 FIX: Soportar tanto elementData.data como elementData.rows para secciones
-              const sectionData = (elementData && (elementData.data || elementData.rows)) ? (elementData.data || elementData.rows) : {};
-              return (
-                <div key={templateElement.id} className="data-section">
-                  <h3>{templateElement.title}</h3>
-                  <div className="data-grid">
-                    {templateElement.fields?.map((fieldDef) => {
-                      if (elementData?.hiddenFields?.[fieldDef.label || fieldDef.name] || fieldDef.isHidden) return null;
+            return rawBodyElements.map((templateElement, elementIndex) => {
+              if (!templateElement) return null;
+              // Buscar el dato correspondiente por ID primero (robusto ante re-ordenamiento), luego por índice
+              let elementData = null;
+              if (templateElement.id !== undefined && templateElement.id !== null) {
+                const byId = savedBodyData.find(bd =>
+                  bd !== null && bd !== undefined &&
+                  (bd.id === templateElement.id || String(bd.id) === String(templateElement.id))
+                );
+                elementData = byId !== undefined ? byId : (savedBodyData[elementIndex] ?? null);
+              } else {
+                elementData = savedBodyData[elementIndex] ?? null;
+              }
+              
+              // 👁️ Ocultar si está marcado como hidden
+              if (elementData?.data?._isHidden) {
+                return null;
+              }
+
+              // Renderizar una SECCIÓN
+              if (templateElement.type === 'section') {
+                // 🔧 FIX: Soportar tanto elementData.data como elementData.rows para secciones
+                const sectionData = (elementData && (elementData.data || elementData.rows)) ? (elementData.data || elementData.rows) : {};
+                const rawFields = Array.isArray(templateElement.fields) ? templateElement.fields : (typeof templateElement.fields === 'string' ? safeParse(templateElement.fields, []) : []);
+                return (
+                  <div key={templateElement.id} className="data-section">
+                    <h3>{templateElement.title}</h3>
+                    <div className="data-grid">
+                      {rawFields.map((fieldDef) => {
+                        if (elementData?.hiddenFields?.[fieldDef.label || fieldDef.name] || fieldDef.isHidden) return null;
                       // Nota estática: mostrar como advertencia, no como dato llenado
                       if (fieldDef.type === 'nota') {
                         const texto = fieldDef.staticContent || '';
@@ -989,7 +1030,7 @@ function ViewForms() {
                         return (
                           <div key={fieldDef.label} style={{ gridColumn: '1 / -1' }}>
                             <span className="data-label">{fieldDef.label}:</span>
-                            <img src={fieldDef.staticImage} alt={fieldDef.label} style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '6px', display: 'block', marginTop: '6px' }} />
+                            <img src={fieldDef.staticImage} alt={fieldDef.label} style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px' }} />
                           </div>
                         );
                       }
@@ -1001,7 +1042,7 @@ function ViewForms() {
                         return (
                           <div key={key} style={{ gridColumn: '1 / -1' }}>
                             <span className="data-label">{key}:</span>
-                            <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '6px', display: 'block', marginTop: '6px', border: '1px solid #e5e7eb' }} />
+                            <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px', border: '1px solid #e5e7eb' }} />
                           </div>
                         );
                       }
@@ -1093,10 +1134,12 @@ function ViewForms() {
               
               {
                 const hiddenColsMap = elementData?.hiddenColumns || {};
-                const visibleColumns = (templateElement.columns || []).map((col, originalIndex) => ({...col, originalIndex})).filter(c => !hiddenColsMap[c.label || c.name || c.header] && !c.isHidden);
+                const rawCols = Array.isArray(templateElement.columns) ? templateElement.columns : (typeof templateElement.columns === 'string' ? safeParse(templateElement.columns, []) : []);
+                const visibleColumns = rawCols.map((col, originalIndex) => ({...col, originalIndex})).filter(c => !hiddenColsMap[c.label || c.name || c.header] && !c.isHidden);
                 const vfGroupedCols = processColumnGroups(visibleColumns);
                 return (
-                <div key={templateElement.id} className="data-section">
+                <FormSectionErrorBoundary key={templateElement.id || elementIndex} sectionTitle={templateElement.title || 'Tabla de Datos'}>
+                <div className="data-section">
                   <h3>{templateElement.title}</h3>
                   <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh' }}>
                     <table className="data-table view-data-table">
@@ -1129,9 +1172,10 @@ function ViewForms() {
                         {tableRows.map((row, rowIndex) => {
                           const safeRow = row || {};
                           // Obtener la fila del template para mapear nombres de celdas
-                          const templateRow = templateElement.rows ? templateElement.rows[rowIndex] : null;
+                          const rawTemplateRows = Array.isArray(templateElement.rows) ? templateElement.rows : (typeof templateElement.rows === 'string' ? safeParse(templateElement.rows, []) : []);
+                          const templateRow = rawTemplateRows[rowIndex] || null;
                           // Pre-calcular fórmulas para permitir encadenamiento entre columnas
-                          const computedRow = buildComputedRow(mergeCrossTableRow(safeRow, rowIndex, selectedForm.bodyData), templateElement.columns || [], tableRows, rowIndex);
+                          const computedRow = buildComputedRow(mergeCrossTableRow(safeRow, rowIndex, selectedForm.bodyData), rawCols, tableRows, rowIndex);
                           
                           return (
                             <tr key={`row-${rowIndex}`}>
@@ -1140,16 +1184,16 @@ function ViewForms() {
                               const rowKeys = Object.keys(safeRow);
                               // 🔗 Rowspan desde filas predefinidas del template
                               let vfRowSpan = undefined;
-                              const vfPredRows = templateElement.predefinedRows || [];
+                              const vfPredRows = Array.isArray(templateElement.predefinedRows) ? templateElement.predefinedRows : (typeof templateElement.predefinedRows === 'string' ? safeParse(templateElement.predefinedRows, []) : []);
                               if (vfPredRows.length > 0 && rowIndex < vfPredRows.length) {
-                                const vfColKey = (col.label || col.header || col.name || col.id || `col_${col.originalIndex}`).trim();
+                                const vfColKey = String(col.label || col.header || col.name || col.id || `col_${col.originalIndex}`).trim();
                                 const vfPredRow = vfPredRows[rowIndex];
-                                if (vfPredRow._hidden?.[vfColKey]) return null;
-                                const vfSpan = vfPredRow._rowSpan?.[vfColKey] || 1;
+                                if (vfPredRow && vfPredRow._hidden?.[vfColKey]) return null;
+                                const vfSpan = vfPredRow?._rowSpan?.[vfColKey] || 1;
                                 if (vfSpan > 1) vfRowSpan = vfSpan;
                               }
-                              const colLabel = (col.label || col.header || "").trim();
-                              const colId = (col.id || col.name || "").trim();
+                              const colLabel = String(col.label || col.header || "").trim();
+                              const colId = String(col.id || col.name || "").trim();
                               const colIdUpper = colId.toUpperCase();
                               const colLabelUpper = colLabel.toUpperCase();
 
@@ -1157,7 +1201,7 @@ function ViewForms() {
                               // Para tablas agrupadas con etiquetas duplicadas, FillForm guarda
                               // "Termómetro_col2", "Termómetro_col6", etc. La búsqueda por sufijo
                               // es la más precisa porque usa el índice exacto de la columna.
-                              const preciseKey = rowKeys.find(k => k.endsWith(`_col${col.originalIndex}`));
+                              const preciseKey = rowKeys.find(k => String(k).endsWith(`_col${col.originalIndex}`));
                               let cellValue = preciseKey !== undefined ? safeRow[preciseKey] : undefined;
 
                               // 2. 🎯 BÚSQUEDA DIRECTA EXACTA (etiquetas únicas sin sufijo)
@@ -1169,7 +1213,7 @@ function ViewForms() {
                               if (cellValue === undefined || cellValue === null || cellValue === "") {
                                 const targetClean = colLabelUpper.replace(/[^A-Z0-9]/g, "");
                                 const foundKey = rowKeys.find(key => {
-                                  const keyClean = key.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                                  const keyClean = String(key).toUpperCase().replace(/[^A-Z0-9]/g, "");
                                   // Solo coincidencia limpia exacta: evita que "TERMÓMETRO" coincida
                                   // con "TERMÓMETRO_COL2" (diferente grupo) via includes()
                                   return keyClean === targetClean && targetClean !== "";
@@ -1183,20 +1227,20 @@ function ViewForms() {
                                 const isTotalColumn = colIdUpper.includes('TOTAL') || colLabelUpper.includes('TOTAL');
 
                                 if (isPesoColumn) {
-                                  const pesoMatch = (colId || colLabel).match(/\d+/);
+                                  const pesoMatch = String(colId || colLabel).match(/\d+/);
                                   const pesoNum = pesoMatch ? pesoMatch[0] : '';
-                                  const pesoKey = rowKeys.find(k => k.toUpperCase().includes(`PESO${pesoNum}`) && !k.toUpperCase().includes('TOTAL'));
+                                  const pesoKey = rowKeys.find(k => String(k).toUpperCase().includes(`PESO${pesoNum}`) && !String(k).toUpperCase().includes('TOTAL'));
                                   if (pesoKey) cellValue = safeRow[pesoKey];
                                 } 
                                 else if (isTotalColumn) {
-                                  const totalKey = rowKeys.find(k => k.toUpperCase().includes('TOTAL'));
+                                  const totalKey = rowKeys.find(k => String(k).toUpperCase().includes('TOTAL'));
                                   if (totalKey) cellValue = safeRow[totalKey];
                                 }
                               }
 
                               // 5. 🧮 Columnas de fórmula: recalcular con computedRow (encadenamiento habilitado)
                               if ((col.type === 'formula' || col.type === 'calculated') && col.formula) {
-                                const rowAlias = buildGroupedRowAlias(computedRow, templateElement.columns, col.originalIndex);
+                                const rowAlias = buildGroupedRowAlias(computedRow, rawCols, col.originalIndex);
                                 const calculado = evaluarFormula(col.formula, rowAlias, tableRows, rowIndex);
                                 if (calculado && calculado !== '⚠️' && calculado !== 'ERR') {
                                   cellValue = calculado;
@@ -1204,7 +1248,7 @@ function ViewForms() {
                               }
 
                               return (
-                                <td key={`cell-${rowIndex}-${col.originalIndex}`} rowSpan={vfRowSpan || undefined} style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: templateElement.columns.length > 12 ? '60px' : templateElement.columns.length > 8 ? '75px' : '100px' }}>
+                                <td key={`cell-${rowIndex}-${col.originalIndex}`} rowSpan={vfRowSpan || undefined} style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: rawCols.length > 12 ? '60px' : rawCols.length > 8 ? '75px' : '100px' }}>
                                   {renderCellValue(cellValue, col.type)}{col.unit && cellValue !== undefined && cellValue !== null && cellValue !== '' && cellValue !== '-' ? <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '2px' }}>{col.unit}</span> : null}
                                 </td>
                               );
@@ -1213,22 +1257,22 @@ function ViewForms() {
                           );
                         })}
                         {tableRows.length === 0 && (
-                          <tr><td colSpan={templateElement.columns.length + 1}>No hay datos</td></tr>
+                          <tr><td colSpan={rawCols.length + 1}>No hay datos</td></tr>
                         )}
                       </tbody>
                       
                       {/* 📊 FILA DE TOTALES POR COLUMNA */}
                       {tableRows.length > 0 && (
                         (correspondingTemplate?.autoSumColumns === true || correspondingTemplate?.AutoSumColumns === true) || 
-                        (templateElement.columns || []).some(c => c.includeInSum !== false)
+                        rawCols.some(c => c.includeInSum !== false)
                       ) && (
                         <tfoot>
                           <tr style={{ backgroundColor: '#eef2ff', fontWeight: 'bold', borderTop: '3px solid #6366f1' }}>
                             <td style={{ textAlign: 'center', color: '#4338ca', fontWeight: '800', fontSize: '0.9em', padding: '8px 4px' }}>Σ</td>
                             {visibleColumns.map((col, colIndex) => {
-                              const colLabel = (col.label || col.header || '').toUpperCase();
-                              const colId = (col.id || col.name || '').toUpperCase();
-                              const colType = (col.type || '').toLowerCase();
+                              const colLabel = String(col.label || col.header || '').toUpperCase();
+                              const colId = String(col.id || col.name || '').toUpperCase();
+                              const colType = String(col.type || '').toLowerCase();
 
                               // Respetar exclusiones explícitas
                               if (col.includeInSum === true) {
@@ -1268,8 +1312,8 @@ function ViewForms() {
                               tableRows.forEach(row => {
                                 const safeRow = row || {};
                                 const rowKeys = Object.keys(safeRow);
-                                const colLabelSearch = (col.label || col.header || "").trim();
-                                const colIdSearch = (col.id || col.name || "").trim();
+                                const colLabelSearch = String(col.label || col.header || "").trim();
+                                const colIdSearch = String(col.id || col.name || "").trim();
 
                                 // Buscar valor igual que en el renderizado
                                 let cellValue = safeRow[colLabelSearch] ?? safeRow[col.header] ?? safeRow[colIdSearch] ?? safeRow[col.name];
@@ -1282,9 +1326,9 @@ function ViewForms() {
                                 if (cellValue === undefined || cellValue === null || cellValue === "") {
                                   const targetClean = colLabel.replace(/[^A-Z0-9]/g, "");
                                   const foundKey = rowKeys.find(key => {
-                                    const keyClean = key.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                                    const keyClean = String(key).toUpperCase().replace(/[^A-Z0-9]/g, "");
                                     if (keyClean === targetClean && targetClean !== "") return true;
-                                    if (key.toUpperCase().includes(colLabel) && colLabel !== "") return true;
+                                    if (String(key).toUpperCase().includes(colLabel) && colLabel !== "") return true;
                                     return false;
                                   });
                                   if (foundKey) cellValue = row[foundKey];
@@ -1293,20 +1337,24 @@ function ViewForms() {
                                 // Para PESO/TOTAL buscar específicamente
                                 if (cellValue === undefined || cellValue === null || cellValue === "") {
                                   if (colLabel.includes('PESO') || colId.includes('PESO')) {
-                                    const pesoMatch = (col.id || col.label || '').match(/\d+/);
+                                    const pesoMatch = String(col.id || col.label || '').match(/\d+/);
                                     const pesoNum = pesoMatch ? pesoMatch[0] : '';
-                                    const pesoKey = rowKeys.find(k => k.toUpperCase().includes(`PESO${pesoNum}`) && !k.toUpperCase().includes('TOTAL'));
+                                    const pesoKey = rowKeys.find(k => String(k).toUpperCase().includes(`PESO${pesoNum}`) && !String(k).toUpperCase().includes('TOTAL'));
                                     if (pesoKey) cellValue = row[pesoKey];
                                   } else if (colLabel.includes('TOTAL') || colId.includes('TOTAL')) {
-                                    const totalKey = rowKeys.find(k => k.toUpperCase().includes('TOTAL'));
+                                    const totalKey = rowKeys.find(k => String(k).toUpperCase().includes('TOTAL'));
                                     if (totalKey) cellValue = row[totalKey];
                                   }
                                 }
 
-                                const val = parseFloat(cellValue);
-                                if (!isNaN(val)) {
-                                  columnTotal += val;
-                                  hasValues = true;
+                                // Si existe un valor, intentar sumarlo
+                                if (cellValue !== undefined && cellValue !== null && cellValue !== "") {
+                                  let valStr = String(cellValue).trim().replace(',', '.');
+                                  let valNum = parseFloat(valStr);
+                                  if (!isNaN(valNum)) {
+                                    columnTotal += valNum;
+                                    hasValues = true;
+                                  }
                                 }
                               });
 
@@ -1329,6 +1377,7 @@ function ViewForms() {
                     </table>
                   </div>
                 </div>
+                </FormSectionErrorBoundary>
                 );
               }
             }
@@ -1443,10 +1492,16 @@ function ViewForms() {
                                 C{cycleIdx + 1} - {field.label}{field.suffix ? ` (${field.suffix})` : ''}
                               </td>
                               {allTinas.map(tina => {
-                                const val = tinasData[tina.key]?.[cycleIdx]?.[field.label] ?? '';
+                                const isMovil = (tina.groupName || tina.label || '').toUpperCase().includes('MOVIL') || 
+                                                (tina.groupName || tina.label || '').toUpperCase().includes('MÓVIL') || 
+                                                (tina.label || '').toUpperCase().includes('FILETEO');
+                                let val = tinasData[tina.key]?.[cycleIdx]?.[field.label] ?? '';
+                                if (isMovil && ['Vol.', 'Resid. (I)', 'Dosif.'].includes(field.label)) {
+                                  val = '-';
+                                }
                                 return (
                                   <td key={`${tina.key}-${cycleIdx}-${fi}`} style={{ textAlign: 'center' }}>
-                                    {renderCellValue(val, field.type)}
+                                    {isMovil && ['Vol.', 'Resid. (I)', 'Dosif.'].includes(field.label) ? '-' : renderCellValue(val, field.type)}
                                   </td>
                                 );
                               })}
@@ -1475,7 +1530,8 @@ function ViewForms() {
             }
 
             return null;
-          })}
+            });
+          })()}
 
 
           {selectedForm.observaciones && (
@@ -1515,8 +1571,8 @@ function ViewForms() {
                     );
 
                     // El usuario puede firmar si: es su slot O es reemplazo, Y aún no ha firmado
-                    const hoursElapsedView = (new Date() - new Date(formData?.createdAt || formData?.createdDate || new Date())) / (1000 * 60 * 60);
-                    const isTimeLockedView = hoursElapsedView > 36 && !formData?.headerData?.unlocked36h;
+                    const hoursElapsedView = (new Date() - new Date(selectedForm?.createdAt || selectedForm?.createdDate || new Date())) / (1000 * 60 * 60);
+                    const isTimeLockedView = hoursElapsedView > 36 && !selectedForm?.headerData?.unlocked36h;
                     const canSignHere = (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && !isTimeLockedView;
                     
                     console.log(`🔐 [${puesto}] Validación de firma:`, {
@@ -1628,7 +1684,7 @@ function ViewForms() {
                               currentUser={currentUser}
                               canSign={true}
                             />
-                          ) : (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && ((new Date() - new Date(formData?.createdAt || formData?.createdDate || new Date())) / (1000 * 60 * 60)) > 36 && !formData?.headerData?.unlocked36h ? (
+                          ) : (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && ((new Date() - new Date(selectedForm?.createdAt || selectedForm?.createdDate || new Date())) / (1000 * 60 * 60)) > 36 && !selectedForm?.headerData?.unlocked36h ? (
                             <div style={{ padding: '12px', background: '#fef2f2', border: '1px dashed #ef4444', borderRadius: '8px', textAlign: 'center', margin: '8px 0' }}>
                               <span style={{ fontSize: '18px' }}>🔒</span>
                               <p style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '12px', margin: '4px 0 0 0' }}>
@@ -1650,8 +1706,8 @@ function ViewForms() {
                           {data.email && (
                             <p><strong>📧 Email:</strong> <a href={`mailto:${data.email}`} style={{ color: '#1976d2' }}>{data.email}</a></p>
                           )}
-                          <p><strong>Fecha:</strong> {data.fecha ? new Date(data.fecha + 'T00:00:00').toLocaleDateString('es-EC') : "-"}</p>
-                          {data.hora && (
+                          <p><strong>Fecha:</strong> {data.fecha && data.fecha !== '-' ? new Date(data.fecha + 'T00:00:00').toLocaleDateString('es-EC') : "-"}</p>
+                          {data.hora && data.hora !== '-' && (
                             <p><strong>Hora:</strong> {data.hora}</p>
                           )}
                           <p style={{ marginTop: '4px' }}>
@@ -1670,7 +1726,9 @@ function ViewForms() {
             </div>
           )}
         </div>
+        </FormSectionErrorBoundary>
       </div>
+      </FormSectionErrorBoundary>
     );
   }
 

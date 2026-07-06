@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import signatureService from '../services/signatureService';
 import authService from '../services/authService';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -44,6 +44,11 @@ export default function SignatureManagement() {
   const [timingLoading, setTimingLoading] = useState(false);
   const [timingDays, setTimingDays] = useState(30);
   const [timingFilter, setTimingFilter] = useState('all'); // all, signed, pending, rejected
+
+  // Estados para agrupamiento por acordeón y paginación en firmas
+  const [expandedSigGroups, setExpandedSigGroups] = useState({});
+  const [sigGroupPages, setSigGroupPages] = useState({});
+  const sigItemsPerPage = 6;
 
   // Canvas refs
   const canvasRef = useRef(null);
@@ -622,6 +627,33 @@ export default function SignatureManagement() {
     return matchesSearch && matchesArea && matchesTemplate && isAssigned && isNotRejected;
   });
 
+  // Agrupar formularios filtrados por plantilla
+  const groupedFilteredForms = useMemo(() => {
+    const groups = {};
+    filteredForms.forEach(form => {
+      const key = form.formCode && form.formCode !== 'N/A' 
+        ? `[${form.formCode}] ${form.templateName}` 
+        : form.templateName || 'Sin Plantilla';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(form);
+    });
+    return groups;
+  }, [filteredForms]);
+
+  const toggleSigGroup = (groupKey) => {
+    setExpandedSigGroups(prev => ({
+      ...prev,
+      [groupKey]: prev[groupKey] === undefined ? false : !prev[groupKey]
+    }));
+  };
+
+  const handleSigPageChange = (groupKey, newPage) => {
+    setSigGroupPages(prev => ({
+      ...prev,
+      [groupKey]: newPage
+    }));
+  };
+
   // Obtener áreas y plantillas únicas para filtros
   const uniqueAreas = [...new Set(pendingForms.map(f => f.area).filter(Boolean))];
   const uniqueTemplates = Object.values(pendingForms.reduce((acc, f) => {
@@ -650,7 +682,12 @@ export default function SignatureManagement() {
           <h1>✍️ Gestión de Firmas</h1>
           <p className="subtitle">Revisa y firma los registros completados</p>
         </div>
-        <div className="header-actions">
+        <div className="header-actions" style={{ display: 'flex', gap: '10px' }}>
+          {isSGI && (
+            <Link to="/audit-signatures" className="btn-secondary" style={{ backgroundColor: '#2563eb', color: 'white', borderColor: '#1d4ed8' }}>
+              📑 Auditoría de Fechas (SGI)
+            </Link>
+          )}
           <Link to="/" className="btn-secondary">
             ← Volver al Inicio
           </Link>
@@ -834,106 +871,183 @@ export default function SignatureManagement() {
             <p>Todos los formularios han sido firmados o no hay registros para mostrar</p>
           </div>
         ) : (
-          <div className="forms-grid">
-            {filteredForms.map(form => (
-              <div
-                key={form.id}
-                className={`form-card ${selectedForms.includes(form.id) ? 'selected' : ''}`}
-              >
-                <div className="form-card-header">
-                  <input
-                    type="checkbox"
-                    checked={selectedForms.includes(form.id)}
-                    onChange={() => handleSelectForm(form.id)}
-                    className="form-checkbox"
-                  />
-                  <div className="form-info">
-                    <h3>{form.templateName}</h3>
-                    <span className="form-code">{form.formCode}</span>
-                  </div>
-                </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {Object.entries(groupedFilteredForms).map(([groupKey, groupForms]) => {
+              const isExpanded = expandedSigGroups[groupKey] !== false; // Abierto por defecto
+              const currentPage = sigGroupPages[groupKey] || 1;
+              const totalPages = Math.ceil(groupForms.length / sigItemsPerPage);
+              const startIndex = (currentPage - 1) * sigItemsPerPage;
+              const paginatedForms = groupForms.slice(startIndex, startIndex + sigItemsPerPage);
 
-                <div className="form-card-body">
-                  <div className="form-detail">
-                    <span className="detail-label">📅 Fecha:</span>
-                    <span className="detail-value">
-                      {new Date(form.createdDate).toLocaleDateString('es-ES')}
-                    </span>
+              return (
+                <div key={groupKey} style={{ background: 'white', borderRadius: '16px', border: '1px solid #cbd5e1', boxShadow: '0 4px 10px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+                  {/* Cabecera del Grupo / Acordeón */}
+                  <div 
+                    onClick={() => toggleSigGroup(groupKey)}
+                    style={{ background: 'linear-gradient(to right, #f8fafc, #f1f5f9)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '10px' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>📁 {groupKey}</span>
+                      <span style={{ background: '#3b82f6', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 700 }}>{groupForms.length} registro{groupForms.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const groupIds = groupForms.map(f => f.id);
+                          const allSelected = groupIds.every(id => selectedForms.includes(id));
+                          if (allSelected) {
+                            setSelectedForms(prev => prev.filter(id => !groupIds.includes(id)));
+                          } else {
+                            setSelectedForms(prev => [...new Set([...prev, ...groupIds])]);
+                          }
+                        }}
+                        className="btn-secondary"
+                        style={{ fontSize: '0.8rem', padding: '6px 12px', background: '#e2e8f0', color: '#1e293b', border: '1px solid #cbd5e1' }}
+                      >
+                        {groupForms.every(f => selectedForms.includes(f.id)) ? '☑️ Deseleccionar Grupo' : '☐ Seleccionar Grupo'}
+                      </button>
+                      <span style={{ fontWeight: 'bold', color: '#64748b' }}>
+                        {isExpanded ? '▼ Desplegado' : '▶ Desplegar'}
+                      </span>
+                    </div>
                   </div>
-                  
-                  <div className="form-detail">
-                    <span className="detail-label">👤 Creado por:</span>
-                    <span className="detail-value">
-                      {form.createdBy}
-                      {form.createdByEmail && (
-                        <span className="created-by-email" style={{ 
-                          display: 'block', 
-                          fontSize: '0.85em', 
-                          color: '#4b5563',
-                          marginTop: '2px'
-                        }}>
-                          📧 {form.createdByEmail}
-                        </span>
+
+                  {/* Contenido Desplegado */}
+                  {isExpanded && (
+                    <div style={{ padding: '20px', background: '#fcfcfd' }}>
+                      <div className="forms-grid">
+                        {paginatedForms.map(form => (
+                          <div
+                            key={form.id}
+                            className={`form-card ${selectedForms.includes(form.id) ? 'selected' : ''}`}
+                          >
+                            <div className="form-card-header">
+                              <input
+                                type="checkbox"
+                                checked={selectedForms.includes(form.id)}
+                                onChange={() => handleSelectForm(form.id)}
+                                className="form-checkbox"
+                              />
+                              <div className="form-info">
+                                <h3>{form.templateName}</h3>
+                                <span className="form-code">{form.formCode}</span>
+                              </div>
+                            </div>
+
+                            <div className="form-card-body">
+                              <div className="form-detail">
+                                <span className="detail-label">📅 Fecha:</span>
+                                <span className="detail-value">
+                                  {new Date(form.createdDate).toLocaleDateString('es-ES')}
+                                </span>
+                              </div>
+                              
+                              <div className="form-detail">
+                                <span className="detail-label">👤 Creado por:</span>
+                                <span className="detail-value">
+                                  {form.createdBy}
+                                  {form.createdByEmail && (
+                                    <span className="created-by-email" style={{ 
+                                      display: 'block', 
+                                      fontSize: '0.85em', 
+                                      color: '#4b5563',
+                                      marginTop: '2px'
+                                    }}>
+                                      📧 {form.createdByEmail}
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+
+                              {form.area && (
+                                <div className="form-detail">
+                                  <span className="detail-label">🏢 Área:</span>
+                                  <span className="detail-value">{form.area}</span>
+                                </div>
+                              )}
+
+                              <div className="form-detail">
+                                <span className="detail-label">⏰ Pendiente:</span>
+                                <span className="detail-value pending-time">
+                                  {calculatePendingTime(form.createdDate)}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="form-card-actions">
+                              {(() => {
+                                const hoursElapsedCard = (new Date() - new Date(form.createdDate)) / (1000 * 60 * 60);
+                                const isTimeLockedCard = hoursElapsedCard > 36 && !form.unlocked36h;
+                                if (isTimeLockedCard) {
+                                  return (
+                                    <button
+                                      onClick={() => alert('🔒 Este registro tiene más de 36 horas de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.')}
+                                      className="btn-sign"
+                                      style={{ backgroundColor: '#9ca3af', cursor: 'not-allowed' }}
+                                    >
+                                      🔒 Bloqueado (&gt;36h)
+                                    </button>
+                                  );
+                                }
+                                return (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedForms([form.id]);
+                                      openContractPreview(form.id);
+                                    }}
+                                    className="btn-sign"
+                                  >
+                                    {form.unlocked36h ? '🔓 Firmar (Habilitado)' : '✍️ Firmar'}
+                                  </button>
+                                );
+                              })()}
+
+                              {isSGI && (
+                                <button
+                                  onClick={() => openRejectModal(form.id)}
+                                  className="btn-reject"
+                                >
+                                  ❌ Rechazar
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Paginación interna del grupo */}
+                      {totalPages > 1 && (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '20px', paddingTop: '16px', borderTop: '1px dashed #cbd5e1' }}>
+                          <button
+                            type="button"
+                            disabled={currentPage === 1}
+                            onClick={() => handleSigPageChange(groupKey, currentPage - 1)}
+                            style={{ padding: '8px 14px', border: '1px solid #cbd5e1', background: 'white', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#334155', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1 }}
+                          >
+                            ← Anterior
+                          </button>
+                          
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#475569', padding: '0 8px' }}>
+                            Página {currentPage} de {totalPages} ({groupForms.length} registros en total)
+                          </span>
+
+                          <button
+                            type="button"
+                            disabled={currentPage === totalPages}
+                            onClick={() => handleSigPageChange(groupKey, currentPage + 1)}
+                            style={{ padding: '8px 14px', border: '1px solid #cbd5e1', background: 'white', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#334155', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                          >
+                            Siguiente →
+                          </button>
+                        </div>
                       )}
-                    </span>
-                  </div>
-
-                  {form.area && (
-                    <div className="form-detail">
-                      <span className="detail-label">🏢 Área:</span>
-                      <span className="detail-value">{form.area}</span>
                     </div>
                   )}
-
-                  <div className="form-detail">
-                    <span className="detail-label">⏰ Pendiente:</span>
-                    <span className="detail-value pending-time">
-                      {calculatePendingTime(form.createdDate)}
-                    </span>
-                  </div>
                 </div>
-
-                <div className="form-card-actions">
-                  {(() => {
-                    const hoursElapsedCard = (new Date() - new Date(form.createdDate)) / (1000 * 60 * 60);
-                    const isTimeLockedCard = hoursElapsedCard > 36 && !form.unlocked36h;
-                    if (isTimeLockedCard) {
-                      return (
-                        <button
-                          onClick={() => alert('🔒 Este registro tiene más de 36 horas de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.')}
-                          className="btn-sign"
-                          style={{ backgroundColor: '#9ca3af', cursor: 'not-allowed' }}
-                        >
-                          🔒 Bloqueado (&gt;36h)
-                        </button>
-                      );
-                    }
-                    return (
-                      <button
-                        onClick={() => {
-                          setSelectedForms([form.id]);
-                          openContractPreview(form.id);
-                        }}
-                        className="btn-sign"
-                      >
-                        {form.unlocked36h ? '🔓 Firmar (Habilitado)' : '✍️ Firmar'}
-                      </button>
-                    );
-                  })()}
-                  
-                  
-
-                  {isSGI && (
-                    <button
-                      onClick={() => openRejectModal(form.id)}
-                      className="btn-reject"
-                    >
-                      ❌ Rechazar
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

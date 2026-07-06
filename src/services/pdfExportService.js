@@ -131,6 +131,24 @@ const getBase64Image = (imgUrl) => {
   });
 };
 
+const getImageDataAndDims = (imgUrl) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width || 800;
+      canvas.height = img.height || 600;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const dataURL = canvas.toDataURL('image/png');
+      resolve({ dataURL, width: img.width || 800, height: img.height || 600 });
+    };
+    img.onerror = reject;
+    img.src = imgUrl;
+  });
+};
+
 /**
  * 🎨 ESTILOS Y COLORES DE FRIGOLAB
  */
@@ -213,58 +231,63 @@ const getTableStyles = (columnCount, pageWidth, margins, compact = false) => {
  * 📏 Calcula anchos inteligentes de columna basados en contenido real
  */
 const calculateSmartColumnWidths = (columns, rows, availableWidth, doc, fontSize) => {
-  doc.setFontSize(fontSize);
+  const headerFontSize = Math.max(fontSize * 1.3, 7);
   
   // Medir ancho real de cada columna (header + contenido)
   const colWidths = columns.map((col, ci) => {
     const headerText = col.header || '';
-    // Medir ancho del header (podría tener varias palabras)
-    const headerWords = headerText.split(/\s+/);
-    // El ancho mínimo es la palabra más larga del header
-    const longestWord = headerWords.reduce((max, w) => Math.max(max, doc.getTextWidth(w)), 0);
-    let maxWidth = longestWord + 3; // +3mm padding
     
-    // Medir contenido de las filas
+    // Medir header con el tamaño y estilo real con el que se dibuja
+    doc.setFontSize(headerFontSize);
+    doc.setFont('helvetica', 'bold');
+    const headerWords = headerText.split(/\s+/);
+    const longestHeaderWord = headerWords.reduce((max, w) => Math.max(max, doc.getTextWidth(w)), 0);
+    const headerFullW = doc.getTextWidth(headerText);
+    
+    // Medir contenido con la fuente normal del cuerpo
+    doc.setFontSize(fontSize);
+    doc.setFont('helvetica', 'normal');
+    let maxContentW = 0;
     rows.forEach(row => {
       const cellText = String(row[ci] || '');
       if (cellText) {
         const textW = doc.getTextWidth(cellText);
-        if (textW + 3 > maxWidth) maxWidth = textW + 3;
+        if (textW > maxContentW) maxContentW = textW;
       }
     });
     
-    return { index: ci, idealWidth: maxWidth, minWidth: longestWord + 2 };
+    const idealWidth = Math.max(headerFullW + 4, maxContentW + 4);
+    const minWidth = Math.max(longestHeaderWord + 3, Math.min(maxContentW + 3, 16));
+    
+    return { index: ci, idealWidth, minWidth };
   });
   
-  // Calcular total ideal
   const totalIdeal = colWidths.reduce((sum, c) => sum + c.idealWidth, 0);
+  const result = {};
   
   if (totalIdeal <= availableWidth) {
     // Cabe todo: distribuir espacio sobrante proporcionalmente
     const ratio = availableWidth / totalIdeal;
-    const result = {};
     colWidths.forEach(c => {
       result[c.index] = { cellWidth: c.idealWidth * ratio };
     });
     return result;
   }
   
-  // No cabe → comprimir proporcionalmente pero respetar mínimos
   const totalMin = colWidths.reduce((sum, c) => sum + c.minWidth, 0);
-  const result = {};
   
   if (totalMin >= availableWidth) {
-    // Ni los mínimos caben → distribuir equitativamente
-    const eqWidth = availableWidth / columns.length;
+    // Ni los mínimos caben → distribuir proporcional a su minWidth (para no desperdiciar en columnas cortas)
+    const ratio = availableWidth / totalMin;
     colWidths.forEach(c => {
-      result[c.index] = { cellWidth: eqWidth };
+      result[c.index] = { cellWidth: Math.max(c.minWidth * ratio, 10) };
     });
   } else {
     // Distribuir: cada col obtiene su mínimo + proporción del espacio restante
     const extraSpace = availableWidth - totalMin;
-    const totalExtra = colWidths.reduce((sum, c) => sum + (c.idealWidth - c.minWidth), 0);
+    const totalExtra = colWidths.reduce((sum, c) => sum + Math.max(0, c.idealWidth - c.minWidth), 0);
     colWidths.forEach(c => {
-      const extra = totalExtra > 0 ? ((c.idealWidth - c.minWidth) / totalExtra) * extraSpace : 0;
+      const extra = totalExtra > 0 ? ((Math.max(0, c.idealWidth - c.minWidth)) / totalExtra) * extraSpace : 0;
       result[c.index] = { cellWidth: c.minWidth + extra };
     });
   }
@@ -610,7 +633,7 @@ const drawBodyTable = (doc, bodyData, bodyElements, startY) => {
       halign: 'center',
       valign: 'middle',
       cellPadding: tblStyles2.cellPadding,
-      overflow: 'ellipsize',
+      overflow: 'linebreak',
       lineWidth: 0.2,
       lineColor: [55, 95, 170]
     },
@@ -1381,7 +1404,7 @@ const rows = tableData.map((row, rowIndex) => {
               halign: 'center',
               valign: 'middle',
               cellPadding: tblStyles.cellPadding,
-              overflow: 'ellipsize',
+              overflow: 'linebreak',
               lineWidth: 0.2,
               lineColor: [55, 95, 170]
             },
@@ -1607,32 +1630,70 @@ const rows = tableData.map((row, rowIndex) => {
             continue;
           }
 
-          if (isImageUrl(strVal)) {
-            // 🖼️ Imagen
-            doc.setFontSize(8.5);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(...COLORS.sectionTitle);
-            doc.text(sanitizeText(`${fieldLabel}:`), 12, currentY);
-            currentY += 5;
+          const imageSource = strVal || fieldDef.staticImage || '';
+          if (fieldType === 'image' || isImageUrl(imageSource)) {
+            // Omitir completamente si la imagen está vacía o no fue adjuntada (elimina títulos y recuadros "[Imagen no disponible]")
+            if (!imageSource || typeof imageSource !== 'string' || imageSource.trim() === '' || imageSource === 'undefined') {
+              continue;
+            }
+
             try {
-              let imageData = strVal;
-              if (strVal.startsWith('http') || strVal.startsWith('data:image')) {
-                imageData = await getBase64Image(strVal);
+              let imageData = imageSource;
+              let origW = 800;
+              let origH = 600;
+              if (imageSource.startsWith('http') || imageSource.startsWith('data:image')) {
+                try {
+                  const res = await getImageDataAndDims(imageSource);
+                  imageData = res.dataURL;
+                  origW = res.width || 800;
+                  origH = res.height || 600;
+                } catch (err) {
+                  imageData = await getBase64Image(imageSource);
+                }
               }
-              const imgWidth = 60;
-              const imgHeight = 45;
-              if (currentY + imgHeight > pageH - 15) { doc.addPage(); currentY = 20; }
+
+              if (!imageData || imageData.trim() === '') continue;
+
+              const aspect = origW / origH;
+              // Recuadro compacto y claro: altura máxima 62mm para que entren varias fotos por hoja y no queden espacios en blanco
+              const maxAllowedW = Math.min(secPgW2 - 24, 155); 
+              const maxAllowedH = 62; 
+              
+              let imgWidth = 125; 
+              let imgHeight = imgWidth / aspect;
+              
+              if (imgHeight > maxAllowedH) {
+                imgHeight = maxAllowedH;
+                imgWidth = imgHeight * aspect;
+              }
+              if (imgWidth > maxAllowedW) {
+                imgWidth = maxAllowedW;
+                imgHeight = imgWidth / aspect;
+              }
+
+              // Evaluar salto de página antes de imprimir el título para mantener título + imagen juntos
+              if (currentY + imgHeight + 10 > pageH - 16) { 
+                doc.addPage(); 
+                currentY = 16; 
+              }
+
+              // 🖼️ Imprimir título e imagen en la misma hoja
+              doc.setFontSize(8.5);
+              doc.setFont('helvetica', 'bold');
+              doc.setTextColor(...COLORS.sectionTitle);
+              doc.text(sanitizeText(`${fieldLabel}:`), 12, currentY);
+              currentY += 4.5;
+
+              // Dibujar marco estandarizado sutil del recuadro
+              doc.setDrawColor(210, 210, 210);
+              doc.setLineWidth(0.3);
+              doc.rect(12, currentY, imgWidth, imgHeight);
               doc.addImage(imageData, 'PNG', 12, currentY, imgWidth, imgHeight);
               currentY += imgHeight + 5;
+              hasRendered = true;
             } catch (imgError) {
-              doc.setFontSize(8);
-              doc.setFont('helvetica', 'italic');
-              doc.setTextColor(150, 150, 150);
-              doc.text(`[Imagen no disponible]`, 12, currentY);
-              doc.setTextColor(...COLORS.text);
-              currentY += 6;
+              console.warn(`Imagen no cargada (${fieldLabel}): omitiendo para no generar espacios en blanco`);
             }
-            hasRendered = true;
             continue;
           }
 

@@ -70,24 +70,23 @@ export const loadFormForEdit = async (formId) => {
   }
 };
 
+// Parsear los datos JSON de forma segura
+const safeParseJSON = (jsonString, fallback = {}) => {
+  try {
+    if (jsonString === null || jsonString === undefined || jsonString === 'null' || jsonString === '') {
+      return fallback;
+    }
+    if (typeof jsonString === 'object') return jsonString;
+    return JSON.parse(jsonString) || fallback;
+  } catch (error) {
+    console.warn('⚠️ Error parsing JSON, usando fallback:', { jsonString, error });
+    return fallback;
+  }
+};
+
 // Función helper para procesar los datos del formulario
 function processFormData(data) {
   console.log('🔧 Procesando datos del formulario:', data);
-  
-  // Parsear los datos JSON de forma segura
-  const safeParseJSON = (jsonString, fallback = {}) => {
-    try {
-      if (!jsonString || jsonString === 'null' || jsonString === '') {
-        console.warn('⚠️ JSON string vacío, usando fallback:', jsonString);
-        return fallback;
-      }
-      const parsed = JSON.parse(jsonString);
-      return parsed;
-    } catch (error) {
-      console.warn('⚠️ Error parsing JSON, usando fallback:', { jsonString, error });
-      return fallback;
-    }
-  };
 
   // Encontrar el template (puede venir como Template o template)
   const template = data.Template || data.template;
@@ -180,8 +179,8 @@ function processBodyData(bodyDataString) {
             console.log(`✅ Item ${index} ya tiene estructura correcta`);
             return item;
           }
-          // Si tiene formato legacy {id, type, data} para tablas
-          else if (item.id && item.type === 'table' && item.data && Array.isArray(item.data)) {
+          // Si tiene formato legacy {data: [...]} para tablas
+          else if (item.data && Array.isArray(item.data)) {
             console.log(`🔄 Item ${index} es formato legacy tabla, convirtiendo {data} -> {rows}`);
             return { ...item, rows: item.data };
           }
@@ -423,15 +422,9 @@ export const loadFormWithVersionInfo = async (formId) => {
         nombre: tpl.nombre || tpl.Nombre || 'Sin nombre',
         version: tpl.version || tpl.Version || '1',
         fechaVersion: tpl.fechaVersion || tpl.FechaVersion || null,
-        headerFields: typeof (tpl.headerFields || tpl.HeaderFields) === 'string'
-          ? JSON.parse(tpl.headerFields || tpl.HeaderFields || '[]') 
-          : (tpl.headerFields || tpl.HeaderFields || []),
-        bodyElements: typeof (tpl.bodyElements || tpl.BodyElements) === 'string'
-          ? JSON.parse(tpl.bodyElements || tpl.BodyElements || '[]')
-          : (tpl.bodyElements || tpl.BodyElements || []),
-        firmas: typeof (tpl.firmas || tpl.Firmas) === 'string'
-          ? JSON.parse(tpl.firmas || tpl.Firmas || '[]')
-          : (tpl.firmas || tpl.Firmas || [])
+        headerFields: safeParseJSON(tpl.headerFields || tpl.HeaderFields, []),
+        bodyElements: safeParseJSON(tpl.bodyElements || tpl.BodyElements, []),
+        firmas: safeParseJSON(tpl.firmas || tpl.Firmas, [])
       } : null
     };
     

@@ -124,10 +124,10 @@ export default function ConsumptionDashboard() {
       setExporting(true);
       // Basic CSV export
       let csvContent = "data:text/csv;charset=utf-8,";
-      csvContent += "CÓDIGO DEL FORMULARIO,FECHA REGISTRADA,FORMULARIO,CREADO POR,INSUMO,CANTIDAD,UNIDAD DE MEDIDA\n";
+      csvContent += "CÓDIGO DEL FORMULARIO,FECHA REGISTRADA,FORMULARIO,CREADO POR,CÓDIGO,INSUMO,CANTIDAD,UNIDAD DE MEDIDA\n";
       consolidatedInsumos.forEach(row => {
         const fecha = new Date(row.createdAt).toLocaleDateString('es-ES');
-        const rowStr = `"${row.templateCode}","${fecha}","${row.templateName}","${row.filledBy}","${row.producto}",${row.cantidad},"${row.unidad}"`;
+        const rowStr = `"${row.templateCode}","${fecha}","${row.templateName}","${row.filledBy}","${row.codigo || ''}","${row.producto}",${row.cantidad},"${row.unidad}"`;
         csvContent += rowStr + "\r\n";
       });
       
@@ -162,6 +162,7 @@ export default function ConsumptionDashboard() {
           const prodColIdx = cols.findIndex(c => /PRODUCTO|ITEM|DESCRIPCI[OÓ]N|ART[IÍ]CULO|INSUMO|MATERIAL/i.test(c));
           const cantColIdx = cols.findIndex(c => /CANTIDAD|USADO|CONSUMO|KILOS|LIBRAS/i.test(c) && !/MERMA/i.test(c));
           const unitColIdx = cols.findIndex(c => /UNIDAD|MEDIDA|U\.M/i.test(c));
+          const codigoColIdx = cols.findIndex(c => /C[OÓ]DIGO/i.test(c));
 
           if (prodColIdx === -1 && cantColIdx === -1) return;
 
@@ -183,15 +184,17 @@ export default function ConsumptionDashboard() {
             let qtyStr = getVal(cantColIdx);
             let qty = parseFloat(qtyStr) || 0;
             let unit = getVal(unitColIdx) || '';
+            let codigo = getVal(codigoColIdx) || '';
 
             if (!prodName || prodName === 'Desconocido' || prodName.toString().trim() === '') return;
-            
+
             rowsList.push({
               formID: form.formID,
               templateCode: form.templateCode || 'N/A',
               templateName: form.templateName,
               createdAt: form.createdAt,
               filledBy: form.filledBy || 'Desconocido',
+              codigo,
               producto: prodName,
               cantidad: qty,
               unidad: unit,
@@ -318,26 +321,6 @@ export default function ConsumptionDashboard() {
           </div>
         ) : (
           <>
-            {/* Resumen por plantilla */}
-            <div style={{ marginBottom: '20px' }}>
-              <h3 style={{ marginBottom: '12px', color: '#1e293b' }}>📊 Resumen por Plantilla</h3>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                {(allSectionsData.templateSummary || []).map((tpl, idx) => (
-                  <div key={idx} style={{
-                    background: 'white', border: '1px solid #e5e7eb', borderRadius: '10px',
-                    padding: '14px 20px', minWidth: '200px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                  }}>
-                    <div style={{ fontWeight: '600', color: '#1e40af', fontSize: '14px', marginBottom: '4px' }}>
-                      📄 {tpl.templateName}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#6b7280' }}>
-                      {tpl.formCount} formularios • {tpl.totalSections} secciones
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
               <div style={{ padding: '16px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontSize: '20px' }}>📦</span>
@@ -355,6 +338,7 @@ export default function ConsumptionDashboard() {
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>FECHA REGISTRADA</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>FORMULARIO</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CREADO POR</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CÓDIGO</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>INSUMO</th>
                       <th style={{ padding: '10px 14px', textAlign: 'right', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CANTIDAD</th>
                       <th style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>UNIDAD DE MEDIDA</th>
@@ -363,7 +347,7 @@ export default function ConsumptionDashboard() {
                   <tbody>
                     {consolidatedInsumos.length === 0 ? (
                       <tr>
-                        <td colSpan="8" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                        <td colSpan="9" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
                           No se detectaron tablas de "Insumos" o "Materiales de Empaque" en los formularios de este rango de fechas.
                         </td>
                       </tr>
@@ -381,6 +365,7 @@ export default function ConsumptionDashboard() {
                             {item.templateName}
                           </td>
                           <td style={{ padding: '10px 14px', color: '#64748b', fontWeight: '500' }}>{item.filledBy}</td>
+                          <td style={{ padding: '10px 14px', color: '#475569', fontWeight: '600', fontFamily: 'monospace' }}>{item.codigo || '-'}</td>
                           <td style={{ padding: '10px 14px', color: '#1e293b', fontWeight: '600' }}>{item.producto}</td>
                           <td style={{ padding: '10px 14px', textAlign: 'right', color: '#166534', fontWeight: '700' }}>{formatNumber(item.cantidad)}</td>
                           <td style={{ padding: '10px 14px', textAlign: 'center', color: '#475569', fontWeight: '500' }}>{item.unidad || '-'}</td>

@@ -271,7 +271,8 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
  *  - Tablas con etiquetas únicas (no necesita alias, pasa el row directo)
  */
 export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
-  if (!templateCols || !templateCols.length) return row;
+  const cols = Array.isArray(templateCols) ? templateCols : (typeof templateCols === 'string' ? (() => { try { return JSON.parse(templateCols) || []; } catch(e){ return []; } })() : []);
+  if (!cols || !cols.length) return row || {};
 
   // Normaliza un nombre de grupo para comparación resistente a acentos/mayúsculas
   const normGroup = (g) =>
@@ -282,19 +283,19 @@ export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
 
   // 1. Reconstruir columnNameMap igual que FillForm
   const seenLabels = new Map();
-  templateCols.forEach((col, ci) => {
+  cols.forEach((col, ci) => {
     const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
     if (!seenLabels.has(lbl)) seenLabels.set(lbl, []);
     seenLabels.get(lbl).push(ci);
   });
   const colNMap = new Map();
-  templateCols.forEach((col, ci) => {
+  cols.forEach((col, ci) => {
     const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
     colNMap.set(ci, seenLabels.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl);
   });
 
   // 2. Determinar el grupo de la columna de fórmula (normalizado)
-  const formulaCol = templateCols[formulaColIndex];
+  const formulaCol = cols[formulaColIndex];
   const colGroupNorm = formulaCol ? normGroup(formulaCol.group) : '';
 
   // 3. Para cada etiqueta duplicada, seleccionar la instancia más apropiada:
@@ -307,7 +308,7 @@ export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
 
     // Ordenar candidatos por prioridad: mismo grupo + cercanía al formulaColIndex
     const candidates = indices.map(ci => {
-      const col = templateCols[ci];
+      const col = cols[ci];
       const ciGroupNorm = normGroup(col ? col.group : '');
       const sameGroup = colGroupNorm !== '' && ciGroupNorm === colGroupNorm;
       const distance = Math.abs(ci - formulaColIndex);
@@ -351,14 +352,15 @@ export const buildGroupedRowAlias = (row, templateCols, formulaColIndex) => {
  * @returns {Object} Fila enriquecida con valores de otras tablas
  */
 export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
-  if (!Array.isArray(allBodyData) || allBodyData.length === 0) return rawRow;
+  const bodyList = Array.isArray(allBodyData) ? allBodyData : (typeof allBodyData === 'string' ? (() => { try { return JSON.parse(allBodyData) || []; } catch(e){ return []; } })() : []);
+  if (!Array.isArray(bodyList) || bodyList.length === 0) return rawRow || {};
   const merged = {};
   const crossTableSums = {};
   const crossTableMax = {};
   const crossTableMin = {};
   const crossTableCounts = {};
   
-  allBodyData.forEach(elData => {
+  bodyList.forEach(elData => {
     if (!elData) return;
     
     // 1. Manejar campos de Sección (Variables globales para toda la plantilla)
@@ -367,7 +369,7 @@ export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
         if (typeof k !== 'string' || k.startsWith('_')) return;
         
         // Agregar al merged para TODAS las filas
-        if (rawRow[k] === undefined) {
+        if (rawRow && rawRow[k] === undefined) {
           merged[k] = elData.data[k];
         }
 
@@ -386,12 +388,12 @@ export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
     const elRows = Array.isArray(elData.data) ? elData.data
       : Array.isArray(elData.rows) ? elData.rows
       : Array.isArray(elData) ? elData
-      : [];
+      : (typeof elData.data === 'string' ? (() => { try { return JSON.parse(elData.data) || []; } catch(e){ return []; } })() : []);
       
     elRows.forEach(r => {
       if (!r || r._deleted) return;
       // IMPORTANTE: Ignorar la fila TOTAL para no alterar el MÁXIMO/MÍNIMO real
-      if (String(r['N°']).toUpperCase() === 'TOTAL' || String(r['#']).toUpperCase() === 'TOTAL' || r['Métrica'] !== undefined) return;
+      if (String(r['N°'] || '').toUpperCase() === 'TOTAL' || String(r['#'] || '').toUpperCase() === 'TOTAL' || r['Métrica'] !== undefined) return;
       
       Object.keys(r).forEach(k => {
         if (typeof k !== 'string' || k.startsWith('_')) return;
@@ -408,14 +410,14 @@ export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
     if (rowIndex < elRows.length && elRows[rowIndex] && typeof elRows[rowIndex] === 'object') {
       const otherRow = elRows[rowIndex];
       Object.keys(otherRow).forEach(k => {
-        if (rawRow[k] === undefined && merged[k] === undefined) {
+        if ((!rawRow || rawRow[k] === undefined) && merged[k] === undefined) {
           merged[k] = otherRow[k];
         }
       });
     }
   });
   
-  Object.assign(merged, rawRow);
+  Object.assign(merged, rawRow || {});
   merged.__crossTableSums__ = crossTableSums;
   merged.__crossTableMax__ = crossTableMax;
   merged.__crossTableMin__ = crossTableMin;
@@ -437,7 +439,8 @@ export const mergeCrossTableRow = (rawRow, rowIndex, allBodyData) => {
  * @returns {Object} Copia de row con los resultados de fórmulas calculados
  */
 export const buildComputedRow = (row, templateCols, allRows = [], rowIndex = -1) => {
-  if (!templateCols || !templateCols.length) return row;
+  const cols = Array.isArray(templateCols) ? templateCols : (typeof templateCols === 'string' ? (() => { try { return JSON.parse(templateCols) || []; } catch(e){ return []; } })() : []);
+  if (!cols || !cols.length) return row || {};
 
   // Reconstruir colNMap igual que buildGroupedRowAlias
   const seenLabels = new Map();

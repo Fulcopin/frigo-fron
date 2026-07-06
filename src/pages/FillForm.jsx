@@ -9644,6 +9644,13 @@ useEffect(() => {
           const tName = (selectedTemplate?.nombre || '').toUpperCase();
           const esFormulario15Tinas = tId === 38 || tName.includes('15 TINAS');
 
+          // 🔒 FOR-PD-04 (Fileteo V2): los datos que llegan desde la API de recepción
+          // (Código Materia Prima, Clasificación, Peso Materia Prima, etc.) no deben
+          // poder editarse manualmente una vez cargados — evita discrepancias de peso
+          // como la reportada (variación de 3 lb). El código/insumo de búsqueda queda
+          // siempre editable, y Admin/Supervisor pueden seguir corrigiendo si hace falta.
+          const esFileteoV2 = (selectedTemplate?.codigo || '').toUpperCase().includes('PD-04');
+
           // 2. Recuperar nombre de celda
           let cellName = (element._columnNameMap instanceof Map ? element._columnNameMap.get(colIndex) : null) || col.label || col.header || col.id;
           const colLabel = (col.label || col.header || '').toUpperCase();
@@ -9789,6 +9796,33 @@ useEffect(() => {
           // Texto actualmente escrito en la celda, para filtrar chips mientras se escribe
           const typedForChips = (row[resolvedCellName] || '').toLowerCase();
 
+          // 🔒 Bloqueo de campos cargados desde la API de recepción (solo FOR-PD-04)
+          // Se bloquea la tabla completa (CONTROL / MATERIALES DE EMPAQUE E INSUMOS),
+          // excepto la columna de búsqueda por código/producto, sin depender de que la
+          // columna tenga configurado apiCodigo/apiMap (muchas veces no lo tienen).
+          const tableTitleUpper = (element.title || tableTemplateForApiCodigo?.title || '').trim().toUpperCase();
+          const esTablaBloqueablePorApi = esFileteoV2
+            || tableTemplateForApiCodigo?.usaApiPorCodigo
+            || !!tableTemplateForApiCodigo?.apiPorIdEndpoint
+            || tableTitleUpper === 'CONTROL'
+            || tableTitleUpper.includes('MATERIALES')
+            || tableTitleUpper.includes('EMPAQUE')
+            || tableTitleUpper.includes('INSUMO')
+            || tableTitleUpper.includes('MATERIA')
+            || tableTitleUpper.includes('RECEPCION')
+            || tableTitleUpper.includes('RECEPCIÓN')
+            || tableTitleUpper.includes('FILETEO')
+            || tableTitleUpper.includes('DETALLE')
+            || tableTitleUpper.includes('CODIGO')
+            || tableTitleUpper.includes('CÓDIGO')
+            || tableTitleUpper.includes('PRODUCTO');
+          const esColumnaCodigoOBusqueda = colLabel.includes('CODIGO') || colLabel.includes('CÓDIGO') || colLabel === 'PRODUCTO' || colLabel === 'PRODUCTOS' || colLabel.includes('INSUMO');
+          const tieneValorEnCelda = !!(row[resolvedCellName] || row[cellName]);
+          const isLockedByRecepcionApi = esTablaBloqueablePorApi
+            && !isApiCodigoTrigger
+            && !esColumnaCodigoOBusqueda
+            && tieneValorEnCelda;
+
           return (
             <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border">
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -9835,7 +9869,20 @@ useEffect(() => {
                         )}
                       </>
                     );
-                  })() : renderField(col, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
+                  })() : isLockedByRecepcionApi ? (
+                    <input
+                      type="text"
+                      value={row[resolvedCellName] || ''}
+                      readOnly
+                      disabled
+                      title="Dato cargado desde la API de recepción — no editable"
+                      style={{
+                        width: '100%', padding: '4px 8px',
+                        border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '13px',
+                        background: '#f3f4f6', color: '#374151', cursor: 'not-allowed'
+                      }}
+                    />
+                  ) : renderField(col, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
                 </div>
                 {isApiCodigoTrigger && (
                   <button
@@ -10157,6 +10204,7 @@ useEffect(() => {
               Array.from({ length: g.count }, (_, tIdx) => ({
                 key: `g${gIdx}_t${tIdx}`,
                 label: (g.labels || [])[tIdx] || `TINA ${tIdx + 1}`,
+                groupName: g.name || `Grupo ${gIdx + 1}`,
                 groupIdx: gIdx,
               }))
             );
@@ -10170,6 +10218,12 @@ useEffect(() => {
                 const newTinaData = { ...newTinasData[tinaKey] };
                 const newCycleData = { ...(newTinaData[cycleIdx] || {}) };
                 newCycleData[fieldLabel] = value;
+                if (fieldLabel === 'SE CAMBIA AGUA' && value === 'SI' && !newCycleData['HORA']) {
+                  const now = new Date();
+                  const hours = String(now.getHours()).padStart(2, '0');
+                  const mins = String(now.getMinutes()).padStart(2, '0');
+                  newCycleData['HORA'] = `${hours}:${mins}`;
+                }
                 newTinaData[cycleIdx] = newCycleData;
                 newTinasData[tinaKey] = newTinaData;
                 elData.data = newTinasData;
@@ -10382,8 +10436,15 @@ useEffect(() => {
                                 border: '1px solid #e2e8f0', padding: '6px 8px', verticalAlign: 'top',
                                 background: cycleIdx % 2 === 0 ? '#ffffff' : '#f8fafc'
                               }}>
-                                {fields.map((field) => (
-                                  <div key={field.label} style={{ marginBottom: '6px' }}>
+                                {fields.map((field) => {
+                                  const isMovil = (tina.groupName || tina.label || '').toUpperCase().includes('MOVIL') || 
+                                                  (tina.groupName || tina.label || '').toUpperCase().includes('MÓVIL') || 
+                                                  (tina.label || '').toUpperCase().includes('FILETEO');
+                                  if (isMovil && ['Vol.', 'Resid. (I)', 'Dosif.'].includes(field.label)) {
+                                    return null;
+                                  }
+                                  return (
+                                    <div key={field.label} style={{ marginBottom: '6px' }}>
                                     <label style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '2px' }}>
                                       {field.label}{field.suffix ? ` (${field.suffix})` : ''}
                                     </label>
@@ -10417,7 +10478,8 @@ useEffect(() => {
                                       />
                                     )}
                                   </div>
-                                ))}
+                                );
+                              })}
                               </td>
                             );
                           })}
@@ -10690,10 +10752,10 @@ useEffect(() => {
                           </div>
                           {(firmasData[firma.puesto]?.fecha || firmasData[firma.puesto]?.hora) && (
                             <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#4b5563' }}>
-                              {firmasData[firma.puesto]?.fecha && (
+                              {firmasData[firma.puesto]?.fecha && firmasData[firma.puesto].fecha !== '-' && (
                                 <span>📅 {new Date(firmasData[firma.puesto].fecha + 'T00:00:00').toLocaleDateString('es-EC')}</span>
                               )}
-                              {firmasData[firma.puesto]?.hora && (
+                              {firmasData[firma.puesto]?.hora && firmasData[firma.puesto].hora !== '-' && (
                                 <span>🕐 {firmasData[firma.puesto].hora}</span>
                               )}
                             </div>

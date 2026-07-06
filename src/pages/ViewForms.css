@@ -421,8 +421,9 @@
 }
 
 .data-value img {
-  max-width: 300px;
-  max-height: 250px;
+  max-width: 100%;
+  width: auto;
+  max-height: 650px;
   border-radius: 8px;
   border: 2px solid #e5e7eb;
   cursor: pointer;
@@ -616,6 +617,14 @@
   .form-viewer-document {
     border: none;
     box-shadow: none;
+  }
+
+  .data-value img,
+  div[style*="gridColumn: 1 / -1"] img {
+    max-width: 100% !important;
+    width: auto !important;
+    max-height: 550px !important;
+    page-break-inside: avoid;
   }
 }
 

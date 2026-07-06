@@ -18,9 +18,11 @@ import ManageTemplates from './pages/ManageTemplates';
 import DailyForms from './pages/DailyForms';
 import ERPDashboard from "./pages/ERPDashboard";
 import SignatureManagement from "./pages/SignatureManagement";
+import AuditSignatures from "./pages/AuditSignatures";
 import MySignature from "./pages/MySignature";
 import AlertManagement from "./pages/AlertManagement";
 import ConsumptionDashboard from "./pages/ConsumptionDashboard";
+import Tickets from "./pages/Tickets";
 import CatalogoFirmas from "./pages/CatalogoFirmas";
 import SessionHistory from "./pages/SessionHistory";
 import MyDrafts from "./pages/MyDrafts";
@@ -63,6 +65,7 @@ function Navigation() {
   const navLinks = [
     { to: "/", icon: "🏠", label: "Inicio", show: true },
     { to: "/fill-form", icon: "📝", label: "Llenar Formulario", show: true },
+    { to: "/tickets", icon: "🎫", label: "Tickets", show: true },
     { to: "/my-drafts", icon: "📋", label: "Mis Borradores", show: true },
     { to: "/view-forms", icon: "👁️", label: "Ver Formularios", show: true },
     { divider: true, label: "Plantillas", show: isAdminOrSupervisor },
@@ -70,6 +73,7 @@ function Navigation() {
     { to: "/manage-templates", icon: "⚙️", label: "Administrar Plantillas", show: isAdminOrSupervisor },
     { divider: true, label: "Firmas", show: true },
     { to: "/signatures", icon: "✍️", label: "Firmas Pendientes", show: true },
+    { to: "/audit-signatures", icon: "📑", label: "Auditoría de Fechas", show: isAdminOrSupervisor },
     { to: "/signatures?tab=timing", icon: "⏱️", label: "Tiempos y Rechazos", show: false }, // Oculto por solicitud
     { to: "/my-signature", icon: "🖊️", label: "Mi Firma", show: true },
     { to: "/catalogo-firmas", icon: "📋", label: "Catálogo Firmas", show: isAdminOrSupervisor },
@@ -197,9 +201,11 @@ function getPageName(pathname) {
     '/view-forms': 'Ver Formularios',
     '/daily-forms': 'Formularios por Fecha',
     '/signatures': 'Gestión de Firmas',
+    '/audit-signatures': 'Auditoría de Fechas de Firma',
     '/catalogo-firmas': 'Catálogo de Firmas',
     '/my-signature': 'Mi Firma Personal',
     '/alerts': 'Gestión de Alertas',
+    '/tickets': 'Tickets / Mesa de Ayuda',
     '/dashboard-erp': 'Dashboard ERP',
     '/consumption-dashboard': 'Dashboard de Consumos',
     '/session-history': 'Registro de Tiempos',
@@ -261,7 +267,16 @@ function App() {
                   </ErrorBoundary>
                 </ProtectedRoute>
               } />
-              
+
+              {/* Tickets / Mesa de Ayuda - Acceso para todos los roles */}
+              <Route path="/tickets" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <Tickets />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } />
+
               {/* Mis Borradores - Acceso para todos los roles */}
               <Route path="/my-drafts" element={
                 <ProtectedRoute>
@@ -281,7 +296,9 @@ function App() {
               {/* Ver Formularios - Acceso para todos los roles */}
               <Route path="/view-forms" element={
                 <ProtectedRoute>
-                  <ViewForms />
+                  <ErrorBoundary>
+                    <ViewForms />
+                  </ErrorBoundary>
                 </ProtectedRoute>
               } />
               
@@ -312,6 +329,13 @@ function App() {
                 <ProtectedRoute>
                   <SignatureManagement />
                 </ProtectedRoute>
+              } />
+              
+              {/* Auditoría de Firmas - Solo Admin y Supervisor */}
+              <Route path="/audit-signatures" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <AuditSignatures />
+                </RoleBasedRoute>
               } />
               
               {/* Catálogo de Firmas - Solo Admin y Supervisor */}

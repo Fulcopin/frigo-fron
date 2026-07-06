@@ -790,7 +790,17 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
             labelCell.font = { ...labelCell.font, bold: true };
 
             allTinas.forEach((tina, tIdx) => {
-              const val = tinasData[tina.key]?.[c]?.[fields[fi].label] ?? '';
+              const isMovil = (tina.groupName || tina.label || '').toUpperCase().includes('MOVIL') || 
+                              (tina.groupName || tina.label || '').toUpperCase().includes('MÓVIL') || 
+                              (tina.label || '').toUpperCase().includes('FILETEO');
+              let val = tinasData[tina.key]?.[c]?.[fields[fi].label] ?? '';
+              if (isMovil) {
+                if (['Vol.', 'Resid. (I)', 'Dosif.'].includes(fields[fi].label)) {
+                  val = '-';
+                } else if (fields[fi].label === 'Resid. (F)' && val) {
+                  val = `${val}`;
+                }
+              }
               const dataCell = worksheet.getCell(currentRow, tIdx + 2);
               dataCell.value = String(val);
               applyCellStyle(dataCell, isAlt);
