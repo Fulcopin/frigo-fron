@@ -4434,6 +4434,40 @@ useEffect(() => {
     // 🚫 Si el auto-lookup está deshabilitado para esta tabla, no hacer nada
     if (disableAutoLookupByTable[elementIndex]) return;
     if (!code || !tableTemplate?.apiCodigoUrl) return;
+
+    // 🚫 1. VALIDACIÓN DE CÓDIGO REPETIDO O USADO: verificar si este código ya fue ingresado en el formulario
+    const codeStr = String(code).trim().toLowerCase();
+    let isDuplicate = false;
+    bodyData.forEach((element, eIdx) => {
+      if (!Array.isArray(element.data)) return;
+      element.data.forEach((row, rIdx) => {
+        if (eIdx === elementIndex && rIdx === rowIndex) return; // ignorar la fila actual
+        Object.values(row || {}).forEach(val => {
+          if (val && String(val).trim().toLowerCase() === codeStr) {
+            isDuplicate = true;
+          }
+        });
+      });
+    });
+
+    if (isDuplicate) {
+      alert(`⚠️ El código "${code}" ya se encuentra ingresado o utilizado en este formulario. No se permiten códigos repetidos o ya usados.`);
+      // Limpiar el código repetido de la celda actual para quitarlo
+      setBodyData(prev => prev.map((el, eIdx) => {
+        if (eIdx !== elementIndex) return el;
+        const updatedData = [...(el.data || [])];
+        const currentRow = { ...(updatedData[rowIndex] || {}) };
+        Object.keys(currentRow).forEach(k => {
+          if (String(currentRow[k]).trim().toLowerCase() === codeStr) {
+            currentRow[k] = '';
+          }
+        });
+        updatedData[rowIndex] = currentRow;
+        return { ...el, data: updatedData };
+      }));
+      return;
+    }
+
     const loadKey = `${elementIndex}-${rowIndex}`;
     setApiCodigoLoadingRows(prev => ({ ...prev, [loadKey]: true }));
     try {
@@ -4453,6 +4487,33 @@ useEffect(() => {
       // Soporta tanto array como objeto único
       const item = Array.isArray(data) ? data[0] : data;
       if (!item) { console.warn('🔍 API por Código: sin resultados para', code); return; }
+
+      // 🚫 2. VALIDACIÓN DE STOCK Y CÓDIGO YA USADO: verificar en la respuesta de la API
+      const stockVal = item.detTieneStock !== undefined ? item.detTieneStock : (item.DetTieneStock !== undefined ? item.DetTieneStock : (item.dettieneStock !== undefined ? item.dettieneStock : (item.tieneStock !== undefined ? item.tieneStock : item.TieneStock)));
+      const isNoStock = stockVal !== undefined && (stockVal === false || stockVal === 0 || String(stockVal).trim().toLowerCase() === 'false' || String(stockVal).trim() === '0');
+      const isUsado = (item.detUsado === true || item.detUsado === 1 || String(item.detUsado).trim().toLowerCase() === 'true' || String(item.detUsado).trim() === '1') ||
+                      (item.usado === true || item.usado === 1 || String(item.usado).trim().toLowerCase() === 'true' || String(item.usado).trim() === '1') ||
+                      (item.detEstaUsado === true || item.detEstaUsado === 1 || String(item.detEstaUsado).trim().toLowerCase() === 'true' || String(item.detEstaUsado).trim() === '1') ||
+                      (item.estaUsado === true || item.estaUsado === 1 || String(item.estaUsado).trim().toLowerCase() === 'true' || String(item.estaUsado).trim() === '1') ||
+                      (item.isUsed === true || item.isUsed === 1 || String(item.isUsed).trim().toLowerCase() === 'true' || String(item.isUsed).trim() === '1');
+
+      if (isNoStock || isUsado) {
+        alert(`⚠️ Alerta: El código "${code}" ya se encuentra UTILIZADO / USADO ("detTieneStock": false). No se permite seleccionar un código que ya se consumió y no está disponible.`);
+        // Limpiar el código de la celda actual para quitarlo
+        setBodyData(prev => prev.map((el, eIdx) => {
+          if (eIdx !== elementIndex) return el;
+          const updatedData = [...(el.data || [])];
+          const currentRow = { ...(updatedData[rowIndex] || {}) };
+          Object.keys(currentRow).forEach(k => {
+            if (String(currentRow[k]).trim().toLowerCase() === codeStr) {
+              currentRow[k] = '';
+            }
+          });
+          updatedData[rowIndex] = currentRow;
+          return { ...el, data: updatedData };
+        }));
+        return;
+      }
 
       // Construir mapa de claves deduplicadas igual que en handleTableFieldChangeWithAutoSave
       const cols = tableTemplate.columns || [];
@@ -4574,6 +4635,50 @@ useEffect(() => {
       let data = await response.json();
       if (!Array.isArray(data) || data.length === 0) {
         console.warn('📥 API por ID: sin resultados para cabId', cabId);
+        return;
+      }
+
+      // 🚫 Filtrar ítems sin stock, ya usados en la API o repetidos en el formulario al cargar por ID
+      const initialLength = data.length;
+      const seenInBatch = new Set();
+      data = data.filter(item => {
+        // Verificar stock
+        const stockVal = item.detTieneStock !== undefined ? item.detTieneStock : (item.DetTieneStock !== undefined ? item.DetTieneStock : (item.dettieneStock !== undefined ? item.dettieneStock : (item.tieneStock !== undefined ? item.tieneStock : item.TieneStock)));
+        const isNoStock = stockVal !== undefined && (stockVal === false || stockVal === 0 || String(stockVal).trim().toLowerCase() === 'false' || String(stockVal).trim() === '0');
+        // Verificar si está usado en la API
+        const isUsado = (item.detUsado === true || item.detUsado === 1 || String(item.detUsado).trim().toLowerCase() === 'true' || String(item.detUsado).trim() === '1') ||
+                        (item.usado === true || item.usado === 1 || String(item.usado).trim().toLowerCase() === 'true' || String(item.usado).trim() === '1') ||
+                        (item.detEstaUsado === true || item.detEstaUsado === 1 || String(item.detEstaUsado).trim().toLowerCase() === 'true' || String(item.detEstaUsado).trim() === '1') ||
+                        (item.estaUsado === true || item.estaUsado === 1 || String(item.estaUsado).trim().toLowerCase() === 'true' || String(item.estaUsado).trim() === '1') ||
+                        (item.isUsed === true || item.isUsed === 1 || String(item.isUsed).trim().toLowerCase() === 'true' || String(item.isUsed).trim() === '1');
+        if (isNoStock || isUsado) return false;
+
+        // Verificar si ya está en el formulario o repetido en el mismo lote
+        const codeVal = item.detCodigo ? String(item.detCodigo).trim().toLowerCase() : null;
+        if (codeVal) {
+          if (seenInBatch.has(codeVal)) return false;
+          seenInBatch.add(codeVal);
+
+          let exists = false;
+          bodyData.forEach(element => {
+            if (!Array.isArray(element.data)) return;
+            element.data.forEach(row => {
+              Object.values(row || {}).forEach(val => {
+                if (val && String(val).trim().toLowerCase() === codeVal) exists = true;
+              });
+            });
+          });
+          if (exists) return false;
+        }
+        return true;
+      });
+
+      if (data.length < initialLength) {
+        const omitidos = initialLength - data.length;
+        alert(`⚠️ Alerta: Se omitieron ${omitidos} código(s) de la carga por estar ya UTILIZADOS / USADOS ("detTieneStock": false), no tener stock disponible o estar repetidos.`);
+      }
+
+      if (data.length === 0) {
         return;
       }
 
@@ -9765,7 +9870,7 @@ useEffect(() => {
           }
 
           // 4. CASO NORMAL (Resto de formularios o columnas normales)
-          const tableTemplateForApiCodigo = selectedTemplate?.bodyElements?.[elementIndex];
+          const tableTemplateForApiCodigo = element.usaApiPorCodigo || element.apiCodigoUrl ? element : (Array.isArray(selectedTemplate?.bodyElements) ? selectedTemplate?.bodyElements?.[elementIndex] : (typeof selectedTemplate?.bodyElements === 'string' ? JSON.parse(selectedTemplate.bodyElements)[elementIndex] : null)) || element;
           const isApiCodigoTrigger = tableTemplateForApiCodigo?.usaApiPorCodigo && col.label === tableTemplateForApiCodigo?.apiCodigoTriggerCol;
           const apiCodigoLoadKey = `${elementIndex}-${rowIndex}`;
           const isApiCodigoLoading = apiCodigoLoadingRows[apiCodigoLoadKey];
@@ -9802,9 +9907,11 @@ useEffect(() => {
           // columna tenga configurado apiCodigo/apiMap (muchas veces no lo tienen).
           const tableTitleUpper = (element.title || tableTemplateForApiCodigo?.title || '').trim().toUpperCase();
           const esTablaBloqueablePorApi = esFileteoV2
+            || element.usaApiPorCodigo
             || tableTemplateForApiCodigo?.usaApiPorCodigo
+            || !!element.apiPorIdEndpoint
             || !!tableTemplateForApiCodigo?.apiPorIdEndpoint
-            || tableTitleUpper === 'CONTROL'
+            || tableTitleUpper.includes('CONTROL')
             || tableTitleUpper.includes('MATERIALES')
             || tableTitleUpper.includes('EMPAQUE')
             || tableTitleUpper.includes('INSUMO')
@@ -9816,12 +9923,15 @@ useEffect(() => {
             || tableTitleUpper.includes('CODIGO')
             || tableTitleUpper.includes('CÓDIGO')
             || tableTitleUpper.includes('PRODUCTO');
-          const esColumnaCodigoOBusqueda = colLabel.includes('CODIGO') || colLabel.includes('CÓDIGO') || colLabel === 'PRODUCTO' || colLabel === 'PRODUCTOS' || colLabel.includes('INSUMO');
-          const tieneValorEnCelda = !!(row[resolvedCellName] || row[cellName]);
+          const esColumnaCodigoOBusqueda = colLabel.includes('CODIGO') || colLabel.includes('CÓDIGO') || colLabel.includes('INSUMO') || (colLabel.includes('PRODUCTO') && !esFileteoV2 && tableTitleUpper.includes('EMPAQUE'));
+          // 🔒 Bloquear SOLO filas que realmente vienen de la API de recepción (tienen marcador
+          // _apiCabId/_apiCodigoId). Esto NO cambia mientras el usuario escribe, así que las filas
+          // manuales quedan siempre editables y no se pierde el foco al escribir el primer dígito.
+          const rowCargadaDesdeApi = !!(row._apiCabId || row._apiCodigoId);
           const isLockedByRecepcionApi = esTablaBloqueablePorApi
             && !isApiCodigoTrigger
             && !esColumnaCodigoOBusqueda
-            && tieneValorEnCelda;
+            && rowCargadaDesdeApi;
 
           return (
             <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border">

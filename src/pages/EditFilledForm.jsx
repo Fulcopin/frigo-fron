@@ -1014,7 +1014,7 @@ Template: ${template?.nombre}
         const esTablaBloqueablePorApi = esFileteoV2
           || element.usaApiPorCodigo
           || !!element.apiPorIdEndpoint
-          || tableTitleUpper === 'CONTROL'
+          || tableTitleUpper.includes('CONTROL')
           || tableTitleUpper.includes('MATERIALES')
           || tableTitleUpper.includes('EMPAQUE')
           || tableTitleUpper.includes('INSUMO')
@@ -1026,13 +1026,16 @@ Template: ${template?.nombre}
           || tableTitleUpper.includes('CODIGO')
           || tableTitleUpper.includes('CÓDIGO')
           || tableTitleUpper.includes('PRODUCTO');
-        const esColumnaCodigoOBusqueda = colLabelUpper.includes('CODIGO') || colLabelUpper.includes('CÓDIGO') || colLabelUpper === 'PRODUCTO' || colLabelUpper === 'PRODUCTOS' || colLabelUpper.includes('INSUMO');
+        const esColumnaCodigoOBusqueda = colLabelUpper.includes('CODIGO') || colLabelUpper.includes('CÓDIGO') || colLabelUpper.includes('INSUMO') || (colLabelUpper.includes('PRODUCTO') && !esFileteoV2 && tableTitleUpper.includes('EMPAQUE'));
         const isApiCodigoTrigger = element.usaApiPorCodigo && colLabelUpper === (element.apiCodigoTriggerCol || '').trim().toUpperCase();
-        const tieneValorEnCelda = !!row[cellName];
+        // 🔒 Bloquear SOLO filas que realmente vienen de la API de recepción (marcador
+        // _apiCabId/_apiCodigoId). No cambia mientras se escribe, así que las filas manuales
+        // quedan siempre editables y no se pierde el foco al escribir.
+        const rowCargadaDesdeApi = !!(row._apiCabId || row._apiCodigoId);
         const isLockedByRecepcionApi = esTablaBloqueablePorApi
           && !isApiCodigoTrigger
           && !esColumnaCodigoOBusqueda
-          && tieneValorEnCelda;
+          && rowCargadaDesdeApi;
 
         return (
           <td key={colIndex}>
