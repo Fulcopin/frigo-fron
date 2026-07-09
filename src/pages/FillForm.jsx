@@ -4272,15 +4272,24 @@ useEffect(() => {
           // Autocompletado bidireccional desde ProductoAutocomplete
           baseRow[columnLabel] = value.selectedValue;
           
-          // Actualizar la otra columna (código o nombre)
+          // Actualizar la otra columna (código o nombre).
+          // La columna de "nombre" se detecta por PRODUCTO y también por MATERIAL/INSUMO/EMPAQUE
+          // (así funciona la búsqueda por código en la tabla "MATERIALES DE EMPAQUE E INSUMOS").
+          // Nota: "MATERIAL" (con L) no coincide con "MATERIA PRIMA", así que no afecta la tabla CONTROL.
           cols.forEach((col, ci) => {
             const colKey = colKeyMap.get(ci);
-            const isCodigo = (colKey || '').toUpperCase().includes('CODIGO') || (colKey || '').toUpperCase().includes('CÓDIGO');
-            const isProducto = !isCodigo && (colKey || '').toUpperCase().includes('PRODUCTO');
-            
+            const colUpper = (colKey || '').toUpperCase();
+            const isCodigo = colUpper.includes('CODIGO') || colUpper.includes('CÓDIGO');
+            const isNombreProducto = !isCodigo && (
+              colUpper.includes('PRODUCTO') ||
+              colUpper.includes('MATERIAL') ||
+              colUpper.includes('INSUMO') ||
+              colUpper.includes('EMPAQUE')
+            );
+
             if (isCodigo && value.codigoErp !== undefined) {
               baseRow[colKey] = value.codigoErp;
-            } else if (isProducto && value.nombreProducto !== undefined) {
+            } else if (isNombreProducto && value.nombreProducto !== undefined) {
               baseRow[colKey] = value.nombreProducto;
             }
           });

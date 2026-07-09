@@ -1460,7 +1460,7 @@ function ViewForms() {
                     <table className="view-table" style={{ fontSize: '12px' }}>
                       <thead>
                         <tr>
-                          <th rowSpan={2} style={{ background: '#035b8d', color: 'white', minWidth: '120px' }}>Ciclo / Campo</th>
+                          <th rowSpan={2} style={{ background: '#035b8d', color: 'white', minWidth: '56px' }}>Ciclo</th>
                           {groups.map((g, gIdx) => (
                             <th key={gIdx} colSpan={g.count} style={{ background: '#035b8d', color: 'white', textAlign: 'center' }}>
                               {g.name && g.name.includes('___') ? (
@@ -1502,29 +1502,39 @@ function ViewForms() {
                         </tr>
                       </thead>
                       <tbody>
-                        {Array.from({ length: cycles }).map((_, cycleIdx) =>
-                          fields.map((field, fi) => (
-                            <tr key={`${cycleIdx}-${fi}`} style={{ background: (cycleIdx * fields.length + fi) % 2 === 0 ? '#fff' : '#f8fafc' }}>
-                              <td style={{ fontWeight: 600, fontSize: '11px', whiteSpace: 'nowrap' }}>
-                                C{cycleIdx + 1} - {field.label}{field.suffix ? ` (${field.suffix})` : ''}
-                              </td>
-                              {allTinas.map(tina => {
-                                const isMovil = (tina.groupName || tina.label || '').toUpperCase().includes('MOVIL') || 
-                                                (tina.groupName || tina.label || '').toUpperCase().includes('MÓVIL') || 
-                                                (tina.label || '').toUpperCase().includes('FILETEO');
-                                let val = tinasData[tina.key]?.[cycleIdx]?.[field.label] ?? '';
-                                if (isMovil && ['Vol.', 'Resid. (I)', 'Dosif.'].includes(field.label)) {
-                                  val = '-';
-                                }
-                                return (
-                                  <td key={`${tina.key}-${cycleIdx}-${fi}`} style={{ textAlign: 'center' }}>
-                                    {isMovil && ['Vol.', 'Resid. (I)', 'Dosif.'].includes(field.label) ? '-' : renderCellValue(val, field.type)}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))
-                        )}
+                        {/* 🧊 Vista FIEL al llenado: una fila por ciclo y en cada celda el mini-formulario apilado (solo lectura) */}
+                        {Array.from({ length: cycles }).map((_, cycleIdx) => (
+                          <tr key={cycleIdx} style={{ borderBottom: '2px solid #cbd5e1' }}>
+                            <td style={{ fontWeight: 700, fontSize: '11px', textAlign: 'center', verticalAlign: 'middle', background: '#eef4f9' }}>
+                              Ciclo {cycleIdx + 1}
+                            </td>
+                            {allTinas.map(tina => {
+                              const cycleData = tinasData[tina.key]?.[cycleIdx] || {};
+                              const isMovil = (tina.groupName || tina.label || '').toUpperCase().includes('MOVIL') ||
+                                              (tina.groupName || tina.label || '').toUpperCase().includes('MÓVIL') ||
+                                              (tina.label || '').toUpperCase().includes('FILETEO');
+                              return (
+                                <td key={`${tina.key}-${cycleIdx}`} style={{ verticalAlign: 'top', padding: '6px 8px', background: cycleIdx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                                  {fields.map(field => {
+                                    if (isMovil && ['Vol.', 'Resid. (I)', 'Dosif.'].includes(field.label)) return null;
+                                    const val = cycleData[field.label];
+                                    const tieneVal = val !== undefined && val !== null && String(val) !== '';
+                                    return (
+                                      <div key={field.label} style={{ marginBottom: '5px' }}>
+                                        <span style={{ fontSize: '9px', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '1px' }}>
+                                          {field.label}{field.suffix ? ` (${field.suffix})` : ''}
+                                        </span>
+                                        <span style={{ fontSize: '12px', color: tieneVal ? '#111827' : '#cbd5e1' }}>
+                                          {tieneVal ? renderCellValue(val, field.type) : '—'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>

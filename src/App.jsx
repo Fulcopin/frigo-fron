@@ -22,6 +22,7 @@ import AuditSignatures from "./pages/AuditSignatures";
 import MySignature from "./pages/MySignature";
 import AlertManagement from "./pages/AlertManagement";
 import ConsumptionDashboard from "./pages/ConsumptionDashboard";
+import Indicadores from "./pages/Indicadores";
 import Tickets from "./pages/Tickets";
 import CatalogoFirmas from "./pages/CatalogoFirmas";
 import SessionHistory from "./pages/SessionHistory";
@@ -81,6 +82,7 @@ function Navigation() {
     { to: "/dashboard-erp", icon: "📊", label: "Descargar Datos", show: isAdminOrSupervisor },
     { to: "/alerts", icon: "🔔", label: "Alertas", show: isAdminOrSupervisor },
     { to: "/consumptions", icon: "📊", label: "Consumos", show: isAdminOrSupervisor },
+    { to: "/indicadores", icon: "📈", label: "Indicadores", show: isAdminOrSupervisor },
     { to: "/session-history", icon: "⏱️", label: "Tiempos", show: false }, // Oculto por solicitud
     { divider: true, label: "Documentos", show: true },
     { to: "/document-registry", icon: "📄", label: "Lista de Documentos", show: true },
@@ -208,6 +210,7 @@ function getPageName(pathname) {
     '/tickets': 'Tickets / Mesa de Ayuda',
     '/dashboard-erp': 'Dashboard ERP',
     '/consumption-dashboard': 'Dashboard de Consumos',
+    '/indicadores': 'Indicadores',
     '/session-history': 'Registro de Tiempos',
     '/my-drafts': 'Mis Borradores',
     '/document-registry': 'Documentos Registrados',
@@ -363,6 +366,13 @@ function App() {
               <Route path="/consumptions" element={
                 <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
                   <ConsumptionDashboard />
+                </RoleBasedRoute>
+              } />
+
+              {/* Indicadores - Solo Admin y Supervisor */}
+              <Route path="/indicadores" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <Indicadores />
                 </RoleBasedRoute>
               } />
               

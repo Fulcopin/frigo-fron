@@ -1921,50 +1921,53 @@ const rows = tableData.map((row, rowIndex) => {
         );
 
         if (allTinas.length > 0 && fields.length > 0) {
-          // Build header rows: Group names + tina labels
-          const head = [];
-          // Row 1: Group headers (merged via colSpan emulation — repeated text)
-          const groupRow = ['Ciclo'];
+          // 🧊 Render FIEL a la pantalla de llenado:
+          //   - Fila de encabezado 1: nombre de cada GRUPO abarcando (colSpan) sus columnas.
+          //   - Fila de encabezado 2: etiqueta de cada tina/columna.
+          //   - Cuerpo: UNA fila por ciclo; cada celda contiene el mini-formulario apilado (todos los campos).
+          //   - Se ocultan Vol./Resid.(I)/Dosif. en columnas MÓVIL/FILETEO, igual que en pantalla.
+          const head1 = [{ content: 'Ciclo', rowSpan: 2 }];
           groups.forEach((g, gIdx) => {
             let subtitleText = g.subtitle || '';
             if (subtitleText.includes('___SELECT_CLORO_PEROX___')) {
-               const selection = tinasData[`g${gIdx}_subtitle`] || '(Sin Seleccionar)';
-               subtitleText = subtitleText.replace('___SELECT_CLORO_PEROX___', selection);
+               subtitleText = subtitleText.replace('___SELECT_CLORO_PEROX___', tinasData[`g${gIdx}_subtitle`] || '(Sin Seleccionar)');
             }
             if (subtitleText.includes('___SELECT_ANTES_DESPUES___')) {
-               const selection = tinasData[`g${gIdx}_subtitle_antes`] || '(Sin Seleccionar)';
-               subtitleText = subtitleText.replace('___SELECT_ANTES_DESPUES___', selection);
+               subtitleText = subtitleText.replace('___SELECT_ANTES_DESPUES___', tinasData[`g${gIdx}_subtitle_antes`] || '(Sin Seleccionar)');
             }
             if (subtitleText.includes('___INPUT___')) {
-               const selection = tinasData[`g${gIdx}_subtitle_input`] || '________________';
-               subtitleText = subtitleText.replace('___INPUT___', selection);
+               subtitleText = subtitleText.replace('___INPUT___', tinasData[`g${gIdx}_subtitle_input`] || '________________');
             }
             let groupName = g.name || '';
             if (groupName.includes('___')) {
-               const customName = tinasData[`g${gIdx}_customName`] || '___';
-               groupName = groupName.replace('___', customName);
+               groupName = groupName.replace('___', tinasData[`g${gIdx}_customName`] || '___');
             }
             const groupText = subtitleText ? `${groupName}\n${subtitleText}` : groupName;
-            for (let i = 0; i < g.count; i++) {
-              groupRow.push(sanitizeText(groupText));
-            }
+            head1.push({ content: sanitizeText(groupText), colSpan: g.count });
           });
-          // Row 2: Tina labels
-          const tinaRow = [''];
-          allTinas.forEach(t => tinaRow.push(sanitizeText(t.label)));
-          head.push(groupRow, tinaRow);
+          // Fila 2: etiqueta de cada tina (la columna "Ciclo" ya la cubre el rowSpan de arriba)
+          const head2 = allTinas.map(t => sanitizeText(t.label));
+          const head = [head1, head2];
 
-          // Build body: for each cycle, for each field, one row
+          // Cuerpo: una fila por ciclo; cada celda = mini-formulario apilado (campo: valor)
           const body = [];
           for (let c = 0; c < cycles; c++) {
-            for (let fi = 0; fi < fields.length; fi++) {
-              const row = [sanitizeText(`C${c + 1} - ${fields[fi].label}${fields[fi].suffix ? ' (' + fields[fi].suffix + ')' : ''}`)];
-              allTinas.forEach(tina => {
-                const val = tinasData[tina.key]?.[c]?.[fields[fi].label] ?? '';
-                row.push(sanitizeText(String(val)));
+            const row = [sanitizeText(`Ciclo ${c + 1}`)];
+            allTinas.forEach(tina => {
+              const cycleData = tinasData[tina.key]?.[c] || {};
+              const isMovil = (tina.groupName || tina.label || '').toUpperCase().includes('MOVIL') ||
+                              (tina.groupName || tina.label || '').toUpperCase().includes('MÓVIL') ||
+                              (tina.label || '').toUpperCase().includes('FILETEO');
+              const lines = [];
+              fields.forEach(f => {
+                if (isMovil && ['Vol.', 'Resid. (I)', 'Dosif.'].includes(f.label)) return;
+                const val = cycleData[f.label];
+                const etiqueta = `${f.label}${f.suffix ? ` (${f.suffix})` : ''}`;
+                lines.push(`${etiqueta}: ${val !== undefined && val !== null && String(val) !== '' ? val : '—'}`);
               });
-              body.push(row);
-            }
+              row.push(sanitizeText(lines.join('\n')));
+            });
+            body.push(row);
           }
 
           // Check page space
@@ -1992,14 +1995,14 @@ const rows = tableData.map((row, rowIndex) => {
             bodyStyles: {
               fontSize: 6,
               textColor: [51, 51, 51],
-              halign: 'center',
-              valign: 'middle',
+              halign: 'left',
+              valign: 'top',
               lineWidth: 0.15,
               lineColor: [200, 200, 200],
-              cellPadding: { top: 0.8, right: 1, bottom: 0.8, left: 1 }
+              cellPadding: { top: 1.2, right: 1.5, bottom: 1.2, left: 1.5 }
             },
             columnStyles: {
-              0: { halign: 'left', fontStyle: 'bold', fontSize: 6, cellWidth: 35 }
+              0: { halign: 'center', valign: 'middle', fontStyle: 'bold', fontSize: 6, cellWidth: 12 }
             },
             alternateRowStyles: {
               fillColor: [242, 247, 252]
