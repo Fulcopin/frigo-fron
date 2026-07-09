@@ -76,24 +76,45 @@
     table-layout: auto !important;
   }
 
-  /* Celdas más espaciadas */
+  /* Celdas más espaciadas y anchas (tablet: se ve como en la computadora) */
   .data-table th,
   .data-table td {
-    padding: 12px 10px !important;
-    min-width: 110px !important; /* Suficiente para ser legible */
+    padding: 14px 12px !important;
+    min-width: 170px !important; /* Columnas anchas en tablet, como en laptop */
     white-space: nowrap;
+    vertical-align: top;
   }
 
-  /* Inputs dentro de tablas */
-  .data-table input,
-  .data-table select,
-  .data-table textarea {
-    min-width: 90px !important;
-    min-height: 44px !important;
-    font-size: 15px !important;
-    /* ✅ PREVENIR SCROLL AUTOMÁTICO AL HACER FOCUS EN TABLAS */
+  /* Inputs dentro de tablas: GRANDES y que llenen todo el ancho de la celda */
+  .data-table input:not([type="checkbox"]):not([type="radio"]),
+  .data-table select {
+    width: 100% !important;
+    min-width: 160px !important;
+    min-height: 56px !important; /* Más alto: fácil de tocar en tablet */
+    font-size: 16px !important;
+    box-sizing: border-box !important;
     scroll-margin: 0 !important;
     scroll-padding: 0 !important;
+  }
+
+  /* Textareas (columnas de texto largo, ej. ESPECIE/PRESENTACIÓN): ANCHOS y ALTOS
+     para que la primera sección NO se corte y se vea completa como en la computadora */
+  .data-table textarea {
+    width: 100% !important;
+    min-width: 300px !important;
+    min-height: 110px !important;
+    font-size: 16px !important;
+    box-sizing: border-box !important;
+    resize: both !important; /* el usuario puede ensancharlo/agrandarlo aún más */
+    scroll-margin: 0 !important;
+    scroll-padding: 0 !important;
+  }
+
+  .data-table input[type="checkbox"],
+  .data-table input[type="radio"] {
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
   }
 
   /* Botón agregar fila más grande */

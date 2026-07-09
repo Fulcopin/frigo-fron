@@ -926,8 +926,9 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
         return String(v).trim() === '';
       });
     };
-    const filteredTableData = isEmptyTable ? tableData : tableData.filter(row => !isRowEmpty(row));
-    const dataToRender = filteredTableData.length > 0 ? filteredTableData : tableData;
+    // 🚫 Excluir filas marcadas como ocultas (_hiddenRow)
+    const filteredTableData = (isEmptyTable ? tableData : tableData.filter(row => !isRowEmpty(row))).filter(row => !row?._hiddenRow);
+    const dataToRender = filteredTableData.length > 0 ? filteredTableData : tableData.filter(row => !row?._hiddenRow);
     
     dataToRender.forEach((row, rowIndex) => {
       const isAlt = rowIndex % 2 === 1;

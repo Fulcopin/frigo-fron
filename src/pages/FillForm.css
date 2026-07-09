@@ -664,6 +664,21 @@ body {
   max-height: 60vh;
 }
 
+/* 🔲 Inputs de celda: ocupar TODO el ancho de la columna (celdas grandes/anchas) */
+.data-table td .table-input-expandable,
+.data-table td input.table-input-expandable,
+.data-table td select.table-input-expandable,
+.data-table td textarea.table-input-expandable,
+.data-table td > input:not([type="checkbox"]):not([type="radio"]),
+.data-table td > select,
+.data-table td > textarea,
+.data-table td > div > input:not([type="checkbox"]):not([type="radio"]),
+.data-table td > div > select,
+.data-table td > div > textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .excel-table-wrapper thead th {
   position: sticky;
   top: 0;

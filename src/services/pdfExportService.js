@@ -1252,12 +1252,16 @@ const rows = tableData.map((row, rowIndex) => {
     return strValue;
   });
 });
-          
-          console.log(`Filas procesadas para "${sectionTitle}":`, rows);
-          
+
+          // 🚫 Quitar filas marcadas como ocultas (_hiddenRow), preservando el índice para las fórmulas
+          const _hiddenRowMask = tableData.map(r => !!(r && r._hiddenRow));
+          const rowsVisibles = rows.filter((_, i) => !_hiddenRowMask[i]);
+
+          console.log(`Filas procesadas para "${sectionTitle}":`, rowsVisibles);
+
           // Filtrar filas completamente vacías (ignorar propiedades internas _prefixed)
           // No usar fallback a "rows" para evitar renderizar filas vacías que inflan el PDF
-          const filteredRows = rows.filter(row => row.some(cell => cell && cell.trim() !== ''));
+          const filteredRows = rowsVisibles.filter(row => row.some(cell => cell && cell.trim() !== ''));
           
           // Sanitizar solo filas con datos; filas totalmente vacías se omiten para compactar el PDF
           const sanitizedRows = filteredRows.map(row => 

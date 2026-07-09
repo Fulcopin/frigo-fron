@@ -84,6 +84,8 @@ function FillForm() {
   const [headerData, setHeaderData] = useState({})
   const [bodyData, setBodyData] = useState([]); 
   const [firmasData, setFirmasData] = useState({})
+  // 🔎 Tablas expandidas (mostrar completas sin scroll interno) por elementIndex
+  const [expandedTables, setExpandedTables] = useState({})
   // 🔑 Estados para firma por PIN (por puesto)
   const [pinInputByPuesto, setPinInputByPuesto] = useState({})
   const [pinLoadingByPuesto, setPinLoadingByPuesto] = useState({})
@@ -3653,6 +3655,47 @@ useEffect(() => {
     } finally {
       setPinLoadingByPuesto(prev => ({ ...prev, [puesto]: false }));
     }
+  };
+
+  // 🚫 Ocultar/mostrar una COLUMNA de tabla para este registro (se respeta en Ver/PDF/Excel)
+  const toggleHiddenColumn = (elementIndex, colKey, checked) => {
+    if (!colKey) return;
+    setBodyData(prev => {
+      const nb = [...prev];
+      const el = { ...(nb[elementIndex] || {}) };
+      const hc = { ...(el.hiddenColumns || {}) };
+      if (checked) hc[colKey] = true; else delete hc[colKey];
+      el.hiddenColumns = hc;
+      nb[elementIndex] = el;
+      return nb;
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  // 🚫 Ocultar/mostrar una FILA de tabla para este registro (no sale en Ver/PDF/Excel)
+  const toggleHiddenRow = (elementIndex, rowIndex, checked) => {
+    setBodyData(prev => prev.map((el, i) => {
+      if (i !== elementIndex) return el;
+      const data = [...(el.data || [])];
+      if (data[rowIndex]) data[rowIndex] = { ...data[rowIndex], _hiddenRow: checked };
+      return { ...el, data };
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  // 🚫 Ocultar/mostrar un CAMPO de sección para este registro
+  const toggleHiddenField = (elementIndex, fieldKey, checked) => {
+    if (!fieldKey) return;
+    setBodyData(prev => {
+      const nb = [...prev];
+      const el = { ...(nb[elementIndex] || {}) };
+      const hf = { ...(el.hiddenFields || {}) };
+      if (checked) hf[fieldKey] = true; else delete hf[fieldKey];
+      el.hiddenFields = hf;
+      nb[elementIndex] = el;
+      return nb;
+    });
+    setHasUnsavedChanges(true);
   };
 
   // 🆕 FUNCIÓN PARA RECALCULAR TOTALES DE TODAS LAS FILAS
@@ -8652,6 +8695,17 @@ useEffect(() => {
                 isExpanded={expandedSections[`body_${elementIndex}`] !== false}
                 onToggle={() => toggleBodySection(elementIndex)}
               >
+                {/* 👁️ Ocultar toda la sección en Ver/PDF/Excel (por registro) */}
+                <div style={{ padding: '6px 10px', background: currentElementData?._isHidden ? '#fee2e2' : '#f0fdf4', borderRadius: '6px', marginBottom: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: currentElementData?._isHidden ? '#dc2626' : '#16a34a' }}>
+                    <input type="checkbox" checked={!currentElementData?._isHidden}
+                      onChange={(e) => {
+                        setBodyData(prev => { const nb = [...prev]; const el = { ...(nb[elementIndex] || {}) }; el._isHidden = !e.target.checked; nb[elementIndex] = el; return nb; });
+                        setHasUnsavedChanges(true);
+                      }} />
+                    {currentElementData?._isHidden ? '🚫 Sección oculta (no sale en Ver/PDF/Excel)' : '👁️ Sección visible'}
+                  </label>
+                </div>
                 <div className="section-fields-grid">
                 {(element.fields || []).map((field, fieldIndex) => {
                   // ✅ NUEVO: Si el campo es una tabla, renderizarla completa
@@ -8686,7 +8740,16 @@ useEffect(() => {
                         </div>
                         
                         {/* 📋 TABLA PRINCIPAL - ESTILO EXCEL */}
-                        <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh', marginBottom: '1rem', position: 'relative' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '4px' }}>
+                          <button type="button"
+                            onClick={() => setExpandedTables(p => ({ ...p, [elementIndex]: !p[elementIndex] }))}
+                            className="btn-add-row"
+                            style={{ background: expandedTables[elementIndex] ? 'linear-gradient(135deg, #64748b, #475569)' : 'linear-gradient(135deg, #0ea5e9, #0284c7)', fontSize: '11px' }}
+                            title="Mostrar la tabla completa o volver al tamaño normal">
+                            {expandedTables[elementIndex] ? '🗕 Contraer tabla' : '⛶ Expandir tabla'}
+                          </button>
+                        </div>
+                        <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: expandedTables[elementIndex] ? 'none' : '60vh', marginBottom: '1rem', position: 'relative', resize: 'vertical' }}>
                           <table className="data-table excel-table" style={{
                             width: '100%',
                             borderCollapse: 'collapse',
@@ -9468,7 +9531,16 @@ useEffect(() => {
                   </div>
                 )}
 
-                <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh', maxWidth: '100%', position: 'relative' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '4px' }}>
+                  <button type="button"
+                    onClick={() => setExpandedTables(p => ({ ...p, [elementIndex]: !p[elementIndex] }))}
+                    className="btn-add-row"
+                    style={{ background: expandedTables[elementIndex] ? 'linear-gradient(135deg, #64748b, #475569)' : 'linear-gradient(135deg, #0ea5e9, #0284c7)', fontSize: '11px' }}
+                    title="Mostrar la tabla completa (sin scroll interno) o volver al tamaño normal">
+                    {expandedTables[elementIndex] ? '🗕 Contraer tabla' : '⛶ Expandir tabla'}
+                  </button>
+                </div>
+                <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: expandedTables[elementIndex] ? 'none' : '60vh', maxWidth: '100%', position: 'relative', resize: 'vertical' }}>
                   <table className="data-table complex-header">
                     <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                       <tr>
@@ -9507,6 +9579,19 @@ useEffect(() => {
                             <th key={colIndex} style={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'break-word', position: 'relative', minWidth: '85px', maxWidth: '200px', verticalAlign: 'middle', textAlign: 'center', lineHeight: '1.3' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
                                 <span style={{ fontSize: '0.68rem', wordBreak: 'break-word' }}>{headerText}</span>
+
+                                {/* 🚫 Ocultar esta columna en Ver/PDF/Excel (por registro) */}
+                                {(() => {
+                                  const hcKey = col.label || col.name || col.header;
+                                  const hidden = !!(currentElementData?.hiddenColumns?.[hcKey]);
+                                  return (
+                                    <label title="No mostrar esta columna en Ver / PDF / Excel para este registro"
+                                      style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '0.55rem', fontWeight: 400, color: hidden ? '#dc2626' : '#94a3b8', cursor: 'pointer', background: hidden ? '#fee2e2' : 'transparent', borderRadius: '3px', padding: '0 3px' }}>
+                                      <input type="checkbox" checked={hidden} onChange={(e) => toggleHiddenColumn(elementIndex, hcKey, e.target.checked)} style={{ margin: 0, cursor: 'pointer' }} />
+                                      {hidden ? '🚫 Oculta' : '🚫 Ocultar'}
+                                    </label>
+                                  );
+                                })()}
 
                                 {/* 🐟📦 Botón de rango para columnas PRODUCTOS_POR_ESPECIE (solo si es editable) */}
                                 {isEspecieProductoCol && isColEditable && (
@@ -9726,7 +9811,7 @@ useEffect(() => {
     const rowLoteColor = activeOpt ? activeOpt.color : null;
 
     return (
-      <tr key={rowUniqueKey} style={{ background: (displayNum - 1) % 2 === 0 ? 'white' : '#f9fafb', borderLeft: rowLoteColor ? `4px solid ${rowLoteColor}` : undefined }}>
+      <tr key={rowUniqueKey} style={{ background: row._hiddenRow ? '#fef2f2' : ((displayNum - 1) % 2 === 0 ? 'white' : '#f9fafb'), opacity: row._hiddenRow ? 0.55 : 1, borderLeft: rowLoteColor ? `4px solid ${rowLoteColor}` : undefined }}>
         <td style={{ fontWeight: 'bold', color: '#6b7280', textAlign: 'center' }}>{displayNum}</td>
         
         {/* 📦 Selector de Lote por fila */}
@@ -10207,6 +10292,13 @@ useEffect(() => {
               }} className="btn-remove-row" title="Eliminar fila">
                 🗑️
               </button>
+              <button
+                onClick={() => toggleHiddenRow(elementIndex, delRowIndex, !row._hiddenRow)}
+                className="btn-remove-row"
+                title={row._hiddenRow ? 'Fila oculta en Ver/PDF/Excel — clic para mostrar' : 'Ocultar esta fila en Ver/PDF/Excel'}
+                style={{ background: row._hiddenRow ? '#dc2626' : '#e5e7eb', color: row._hiddenRow ? 'white' : '#374151', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '2px 5px', fontSize: '0.75rem', marginLeft: '2px' }}>
+                🚫
+              </button>
             </td>
           );
         })()}
@@ -10420,7 +10512,16 @@ useEffect(() => {
                     {currentElementData._isHidden ? '🚫 Tabla Oculta (No se mostrará en PDF/Excel/Ver)' : '👁️ Tabla Visible (Incluida en Reportes)'}
                   </label>
                 </div>
-                <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '60vh', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '4px' }}>
+                  <button type="button"
+                    onClick={() => setExpandedTables(p => ({ ...p, [elementIndex]: !p[elementIndex] }))}
+                    className="btn-add-row"
+                    style={{ background: expandedTables[elementIndex] ? 'linear-gradient(135deg, #64748b, #475569)' : 'linear-gradient(135deg, #0ea5e9, #0284c7)', fontSize: '11px' }}
+                    title="Mostrar la tabla completa o volver al tamaño normal">
+                    {expandedTables[elementIndex] ? '🗕 Contraer tabla' : '⛶ Expandir tabla'}
+                  </button>
+                </div>
+                <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: expandedTables[elementIndex] ? 'none' : '60vh', WebkitOverflowScrolling: 'touch', position: 'relative', resize: 'vertical' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', minWidth: `${totalTinas * 200}px` }}>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                       {/* Group headers row */}

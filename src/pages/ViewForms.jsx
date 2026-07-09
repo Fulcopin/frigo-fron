@@ -1010,8 +1010,8 @@ function ViewForms() {
                 elementData = savedBodyData[elementIndex] ?? null;
               }
               
-              // 👁️ Ocultar si está marcado como hidden
-              if (elementData?.data?._isHidden) {
+              // 👁️ Ocultar tabla/sección completa si está marcada como hidden (3 variantes, igual que PDF/Excel)
+              if (elementData?.data?._isHidden || elementData?.rows?._isHidden || elementData?._isHidden) {
                 return null;
               }
 
@@ -1148,7 +1148,12 @@ function ViewForms() {
                   tableRows = elementData;
                 }
               }
-              
+
+              // 🚫 Quitar filas marcadas como ocultas (_hiddenRow) para este registro
+              if (Array.isArray(tableRows)) {
+                tableRows = tableRows.filter(r => !(r && r._hiddenRow));
+              }
+
               {
                 const hiddenColsMap = elementData?.hiddenColumns || {};
                 const rawCols = Array.isArray(templateElement.columns) ? templateElement.columns : (typeof templateElement.columns === 'string' ? safeParse(templateElement.columns, []) : []);

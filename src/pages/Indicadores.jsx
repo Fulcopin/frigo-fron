@@ -240,6 +240,7 @@ export default function Indicadores() {
   const [indError, setIndError] = useState('');
   const [showBuilder, setShowBuilder] = useState(false);
   const [draft, setDraft] = useState(null);
+  const [expanded, setExpanded] = useState(null); // indicador abierto en grande
 
   useEffect(() => { loadData(); loadIndicators(); /* eslint-disable-next-line */ }, []);
 
@@ -528,8 +529,52 @@ export default function Indicadores() {
 
       <div className="ind-grid">
         {indicators.map(ind => (
-          <IndicatorCard key={ind.id} ind={ind} data={allData} onRemove={() => removeIndicator(ind)} />
+          <IndicatorCard key={ind.id} ind={ind} data={allData} onRemove={() => removeIndicator(ind)} onExpand={() => setExpanded(ind)} />
         ))}
+      </div>
+
+      {expanded && (
+        <ExpandedModal ind={expanded} data={allData} onClose={() => setExpanded(null)} />
+      )}
+    </div>
+  );
+}
+
+// Modal para ver un indicador en grande
+function ExpandedModal({ ind, data, onClose }) {
+  const series = useMemo(() => computeIndicator(ind, data), [ind, data]);
+  const total = series.reduce((s, d) => s + (Number(d.value) || 0), 0);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="ind-modal-overlay" onClick={onClose}>
+      <div className="ind-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="ind-modal-head">
+          <div>
+            <h2>{ind.title}</h2>
+            <span className="ind-card-meta">{scopeLabel(ind)} · {AGG_LABELS[ind.agg] || (ind.mode === 'combined' ? 'combinado' : '')}</span>
+          </div>
+          <button className="ind-modal-close" onClick={onClose} title="Cerrar (Esc)">✕</button>
+        </div>
+        <div className="ind-modal-chart">
+          <SimpleChart type={ind.chart} data={series} unit={ind.unit} kpiSubtitle={ind.title} />
+        </div>
+        {series.length > 0 && (
+          <div className="ind-modal-table">
+            <table>
+              <thead><tr><th>{ind.groupBy?.startsWith('__DATE_') ? 'Fecha' : 'Grupo'}</th><th>Valor</th></tr></thead>
+              <tbody>
+                {series.map((d, i) => (
+                  <tr key={i}><td>{d.label}</td><td className="ind-num">{fmtNum(d.value)}{ind.unit ? ` ${ind.unit}` : ''}</td></tr>
+                ))}
+                <tr className="ind-total-row"><td><strong>Total</strong></td><td className="ind-num"><strong>{fmtNum(total)}</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -575,7 +620,7 @@ function FormTableCols({ data, value, onChange, showAgg }) {
   );
 }
 
-function IndicatorCard({ ind, data, onRemove }) {
+function IndicatorCard({ ind, data, onRemove, onExpand }) {
   const series = useMemo(() => computeIndicator(ind, data), [ind, data]);
   const total = series.reduce((s, d) => s + (Number(d.value) || 0), 0);
   return (
@@ -585,9 +630,14 @@ function IndicatorCard({ ind, data, onRemove }) {
           <h3>{ind.title}</h3>
           <span className="ind-card-meta">{scopeLabel(ind)}</span>
         </div>
-        <button className="ind-card-remove" onClick={onRemove} title="Eliminar indicador">✕</button>
+        <div className="ind-card-actions">
+          <button className="ind-card-expand" onClick={onExpand} title="Ver en grande">⛶</button>
+          <button className="ind-card-remove" onClick={onRemove} title="Eliminar indicador">✕</button>
+        </div>
       </div>
-      <SimpleChart type={ind.chart} data={series} unit={ind.unit} kpiSubtitle={ind.title} />
+      <button className="ind-card-chartbtn" onClick={onExpand} title="Ampliar">
+        <SimpleChart type={ind.chart} data={series} unit={ind.unit} kpiSubtitle={ind.title} />
+      </button>
       {ind.chart !== 'kpi' && series.length > 0 && (
         <details className="ind-card-table">
           <summary>Ver datos ({series.length})</summary>
