@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { useParams, useNavigate, useLocation } from "react-router-dom" 
+import { useParams, useNavigate, useLocation } from "react-router-dom"
+import { mergeOpcionesActuales } from "../utils/filledFormsUtils"
 import FormHeader from "../components/FormHeader"
 import AccordionSection from "../components/AccordionSection"
 import LoteSelectorAPI from "../components/LoteSelectorAPI"
@@ -904,6 +905,11 @@ useEffect(() => {
             });
           }
         });
+
+        // 🔄 Para formularios seleccionados (ej. FOR-CC-41): completar los
+        // desplegables con las opciones ACTUALES de la plantilla, porque el
+        // snapshot histórico no incluye opciones agregadas después
+        await mergeOpcionesActuales(processedTemplate);
 
         setSelectedTemplate(processedTemplate);
         setHeaderData(typeof data.headerData === 'string' ? JSON.parse(data.headerData) : data.headerData);

@@ -42,7 +42,7 @@ from langgraph.types import Command, interrupt
 from tenacity import (
     AsyncRetrying,
     RetryError,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
 )
@@ -248,6 +248,26 @@ _TRANSIENT_LLM_EXCEPTIONS: tuple[type[BaseException], ...] = (
 LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "2"))
 
 
+def _es_error_reintentable(exc: BaseException) -> bool:
+    """True si el error del LLM amerita reintento.
+
+    Ademas de los errores de red transitorios, reintenta los FLAKES DE
+    GENERACION de tool calls: a veces el modelo emite una llamada a funcion
+    malformada y el proveedor la rechaza ("Failed to call a function",
+    "tool call validation failed"). No es un bug del prompt — al reintentar,
+    el modelo casi siempre genera la llamada bien.
+    """
+    if isinstance(exc, _TRANSIENT_LLM_EXCEPTIONS):
+        return True
+    msg = str(exc).lower()
+    return (
+        "failed to call a function" in msg
+        or "tool call validation failed" in msg
+        or "failed_generation" in msg
+        or "rate_limit_exceeded" in msg
+    )
+
+
 async def _get_bound_llm(tools: list, temperature: float = 0.1):
     """Retorna el LLM con `bind_tools(...)` aplicado, cacheado por tools y temperature."""
     key = (round(temperature, 2), tuple(getattr(t, "name", str(t)) for t in tools))
@@ -277,7 +297,7 @@ async def _llm_ainvoke_with_retry(llm, messages: list) -> Any:
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(LLM_MAX_RETRIES + 1),
             wait=wait_exponential(multiplier=0.5, min=0.5, max=3.0),
-            retry=retry_if_exception_type(_TRANSIENT_LLM_EXCEPTIONS),
+            retry=retry_if_exception(_es_error_reintentable),
             reraise=True,
         ):
             with attempt:

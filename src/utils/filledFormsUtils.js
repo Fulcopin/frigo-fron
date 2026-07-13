@@ -61,14 +61,70 @@ export const loadFormForEdit = async (formId) => {
     }
     
     console.log('✅ Template encontrado:', template);
-    
-    return processFormData(data);
-    
+
+    const result = processFormData(data);
+    // 🔄 Para formularios seleccionados: refrescar opciones de los desplegables
+    // con las de la plantilla ACTUAL (los formularios viejos usan el snapshot
+    // histórico y no ven opciones agregadas después, ej. un termómetro nuevo)
+    result.template = await mergeOpcionesActuales(result.template);
+    return result;
+
   } catch (error) {
     console.error('❌ Error completo al cargar formulario:', error);
     throw new Error(`Error al cargar formulario para edición: ${error.message}`);
   }
 };
+
+// 📋 Formularios cuyas listas desplegables SIEMPRE muestran las opciones
+// actuales de la plantilla (unión: primero las actuales, luego las históricas
+// que ya no existan — para no romper valores viejos ya guardados)
+const FORMS_CON_OPCIONES_ACTUALES = ['FOR-CC-41'];
+
+export async function mergeOpcionesActuales(templateProcesado) {
+  try {
+    const codigo = (templateProcesado?.codigo || templateProcesado?.Codigo || '').toUpperCase().trim();
+    if (!FORMS_CON_OPCIONES_ACTUALES.includes(codigo)) return templateProcesado;
+    const tplId = templateProcesado.templateID || templateProcesado.TemplateID;
+    if (!tplId) return templateProcesado;
+
+    const resp = await fetch(`${API_URL_TEMPLATES}/${tplId}`);
+    if (!resp.ok) return templateProcesado;
+    const actual = await resp.json();
+
+    // Indexar opciones actuales por nombre de campo/columna (normalizado)
+    const opcionesActuales = {};
+    const indexar = (campo) => {
+      const key = (campo?.label || campo?.name || '').toLowerCase().trim();
+      if (key && Array.isArray(campo.options) && campo.options.length > 0) {
+        opcionesActuales[key] = campo.options;
+      }
+    };
+    safeParseJSON(actual.HeaderFields || actual.headerFields, []).forEach(indexar);
+    safeParseJSON(actual.BodyElements || actual.bodyElements, []).forEach(el => {
+      (el.columns || []).forEach(indexar);
+      (el.fields || []).forEach(indexar);
+    });
+
+    // Fusionar en el snapshot: opciones actuales primero + históricas que ya no existen
+    const fusionar = (campo) => {
+      const key = (campo?.label || campo?.name || '').toLowerCase().trim();
+      const nuevas = opcionesActuales[key];
+      if (!nuevas) return;
+      const viejas = Array.isArray(campo.options) ? campo.options : [];
+      campo.options = [...nuevas, ...viejas.filter(v => !nuevas.includes(v))];
+    };
+    (templateProcesado.headerFields || []).forEach(fusionar);
+    (templateProcesado.bodyElements || []).forEach(el => {
+      (el.columns || []).forEach(fusionar);
+      (el.fields || []).forEach(fusionar);
+    });
+
+    console.log(`🔄 ${codigo}: desplegables actualizados con las opciones de la plantilla actual`);
+  } catch (e) {
+    console.warn('⚠️ No se pudieron refrescar las opciones actuales:', e);
+  }
+  return templateProcesado;
+}
 
 // Parsear los datos JSON de forma segura
 const safeParseJSON = (jsonString, fallback = {}) => {
