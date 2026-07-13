@@ -90,6 +90,7 @@ function FillForm() {
   const [pinInputByPuesto, setPinInputByPuesto] = useState({})
   const [pinLoadingByPuesto, setPinLoadingByPuesto] = useState({})
   const [pinOpenByPuesto, setPinOpenByPuesto] = useState({})
+  const [pinFirmanteByPuesto, setPinFirmanteByPuesto] = useState({}) // 🔄 Quién firma con PIN (titular o reemplazo)
 
   // 👥 Estados para usuarios de la API
   const [allUsers, setAllUsers] = useState([]) // Todos los usuarios de la API
@@ -3623,8 +3624,8 @@ useEffect(() => {
     setHasUnsavedChanges(true);
   };
 
-  // 🔑 Firma por PIN: verifica el PIN del asignado y adjunta su firma guardada a este slot.
-  const handleFirmarConPin = async (puesto, nombreAsignado) => {
+  // 🔑 Firma por PIN: verifica el PIN del firmante (titular o reemplazo) y adjunta su firma guardada a este slot.
+  const handleFirmarConPin = async (puesto, nombreFirmante, reemplazoInfo = null) => {
     const pin = (pinInputByPuesto[puesto] || '').trim();
     if (pin.length < 4) {
       alert('⚠️ Ingresa el PIN (mínimo 4 dígitos).');
@@ -3635,7 +3636,7 @@ useEffect(() => {
       const res = await fetch(`${API_BASE_URL}/CatalogoFirmas/verify-pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre: nombreAsignado, pin })
+        body: JSON.stringify({ nombre: nombreFirmante, pin })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -3644,11 +3645,18 @@ useEffect(() => {
       }
       // Adjuntar la firma verificada al slot (mismo shape que una firma guardada de Cloudinary)
       handleFirmaUpdate(puesto, {
-        nombre: nombreAsignado,
-        firma: { url: data.firmaImageUrl, provider: 'cloudinary', uploaded_at: toLocalISOString() }
+        nombre: nombreFirmante,
+        firma: { url: data.firmaImageUrl, provider: 'cloudinary', uploaded_at: toLocalISOString() },
+        // 🔄 Si firma un reemplazo, guardar la misma metadata que en la firma normal
+        ...(reemplazoInfo ? {
+          esReemplazo: true,
+          reemplazandoA: reemplazoInfo.reemplazandoA || '',
+          cargoFirmante: reemplazoInfo.cargoFirmante || ''
+        } : {})
       });
       setPinInputByPuesto(prev => ({ ...prev, [puesto]: '' }));
       setPinOpenByPuesto(prev => ({ ...prev, [puesto]: false }));
+      setPinFirmanteByPuesto(prev => ({ ...prev, [puesto]: '' }));
     } catch (err) {
       console.error('Error al firmar con PIN:', err);
       alert('❌ Error al validar el PIN. Verifica la conexión.');
@@ -8750,7 +8758,7 @@ useEffect(() => {
                           </button>
                         </div>
                         <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: expandedTables[elementIndex] ? 'none' : '60vh', marginBottom: '1rem', position: 'relative', resize: 'vertical' }}>
-                          <table className="data-table excel-table" style={{
+                          <table className={`data-table excel-table${element.celdasAnchas ? ' big-cells' : ''}`} style={{
                             width: '100%',
                             borderCollapse: 'collapse',
                             backgroundColor: 'white',
@@ -9541,7 +9549,7 @@ useEffect(() => {
                   </button>
                 </div>
                 <div className="table-wrapper excel-table-wrapper" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: expandedTables[elementIndex] ? 'none' : '60vh', maxWidth: '100%', position: 'relative', resize: 'vertical' }}>
-                  <table className="data-table complex-header">
+                  <table className={`data-table complex-header${element.celdasAnchas ? ' big-cells' : ''}`}>
                     <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                       <tr>
                         {groupingMode[elementIndex] && <th rowSpan="2" style={{ width: '40px', background: '#ede9fe' }}>☑️</th>}
@@ -10932,6 +10940,18 @@ useEffect(() => {
                       ? (currentUser?.nombre || currentUser?.username || '')
                       : (firmasData[firma.puesto]?.nombre || nombreAsignado || '');
 
+                    // 🔑 Opciones de firmante para PIN: titular + reemplazos definidos en la plantilla
+                    const opcionesFirmantesPin = [nombreAsignado, ...reemplazosDefinidos.filter(
+                      r => r.toLowerCase().trim() !== nombreAsignado.toLowerCase().trim()
+                    )].filter(Boolean);
+                    const firmantePinSeleccionado = pinFirmanteByPuesto[firma.puesto] || nombreAsignado;
+                    const esPinReemplazo = !!firmantePinSeleccionado && !!nombreAsignado &&
+                      firmantePinSeleccionado.toLowerCase().trim() !== nombreAsignado.toLowerCase().trim();
+                    const pinReemplazoInfo = esPinReemplazo ? {
+                      reemplazandoA: nombreAsignado,
+                      cargoFirmante: firma.cargoReemplazos?.[firmantePinSeleccionado.toLowerCase().trim()] || ''
+                    } : null;
+
                     // Estilo del box
                     let boxBorder = '1px solid #e5e7eb';
                     let boxBackground = !nombreAsignado ? '#fff' : '#f9fafb';
@@ -11048,13 +11068,18 @@ useEffect(() => {
                           }}>
                             <img
                               src={firmasData[firma.puesto].firma.url || firmasData[firma.puesto].firma.base64}
-                              alt={`Firma de ${nombreAsignado}`}
+                              alt={`Firma de ${firmasData[firma.puesto]?.nombre || nombreAsignado}`}
                               style={{ maxHeight: '90px', maxWidth: '100%', objectFit: 'contain' }}
                             />
                             <p style={{ color: '#166534', fontWeight: 'bold', fontSize: '12px', margin: '8px 0 0 0' }}>
-                              ✅ Firmado por {nombreAsignado} (con PIN)
+                              ✅ Firmado por {firmasData[firma.puesto]?.nombre || nombreAsignado} (con PIN)
                               {firmasData[firma.puesto]?.fecha ? ` — ${firmasData[firma.puesto].fecha} ${firmasData[firma.puesto].hora || ''}` : ''}
                             </p>
+                            {firmasData[firma.puesto]?.esReemplazo && firmasData[firma.puesto]?.reemplazandoA && (
+                              <p style={{ color: '#92400e', fontSize: '11px', margin: '4px 0 0 0' }}>
+                                🔄 Reemplazo de: {firmasData[firma.puesto].reemplazandoA}
+                              </p>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleFirmaUpdate(firma.puesto, { nombre: nombreAsignado, firma: null })}
@@ -11094,16 +11119,47 @@ useEffect(() => {
                               </button>
                             ) : (
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>
-                                  Pide a <strong>{nombreAsignado}</strong> que ingrese su PIN:
-                                </p>
+                                {/* 🔄 Selector de firmante: titular o alguno de sus reemplazos */}
+                                {opcionesFirmantesPin.length > 1 ? (
+                                  <>
+                                    <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>
+                                      ¿Quién va a firmar con su PIN?
+                                    </p>
+                                    <select
+                                      value={firmantePinSeleccionado}
+                                      onChange={(e) => {
+                                        setPinFirmanteByPuesto(prev => ({ ...prev, [firma.puesto]: e.target.value }));
+                                        setPinInputByPuesto(prev => ({ ...prev, [firma.puesto]: '' }));
+                                      }}
+                                      style={{
+                                        padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: '8px',
+                                        fontSize: '13px', maxWidth: '100%'
+                                      }}
+                                    >
+                                      {opcionesFirmantesPin.map((nombre, oIdx) => (
+                                        <option key={`pin-firmante-${index}-${oIdx}`} value={nombre}>
+                                          {oIdx === 0 ? `${nombre} (Titular)` : `${nombre} (Reemplazo)`}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {esPinReemplazo && (
+                                      <span style={{ fontSize: '10px', color: '#92400e', background: '#fef3c7', padding: '2px 8px', borderRadius: '8px' }}>
+                                        🔄 Firmará como reemplazo de {nombreAsignado}
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>
+                                    Pide a <strong>{nombreAsignado}</strong> que ingrese su PIN:
+                                  </p>
+                                )}
                                 <input
                                   type="password"
                                   inputMode="numeric"
                                   autoComplete="off"
                                   value={pinInputByPuesto[firma.puesto] || ''}
                                   onChange={(e) => setPinInputByPuesto(prev => ({ ...prev, [firma.puesto]: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') handleFirmarConPin(firma.puesto, nombreAsignado); }}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') handleFirmarConPin(firma.puesto, firmantePinSeleccionado, pinReemplazoInfo); }}
                                   placeholder="PIN"
                                   style={{
                                     padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: '8px',
@@ -11113,7 +11169,7 @@ useEffect(() => {
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                   <button
                                     type="button"
-                                    onClick={() => handleFirmarConPin(firma.puesto, nombreAsignado)}
+                                    onClick={() => handleFirmarConPin(firma.puesto, firmantePinSeleccionado, pinReemplazoInfo)}
                                     disabled={pinLoadingByPuesto[firma.puesto]}
                                     style={{
                                       background: pinLoadingByPuesto[firma.puesto] ? '#9ca3af' : '#10b981', color: 'white',
@@ -11125,7 +11181,7 @@ useEffect(() => {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => { setPinOpenByPuesto(prev => ({ ...prev, [firma.puesto]: false })); setPinInputByPuesto(prev => ({ ...prev, [firma.puesto]: '' })); }}
+                                    onClick={() => { setPinOpenByPuesto(prev => ({ ...prev, [firma.puesto]: false })); setPinInputByPuesto(prev => ({ ...prev, [firma.puesto]: '' })); setPinFirmanteByPuesto(prev => ({ ...prev, [firma.puesto]: '' })); }}
                                     style={{ background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '8px', padding: '8px 14px', fontSize: '13px', cursor: 'pointer' }}
                                   >
                                     Cancelar

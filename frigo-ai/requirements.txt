@@ -1,0 +1,60 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.18
+pydantic==2.10.3
+
+# Database — Azure PostgreSQL (asyncpg: driver async nativo)
+asyncpg>=0.30.0
+
+# HTTP client (guardar borradores via API)
+httpx==0.28.1
+
+# Retry con backoff exponencial sobre errores transitorios de DB/HTTP (sql_tools.py)
+tenacity>=8.2.0
+
+# Config
+python-dotenv==1.0.1
+
+# Voice — Azure OpenAI Whisper STT (REST API, sin SDK adicional ni ffmpeg)
+# El cliente openai ya esta incluido como dependencia de langchain-openai
+# ELIMINADO: azure-cognitiveservices-speech (reemplazado por Azure OpenAI Whisper API)
+# ELIMINADO: openai-whisper, torch, numpy (~3.5 GB — ya no requeridos)
+
+# LangChain + Agente con Tool Calling (interrupt requiere >=0.2.35)
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langgraph>=0.2.35
+
+# Telegram Bot (python-telegram-bot asyncio — para telegram_bot.py)
+python-telegram-bot[ext]>=21.0
+
+# Telegram Bot sincrono (pyTelegramBotAPI / telebot — para main.py)
+pyTelegramBotAPI>=4.22.0
+
+# OpenAI SDK (Azure OpenAI Whisper STT en main.py)
+openai>=1.30.0
+
+# MCP — Model Context Protocol Server SDK
+mcp[cli]>=1.0.0
+
+# LangChain MCP Adapters — convierte herramientas MCP en tools LangChain nativos
+# Permite usar MultiServerMCPClient con SSE o stdio sin glue-code manual.
+langchain-mcp-adapters>=0.1.0
+
+# SQL Server driver (sql_tools.py y mcp_server.py via db_utils.py)
+pyodbc>=5.1.0
+
+# Error monitoring (observability.py) — opcional, solo se activa si SENTRY_DSN
+sentry-sdk>=1.40.0
+
+# Persistencia opcional del estado LangGraph en Postgres (state_backends.py)
+# Solo necesario si CHECKPOINTER_BACKEND=postgres. Comenta en desarrollo local.
+langgraph-checkpoint-postgres>=2.0.0
+
+# ELIMINADO: langchain-ollama (reemplazado por langchain-openai + Azure)
+
+# ELIMINADO: chromadb==0.5.23       (causaba alucinaciones — reemplazado por SQL directo)
+# ELIMINADO: sentence-transformers==3.3.1 (sin RAG, sin embeddings)
+# ELIMINADO: sounddevice==0.5.1     (sin grabacion local, se usa WebM del browser)
+# ELIMINADO: scipy==1.14.1          (dependencia de sounddevice, ya no necesaria)

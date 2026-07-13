@@ -1179,7 +1179,14 @@ export const exportFormToPDF = async (form, template, options = {}) => {
         }
         
         console.log(`📊 Datos de tabla "${sectionTitle}":`, tableData);
-        
+
+        // 🧾 Si el formulario no guardó filas pero la plantilla define filas fijas (checklist),
+        // usarlas como base para que el PDF muestre la estructura en vez de una tabla vacía
+        if (tableData.length === 0 && Array.isArray(section.predefinedRows) && section.predefinedRows.length > 0) {
+          tableData = section.predefinedRows.map((pr, i) => ({ ...pr, _predefinedIndex: i }));
+          console.log(`🧾 Tabla sin datos: usando ${tableData.length} filas predefinidas de la plantilla`);
+        }
+
         if (tableData.length > 0) {
           // Las columnas usan 'label' como nombre (ej: "LOTE DE PROCESO")
           // Los datos también usan 'label' como key: { "LOTE DE PROCESO": "jnd" }
@@ -1211,6 +1218,17 @@ const rows = tableData.map((row, rowIndex) => {
     
     // 1. Intento normal
     let value = row[col.dataKey] ?? row[col.header] ?? row[col.label];
+
+    // 1.5 🧾 Respaldo: valor fijo de la plantilla (Zona, Punto de Muestreo, etc.)
+    // Así las filas del checklist no se pierden aunque el formulario se guarde sin datos
+    if (!value || value === "") {
+      const predIdxCell = row._predefinedIndex !== undefined ? row._predefinedIndex : rowIndex;
+      const predRowCell = (section.predefinedRows || [])[predIdxCell];
+      if (predRowCell) {
+        const predVal = predRowCell[col.dataKey] ?? predRowCell[col.header] ?? predRowCell[col.label];
+        if (predVal !== undefined && predVal !== null && String(predVal) !== '') value = predVal;
+      }
+    }
 
     // 2. 🎯 SI ES LA COLUMNA DE "TOTAL" (Lógica copiada del ViewForms que sí funciona)
     if (colHeader.includes("TOTAL") && (!value || value === "")) {
@@ -1253,20 +1271,23 @@ const rows = tableData.map((row, rowIndex) => {
   });
 });
 
-          // 🚫 Quitar filas marcadas como ocultas (_hiddenRow), preservando el índice para las fórmulas
+          // 🚫 Quitar filas marcadas como ocultas (_hiddenRow) y filas completamente vacías,
+          // conservando el índice original para fórmulas y celdas combinadas (rowSpan)
           const _hiddenRowMask = tableData.map(r => !!(r && r._hiddenRow));
-          const rowsVisibles = rows.filter((_, i) => !_hiddenRowMask[i]);
+          const rowEntries = rows
+            .map((cells, i) => ({ cells, srcIdx: i }))
+            .filter(e => !_hiddenRowMask[e.srcIdx])
+            .filter(e => e.cells.some(cell => cell && cell.trim() !== ''));
 
-          console.log(`Filas procesadas para "${sectionTitle}":`, rowsVisibles);
+          console.log(`Filas procesadas para "${sectionTitle}":`, rowEntries.length);
 
-          // Filtrar filas completamente vacías (ignorar propiedades internas _prefixed)
-          // No usar fallback a "rows" para evitar renderizar filas vacías que inflan el PDF
-          const filteredRows = rowsVisibles.filter(row => row.some(cell => cell && cell.trim() !== ''));
-          
           // Sanitizar solo filas con datos; filas totalmente vacías se omiten para compactar el PDF
-          const sanitizedRows = filteredRows.map(row => 
-            row.map(cell => sanitizeText(cell))
-          );
+          const sanitizedRows = rowEntries.map(e => e.cells.map(cell => sanitizeText(cell)));
+          // Índice en predefinedRows de cada fila visible (para _rowSpan/_hidden)
+          const predIdxByRow = rowEntries.map(e => {
+            const srcRow = tableData[e.srcIdx];
+            return (srcRow && srcRow._predefinedIndex !== undefined) ? srcRow._predefinedIndex : e.srcIdx;
+          });
           
           // 📊 Calcular fila de TOTALES por columna (solo si autoSumColumns está activado o alguna col lo pide)
           const showColumnTotals = template?.autoSumColumns === true || template?.AutoSumColumns === true
@@ -1370,36 +1391,70 @@ const rows = tableData.map((row, rowIndex) => {
           );
 
           // 🔗 Rowspan: construir body con soporte de celdas combinadas (predefinedRows._rowSpan)
+          // Los bloques combinados se parten en trozos de máx. MAX_SPAN_PDF filas: un bloque
+          // más alto que la página obliga a autoTable a saltar de página dejando hueco en blanco.
+          const MAX_SPAN_PDF = 8;
           const predRowsPdf = section.predefinedRows || [];
-          const coveredPdfCells = {};
-          const bodyWithSpan = sanitizedRows.map((rowCells, rowIndex) => {
-            return rowCells.reduce((acc, cellStr, colIndex) => {
-              if (coveredPdfCells[`${rowIndex}_${colIndex}`]) return acc; // skip covered
-              let rowSpanPdf = 1;
-              if (predRowsPdf.length > 0 && rowIndex < predRowsPdf.length) {
-                const pdfColKey = columns[colIndex]?.dataKey || '';
-                const pdfPredRow = predRowsPdf[rowIndex];
-                if (pdfPredRow._hidden?.[pdfColKey]) return acc;
-                rowSpanPdf = pdfPredRow._rowSpan?.[pdfColKey] || 1;
-                if (rowSpanPdf > 1) {
-                  for (let r = rowIndex + 1; r < rowIndex + rowSpanPdf; r++) {
-                    coveredPdfCells[`${r}_${colIndex}`] = true;
+          const coveredPdfCells = {};   // celdas cubiertas por un bloque combinado
+          const chunkStartPdf = {};     // `${fila}_${col}` -> { span, content } inicio de cada trozo
+          if (predRowsPdf.length > 0) {
+            for (let c = 0; c < columns.length; c++) {
+              const colKeyPlan = columns[c]?.dataKey || '';
+              let r = 0;
+              while (r < sanitizedRows.length) {
+                const pRowPlan = predRowsPdf[predIdxByRow[r]];
+                if (!pRowPlan) { r++; continue; }
+                if (pRowPlan._hidden?.[colKeyPlan]) {
+                  // Cubierta por un bloque cuyo inicio no está visible: omitirla igual que antes
+                  coveredPdfCells[`${r}_${c}`] = true;
+                  r++;
+                  continue;
+                }
+                const spanPlan = Math.min(pRowPlan._rowSpan?.[colKeyPlan] || 1, sanitizedRows.length - r);
+                if (spanPlan > 1) {
+                  const contentPlan = sanitizedRows[r][c];
+                  for (let s = r; s < r + spanPlan; s += MAX_SPAN_PDF) {
+                    const chunkLen = Math.min(MAX_SPAN_PDF, r + spanPlan - s);
+                    chunkStartPdf[`${s}_${c}`] = { span: chunkLen, content: contentPlan };
+                    for (let rr = s + 1; rr < s + chunkLen; rr++) coveredPdfCells[`${rr}_${c}`] = true;
                   }
+                  r += spanPlan;
+                } else {
+                  r++;
                 }
               }
-              acc.push(rowSpanPdf > 1
-                ? { content: cellStr, rowSpan: rowSpanPdf, styles: { valign: 'middle' } }
-                : cellStr);
+            }
+          }
+          const bodyWithSpan = sanitizedRows.map((rowCells, rowIndex) => {
+            return rowCells.reduce((acc, cellStr, colIndex) => {
+              const cellKeyPdf = `${rowIndex}_${colIndex}`;
+              if (coveredPdfCells[cellKeyPdf]) return acc; // skip covered
+              const chunkPdf = chunkStartPdf[cellKeyPdf];
+              if (chunkPdf) {
+                acc.push(chunkPdf.span > 1
+                  ? { content: chunkPdf.content, rowSpan: chunkPdf.span, styles: { valign: 'middle' } }
+                  : chunkPdf.content);
+              } else {
+                acc.push(cellStr);
+              }
               return acc;
             }, []);
           });
+
+          // 🪶 Si todas las filas quedaron vacías, mostrar una fila informativa
+          // en lugar de una tabla con solo encabezado y un gran espacio en blanco
+          const bodyFinal = bodyWithSpan.length > 0 ? bodyWithSpan : [[{
+            content: 'Sin novedades registradas en esta sección',
+            colSpan: columns.length,
+            styles: { halign: 'center', fontStyle: 'italic', textColor: [130, 130, 130], fillColor: [250, 250, 250] }
+          }]];
 
           // 🎨 Estilo Excel: bordes definidos, colores suaves, compacto
           autoTable(doc, {
             startY: currentY,
             head: tableHead,
-            body: bodyWithSpan,
-            foot: hasTotals ? [totalsRow] : [],
+            body: bodyFinal,
+            foot: hasTotals && bodyWithSpan.length > 0 ? [totalsRow] : [],
             theme: 'grid',
             tableWidth: tblStyles.availableWidth,
             headStyles: {

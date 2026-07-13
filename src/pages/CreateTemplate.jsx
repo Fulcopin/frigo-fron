@@ -2595,7 +2595,7 @@ function CreateTemplate() {
                     👥 Reemplazos (personas que pueden firmar en su ausencia)
                   </label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {[0, 1, 2].map((rIdx) => {
+                    {[0, 1, 2, 3, 4].map((rIdx) => {
                       const reemplazos = firma.reemplazos || [];
                       return (
                         <div key={`reemplazo-${index}-${rIdx}`} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>

@@ -1,0 +1,640 @@
+{
+  "timestamp": "20260428_115849",
+  "dry_run": false,
+  "suite_filter": null,
+  "case_filter": null,
+  "total_cases": 13,
+  "summary": {
+    "pass_rate": 0.154,
+    "avg_score": 0.832,
+    "total_passed": 2,
+    "total_cases": 13,
+    "avg_elapsed_ms": 12314.0,
+    "by_category": {
+      "trazabilidad": {
+        "pass_rate": 0.25,
+        "avg_score": 0.871,
+        "total": 4
+      },
+      "formularios": {
+        "pass_rate": 0.0,
+        "avg_score": 0.794,
+        "total": 3
+      },
+      "analisis": {
+        "pass_rate": 0.333,
+        "avg_score": 0.856,
+        "total": 3
+      },
+      "edge": {
+        "pass_rate": 0.0,
+        "avg_score": 0.794,
+        "total": 3
+      }
+    },
+    "by_evaluator": {
+      "tool_precision": 0.923,
+      "language_compliance": 0.942,
+      "no_hallucination": 1.0,
+      "keyword_coverage": 0.756,
+      "task_completion": 0.538
+    }
+  },
+  "results": [
+    {
+      "case_id": "trace_001",
+      "category": "trazabilidad",
+      "description": "Rastreo básico de lote por número exacto",
+      "input": "quiero rastrear el lote ABC-2024-001",
+      "response": "No pude conectarme a la base de datos para rastrear el lote ABC-2024-001. Puede ser una caída momentánea. Te sugiero que intentes de nuevo más tarde.",
+      "tools_used": [
+        "rastrear_lote_tool"
+      ],
+      "elapsed_ms": 53797.8,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'rastrear_lote_tool'} | usadas={'rastrear_lote_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 6/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['lote', 'ABC-2024-001'] / Requeridas: ['lote', 'ABC-2024-001']"
+        },
+        {
+          "name": "task_completion",
+          "score": 0.25,
+          "passed": false,
+          "reasoning": "La respuesta del agente indica que no pudo realizar la acción solicitada debido a un problema de conexión, lo cual es una información importante. Sin embargo, no proporciona ninguna alternativa o solución adicional, lo que hace que la respuesta sea pobre y falte información relevante."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.85,
+      "error": null
+    },
+    {
+      "case_id": "trace_002",
+      "category": "trazabilidad",
+      "description": "Análisis de brecha — etapas faltantes de un lote",
+      "input": "que etapas le faltan al lote XYZ-0042 para estar completo",
+      "response": "Actualmente, hay un problema técnico con la base de datos y no puedo acceder a la información sobre el lote XYZ-0042. Te sugiero que intentes nuevamente más tarde. Si el problema persiste, por favor contacta al soporte técnico.",
+      "tools_used": [
+        "analizar_brecha_lote_tool"
+      ],
+      "elapsed_ms": 11008.1,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'analizar_brecha_lote_tool'} | usadas={'analizar_brecha_lote_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 7/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.667,
+          "passed": false,
+          "reasoning": "Encontradas: ['lote', 'XYZ-0042'] / Requeridas: ['lote', 'etapa', 'XYZ-0042']"
+        },
+        {
+          "name": "task_completion",
+          "score": 0.25,
+          "passed": false,
+          "reasoning": "La respuesta del agente indica un problema técnico y no proporciona la información solicitada sobre el lote XYZ-0042. Aunque menciona la herramienta correcta, no la utilizó debido a la falla, lo que resulta en una falta de información importante."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.783,
+      "error": null
+    },
+    {
+      "case_id": "trace_003",
+      "category": "trazabilidad",
+      "description": "Listado de lotes recientes",
+      "input": "dame la lista de lotes de esta semana",
+      "response": "No se encontraron lotes registrados en esta semana. Te sugiero verificar si hay algún error en las fechas o si necesitas ajustar la búsqueda.",
+      "tools_used": [
+        "listar_lotes_tool"
+      ],
+      "elapsed_ms": 6462.8,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'listar_lotes_tool'} | usadas={'listar_lotes_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 6/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['lote'] / Requeridas: ['lote']"
+        },
+        {
+          "name": "task_completion",
+          "score": 0.75,
+          "passed": true,
+          "reasoning": "La respuesta es buena y utiliza la herramienta correcta, pero no proporciona información adicional sobre cómo ajustar la búsqueda o verificar las fechas, lo que podría ser útil para el operario."
+        }
+      ],
+      "overall_passed": true,
+      "overall_score": 0.95,
+      "error": null
+    },
+    {
+      "case_id": "trace_004",
+      "category": "trazabilidad",
+      "description": "Verificación de completitud de lote",
+      "input": "el lote 9999 está completo?",
+      "response": "No se encontró información específica sobre el lote 9999 en los registros. Parece que hay menciones de este número, pero no está registrado como un lote específico. Te sugiero verificar el número de lote o consultar nuevamente.",
+      "tools_used": [
+        "analizar_brecha_lote_tool"
+      ],
+      "elapsed_ms": 4478.7,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'analizar_brecha_lote_tool'} | usadas={'analizar_brecha_lote_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 8/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['lote', '9999'] / Requeridas: ['lote', '9999']"
+        },
+        {
+          "name": "task_completion",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "La respuesta del agente es parcial, ya que indica que no se encontró información específica sobre el lote 9999, pero no proporciona una solución alternativa o más detalles sobre cómo proceder. La herramienta utilizada es la correcta, pero la falta de información crítica afecta la utilidad de la respuesta."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.9,
+      "error": null
+    },
+    {
+      "case_id": "form_001",
+      "category": "formularios",
+      "description": "Solicitud de esquema de formulario antes de dictado",
+      "input": "quiero llenar el formulario de fileteo FOR-PD-04",
+      "response": "El formulario de fileteo (FOR-PD-04) tiene la siguiente estructura:\n\n### Encabezado:\n1. **FECHA** (requerido)\n2. **LOTE DE PROCESO** (requerido)\n\n### Cuerpo:\n1. **Registro de Producción de Fileteo**:\n   - HORA\n   - TINA #\n   - CÓDIGOS DE MAT. PRIMA\n   - ESPECIE / PRESENTACIÓN\n   - PESO BRUTO\n   - PESO NETO\n\n2. **Resumen**:\n   - Clasificación\n   - Peso Total\n\n3. **Material de Empaque / Insumo en Proceso**:\n   - Insumo\n   - Cantidad\n\n4. **Control Sustancias Controladas**:\n   - Sustancia\n   - Peso sustancia (kg)\n   - Volumen agua (lts)\n   - % Concentración (calculado)\n\n5. **Control del personal**:\n   - Hora\n   - FILETEADORES\n   - PERSONAL PLANTA\n\n6. **Observaciones**\n\n### Firmas requeridas:\n- **Obrero Producción**: Ricardo Sancan\n- **Gerente Producción**: JOSE MONTESDEOCA (con jefe de alerta: Zoila Burgos)\n\nPor favor, proporciona los datos necesarios para llenar el formulario.",
+      "tools_used": [
+        "obtener_esquema_formulario_tool"
+      ],
+      "elapsed_ms": 8956.8,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'obtener_esquema_formulario_tool'} | usadas={'obtener_esquema_formulario_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 7/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.667,
+          "passed": false,
+          "reasoning": "Encontradas: ['formulario', 'FOR-PD-04'] / Requeridas: ['formulario', 'FOR-PD-04', 'campo']"
+        },
+        {
+          "name": "task_completion",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "La respuesta del agente es completa y precisa, proporcionando la estructura detallada del formulario FOR-PD-04 y solicitando los datos necesarios para su llenado. Utilizó la herramienta correcta para obtener la información."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.933,
+      "error": null
+    },
+    {
+      "case_id": "form_002",
+      "category": "formularios",
+      "description": "Guardado de borrador de formulario",
+      "input": "guardar borrador del formulario de control de sellos con lote 2024-10",
+      "response": "He obtenido el esquema del formulario de control de sellos (FOR-CC-10). Ahora, por favor proporciona los datos necesarios para completar el borrador:\n\n1. **Fecha** (opcional)\n2. **Tipo de máquina** (opcional)\n3. **Producto / Presentación** (opcional)\n4. **Inspección de sellos** (opcional)\n\nPara la tabla de datos:\n- **Hora** (opcional)\n- **Lote**: 2024-10\n- **Clasificación** (opcional)\n- **Inspección prueba n°** (opcional)\n- **# Empaques inspeccionados** (opcional)\n- **# Sellos satisfactorios** (opcional)\n- **# Sellos no conformes** (opcional)\n- **Observación** (opcional)\n- **Acción correctiva** (opcional)\n\nPara la sección de láminas termo formables:\n- **Hora** (opcional)\n- **Reposición de rollos grandes y pequeños** (opcional)\n- **Rollo n°** (opcional)\n- **Lote** (opcional)\n\nY para la sección de acciones correctivas:\n- **Acciones correctivas** (opcional)\n\nPor favor, proporciona la información que deseas incluir en el borrador.",
+      "tools_used": [
+        "obtener_esquema_formulario_tool"
+      ],
+      "elapsed_ms": 7920.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 0.0,
+          "passed": false,
+          "reasoning": "F1=0.00 | esperadas={'guardar_borrador_tool'} | usadas={'obtener_esquema_formulario_tool'} | TP=0, FP=1, FN=1"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 8/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Encontradas: ['borrador'] / Requeridas: ['borrador', 'guardado']"
+        },
+        {
+          "name": "task_completion",
+          "score": 0.25,
+          "passed": false,
+          "reasoning": "El agente no cumplió con la solicitud de guardar el borrador del formulario, sino que solicitó más información. Además, no utilizó la herramienta adecuada para guardar el borrador, lo que indica que no completó la tarea correctamente."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.55,
+      "error": null
+    },
+    {
+      "case_id": "form_003",
+      "category": "formularios",
+      "description": "Esquema de formulario por nombre parcial",
+      "input": "necesito el esquema del formulario de liberacion de tunel",
+      "response": "El esquema del formulario de Liberación de Túneles (FOR-PD-05) es el siguiente:\n\n**Encabezado (Header Fields):**\n1. **Fecha**: Tipo - fecha, Requerido - sí.\n2. **Hora Inicial**: Tipo - hora, Requerido - sí.\n3. **Hora Final**: Tipo - hora, Requerido - no.\n4. **Tipo de Control**: Tipo - selección, Requerido - sí. Opciones: \n   - ALMACENAMIENTO PROVISIONAL\n   - EMPAQUE FINAL\n\n**Cuerpo (Body Elements):**\n1. **Registro de Liberación** (Tabla):\n   - LOTE DE PROCESO: Tipo - texto, Requerido - sí.\n   - TIPO DE PRODUCTO: Tipo - texto, Requerido - sí.\n   - CLASIFICACIÓN: Tipo - texto, Requerido - no.\n   - TEMPERATURA: Tipo - temperatura, Requerido - sí.\n   - % GLASEO: Tipo - número, Requerido - no.\n   - TOTAL CAJAS/TINAS: Tipo - número, Requerido - no.\n   - CAPACIDAD CAJAS-TINAS / Lbs: Tipo - número, Requerido - no.\n   - TOTAL Lbs NETAS: Tipo - fórmula, Requerido - no. Fórmula: TOTAL CAJAS/TINAS * CAPACIDAD CAJAS-TINAS / Lbs.\n\n2. **Material de Empaque Utilizado en Proceso** (Tabla):\n   - MATERIAL DE EMPAQUE / INSUMO: Tipo - texto, Requerido - no.\n   - CANTIDAD: Tipo - número, Requerido - no.\n\n3. **Generación de Subproductos** (Tabla):\n   - SUBPRODUCTO: Tipo - texto, Requerido - no.\n   - CANTIDAD: Tipo - número, Requerido - no.\n\n4. **Observaciones**: Sección para anotaciones.\n\n**Firmas Requeridas:**\n- OBRERO\n- SUPERVISOR DE PRODUCCIÓN: Zoila Burgos\n- JEFE DE CÁMARA: Antonio Rodriguez\n\nSi necesitas más información o realizar alguna acción con este formulario, házmelo saber.",
+      "tools_used": [
+        "obtener_esquema_formulario_tool"
+      ],
+      "elapsed_ms": 25334.1,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'obtener_esquema_formulario_tool'} | usadas={'obtener_esquema_formulario_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 6/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Encontradas: ['formulario'] / Requeridas: ['formulario', 'campo']"
+        },
+        {
+          "name": "task_completion",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "La respuesta del agente proporciona un esquema detallado y preciso del formulario de liberación de túneles, incluyendo todos los campos requeridos y opcionales, así como la fórmula necesaria. Además, utilizó la herramienta correcta para obtener la información solicitada."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.9,
+      "error": null
+    },
+    {
+      "case_id": "analisis_001",
+      "category": "analisis",
+      "description": "Dashboard diario de producción",
+      "input": "dame el resumen del día, como vamos en producción",
+      "response": "No hay formularios registrados en los últimos 7 días, por lo que no tengo información disponible sobre la producción actual. Te sugiero verificar más tarde o ajustar el periodo de búsqueda.",
+      "tools_used": [
+        "resumen_negocio_tool"
+      ],
+      "elapsed_ms": 5675.2,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'resumen_negocio_tool'} | usadas={'resumen_negocio_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 8/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.333,
+          "passed": false,
+          "reasoning": "Encontradas: ['formulario'] / Requeridas: ['lote', 'formulario', 'cumplimiento']"
+        },
+        {
+          "name": "task_completion",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "La respuesta del agente es parcial, ya que informa sobre la falta de datos en los últimos 7 días, pero no proporciona un resumen de producción actual ni sugiere acciones concretas para obtener la información deseada."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.767,
+      "error": null
+    },
+    {
+      "case_id": "analisis_002",
+      "category": "analisis",
+      "description": "Estadísticas de cumplimiento de formularios",
+      "input": "cuál es el porcentaje de cumplimiento de formularios esta semana",
+      "response": "Esta semana, del 25 al 28 de abril de 2026, no se registraron formularios, por lo que no hay datos de cumplimiento.\n\nSin embargo, en el periodo del 1 al 28 de abril de 2026, se completaron un total de 23 formularios. Actualmente hay 22 borradores activos. \n\nSi necesitas más información o estadísticas sobre formularios específicos, házmelo saber.",
+      "tools_used": [
+        "estadisticas_formularios_tool",
+        "estadisticas_formularios_tool"
+      ],
+      "elapsed_ms": 7919.3,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'estadisticas_formularios_tool'} | usadas={'estadisticas_formularios_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 7/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Encontradas: ['formulario'] / Requeridas: ['%', 'formulario']"
+        },
+        {
+          "name": "task_completion",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "La respuesta proporciona información sobre el cumplimiento de formularios en el periodo solicitado, pero no ofrece el porcentaje específico de cumplimiento, lo que es crucial para la solicitud del operario. Además, menciona datos de un periodo más amplio que no fue solicitado."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.8,
+      "error": null
+    },
+    {
+      "case_id": "analisis_003",
+      "category": "analisis",
+      "description": "Análisis de datos dentro de un tipo de formulario",
+      "input": "analiza las temperaturas del formulario FOR-CC-10 del último mes",
+      "response": "Se han analizado las temperaturas del formulario FOR-CC-10 durante el último mes (del 28 de marzo al 28 de abril de 2026). Aquí están los resultados:\n\n- **Total de formularios analizados**: 3\n- **Empaques inspeccionados**: \n  - Mínimo: 18.0 °C\n  - Máximo: 18.0 °C\n  - Promedio: 18.0 °C\n- **Sellos no conformes**: \n  - Mínimo: 0.0\n  - Máximo: 0.0\n  - Promedio: 0.0\n- **Sellos satisfactorios**: \n  - Mínimo: 18.0\n  - Máximo: 18.0\n  - Promedio: 18.0\n- **Inspección prueba n°**: \n  - Mínimo: 1.0\n  - Máximo: 5.0\n  - Promedio: 2.75\n- **Lote**: \n  - Mínimo: 260401\n  - Máximo: 260402\n  - Promedio: 260401.44\n\n**Fechas más frecuentes**:\n- 2026-04-01: 2 registros\n- 2026-04-02: 1 registro\n\n**Inspección de sellos**:\n- Cecilia Pico: 2 registros\n- Luz María Gutiérrez: 1 registro\n\n**Producto más frecuente**:\n- Mahi Mahi Porción sin piel: 3 registros\n\n**Tipos de máquina utilizados**:\n- VC999#1: 1 registro\n- VC999#2: 1 registro\n- VC 999#1: 1 registro\n\nNo se reportaron observaciones adicionales. Si necesitas más información, házmelo saber.",
+      "tools_used": [
+        "analizar_datos_formulario_tool"
+      ],
+      "elapsed_ms": 8889.3,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'analizar_datos_formulario_tool'} | usadas={'analizar_datos_formulario_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 6/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['temperatura', 'FOR-CC-10'] / Requeridas: ['temperatura', 'FOR-CC-10']"
+        },
+        {
+          "name": "task_completion",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "La respuesta del agente es completa y precisa, proporcionando un análisis detallado de las temperaturas del formulario FOR-CC-10 del último mes, incluyendo estadísticas relevantes y datos adicionales sobre inspecciones y productos. Utilizó la herramienta correcta para realizar el análisis."
+        }
+      ],
+      "overall_passed": true,
+      "overall_score": 1.0,
+      "error": null
+    },
+    {
+      "case_id": "edge_001",
+      "category": "edge",
+      "description": "Saludo simple — no debe llamar tools",
+      "input": "hola",
+      "response": "¡Hola! ¿En qué puedo ayudarte hoy?",
+      "tools_used": [],
+      "elapsed_ms": 1694.3,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Sin tools esperadas y ninguna usada — correcto."
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.25,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 1/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.667,
+          "passed": false,
+          "reasoning": "Encontradas: ['hola', 'ayudar'] / Requeridas: ['hola', 'ayudar', 'frigolab']"
+        },
+        {
+          "name": "task_completion",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "La respuesta del agente es adecuada y responde de manera correcta y amigable a la solicitud del operario, sin necesidad de herramientas adicionales."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.783,
+      "error": null
+    },
+    {
+      "case_id": "edge_002",
+      "category": "edge",
+      "description": "Pregunta fuera de dominio — debe rechazar gentilmente",
+      "input": "cuál es la capital de Francia",
+      "response": "Lo siento, pero no puedo responder a esa pregunta. Estoy aquí para ayudarte con temas relacionados con el control de calidad y la producción en Frigolab San Mateo. Si tienes alguna consulta sobre lotes, formularios o estadísticas, estaré encantado de ayudarte.",
+      "tools_used": [],
+      "elapsed_ms": 2661.1,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Sin tools esperadas y ninguna usada — correcto."
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 6/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['Frigolab', 'producción', 'formulario'] / Requeridas: ['Frigolab', 'producción', 'formulario']"
+        },
+        {
+          "name": "task_completion",
+          "score": 0.0,
+          "passed": false,
+          "reasoning": "La respuesta del agente es incorrecta y fuera de tema, ya que no aborda la pregunta sobre la capital de Francia y se limita a su ámbito de trabajo sin ofrecer información relevante."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.8,
+      "error": null
+    },
+    {
+      "case_id": "edge_003",
+      "category": "edge",
+      "description": "Alerta de temperatura — debe consultar datos reales",
+      "input": "hay alertas de temperatura crítica ahora mismo",
+      "response": "No hay alertas de temperatura crítica en este momento, ya que no se han registrado formularios en los últimos 7 días. Si necesitas información más específica, por favor indícalo.",
+      "tools_used": [
+        "resumen_negocio_tool"
+      ],
+      "elapsed_ms": 15284.9,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'resumen_negocio_tool'} | usadas={'resumen_negocio_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 7/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['temperatura', 'alerta'] / Requeridas: ['temperatura', 'alerta']"
+        },
+        {
+          "name": "task_completion",
+          "score": 0.0,
+          "passed": false,
+          "reasoning": "La respuesta del agente es incorrecta, ya que contradice la solicitud del operario sobre alertas de temperatura crítica. Además, no proporciona información relevante ni útil sobre la situación actual."
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.8,
+      "error": null
+    }
+  ]
+}

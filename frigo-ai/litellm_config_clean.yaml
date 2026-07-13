@@ -1,0 +1,26 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_base: https://models.inference.ai.azure.com
+      api_key: os.environ/GITHUB_TOKEN
+      timeout: 30
+      stream_timeout: 60
+
+  - model_name: modelo-local-a100
+    litellm_params:
+      model: ollama/llama3
+      api_base: http://localhost:11434
+      api_key: "not-needed"
+      timeout: 120
+      stream_timeout: 180
+
+litellm_settings:
+  fallbacks:
+    - gpt-4o: ["modelo-local-a100"]
+  num_retries: 1
+  cooldown_time: 60
+  set_verbose: false
+
+general_settings:
+  master_key: sk-frigo-litellm

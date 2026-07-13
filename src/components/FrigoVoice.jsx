@@ -12,15 +12,17 @@ import {
   voiceQuery,
   agentQuery,
   agentVoiceQuery,
+  getTemplateFields,
   speak,
 } from '../services/aiService';
+import authService from '../services/authService';
 import './FrigoVoice.css';
 
 const SUGGESTIONS = [
+  'Cual fue el rendimiento de esta semana?',
+  'Que novedades hay en observaciones estos 15 dias?',
+  'Divide el peso neto entre el peso recibido del mes',
   'Trazabilidad del lote 260302',
-  'Iniciar control de sellos maquina 2',
-  'Que formularios hay disponibles?',
-  'Quien firmo el fileteo del lote 260318?',
 ];
 
 // Modos de operacion
@@ -28,6 +30,23 @@ const MODES = {
   AGENT: 'agent',   // Tool Calling directo a SQL
   RAG: 'rag',       // ChromaDB + embeddings
 };
+
+// Operaciones de la consulta guiada (formulario + columna + operacion)
+const OPERACIONES = [
+  { key: 'promedio', label: '📊 Promedio', frase: (col) => `el promedio de la columna [${col}]` },
+  { key: 'maximo', label: '⬆️ Máximo', frase: (col) => `el valor máximo de la columna [${col}]` },
+  { key: 'minimo', label: '⬇️ Mínimo', frase: (col) => `el valor mínimo de la columna [${col}]` },
+  { key: 'suma', label: '➕ Suma', frase: (col) => `la suma total de la columna [${col}]` },
+  { key: 'dividir', label: '➗ Dividir A÷B', frase: null, requiere2: true },
+  { key: 'rendimiento', label: '🎯 Rendimiento', frase: null },
+  { key: 'observaciones', label: '📝 Observaciones', frase: null },
+];
+
+const PERIODOS = [
+  { dias: 7, label: '7 días' },
+  { dias: 15, label: '15 días' },
+  { dias: 30, label: '30 días' },
+];
 
 export default function FrigoVoice() {
   const [isOpen, setIsOpen] = useState(false);
@@ -43,9 +62,53 @@ export default function FrigoVoice() {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // 🎯 Consulta guiada: elegir formulario + columnas + operación
+  const [showGuided, setShowGuided] = useState(false);
+  const [templatesCat, setTemplatesCat] = useState([]);
+  const [guidedTemplate, setGuidedTemplate] = useState('');
+  const [guidedCols, setGuidedCols] = useState([]);
+  const [guidedDias, setGuidedDias] = useState(15);
+
   const messagesEndRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+
+  // Cargar catálogo de formularios/campos al abrir la consulta guiada
+  useEffect(() => {
+    if (showGuided && templatesCat.length === 0) {
+      getTemplateFields().then(setTemplatesCat).catch(() => setTemplatesCat([]));
+    }
+  }, [showGuided, templatesCat.length]);
+
+  const selectedTemplateCat = templatesCat.find(t => t.codigo === guidedTemplate);
+
+  const toggleGuidedCol = (nombre) => {
+    setGuidedCols(prev => prev.includes(nombre)
+      ? prev.filter(c => c !== nombre)
+      : [...prev.slice(-1), nombre]); // máximo 2 columnas seleccionadas
+  };
+
+  // Construye la pregunta en lenguaje natural y la envía al agente
+  const runGuidedQuery = (op) => {
+    const codigo = guidedTemplate;
+    const [colA, colB] = guidedCols;
+    let msg = '';
+    if (op.key === 'rendimiento') {
+      msg = `Analiza el rendimiento de los últimos ${guidedDias} días` +
+        (codigo ? ` del formulario ${codigo}` : '') + ', dime el mejor y el peor día.';
+    } else if (op.key === 'observaciones') {
+      msg = `¿Qué observaciones o novedades hay en los últimos ${guidedDias} días` +
+        (codigo ? ` del formulario ${codigo}` : '') + '?';
+    } else if (op.requiere2) {
+      if (!colA || !colB) return;
+      msg = `En el formulario ${codigo}, calcula [${colA}] / [${colB}] * 100 de los últimos ${guidedDias} días, día por día.`;
+    } else {
+      if (!colA) return;
+      msg = `En el formulario ${codigo}, calcula ${op.frase(colA)} de los últimos ${guidedDias} días, día por día.`;
+    }
+    setShowGuided(false);
+    handleSend(msg);
+  };
 
   // Auto-scroll al ultimo mensaje
   useEffect(() => {
@@ -73,9 +136,13 @@ export default function FrigoVoice() {
           .slice(-6)
           .map(m => ({ role: m.role, text: m.text }));
 
-        const result = await agentQuery(query, history);
+        const currentUser = authService.getCurrentUser();
+        const result = await agentQuery(query, history, currentUser?.nombre || currentUser?.username || '');
         responseText = result.response;
         toolsUsed = result.tools_used || [];
+        if (result.active_agent && result.active_agent !== 'directo' && result.active_agent !== 'supervisor') {
+          toolsUsed = [...toolsUsed, `agente: ${result.active_agent}`];
+        }
       } else {
         const result = await queryTraceability(query);
         responseText = result.answer;
@@ -236,6 +303,15 @@ export default function FrigoVoice() {
               </div>
             </div>
             <div className="frigovoice-header__actions">
+              {/* 🎯 Consulta guiada */}
+              <button
+                className="frigovoice-mode-toggle"
+                onClick={() => setShowGuided(!showGuided)}
+                title="Consulta guiada: elige formulario, columna y operación"
+                style={{ background: showGuided ? '#7c3aed' : undefined, color: showGuided ? '#fff' : undefined }}
+              >
+                🎯
+              </button>
               {/* Toggle de modo */}
               <button
                 className={`frigovoice-mode-toggle ${mode === MODES.AGENT ? 'frigovoice-mode-toggle--agent' : ''}`}
@@ -297,8 +373,98 @@ export default function FrigoVoice() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* 🎯 Panel de consulta guiada */}
+          {showGuided && (
+            <div style={{
+              padding: '10px 12px', borderTop: '1px solid #e5e7eb', background: '#faf5ff',
+              display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '46%', overflowY: 'auto'
+            }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select
+                  value={guidedTemplate}
+                  onChange={(e) => { setGuidedTemplate(e.target.value); setGuidedCols([]); }}
+                  style={{ flex: 1, padding: '6px 8px', borderRadius: '6px', border: '1px solid #c4b5fd', fontSize: '12px' }}
+                >
+                  <option value="">📋 Elige un formulario...</option>
+                  {templatesCat.map(t => (
+                    <option key={t.templateID} value={t.codigo}>{t.codigo} — {t.nombre}</option>
+                  ))}
+                </select>
+                <select
+                  value={guidedDias}
+                  onChange={(e) => setGuidedDias(Number(e.target.value))}
+                  style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #c4b5fd', fontSize: '12px' }}
+                >
+                  {PERIODOS.map(p => <option key={p.dias} value={p.dias}>{p.label}</option>)}
+                </select>
+              </div>
+
+              {templatesCat.length === 0 && (
+                <span style={{ fontSize: '11px', color: '#6b7280' }}>⏳ Cargando formularios...</span>
+              )}
+
+              {/* Columnas del formulario elegido (numéricas primero) */}
+              {selectedTemplateCat && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                  {[...selectedTemplateCat.campos]
+                    .sort((a, b) => (b.numerico ? 1 : 0) - (a.numerico ? 1 : 0))
+                    .slice(0, 30)
+                    .map(c => (
+                      <button
+                        key={c.nombre}
+                        onClick={() => toggleGuidedCol(c.nombre)}
+                        title={`${c.origen} · ${c.tipo}`}
+                        style={{
+                          fontSize: '10.5px', padding: '3px 8px', borderRadius: '10px', cursor: 'pointer',
+                          border: guidedCols.includes(c.nombre) ? '1.5px solid #7c3aed' : '1px solid #d1d5db',
+                          background: guidedCols.includes(c.nombre) ? '#ede9fe' : (c.numerico ? '#fff' : '#f9fafb'),
+                          color: c.numerico ? '#111827' : '#9ca3af', fontWeight: guidedCols.includes(c.nombre) ? 700 : 400
+                        }}
+                      >
+                        {c.numerico ? '🔢 ' : ''}{c.nombre}
+                      </button>
+                    ))}
+                </div>
+              )}
+
+              {guidedCols.length > 0 && (
+                <span style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 600 }}>
+                  Seleccionadas: {guidedCols.join(' y ')}
+                </span>
+              )}
+
+              {/* Operaciones */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                {OPERACIONES.map(op => {
+                  const necesitaCol = !['rendimiento', 'observaciones'].includes(op.key);
+                  const deshabilitado = isLoading
+                    || (necesitaCol && (!guidedTemplate || guidedCols.length === 0))
+                    || (op.requiere2 && guidedCols.length < 2);
+                  return (
+                    <button
+                      key={op.key}
+                      onClick={() => runGuidedQuery(op)}
+                      disabled={deshabilitado}
+                      style={{
+                        fontSize: '11px', padding: '5px 9px', borderRadius: '7px',
+                        border: 'none', cursor: deshabilitado ? 'not-allowed' : 'pointer',
+                        background: deshabilitado ? '#e5e7eb' : 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+                        color: deshabilitado ? '#9ca3af' : '#fff', fontWeight: 600
+                      }}
+                    >
+                      {op.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <span style={{ fontSize: '10px', color: '#6b7280' }}>
+                Elige formulario y columna(s) 🔢, luego la operación. Rendimiento y Observaciones funcionan también sin columna.
+              </span>
+            </div>
+          )}
+
           {/* Sugerencias (solo si hay pocos mensajes) */}
-          {messages.length <= 2 && (
+          {messages.length <= 2 && !showGuided && (
             <div className="frigovoice-suggestions">
               {SUGGESTIONS.map((s, i) => (
                 <button

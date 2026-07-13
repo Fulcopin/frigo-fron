@@ -1,0 +1,560 @@
+{
+  "timestamp": "20260428_115039",
+  "dry_run": true,
+  "suite_filter": null,
+  "case_filter": null,
+  "total_cases": 13,
+  "summary": {
+    "pass_rate": 0.0,
+    "avg_score": 0.75,
+    "total_passed": 0,
+    "total_cases": 13,
+    "avg_elapsed_ms": 0.0,
+    "by_category": {
+      "trazabilidad": {
+        "pass_rate": 0.0,
+        "avg_score": 0.828,
+        "total": 4
+      },
+      "formularios": {
+        "pass_rate": 0.0,
+        "avg_score": 0.785,
+        "total": 3
+      },
+      "analisis": {
+        "pass_rate": 0.0,
+        "avg_score": 0.75,
+        "total": 3
+      },
+      "edge": {
+        "pass_rate": 0.0,
+        "avg_score": 0.611,
+        "total": 3
+      }
+    },
+    "by_evaluator": {
+      "tool_precision": 1.0,
+      "language_compliance": 0.423,
+      "no_hallucination": 0.923,
+      "keyword_coverage": 0.654
+    }
+  },
+  "results": [
+    {
+      "case_id": "trace_001",
+      "category": "trazabilidad",
+      "description": "Rastreo básico de lote por número exacto",
+      "input": "quiero rastrear el lote ABC-2024-001",
+      "response": "[DRY-RUN] Procesando: quiero rastrear el lote ABC-2024-001... (herramientas esperadas: rastrear_lote_tool)",
+      "tools_used": [
+        "rastrear_lote_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'rastrear_lote_tool'} | usadas={'rastrear_lote_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.25,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 1/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['lote', 'ABC-2024-001'] / Requeridas: ['lote', 'ABC-2024-001']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.812,
+      "error": null
+    },
+    {
+      "case_id": "trace_002",
+      "category": "trazabilidad",
+      "description": "Análisis de brecha — etapas faltantes de un lote",
+      "input": "que etapas le faltan al lote XYZ-0042 para estar completo",
+      "response": "[DRY-RUN] Procesando: que etapas le faltan al lote XYZ-0042 para estar completo... (herramientas esperadas: analizar_brecha_lote_tool)",
+      "tools_used": [
+        "analizar_brecha_lote_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'analizar_brecha_lote_tool'} | usadas={'analizar_brecha_lote_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.25,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 1/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['lote', 'etapa', 'XYZ-0042'] / Requeridas: ['lote', 'etapa', 'XYZ-0042']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.812,
+      "error": null
+    },
+    {
+      "case_id": "trace_003",
+      "category": "trazabilidad",
+      "description": "Listado de lotes recientes",
+      "input": "dame la lista de lotes de esta semana",
+      "response": "[DRY-RUN] Procesando: dame la lista de lotes de esta semana... (herramientas esperadas: listar_lotes_tool)",
+      "tools_used": [
+        "listar_lotes_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'listar_lotes_tool'} | usadas={'listar_lotes_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 2/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['lote'] / Requeridas: ['lote']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.875,
+      "error": null
+    },
+    {
+      "case_id": "trace_004",
+      "category": "trazabilidad",
+      "description": "Verificación de completitud de lote",
+      "input": "el lote 9999 está completo?",
+      "response": "[DRY-RUN] Procesando: el lote 9999 está completo?... (herramientas esperadas: analizar_brecha_lote_tool)",
+      "tools_used": [
+        "analizar_brecha_lote_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'analizar_brecha_lote_tool'} | usadas={'analizar_brecha_lote_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.25,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 1/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['lote', '9999'] / Requeridas: ['lote', '9999']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.812,
+      "error": null
+    },
+    {
+      "case_id": "form_001",
+      "category": "formularios",
+      "description": "Solicitud de esquema de formulario antes de dictado",
+      "input": "quiero llenar el formulario de fileteo FOR-PD-04",
+      "response": "[DRY-RUN] Procesando: quiero llenar el formulario de fileteo FOR-PD-04... (herramientas esperadas: obtener_esquema_formulario_tool)",
+      "tools_used": [
+        "obtener_esquema_formulario_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'obtener_esquema_formulario_tool'} | usadas={'obtener_esquema_formulario_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 2/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.667,
+          "passed": false,
+          "reasoning": "Encontradas: ['formulario', 'FOR-PD-04'] / Requeridas: ['formulario', 'FOR-PD-04', 'campo']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.792,
+      "error": null
+    },
+    {
+      "case_id": "form_002",
+      "category": "formularios",
+      "description": "Guardado de borrador de formulario",
+      "input": "guardar borrador del formulario de control de sellos con lote 2024-10",
+      "response": "[DRY-RUN] Procesando: guardar borrador del formulario de control de sellos con lot... (herramientas esperadas: guardar_borrador_tool)",
+      "tools_used": [
+        "guardar_borrador_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'guardar_borrador_tool'} | usadas={'guardar_borrador_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.75,
+          "passed": true,
+          "reasoning": "Marcadores de español encontrados: 3/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Encontradas: ['borrador'] / Requeridas: ['borrador', 'guardado']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.812,
+      "error": null
+    },
+    {
+      "case_id": "form_003",
+      "category": "formularios",
+      "description": "Esquema de formulario por nombre parcial",
+      "input": "necesito el esquema del formulario de liberacion de tunel",
+      "response": "[DRY-RUN] Procesando: necesito el esquema del formulario de liberacion de tunel... (herramientas esperadas: obtener_esquema_formulario_tool)",
+      "tools_used": [
+        "obtener_esquema_formulario_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'obtener_esquema_formulario_tool'} | usadas={'obtener_esquema_formulario_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 2/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Encontradas: ['formulario'] / Requeridas: ['formulario', 'campo']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.75,
+      "error": null
+    },
+    {
+      "case_id": "analisis_001",
+      "category": "analisis",
+      "description": "Dashboard diario de producción",
+      "input": "dame el resumen del día, como vamos en producción",
+      "response": "[DRY-RUN] Procesando: dame el resumen del día, como vamos en producción... (herramientas esperadas: resumen_negocio_tool)",
+      "tools_used": [
+        "resumen_negocio_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'resumen_negocio_tool'} | usadas={'resumen_negocio_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 2/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.0,
+          "passed": false,
+          "reasoning": "Encontradas: [] / Requeridas: ['lote', 'formulario', 'cumplimiento']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.625,
+      "error": null
+    },
+    {
+      "case_id": "analisis_002",
+      "category": "analisis",
+      "description": "Estadísticas de cumplimiento de formularios",
+      "input": "cuál es el porcentaje de cumplimiento de formularios esta semana",
+      "response": "[DRY-RUN] Procesando: cuál es el porcentaje de cumplimiento de formularios esta se... (herramientas esperadas: estadisticas_formularios_tool)",
+      "tools_used": [
+        "estadisticas_formularios_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'estadisticas_formularios_tool'} | usadas={'estadisticas_formularios_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 2/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Encontradas: ['formulario'] / Requeridas: ['%', 'formulario']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.75,
+      "error": null
+    },
+    {
+      "case_id": "analisis_003",
+      "category": "analisis",
+      "description": "Análisis de datos dentro de un tipo de formulario",
+      "input": "analiza las temperaturas del formulario FOR-CC-10 del último mes",
+      "response": "[DRY-RUN] Procesando: analiza las temperaturas del formulario FOR-CC-10 del último... (herramientas esperadas: analizar_datos_formulario_tool)",
+      "tools_used": [
+        "analizar_datos_formulario_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'analizar_datos_formulario_tool'} | usadas={'analizar_datos_formulario_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 2/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['temperatura', 'FOR-CC-10'] / Requeridas: ['temperatura', 'FOR-CC-10']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.875,
+      "error": null
+    },
+    {
+      "case_id": "edge_001",
+      "category": "edge",
+      "description": "Saludo simple — no debe llamar tools",
+      "input": "hola",
+      "response": "[DRY-RUN] Procesando: hola... (herramientas esperadas: ninguna)",
+      "tools_used": [],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Sin tools esperadas y ninguna usada — correcto."
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.0,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 0/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.333,
+          "passed": false,
+          "reasoning": "Encontradas: ['hola'] / Requeridas: ['hola', 'ayudar', 'frigolab']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.583,
+      "error": null
+    },
+    {
+      "case_id": "edge_002",
+      "category": "edge",
+      "description": "Pregunta fuera de dominio — debe rechazar gentilmente",
+      "input": "cuál es la capital de Francia",
+      "response": "[DRY-RUN] Procesando: cuál es la capital de Francia... (herramientas esperadas: ninguna)",
+      "tools_used": [],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Sin tools esperadas y ninguna usada — correcto."
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 2/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 0.0,
+          "passed": false,
+          "reasoning": "Frases prohibidas detectadas: ['capital', 'Francia']"
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 0.0,
+          "passed": false,
+          "reasoning": "Encontradas: [] / Requeridas: ['Frigolab', 'producción', 'formulario']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.375,
+      "error": null
+    },
+    {
+      "case_id": "edge_003",
+      "category": "edge",
+      "description": "Alerta de temperatura — debe consultar datos reales",
+      "input": "hay alertas de temperatura crítica ahora mismo",
+      "response": "[DRY-RUN] Procesando: hay alertas de temperatura crítica ahora mismo... (herramientas esperadas: resumen_negocio_tool)",
+      "tools_used": [
+        "resumen_negocio_tool"
+      ],
+      "elapsed_ms": 0.0,
+      "scores": [
+        {
+          "name": "tool_precision",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "F1=1.00 | esperadas={'resumen_negocio_tool'} | usadas={'resumen_negocio_tool'} | TP=1, FP=0, FN=0"
+        },
+        {
+          "name": "language_compliance",
+          "score": 0.5,
+          "passed": false,
+          "reasoning": "Marcadores de español encontrados: 2/10"
+        },
+        {
+          "name": "no_hallucination",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Ninguna frase de alucinación detectada."
+        },
+        {
+          "name": "keyword_coverage",
+          "score": 1.0,
+          "passed": true,
+          "reasoning": "Encontradas: ['temperatura', 'alerta'] / Requeridas: ['temperatura', 'alerta']"
+        }
+      ],
+      "overall_passed": false,
+      "overall_score": 0.875,
+      "error": null
+    }
+  ]
+}

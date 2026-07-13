@@ -1,0 +1,34 @@
+# Secrets — NUNCA subir a git
+.env
+*.env
+*.env.frigo
+
+# Llaves SSH / certificados de Azure VM
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temp audio files
+temp_audio.*
+
+# Repomix output
+repomix-output.xml

@@ -664,19 +664,30 @@ body {
   max-height: 60vh;
 }
 
-/* 🔲 Inputs de celda: ocupar TODO el ancho de la columna (celdas grandes/anchas) */
-.data-table td .table-input-expandable,
-.data-table td input.table-input-expandable,
-.data-table td select.table-input-expandable,
-.data-table td textarea.table-input-expandable,
-.data-table td > input:not([type="checkbox"]):not([type="radio"]),
-.data-table td > select,
-.data-table td > textarea,
-.data-table td > div > input:not([type="checkbox"]):not([type="radio"]),
-.data-table td > div > select,
-.data-table td > div > textarea {
-  width: 100%;
-  box-sizing: border-box;
+/* 🔲 CELDAS ANCHAS (OPT-IN): solo si la tabla tiene la clase .big-cells
+   (se activa con el checkbox "Celdas anchas" en el editor de plantillas).
+   Por defecto las tablas quedan NORMALES como antes. */
+.data-table.big-cells tbody td {
+  height: 1px;            /* mínimo; el navegador la expande al contenido real */
+  vertical-align: top !important;
+}
+/* !important para vencer el alignItems:'center' inline de los <div> de la celda */
+.data-table.big-cells tbody td > div {
+  height: 100% !important;
+  align-items: stretch !important;
+}
+.data-table.big-cells tbody td > div > div {
+  height: 100% !important;
+  display: flex !important;
+  align-items: stretch !important;
+}
+.data-table.big-cells tbody td input:not([type="checkbox"]):not([type="radio"]),
+.data-table.big-cells tbody td select,
+.data-table.big-cells tbody td textarea {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 40px !important;
+  box-sizing: border-box !important;
 }
 
 .excel-table-wrapper thead th {

@@ -1,0 +1,82 @@
+# =============================================================================
+# litellm_config.yaml — Proxy Transparente con Fallback (Alta Disponibilidad)
+#
+# Patrón: Azure OpenAI (nube) como ruta primaria → NVIDIA A100 On-Premise
+#         como fallback automático si Azure falla (timeout, 5xx, corte de red).
+#
+# LiteLLM actúa como proxy HTTP en localhost:4000. Todos los componentes
+# (agent.py, streaming.py) apuntan a este proxy en lugar de a Azure directo.
+# El proxy resuelve el modelo "gpt-4o" al proveedor configurado aquí,
+# y si el primario falla, enruta al fallback sin intervención del caller.
+#
+# Arranque:
+#   litellm --config litellm_config.yaml --port 4000
+#
+# Variables de entorno requeridas:
+#   AZURE_OPENAI_ENDPOINT  — Endpoint del recurso Azure OpenAI
+#   AZURE_OPENAI_KEY       — API Key del recurso Azure OpenAI
+# =============================================================================
+
+model_list:
+
+  # -----------------------------------------------------------------------
+  # PRIMARIO: GitHub Models — Meta-Llama-3.1-405B-Instruct
+  # 128,000 tokens de contexto. Sin limite 413. Calidad muy alta.
+  # Ruta por defecto. Si falla, LiteLLM activa fallback a A100 on-prem.
+  # -----------------------------------------------------------------------
+  - model_name: gpt-4o
+    litellm_params:
+      model: github/Meta-Llama-3.1-405B-Instruct
+      api_base: https://models.inference.ai.azure.com
+      api_key: os.environ/GITHUB_TOKEN
+      timeout: 60
+      stream_timeout: 120
+
+  # -----------------------------------------------------------------------
+  # FALLBACK TEXTO: NVIDIA A100 On-Premise — llama3.2 (solo texto)
+  # Para generación de texto, consultas y respuestas al operario.
+  # Más rápido que vision al no procesar imágenes.
+  # -----------------------------------------------------------------------
+  - model_name: modelo-local-texto
+    litellm_params:
+      model: ollama/mistral
+      api_base: https://io.frigolab.dev
+      api_key: "not-needed"
+      timeout: 45
+      stream_timeout: 90
+
+  # -----------------------------------------------------------------------
+  # FALLBACK VISION: NVIDIA A100 On-Premise — llama3.2-vision (multimodal)
+  # Texto + imágenes. Segunda línea de fallback si el modelo de texto falla.
+  # -----------------------------------------------------------------------
+  - model_name: modelo-local-a100
+    litellm_params:
+      model: ollama/llama3.2-vision
+      api_base: https://io.frigolab.dev
+      api_key: "not-needed"
+      timeout: 60
+      stream_timeout: 120
+
+# ---------------------------------------------------------------------------
+# Política de fallback: si "gpt-4o" falla → enrutar a "modelo-local-a100"
+# LiteLLM reintenta automáticamente en el fallback sin que el caller lo sepa.
+# ---------------------------------------------------------------------------
+litellm_settings:
+  # Cadena: Azure GPT-4o → llama3.2 texto → llama3.2-vision multimodal
+  fallbacks:
+    - gpt-4o: ["modelo-local-texto", "modelo-local-a100"]
+
+  # Reintentos antes de escalar al fallback (0 = ir directo al fallback)
+  num_retries: 1
+  # Cooldown del modelo primario tras fallo (segundos antes de reintentar Azure)
+  cooldown_time: 60
+
+  # Habilitar streaming nativo (crítico para TTS en tiempo real)
+  set_verbose: false
+
+# ---------------------------------------------------------------------------
+# Configuración del proxy HTTP
+# ---------------------------------------------------------------------------
+general_settings:
+  # Master key para autenticar peticiones al proxy (los clientes envían esta key)
+  master_key: os.environ/LITELLM_MASTER_KEY

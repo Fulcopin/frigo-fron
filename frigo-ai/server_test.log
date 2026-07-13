@@ -1,0 +1,199 @@
+INFO:     Started server process [24260]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8100 (Press CTRL+C to quit)
+[07/12/26 22:08:52] INFO     mcp_server: arrancando con      mcp_server.py:1147
+                             transport=stdio port=N/A                          
+                    INFO     Processing request of type           server.py:624
+                             ListToolsRequest                                  
+INFO:     127.0.0.1:49928 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49930 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51626 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64217 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50884 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56377 - "OPTIONS /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56377 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57890 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65446 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57583 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51436 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+multi_agent analisis: LLM falló: Tool call validation failed: tool call validation failed: attempted to call tool 'analisar_datos_formulario_tool' which was not in request.tools
+Traceback (most recent call last):
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\multi_agent.py", line 375, in _agent_node
+    response = await _llm_ainvoke_with_retry(llm, [system] + trimmed)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\agent.py", line 277, in _llm_ainvoke_with_retry
+    async for attempt in AsyncRetrying(
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 170, in __anext__
+    do = await self.iter(retry_state=self._retry_state)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 157, in iter
+    result = await action(retry_state)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\_utils.py", line 111, in inner
+    return call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\__init__.py", line 393, in <lambda>
+    self._add_action_func(lambda rs: rs.outcome.result())
+                                     ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\agent.py", line 287, in _llm_ainvoke_with_retry
+    return await llm.ainvoke(messages)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\runnables\base.py", line 5708, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 478, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1209, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1167, in agenerate
+    raise exceptions[0]
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\sentry_sdk\integrations\asyncio.py", line 166, in _task_with_sentry_span_creation
+    reraise(*_capture_exception())
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\sentry_sdk\utils.py", line 1843, in reraise
+    raise value
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\sentry_sdk\integrations\asyncio.py", line 162, in _task_with_sentry_span_creation
+    result = await coro
+             ^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1393, in _agenerate_with_cache
+    async for chunk in self._astream(messages, stop=stop, **kwargs):
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 3205, in _astream
+    async for chunk in super()._astream(*args, **kwargs):
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1709, in _astream
+    _handle_openai_api_error(e)
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1686, in _astream
+    async for chunk in response:
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\openai\_streaming.py", line 158, in __aiter__
+    async for item in self._iterator:
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\openai\_streaming.py", line 205, in __stream__
+    raise APIError(
+openai.APIError: Tool call validation failed: tool call validation failed: attempted to call tool 'analisar_datos_formulario_tool' which was not in request.tools
+INFO:     127.0.0.1:54770 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56501 - "OPTIONS /api/ai/agent/query HTTP/1.1" 200 OK
+multi_agent analisis: LLM falló: Tool call validation failed: tool call validation failed: attempted to call tool 'analisar_datos_formulario_tool' which was not in request.tools
+Traceback (most recent call last):
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\multi_agent.py", line 375, in _agent_node
+    response = await _llm_ainvoke_with_retry(llm, [system] + trimmed)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\agent.py", line 277, in _llm_ainvoke_with_retry
+    async for attempt in AsyncRetrying(
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 170, in __anext__
+    do = await self.iter(retry_state=self._retry_state)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 157, in iter
+    result = await action(retry_state)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\_utils.py", line 111, in inner
+    return call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\__init__.py", line 393, in <lambda>
+    self._add_action_func(lambda rs: rs.outcome.result())
+                                     ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\agent.py", line 287, in _llm_ainvoke_with_retry
+    return await llm.ainvoke(messages)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\runnables\base.py", line 5708, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 478, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1209, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1167, in agenerate
+    raise exceptions[0]
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\sentry_sdk\integrations\asyncio.py", line 166, in _task_with_sentry_span_creation
+    reraise(*_capture_exception())
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\sentry_sdk\utils.py", line 1843, in reraise
+    raise value
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\sentry_sdk\integrations\asyncio.py", line 162, in _task_with_sentry_span_creation
+    result = await coro
+             ^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1393, in _agenerate_with_cache
+    async for chunk in self._astream(messages, stop=stop, **kwargs):
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 3205, in _astream
+    async for chunk in super()._astream(*args, **kwargs):
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1709, in _astream
+    _handle_openai_api_error(e)
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1686, in _astream
+    async for chunk in response:
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\openai\_streaming.py", line 158, in __aiter__
+    async for item in self._iterator:
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\openai\_streaming.py", line 205, in __stream__
+    raise APIError(
+openai.APIError: Tool call validation failed: tool call validation failed: attempted to call tool 'analisar_datos_formulario_tool' which was not in request.tools
+INFO:     127.0.0.1:56501 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55042 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52754 - "POST /api/ai/agent/query HTTP/1.1" 200 OK
+multi_agent analisis: LLM falló: Tool call validation failed: tool call validation failed: attempted to call tool 'analisar_datos_formulario_tool' which was not in request.tools
+Traceback (most recent call last):
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\multi_agent.py", line 375, in _agent_node
+    response = await _llm_ainvoke_with_retry(llm, [system] + trimmed)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\agent.py", line 277, in _llm_ainvoke_with_retry
+    async for attempt in AsyncRetrying(
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 170, in __anext__
+    do = await self.iter(retry_state=self._retry_state)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 157, in iter
+    result = await action(retry_state)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\_utils.py", line 111, in inner
+    return call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\tenacity\__init__.py", line 393, in <lambda>
+    self._add_action_func(lambda rs: rs.outcome.result())
+                                     ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\AppData\Local\Programs\Python\Python312\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\agent.py", line 287, in _llm_ainvoke_with_retry
+    return await llm.ainvoke(messages)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\runnables\base.py", line 5708, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 478, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1209, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1167, in agenerate
+    raise exceptions[0]
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\sentry_sdk\integrations\asyncio.py", line 166, in _task_with_sentry_span_creation
+    reraise(*_capture_exception())
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\sentry_sdk\utils.py", line 1843, in reraise
+    raise value
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\sentry_sdk\integrations\asyncio.py", line 162, in _task_with_sentry_span_creation
+    result = await coro
+             ^^^^^^^^^^
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1393, in _agenerate_with_cache
+    async for chunk in self._astream(messages, stop=stop, **kwargs):
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 3205, in _astream
+    async for chunk in super()._astream(*args, **kwargs):
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1709, in _astream
+    _handle_openai_api_error(e)
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1686, in _astream
+    async for chunk in response:
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\openai\_streaming.py", line 158, in __aiter__
+    async for item in self._iterator:
+  File "C:\Users\fupifigu\Documents\trabajo\frigo-fron\frigo-ai\venv\Lib\site-packages\openai\_streaming.py", line 205, in __stream__
+    raise APIError(
+openai.APIError: Tool call validation failed: tool call validation failed: attempted to call tool 'analisar_datos_formulario_tool' which was not in request.tools
+INFO:     127.0.0.1:61670 - "POST /api/ai/agent/query HTTP/1.1" 200 OK

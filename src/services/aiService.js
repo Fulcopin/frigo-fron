@@ -88,20 +88,47 @@ export async function runPipeline(source = 'api') {
 // ===========================================================================
 
 /**
+ * ID de sesión persistente por navegador: cada usuario mantiene su propia
+ * memoria de conversación en el multi-agente (LangGraph checkpointer).
+ */
+export function getAISessionId() {
+  let sid = localStorage.getItem('frigoia_session_id');
+  if (!sid) {
+    sid = (globalThis.crypto?.randomUUID?.() || `s_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem('frigoia_session_id', sid);
+  }
+  return sid;
+}
+
+/**
  * Consulta al agente inteligente por texto.
  * El agente decide automaticamente si buscar trazabilidad, llenar formulario, etc.
+ * Envia session_id y nombre del usuario para memoria multi-usuario.
  */
-export async function agentQuery(message, conversationHistory = null) {
+export async function agentQuery(message, conversationHistory = null, userName = '') {
   const response = await fetch(`${AI_API_URL}/agent/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       message,
       conversation_history: conversationHistory,
+      session_id: getAISessionId(),
+      user_name: userName || undefined,
     }),
   });
   if (!response.ok) throw new Error(`Error ${response.status}`);
   return response.json();
+}
+
+/**
+ * Catálogo de formularios con sus campos/columnas para la consulta guiada.
+ * Devuelve [{templateID, codigo, nombre, proceso, campos:[{nombre,tipo,numerico,origen}]}]
+ */
+export async function getTemplateFields() {
+  const response = await fetch(`${AI_API_URL}/templates/fields`);
+  if (!response.ok) throw new Error(`Error ${response.status}`);
+  const data = await response.json();
+  return data.templates || [];
 }
 
 /**

@@ -1,0 +1,46 @@
+# Secretos - NUNCA copiar a la imagen
+.env
+.env.*
+*.pem
+*.key
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Python build artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.tox
+.venv
+venv
+env
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Docs / tests que no se ejecutan en produccion
+tests
+docs
+*.md
+!README.md
+
+# Artefactos de ejecucion local
+*.log
+logs
+data
+tmp

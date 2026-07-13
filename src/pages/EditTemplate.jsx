@@ -1640,6 +1640,20 @@ function EditTemplate() {
                     </label>
                   </div>
 
+                  {/* 🔲 Celdas anchas: los inputs llenan toda la celda (útil en tablet). Si está desmarcado, celdas normales. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+                    <input
+                      type="checkbox"
+                      id={`celdasAnchas-${elementIndex}`}
+                      checked={element.celdasAnchas || false}
+                      onChange={(e) => updateBodyElement(elementIndex, 'celdasAnchas', e.target.checked)}
+                      style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0ea5e9' }}
+                    />
+                    <label htmlFor={`celdasAnchas-${elementIndex}`} style={{ cursor: 'pointer', fontWeight: '600', color: element.celdasAnchas ? '#0369a1' : '#4a5568', fontSize: '14px', margin: 0 }}>
+                      🔲 Celdas anchas (los campos llenan toda la celda — ideal para tablet)
+                    </label>
+                  </div>
+
                   {element.usaApiPorCodigo && (
                     <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ background: '#fdf4ff', border: '1px solid #d8b4fe', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: '#6b21a8' }}>
@@ -2384,7 +2398,7 @@ function EditTemplate() {
                     👥 Reemplazos (personas que pueden firmar en su ausencia)
                   </label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {[0, 1, 2].map((rIdx) => {
+                    {[0, 1, 2, 3, 4].map((rIdx) => {
                       const reemplazos = firma.reemplazos || [];
                       return (
                         <div key={`reemplazo-${index}-${rIdx}`} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>

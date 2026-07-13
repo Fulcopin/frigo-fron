@@ -6,6 +6,8 @@ import "./ManageTemplates.css";
 import { API_BASE_URL } from "../apiConfig";
 import authService from "../services/authService";
 import { exportFormToExcel } from "../services/excelExportService";
+import alertService from "../services/alertService";
+import { fetchUsers } from "../services/userService";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 
 function ManageTemplates() {
@@ -24,6 +26,15 @@ function ManageTemplates() {
   const [newHistoryFecha, setNewHistoryFecha] = useState('');
   const [newHistoryCambio, setNewHistoryCambio] = useState('');
   const [newHistoryVersion, setNewHistoryVersion] = useState('');
+  // 📢 Notificación masiva del cambio a todos los usuarios (correo)
+  // La preferencia se recuerda en el navegador: si lo marcas queda marcado, si lo quitas queda quitado
+  const [notifyAllUsers, setNotifyAllUsers] = useState(() => localStorage.getItem('mh_notifyAllUsers') === '1');
+  const [savingHistoryEntry, setSavingHistoryEntry] = useState(false);
+
+  const handleToggleNotifyAll = (checked) => {
+    setNotifyAllUsers(checked);
+    localStorage.setItem('mh_notifyAllUsers', checked ? '1' : '0');
+  };
 
 
   // �👁️ Pre-visualización
@@ -169,6 +180,42 @@ function ManageTemplates() {
     if (entries !== null) setManualHistoryEntries(entries);
   };
 
+  // 📢 Enviar el cambio registrado como notificación (correo) a TODOS los usuarios
+  const enviarNotificacionMasiva = async (entry) => {
+    const users = await fetchUsers(authService.getToken());
+    const emails = [...new Set(
+      (Array.isArray(users) ? users : [])
+        .map(u => (u.email || '').trim().toLowerCase())
+        .filter(e => e.includes('@'))
+    )];
+    if (emails.length === 0) {
+      alert('⚠️ El registro se guardó, pero no se encontraron usuarios con correo para notificar.');
+      return;
+    }
+
+    const fechaFmt = entry.fecha ? (() => { const [y, m, d] = entry.fecha.split('-'); return `${d}/${m}/${y}`; })() : '';
+    const titulo = `📢 Actualización de documento: ${manualHistoryTemplate.codigo} (Versión ${entry.version})`;
+    const mensaje = `El documento ${manualHistoryTemplate.codigo} — ${manualHistoryTemplate.nombre} fue actualizado a la versión ${entry.version}.` +
+      `\n\nCambio realizado${fechaFmt ? ` (${fechaFmt})` : ''}:\n${entry.cambioRealizado}`;
+
+    const resultados = await Promise.allSettled(emails.map(email =>
+      alertService.createManualAlert({
+        type: 'template_update',
+        priority: 'medium',
+        title: titulo,
+        message: mensaje,
+        targetEmail: email,
+        formCode: manualHistoryTemplate.codigo
+      })
+    ));
+    const ok = resultados.filter(r => r.status === 'fulfilled').length;
+    if (ok === emails.length) {
+      alert(`📧 Notificación del cambio enviada a los ${ok} usuarios.`);
+    } else {
+      alert(`📧 Notificación enviada a ${ok} de ${emails.length} usuarios (algunos envíos fallaron).`);
+    }
+  };
+
   const handleAddManualEntry = async () => {
     if (!newHistoryFecha.trim() || !newHistoryCambio.trim()) {
       alert('Por favor completa la fecha y el cambio realizado.');
@@ -181,6 +228,7 @@ function ManageTemplates() {
       cambioRealizado: newHistoryCambio.trim()
     };
     try {
+      setSavingHistoryEntry(true);
       const response = await fetch(`${API_URL_TEMPLATES}/${manualHistoryTemplate.templateID}/changelog`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -201,8 +249,18 @@ function ManageTemplates() {
       } else {
         setManualHistoryEntries(prev => [optimisticEntry, ...prev]);
       }
+      // 📢 Solo si el check está marcado: notificar a todos los usuarios por correo
+      if (notifyAllUsers) {
+        try {
+          await enviarNotificacionMasiva(optimisticEntry);
+        } catch (notifyErr) {
+          alert('⚠️ El registro se guardó, pero falló el envío de la notificación masiva: ' + notifyErr.message);
+        }
+      }
     } catch (err) {
       alert('Error guardando el registro: ' + err.message);
+    } finally {
+      setSavingHistoryEntry(false);
     }
   };
 
@@ -468,8 +526,28 @@ function ManageTemplates() {
                   />
                 </div>
               </div>
-              <button className="btn-add-mh" onClick={handleAddManualEntry}>
-                💾 Agregar Registro
+              <label style={{
+                display: 'flex', alignItems: 'flex-start', gap: '8px', margin: '10px 0',
+                padding: '10px 12px', background: notifyAllUsers ? '#eff6ff' : '#f9fafb',
+                border: `1px solid ${notifyAllUsers ? '#93c5fd' : '#e5e7eb'}`, borderRadius: '8px',
+                cursor: 'pointer', fontSize: '13px', color: '#374151'
+              }}>
+                <input
+                  type="checkbox"
+                  checked={notifyAllUsers}
+                  onChange={(e) => handleToggleNotifyAll(e.target.checked)}
+                  style={{ marginTop: '2px', width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <span>
+                  📢 <strong>Enviar notificación masiva a todos los usuarios</strong>
+                  <br />
+                  <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                    Se enviará a todos los correos la descripción de este cambio y la versión actual. Si no lo marcas, no se envía nada.
+                  </span>
+                </span>
+              </label>
+              <button className="btn-add-mh" onClick={handleAddManualEntry} disabled={savingHistoryEntry}>
+                {savingHistoryEntry ? '⏳ Guardando...' : '💾 Agregar Registro'}
               </button>
             </div>
 

@@ -1,0 +1,79 @@
+# ============================================================
+# FRIGO-AI — Plantilla de variables de entorno para la VM
+#
+# USO EN LA VM:
+#   cp env-vm.template ~/frigo-ai/.env.frigo
+#   chmod 600 ~/frigo-ai/.env.frigo
+#   nano ~/frigo-ai/.env.frigo
+#
+# Rellena TODOS los valores marcados con CAMBIAR antes de
+# ejecutar el bot. Si dejas algun "CAMBIAR" el script
+# 3-run-bot.sh lo detecta y te avisa.
+# ============================================================
+
+# =============================================
+# SQL Server — Azure SQL (picofrigo)
+# =============================================
+SQL_SERVER=picofrigo.database.windows.net,1433
+SQL_DATABASE=frigolib
+SQL_USER=CAMBIAR
+SQL_PASSWORD=CAMBIAR
+SQL_DRIVER=ODBC Driver 18 for SQL Server
+SQL_TIMEOUT_SECONDS=20
+SQL_MAX_RETRIES=3
+
+# =============================================
+# Backend API (.NET)
+# =============================================
+API_BASE_URL=http://localhost:5074/api
+
+# =============================================
+# Tuning de resiliencia (los defaults son buenos)
+# =============================================
+HTTP_TIMEOUT_SECONDS=15
+HTTP_MAX_RETRIES=2
+LLM_MAX_RETRIES=2
+MAX_CONTEXT_TOKENS=8000
+
+# =============================================
+# CEREBRO — GitHub Models (LLM / GPT-4o)
+# =============================================
+GITHUB_TOKEN=CAMBIAR
+GITHUB_MODEL=gpt-4o
+
+# =============================================
+# OIDOS — Azure OpenAI STT (Whisper)
+# =============================================
+AZURE_STT_KEY=CAMBIAR
+AZURE_STT_ENDPOINT=CAMBIAR
+AZURE_STT_DEPLOYMENT=whisper
+
+# =============================================
+# BOCA — Azure OpenAI TTS (gpt-4o-mini-tts)
+# =============================================
+AZURE_TTS_KEY=CAMBIAR
+AZURE_TTS_ENDPOINT=CAMBIAR
+AZURE_TTS_DEPLOYMENT=gpt-4o-mini-tts
+
+# =============================================
+# TELEGRAM BOT
+# =============================================
+TELEGRAM_BOT_TOKEN=CAMBIAR
+TELEGRAM_TOKEN=CAMBIAR
+
+# =============================================
+# SENTRY — Errores y trazas
+# =============================================
+SENTRY_DSN=CAMBIAR
+SENTRY_ENVIRONMENT=production
+SENTRY_TRACES_SAMPLE_RATE=0.1
+SENTRY_SEND_DEFAULT_PII=false
+APP_VERSION=1.0.0
+
+# =============================================
+# ESTADO CONVERSACIONAL (LangGraph)
+# memory   = RAM (default, OK para 1 contenedor)
+# postgres = persistente entre reinicios (requiere PG_DATABASE_URL)
+# =============================================
+CHECKPOINTER_BACKEND=memory
+# PG_DATABASE_URL=postgresql://usuario:password@servidor.postgres.database.azure.com:5432/frigolab

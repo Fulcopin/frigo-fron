@@ -1,0 +1,122 @@
+# =============================================================================
+# azure-pipelines.yml — CI/CD para FrigoIA en Azure Container Apps
+#
+# Pipeline:
+#   1. Build Docker image multi-stage
+#   2. Push a GitHub Container Registry (ghcr.io) — GRATIS
+#   3. Deploy a Azure Container Apps — GRATIS (free tier)
+#
+# Activadores:
+#   - Push a la rama `main` → deploy automatico a produccion
+#   - Pull Request a `main` → solo build (sin deploy)
+#
+# Service Connections requeridas en Azure DevOps:
+#   - `github-ghcr`  : GitHub PAT con permiso write:packages
+#                      (Settings > Service Connections > Docker Registry)
+#   - `azure-sub`    : Service Principal con rol Contributor en el Resource Group
+#                      (Settings > Service Connections > Azure Resource Manager)
+#
+# Variables de pipeline requeridas (Settings > Pipelines > Variables):
+#   - GITHUB_USERNAME       : tu usuario de GitHub (para ghcr.io)
+#   - CONTAINER_APP_NAME    : nombre del Container App (ej: frigo-ai)
+#   - RESOURCE_GROUP        : nombre del Resource Group (ej: frigo-ai-rg)
+# =============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - "deploy/**"
+      - "*.md"
+      - ".gitignore"
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  IMAGE_NAME: ghcr.io/$(GITHUB_USERNAME)/frigo-bot
+  IMAGE_TAG: $(Build.BuildId)
+
+stages:
+
+# ──────────────────────────────────────────────────────────────────────────
+# STAGE 1: Build & Push
+# ──────────────────────────────────────────────────────────────────────────
+- stage: Build
+  displayName: "Build & Push imagen Docker"
+  jobs:
+  - job: BuildAndPush
+    displayName: "docker build + docker push → ghcr.io"
+    steps:
+
+    - task: Docker@2
+      displayName: "Build & push :$(IMAGE_TAG)"
+      inputs:
+        command: buildAndPush
+        repository: $(IMAGE_NAME)
+        dockerfile: Dockerfile
+        containerRegistry: github-ghcr
+        tags: |
+          $(IMAGE_TAG)
+          latest
+
+    # Publicar el tag usado para que el stage Deploy lo consuma
+    - bash: echo "##vso[task.setvariable variable=deployTag;isOutput=true]$(IMAGE_TAG)"
+      name: setTag
+      displayName: "Exportar tag para Deploy"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# STAGE 2: Deploy (solo en push a main, no en PR)
+# ──────────────────────────────────────────────────────────────────────────
+- stage: Deploy
+  displayName: "Deploy a Azure Container Apps"
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  variables:
+    deployTag: $[ stageDependencies.Build.BuildAndPush.outputs['setTag.deployTag'] ]
+  jobs:
+  - deployment: DeployContainerApp
+    displayName: "az containerapp update"
+    environment: production
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - task: AzureCLI@2
+            displayName: "Actualizar imagen en Container App"
+            inputs:
+              azureSubscription: azure-sub
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az containerapp update \
+                  --name "$(CONTAINER_APP_NAME)" \
+                  --resource-group "$(RESOURCE_GROUP)" \
+                  --image "$(IMAGE_NAME):$(deployTag)"
+
+          - task: AzureCLI@2
+            displayName: "Verificar estado del Container App"
+            inputs:
+              azureSubscription: azure-sub
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                STATUS=$(az containerapp show \
+                  --name "$(CONTAINER_APP_NAME)" \
+                  --resource-group "$(RESOURCE_GROUP)" \
+                  --query "properties.runningStatus" -o tsv)
+                echo "Estado: $STATUS"
+                if [[ "$STATUS" != "Running" ]]; then
+                  echo "##vso[task.logissue type=error]Container App no esta Running: $STATUS"
+                  exit 1
+                fi
+                echo "Deploy exitoso. Imagen: $(IMAGE_NAME):$(deployTag)"

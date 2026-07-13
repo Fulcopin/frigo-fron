@@ -99,12 +99,20 @@ export default function Tickets() {
         body: JSON.stringify({
           titulo: formData.titulo.trim(),
           descripcion: formData.descripcion.trim(),
-          creadoPorNombre: currentUser?.nombre || 'Desconocido',
-          creadoPorEmail: currentUser?.email || '',
+          creadoPorNombre: currentUser?.nombre || currentUser?.username || 'Desconocido',
+          // El backend exige email: si el usuario no tiene, usar su username como identificador
+          creadoPorEmail: currentUser?.email || currentUser?.username || 'sin-correo',
         }),
       });
 
-      if (!response.ok) throw new Error('Error al crear el ticket');
+      if (!response.ok) {
+        // Mostrar el motivo real del rechazo (ej. validación de campos)
+        const errData = await response.json().catch(() => null);
+        const detalle = errData?.errors
+          ? Object.values(errData.errors).filter(Array.isArray).flat().join(' ')
+          : (errData?.title || errData?.message || `Error ${response.status}`);
+        throw new Error(detalle);
+      }
 
       setFormData({ titulo: '', descripcion: '' });
       setShowForm(false);
@@ -112,7 +120,7 @@ export default function Tickets() {
       alert('✅ Ticket creado. El administrador fue notificado.');
     } catch (error) {
       console.error('❌ Error al crear ticket:', error);
-      alert('❌ No se pudo crear el ticket. Intenta de nuevo.');
+      alert(`❌ No se pudo crear el ticket.\n${error.message || 'Intenta de nuevo.'}`);
     } finally {
       setSaving(false);
     }
@@ -190,8 +198,10 @@ export default function Tickets() {
     }
   };
 
+  // Misma identidad de respaldo que al crear: email o, si no tiene, username
+  const miIdentidad = (currentUser?.email || currentUser?.username || 'sin-correo').toLowerCase();
   const misTickets = tickets.filter(
-    t => (t.creadoPorEmail || '').toLowerCase() === (currentUser?.email || '').toLowerCase()
+    t => (t.creadoPorEmail || '').toLowerCase() === miIdentidad
   );
 
   const estadoLabel = (estado) => ESTADOS.find(e => e.value === estado)?.label || estado;
