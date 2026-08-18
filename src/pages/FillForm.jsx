@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useParams, useNavigate, useLocation } from "react-router-dom"
 import { mergeOpcionesActuales } from "../utils/filledFormsUtils"
 import FormHeader from "../components/FormHeader"
@@ -19,8 +19,24 @@ import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import authService from "../services/authService";
 import { evaluarFormula as evaluarFormulaEngine, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
 import { toLocalISOString } from "../utils/dateUtils";
+import { ordenarFormularios } from "../utils/ordenFormularios";
 import LoteTrazabilidadPanel from '../components/LoteTrazabilidadPanel';
-import { isTrazaEnabled, isResumenAutoEnabled, addLote, addLotes, getLotesDisponibles } from '../hooks/useLoteStore';
+import LotesEncabezado from '../components/LotesEncabezado';
+import { isTrazaEnabled, isResumenAutoEnabled, addLote, addLotes, getLotesDisponibles, getResumenPD04 } from '../hooks/useLoteStore';
+import {
+  templateUsaInventario, templateUsaPD04, cargarInventario, cargarProduccionDeTemplate,
+  opcionesInventario, buscarLote, autocompletarDesdeFila, origenDe, esColumnaProduccion,
+  aplicarDescuentosInventario, resumenDescuentos, resolverLoteDeFila, saldoDeFila,
+  usaAutoProduccionLegacy, templateGuardaInventario, aplicarEntradasInventario, resumenEntradas,
+  esColumnaLotePadre, lotesDelEncabezado, tablaTieneLotePadre, campoLoteEncabezado,
+  opcionesLoteProceso, opcionesLotePadre, camposLoteDeTemplate,
+  usaListaLotePadre, filtrarLotesElegidos, listaLotePadreDe,
+  ocultarColumnaLotePadre, loteUnicoDelEncabezado, claveCelda,
+  validarMateriaPrimaVsProduccion,
+  saldoDe, leerCelda, columnaLoteDe, esColumnaInventario, elementosDe,
+} from '../services/inventarioCeldaService';
+import { modoBusquedaProducto, destinoColumnaProducto } from '../utils/busquedaProducto';
+import { DIGITOS_LOTE } from '../utils/validacionLote';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -28,6 +44,62 @@ const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
 
 const AUTOSAVE_INTERVAL = 30000;
 const AUTOSAVE_KEY_PREFIX = 'autosave_form_';
+
+/**
+ * Compara nombres de personas sin que una tilde, una mayúscula o un espacio de más
+ * impidan reconocerlas ("José Pérez" ≡ "jose  perez").
+ */
+const normalizarNombre = (s) => (s || '')
+  .toString()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+
+/**
+ * ¿Este puesto está realmente firmado?
+ *
+ * Vale solo si hay imagen de firma. El nombre y la fecha quedan cargados aunque
+ * nadie haya firmado, así que mirarlos daría por firmado un puesto vacío. Es el
+ * mismo criterio que usa el backend al limpiar firmas.
+ */
+const tieneFirma = (firma) => {
+  const img = firma?.firma;
+  if (!img) return false;
+  return !!(String(img.url || '').trim() || String(img.base64 || '').trim());
+};
+
+/**
+ * Firmas listas para guardarse en un borrador (servidor o localStorage).
+ *
+ * Se conserva la firma COMPLETA, no solo un `hasFirma`: antes la imagen se
+ * descartaba y al reabrir el borrador había que volver a firmar todo. La firma
+ * normal es una URL de Cloudinary, así que no pesa.
+ *
+ * @param {Object} firmas
+ * @param {boolean} permitirBase64 — false en localStorage (cuota de ~5 MB)
+ */
+const firmasParaGuardar = (firmas, { permitirBase64 = true } = {}) =>
+  Object.entries(firmas || {}).reduce((acc, [puesto, firma]) => {
+    if (!firma || typeof firma !== 'object') {
+      acc[puesto] = firma;
+      return acc;
+    }
+    let img = firma.firma ?? null;
+    if (img && typeof img === 'object' && img.base64) {
+      // El base64 sobra si ya hay URL, y no cabe si es enorme o va al navegador.
+      const pesa = String(img.base64).length;
+      if (img.url || !permitirBase64 || pesa > 1_000_000) {
+        const { base64, ...sinBase64 } = img;
+        img = sinBase64;
+        if (!sinBase64.url) {
+          console.warn(`🖊️ Firma de "${puesto}": no se pudo conservar la imagen (${Math.round(pesa / 1024)} KB).`);
+        }
+      }
+    }
+    acc[puesto] = { ...firma, firma: img, hasFirma: tieneFirma(firma) };
+    return acc;
+  }, {});
 
 // Función auxiliar para agrupar columnas en tablas
 const processColumnGroups = (columns = []) => {
@@ -113,8 +185,6 @@ function FillForm() {
   const [hasReviewedDocument, setHasReviewedDocument] = useState(false);
   const documentReviewRef = useRef(null);
 
-  // 🔄 REEMPLAZOS: puestos donde el usuario actual firmará como reemplazo
-  const [reemplazosActivos, setReemplazosActivos] = useState({});
   // 👤 REEMPLAZOS SELECCIONADOS por admin: { [puesto]: nombreDelReemplazo }
   const [reemplazosSeleccionados, setReemplazosSeleccionados] = useState({});
   // ✅ Checkbox "Habilitar Reemplazo" abierto: { [puesto]: true/false }
@@ -237,6 +307,150 @@ function FillForm() {
   const [columnImporterLoading, setColumnImporterLoading] = useState(false); // Estado de carga
   const [columnImporterError, setColumnImporterError] = useState(null); // Estado de error
 
+  // 🏷️ Selector de Producción PD-04 (para columnas LOTE DE PROCESO / TIPO DE PRODUCTO)
+  const [showProdSelector, setShowProdSelector] = useState(false);
+  const [prodSelectorElementIndex, setProdSelectorElementIndex] = useState(null);
+  const [prodSelectorData, setProdSelectorData] = useState([]);
+  const [prodSelectorLoading, setProdSelectorLoading] = useState(false);
+  const [prodSelectorError, setProdSelectorError] = useState(null);
+  const [prodSelectorSearch, setProdSelectorSearch] = useState('');
+
+  // 🏷️ Opciones para los <select> en celdas LOTE DE PROCESO / TIPO DE PRODUCTO
+  const [prodCellOptions, setProdCellOptions] = useState({ lotes: [], productos: [], porLote: {} });
+
+  // Carga la producción PD-04 solo si el template tiene una columna "LOTE DE PROCESO"
+  // y esa tabla NO apagó el enlace automático (sinAutoProduccion).
+  // Si el backend no está desplegado / sin datos, las columnas quedan como input normal.
+  useEffect(() => {
+    const tpl = selectedTemplate;
+    if (!tpl) return;
+    const bodyEls = Array.isArray(tpl.bodyElements) ? tpl.bodyElements : [];
+    if (!bodyEls.some(usaAutoProduccionLegacy)) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const filas = await getResumenPD04();
+        if (cancel) return;
+        const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+        const lotes = uniq((filas || []).map(f => (f.loteProceso || '').trim()));
+        const productos = uniq((filas || []).map(f => (f.producto || '').trim()));
+        // 🔗 Mapa lote de proceso → productos de ESE lote (para el desplegable dependiente)
+        const porLoteSet = {};
+        (filas || []).forEach(f => {
+          const lp = (f.loteProceso || '').trim();
+          const pr = (f.producto || '').trim();
+          if (!lp || !pr) return;
+          (porLoteSet[lp] = porLoteSet[lp] || new Set()).add(pr);
+        });
+        const porLote = {};
+        Object.keys(porLoteSet).forEach(k => {
+          porLote[k] = [...porLoteSet[k]].sort((a, b) => a.localeCompare(b));
+        });
+        setProdCellOptions({ lotes, productos, porLote });
+      } catch {
+        /* backend no desplegado o sin datos → se dejan como input normal */
+      }
+    })();
+    return () => { cancel = true; };
+  }, [selectedTemplate]);
+
+  // 📦 Lotes del Inventario para las columnas type="inventario" y el descuento de saldo.
+  //    Se cargan una sola vez por plantilla; si el backend no responde, las celdas
+  //    quedan como campo de texto normal (no se bloquea al operario).
+  const [invLotes, setInvLotes] = useState([]);
+  // 🏭 Resúmenes de producción por origen: { pd04: [...], pd05: [...] }
+  //    (lote de proceso → producto → clasificación → peso neto)
+  const [invProduccion, setInvProduccion] = useState({});
+  const invDatos = useMemo(
+    () => ({ lotes: invLotes, produccion: invProduccion }),
+    [invLotes, invProduccion]
+  );
+
+  useEffect(() => {
+    if (!selectedTemplate || !templateUsaInventario(selectedTemplate)) {
+      setInvLotes([]);
+      setInvProduccion({});
+      return;
+    }
+    let cancel = false;
+    cargarInventario().then(lotes => { if (!cancel) setInvLotes(lotes || []); });
+    if (templateUsaPD04(selectedTemplate)) {
+      cargarProduccionDeTemplate(selectedTemplate)
+        .then(prod => { if (!cancel) setInvProduccion(prod || {}); });
+    } else {
+      setInvProduccion({});
+    }
+    return () => { cancel = true; };
+  }, [selectedTemplate]);
+
+  // 🔗 Check "Un solo lote" de la barra de lotes. Vive acá y no en la barra
+  // porque también decide si se dibuja la columna de código padre en las tablas.
+  const [modoUnLote, setModoUnLote] = useState(false);
+  useEffect(() => {
+    const tabla = (selectedTemplate?.bodyElements || []).find(tablaTieneLotePadre);
+    setModoUnLote(!!tabla?.lotePadreUnico);
+  }, [selectedTemplate]);
+
+  // 🔗 UN SOLO LOTE: la columna de código padre repetiría en cada fila el mismo
+  // lote que ya está escrito arriba, así que se esconde de la tabla. Igual se
+  // llena sola con ese lote (el descuento de inventario la sigue leyendo) y se
+  // marca como columna oculta para que tampoco salga en Ver / PDF / Excel.
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    const campos = camposLoteDeTemplate(selectedTemplate);
+    const lote = loteUnicoDelEncabezado(headerData, campos);
+
+    // Una fila vacía se deja como está: llenarla la haría parecer usada.
+    const tieneDatos = (fila, salvo) => Object.entries(fila || {}).some(
+      ([k, v]) => k !== salvo && !k.startsWith('_') && String(v ?? '').trim() !== ''
+    );
+
+    setBodyData(prev => {
+      let hubo = false;
+      const nuevo = prev.map((datos, i) => {
+        const el = selectedTemplate.bodyElements?.[i];
+        if (!el || el.type !== 'table' || !tablaTieneLotePadre(el)) return datos;
+        const label = (el.columns || []).find(esColumnaLotePadre)?.label;
+        if (!label) return datos;
+
+        const oculta = ocultarColumnaLotePadre(el, headerData, campos, { unLote: modoUnLote });
+        let salida = datos;
+
+        if (oculta && lote) {
+          const filas = Array.isArray(datos?.data) ? datos.data : [];
+          let cambiaronFilas = false;
+          const filasNuevas = filas.map(fila => {
+            if (!fila || fila._deleted) return fila;
+            const clave = claveCelda(fila, label);
+            if (String(fila[clave] ?? '').trim() === lote) return fila;
+            if (!tieneDatos(fila, clave)) return fila;
+            cambiaronFilas = true;
+            return { ...fila, [clave]: lote };
+          });
+          if (cambiaronFilas) salida = { ...salida, data: filasNuevas };
+        }
+
+        // La marca de "columna oculta" del registro sigue al estado real.
+        const ocultasPrev = salida?.hiddenColumns || {};
+        if (!!ocultasPrev[label] !== oculta) {
+          const ocultas = { ...ocultasPrev };
+          if (oculta) ocultas[label] = true; else delete ocultas[label];
+          salida = { ...salida, hiddenColumns: ocultas };
+        }
+
+        if (salida !== datos) hubo = true;
+        return salida;
+      });
+      return hubo ? nuevo : prev;
+    });
+  }, [headerData, selectedTemplate, bodyData, modoUnLote]);
+
+  /** Refresca el inventario (tras guardar / descontar) para ver los saldos al día. */
+  const refrescarInventario = useCallback(async () => {
+    const lotes = await cargarInventario();
+    setInvLotes(lotes || []);
+  }, []);
+
   // 📦 Trazabilidad de lotes
   const [loteTraza, setLoteTraza] = useState({
     procesoOrigen: '', loteOrigen: '', productoOrigen: '', pesoEntrada: 0,
@@ -343,6 +557,54 @@ function FillForm() {
       setForceRenderKey(prev => prev + 1);
     }
   }, [apiCatalogData]);
+  /**
+   * Trae de la API la última versión de la plantilla de una pestaña restaurada.
+   * Los datos escritos (headerData / bodyData) NO se tocan: solo se cambia la
+   * definición, que es donde viven las opciones configuradas en Crear/Editar.
+   * Si la API no responde se conserva la copia local y todo sigue funcionando.
+   */
+  const refrescarPlantillaDePestana = async (templateGuardado, tabIndex) => {
+    const tid = templateGuardado?.templateID || templateGuardado?.id;
+    if (!tid) return;
+
+    try {
+      const res = await fetch(`${API_URL_TEMPLATES}/${tid}`);
+      if (!res.ok) return;
+
+      const fresco = await res.json();
+      // La API manda headerFields / bodyElements / firmas como texto JSON:
+      // hay que parsearlos igual que en la carga normal o el render revienta.
+      const plantilla = {
+        ...fresco,
+        headerFields: typeof fresco.headerFields === 'string'
+          ? JSON.parse(fresco.headerFields || '[]')
+          : (fresco.headerFields || []),
+        bodyElements: typeof fresco.bodyElements === 'string'
+          ? JSON.parse(fresco.bodyElements || '[]')
+          : (fresco.bodyElements || []),
+        firmas: typeof fresco.firmas === 'string'
+          ? JSON.parse(fresco.firmas || '[]')
+          : fresco.firmas,
+      };
+
+      // Nada que hacer si la definición es idéntica: evita un re-render inútil.
+      const huella = (t) => JSON.stringify([t?.headerFields ?? [], t?.bodyElements ?? []]);
+      if (huella(templateGuardado) === huella(plantilla)) return;
+
+      console.log(`🔄 Plantilla ${tid} actualizada desde el servidor (la pestaña tenía una versión anterior)`);
+      setSelectedTemplate(plantilla);
+      // Si en la plantilla nueva alguna columna cambió de nombre, lo ya escrito
+      // quedaría guardado bajo la etiqueta vieja y desaparecería de la pantalla.
+      // Se re-emparejan las claves contra la definición nueva, igual que al
+      // restaurar la pestaña. No se pierde ningún dato: solo se renombran claves.
+      setBodyData(prev => normalizeBodyDataKeys(prev, plantilla));
+      // La pestaña guardada también se queda con la versión nueva.
+      setOpenTabs(prev => prev.map((t, i) => (i === tabIndex ? { ...t, template: plantilla } : t)));
+    } catch (e) {
+      console.warn('No se pudo refrescar la plantilla de la pestaña:', e.message);
+    }
+  };
+
   // 🆕 1. EFECTO DE CARGA: Recupera las pestañas del "disco duro" al entrar
   useEffect(() => {
     // 🔧 FIX: Si viene un borrador, NO limpiar las pestañas guardadas.
@@ -375,6 +637,13 @@ function FillForm() {
             setApiMovimientoData(tab.apiMovimientoData || []);
             // 🔧 FIX: Restaurar draftId si la pestaña era un borrador
             setCurrentDraftId(tab.draftId || null);
+
+            // 🔄 La plantilla viaja CONGELADA dentro de la pestaña guardada. Si
+            // mientras tanto se editó (columnas nuevas, búsqueda de producto,
+            // inventario…), la pestaña seguiría usando la versión vieja para
+            // siempre, incluso recargando. Se vuelve a pedir a la API y se
+            // reemplaza sin tocar lo que el operario ya escribió.
+            refrescarPlantillaDePestana(tab.template, parsed.activeIdx || 0);
           }
         }
       } catch (e) {
@@ -1300,7 +1569,7 @@ useEffect(() => {
   // --- LÓGICA DE FILTRADO DE PLANTILLAS (NUEVO) ---
   const uniqueProcesses = [...new Set(templates.map(t => t.proceso).filter(Boolean))];
 
-  const filteredTemplates = templates
+  const templatesFiltradas = templates
     .filter(template => {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch =
@@ -1312,10 +1581,9 @@ useEffect(() => {
       const isNotHiddenTest = (template.codigo || "").toLowerCase() !== "for-cc-50";
       
       return matchesSearch && matchesProcess && isNotHiddenTest;
-    })
-    .sort((a, b) =>
-      (a.codigo || '').localeCompare(b.codigo || '', 'es', { numeric: true, sensitivity: 'base' })
-    );
+    });
+  // Por número de formulario, igual que el resto de los filtros del sistema.
+  const filteredTemplates = ordenarFormularios(templatesFiltradas);
 
   // --- SELECCIÓN DE PLANTILLA ---
   const handleTemplateSelect = (templateId) => {
@@ -2256,6 +2524,57 @@ useEffect(() => {
    * @param {number} colIndex - Índice de la columna destino
    * @param {string} columnName - Nombre de la columna destino
    */
+  // 🏷️ Abrir el selector de producción PD-04 para una tabla
+  const openProdSelector = async (elementIndex) => {
+    setProdSelectorElementIndex(elementIndex);
+    setProdSelectorSearch('');
+    setProdSelectorData([]);
+    setProdSelectorError(null);
+    setProdSelectorLoading(true);
+    setShowProdSelector(true);
+    try {
+      const filas = await getResumenPD04();
+      setProdSelectorData(Array.isArray(filas) ? filas : []);
+    } catch (err) {
+      setProdSelectorError(err?.message || 'No se pudo cargar el resumen de producción PD-04.');
+    } finally {
+      setProdSelectorLoading(false);
+    }
+  };
+
+  // 🏷️ Elegir un ítem del resumen → agrega una fila con LOTE DE PROCESO + TIPO DE PRODUCTO (+ código)
+  const pickProdItem = (item) => {
+    const elementIndex = prodSelectorElementIndex;
+    if (elementIndex === null || elementIndex === undefined) return;
+    const low = s => (s || '').toString().toLowerCase();
+
+    setBodyData(prev => prev.map((element, index) => {
+      if (index !== elementIndex) return element;
+      const tpl = selectedTemplate?.bodyElements?.[elementIndex];
+      const cols = tpl?.columns || [];
+
+      const newRow = {};
+      cols.forEach((col, ci) => {
+        const key = col.label || col.header || col.name || col.id || `col_${ci}`;
+        const l = low(col.label || col.header);
+        let val = '';
+        if (l.includes('lote') && l.includes('proceso')) {
+          val = item.loteProceso || item.codigoProducto || '';
+        } else if (l.includes('tipo') && l.includes('producto')) {
+          val = item.producto || '';
+        } else if ((l.includes('codigo') || l.includes('código')) && l.includes('producto')) {
+          val = item.codigoProducto || '';
+        } else if (l.includes('producto') && !l.includes('codigo') && !l.includes('código')) {
+          val = item.producto || '';
+        }
+        newRow[key] = val;
+      });
+
+      const data = Array.isArray(element.data) ? element.data : [];
+      return { ...element, data: [...data, newRow] };
+    }));
+  };
+
   const openColumnImporter = async (elementIndex, colIndex, columnName) => {
     console.log('📥 Abriendo importador de columnas...');
     console.log('   🎯 Columna destino:', columnName);
@@ -2962,14 +3281,25 @@ useEffect(() => {
           (colLabels.some(l => l.includes('producto')) && colLabels.some(l => l.includes('peso')));
 
         if (isResumen) {
-          // Tabla de resumen producción: sacar productos + pesos
-          const prodCol = cols.find(c => (c.label || c.header || '').toLowerCase().includes('producto'));
+          // Tabla de resumen producción: sacar CÓDIGO PRODUCTO + PRODUCTO + PESO
+          const low = s => (s || '').toString().toLowerCase();
+          // Columna "Código Producto"
+          const codigoCol = cols.find(c => {
+            const l = low(c.label || c.header);
+            return (l.includes('codigo') || l.includes('código')) && l.includes('producto');
+          });
+          // Columna "Producto" (la que dice producto pero NO es la de código)
+          const prodCol = cols.find(c => {
+            const l = low(c.label || c.header);
+            return l.includes('producto') && !l.includes('codigo') && !l.includes('código');
+          }) || cols.find(c => low(c.label || c.header).includes('producto'));
           const pesoCol = pesoCols[0] || cols.find(c => c.includeInSum !== false);
           rows.forEach(r => {
-            const prod = prodCol ? (r[prodCol.label] || r[prodCol.header] || '') : '';
+            const codigo = codigoCol ? String(r[codigoCol.label] || r[codigoCol.header] || '').trim() : '';
+            const prod   = prodCol   ? String(r[prodCol.label]   || r[prodCol.header]   || '').trim() : '';
             const rawP = pesoCol ? (r[pesoCol.label] || r[pesoCol.header] || r[pesoCol.apiCodigo] || '') : '';
             const p = parseFloat(String(rawP).replace(',', '.')) || 0;
-            if (p > 0 || prod) productosResumen.push({ producto: String(prod), peso: p });
+            if (p > 0 || prod || codigo) productosResumen.push({ codigo, producto: prod, peso: p });
             pesoNeto += p;
           });
         } else if (hasCodigoLote || pesoEntrada === 0) {
@@ -3012,37 +3342,46 @@ useEffect(() => {
         ? 'Productos: ' + productosResumen.map(p => `${p.producto} ${p.peso.toFixed(2)}lb`).join(' | ')
         : '';
 
-      await addLote({
-        lote: numeroLote,
-        proceso,
-        producto: especie || productosResumen[0]?.producto || '',
-        clasificacion: '',
-        pesoEntrada,
-        desperdicio,
-        tipoDesperdicio: desperdicio > 0 ? 'Diferencia proceso' : '',
-        estado: 'disponible',
-        formId: formIdNum,
-        templateId,
-        fecha,
-        notas: notasProductos,
-      });
+      // El lote de proceso quizás ya existe (edición / re-guardado): no es fatal,
+      // igual queremos guardar los productos hijos, así que lo envolvemos en try/catch.
+      try {
+        await addLote({
+          lote: numeroLote,
+          proceso,
+          producto: especie || productosResumen[0]?.producto || '',
+          clasificacion: '',
+          pesoEntrada,
+          desperdicio,
+          tipoDesperdicio: desperdicio > 0 ? 'Diferencia proceso' : '',
+          estado: 'disponible',
+          formId: formIdNum,
+          templateId,
+          fecha,
+          notas: notasProductos,
+        });
+      } catch (masterErr) {
+        console.warn('📦 [RESUMEN] Lote de proceso ya existía o no se pudo crear:', masterErr?.message || masterErr);
+      }
 
-      // --- 5. Guardar lotes hijo por producto del resumen (si hay más de uno) ---
-      if (productosResumen.length > 1) {
+      // --- 5. Guardar un lote hijo por cada producto del RESUMEN PRODUCCIÓN ---
+      //     Cada hijo = Lote de proceso (padre) + Código Producto + Producto + Peso Neto.
+      const productosAGuardar = productosResumen.filter(p => p.codigo || p.producto || p.peso > 0);
+      if (productosAGuardar.length >= 1) {
         await addLotes(
-          productosResumen.map((p, i) => ({
-            lote: `${numeroLote}-P${String(i + 1).padStart(2, '0')}`,
+          productosAGuardar.map((p, i) => ({
+            // NumeroLote único: "loteProceso-códigoProducto" (o -P01 si no hay código)
+            lote: p.codigo ? `${numeroLote}-${p.codigo}` : `${numeroLote}-P${String(i + 1).padStart(2, '0')}`,
             proceso,
             producto: p.producto,
             clasificacion: '',
             pesoEntrada: p.peso,
             desperdicio: 0,
             estado: 'disponible',
-            lotePadre: numeroLote,
+            lotePadre: numeroLote, // 🔗 el Lote de proceso registrado en el encabezado
             formId: formIdNum,
             templateId,
             fecha,
-            notas: `Producto del resumen de lote ${numeroLote}`,
+            notas: `Lote proceso ${numeroLote}${p.codigo ? ' | Código: ' + p.codigo : ''}`,
           }))
         );
       }
@@ -3582,23 +3921,6 @@ useEffect(() => {
 
   // 🆕 FUNCIÓN PARA ACTUALIZAR FIRMA COMPLETA (con imagen)
   const handleFirmaUpdate = (puesto, firmaData) => {
-
-  // 🔄 ACTIVAR MODO REEMPLAZO para un puesto de firma
-  const handleActivarReemplazo = (puesto, nombreOriginal) => {
-    const usuarioActual = authService.getCurrentUser();
-    const nombreReemplazo = usuarioActual?.nombre || usuarioActual?.username || '';
-    setFirmasData(prev => ({
-      ...prev,
-      [puesto]: {
-        ...prev[puesto],
-        nombre: nombreReemplazo,
-        esReemplazo: true,
-        reemplazandoA: nombreOriginal || prev[puesto]?.nombre || ''
-      }
-    }));
-    setReemplazosActivos(prev => ({ ...prev, [puesto]: true }));
-    setHasUnsavedChanges(true);
-  };
     console.log('🔍 handleFirmaUpdate llamado:', { puesto, tieneFirma: !!firmaData?.firma });
     
     let updatedFirmaData = { ...firmaData };
@@ -3631,44 +3953,123 @@ useEffect(() => {
   };
 
   // 🔑 Firma por PIN: verifica el PIN del firmante (titular o reemplazo) y adjunta su firma guardada a este slot.
-  const handleFirmarConPin = async (puesto, nombreFirmante, reemplazoInfo = null) => {
+  /**
+   * Prueba un PIN contra UNA persona del catálogo.
+   * Devuelve qué pasó, distinguiendo "no es su PIN" de "sí lo es pero no tiene firma".
+   */
+  const verificarPinDe = async (nombre, pin) => {
+    const res = await fetch(`${API_BASE_URL}/CatalogoFirmas/verify-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, pin })
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.firmaImageUrl) return { estado: 'ok', firmaImageUrl: data.firmaImageUrl };
+
+    // El backend solo responde esto DESPUÉS de dar el PIN por bueno: el PIN es de esta
+    // persona, lo que falta es su firma. No tiene sentido seguir probando con los demás.
+    if (/firma guardada/i.test(data.message || '')) return { estado: 'sin-firma' };
+
+    // 401 (PIN incorrecto), 404 (no está en el catálogo) o sin PIN configurado: no es esta persona.
+    return { estado: 'no-coincide' };
+  };
+
+  /**
+   * Firmar con PIN. El PIN IDENTIFICA a quien firma: se prueba contra los firmantes
+   * autorizados de ese puesto (titular y reemplazos definidos en la plantilla), así que
+   * cada persona pone el suyo sin tener que seleccionarse antes en la lista.
+   *
+   * El conjunto se limita a los autorizados del puesto: un PIN ajeno a esa lista no firma.
+   */
+  const handleFirmarConPin = async (puesto, nombreFirmante, reemplazoInfo = null, contextoPuesto = null) => {
     const pin = (pinInputByPuesto[puesto] || '').trim();
     if (pin.length < 4) {
       alert('⚠️ Ingresa el PIN (mínimo 4 dígitos).');
       return;
     }
+
+    // Se prueba primero el firmante ya seleccionado (caso normal: acierta a la primera).
+    const candidatos = [nombreFirmante, ...(contextoPuesto?.candidatos || [])]
+      .filter(Boolean)
+      .filter((nombre, i, lista) => lista.findIndex(o => normalizarNombre(o) === normalizarNombre(nombre)) === i);
+
+    if (candidatos.length === 0) {
+      alert('⚠️ Este puesto no tiene firmantes autorizados definidos en la plantilla.');
+      return;
+    }
+
     setPinLoadingByPuesto(prev => ({ ...prev, [puesto]: true }));
     try {
-      const res = await fetch(`${API_BASE_URL}/CatalogoFirmas/verify-pin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre: nombreFirmante, pin })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert('❌ ' + (data.message || 'No se pudo validar el PIN.'));
+      let firmante = null;
+      for (const candidato of candidatos) {
+        const r = await verificarPinDe(candidato, pin);
+        if (r.estado === 'ok') { firmante = { nombre: candidato, url: r.firmaImageUrl }; break; }
+        if (r.estado === 'sin-firma') {
+          alert(`⚠️ ${candidato} tiene PIN pero no tiene una firma guardada en el catálogo.\n\nDebe subir su firma en "Mi Firma" antes de poder firmar con PIN.`);
+          return;
+        }
+      }
+
+      if (!firmante) {
+        alert(
+          '❌ PIN incorrecto.\n\nEste PIN no corresponde a ninguno de los firmantes autorizados ' +
+          `de "${puesto}":\n\n• ${candidatos.join('\n• ')}`
+        );
         return;
       }
+
+      // Quién es el titular del puesto, para marcar el reemplazo cuando firma otro.
+      const titular = contextoPuesto?.titular ?? reemplazoInfo?.reemplazandoA ?? '';
+      const esReemplazo = !!titular && normalizarNombre(titular) !== normalizarNombre(firmante.nombre);
+      const cargoFirmante = esReemplazo
+        ? (contextoPuesto?.cargoReemplazos?.[firmante.nombre.toLowerCase().trim()]
+           || reemplazoInfo?.cargoFirmante || '')
+        : '';
+
       // Adjuntar la firma verificada al slot (mismo shape que una firma guardada de Cloudinary)
       handleFirmaUpdate(puesto, {
-        nombre: nombreFirmante,
-        firma: { url: data.firmaImageUrl, provider: 'cloudinary', uploaded_at: toLocalISOString() },
+        nombre: firmante.nombre,
+        firma: { url: firmante.url, provider: 'cloudinary', uploaded_at: toLocalISOString() },
         // 🔄 Si firma un reemplazo, guardar la misma metadata que en la firma normal
-        ...(reemplazoInfo ? {
-          esReemplazo: true,
-          reemplazandoA: reemplazoInfo.reemplazandoA || '',
-          cargoFirmante: reemplazoInfo.cargoFirmante || ''
-        } : {})
+        ...(esReemplazo
+          ? { esReemplazo: true, reemplazandoA: titular, cargoFirmante }
+          : { esReemplazo: false, reemplazandoA: '', cargoFirmante: '' })
       });
       setPinInputByPuesto(prev => ({ ...prev, [puesto]: '' }));
       setPinOpenByPuesto(prev => ({ ...prev, [puesto]: false }));
-      setPinFirmanteByPuesto(prev => ({ ...prev, [puesto]: '' }));
+      // La lista queda apuntando a quien realmente firmó.
+      setPinFirmanteByPuesto(prev => ({ ...prev, [puesto]: firmante.nombre }));
     } catch (err) {
       console.error('Error al firmar con PIN:', err);
       alert('❌ Error al validar el PIN. Verifica la conexión.');
     } finally {
       setPinLoadingByPuesto(prev => ({ ...prev, [puesto]: false }));
     }
+  };
+
+  // 🔄 Cambiar el firmante de un slot desde la lista desplegable (titular ↔ reemplazo).
+  // Guarda quién va a firmar y la metadata de reemplazo; si ya había una firma aplicada
+  // se retira, porque la imagen pertenece a la persona anterior.
+  const handleCambiarFirmante = (puesto, nuevoNombre, reemplazoInfo = null) => {
+    setPinFirmanteByPuesto(prev => ({ ...prev, [puesto]: nuevoNombre }));
+    setPinInputByPuesto(prev => ({ ...prev, [puesto]: '' }));
+
+    const actual = firmasData[puesto] || {};
+    const teniaFirma = !!(actual.firma?.url || actual.firma?.base64);
+
+    handleFirmaUpdate(puesto, {
+      ...actual,
+      nombre: nuevoNombre,
+      ...(teniaFirma ? { firma: null, fecha: '', hora: '', fechaHoraCapturada: false } : {}),
+      ...(reemplazoInfo
+        ? {
+            esReemplazo: true,
+            reemplazandoA: reemplazoInfo.reemplazandoA || '',
+            cargoFirmante: reemplazoInfo.cargoFirmante || ''
+          }
+        : { esReemplazo: false, reemplazandoA: '', cargoFirmante: '' })
+    });
   };
 
   // 🚫 Ocultar/mostrar una COLUMNA de tabla para este registro (se respeta en Ver/PDF/Excel)
@@ -3930,25 +4331,15 @@ useEffect(() => {
     }
     
     try {
-      // Preparar datos sin firmas (solo IDs) para reducir tamaño
+      // Firmas con su imagen (URL); sin base64 para no reventar la cuota del navegador
       const autosaveData = {
         templateID: selectedTemplate.templateID,
         headerData,
         bodyData,
-        firmasData: Object.keys(firmasData).reduce((acc, puesto) => {
-          const firma = firmasData[puesto];
-          acc[puesto] = {
-            nombre: firma?.nombre,
-            fecha: firma?.fecha,
-            hora: firma?.hora,
-            email: firma?.email,
-            hasFirma: !!firma?.firma
-          };
-          return acc;
-        }, {}),
+        firmasData: firmasParaGuardar(firmasData, { permitirBase64: false }),
         timestamp: new Date().toISOString()
       };
-      
+
       const key = `${AUTOSAVE_KEY_PREFIX}${selectedTemplate.templateID}`;
       const dataString = JSON.stringify(autosaveData);
       
@@ -3980,17 +4371,7 @@ useEffect(() => {
             templateID: selectedTemplate.templateID,
             headerData,
             bodyData,
-            firmasData: Object.keys(firmasData).reduce((acc, puesto) => {
-              const firma = firmasData[puesto];
-              acc[puesto] = {
-                nombre: firma?.nombre,
-                fecha: firma?.fecha,
-                hora: firma?.hora,
-                email: firma?.email,
-                hasFirma: !!firma?.firma
-              };
-              return acc;
-            }, {}),
+            firmasData: firmasParaGuardar(firmasData, { permitirBase64: false }),
             timestamp: new Date().toISOString()
           };
           localStorage.setItem(key, JSON.stringify(autosaveData));
@@ -4092,9 +4473,33 @@ useEffect(() => {
   }, [hasUnsavedChanges, selectedTemplate, id, headerData, bodyData, firmasData]);
 
   const handleHeaderChangeWithAutoSave = useCallback((label, value) => {
-    setHeaderData((prev) => ({ ...prev, [label]: value }));
+    setHeaderData((prev) => {
+      const nextData = { ...prev, [label]: value };
+      
+      if (selectedTemplate && selectedTemplate.headerFields) {
+        const fieldConfig = selectedTemplate.headerFields.find(f => f.label === label);
+        if (fieldConfig && fieldConfig.type === 'date' && fieldConfig.autoGenerarLote && value) {
+          try {
+            const [year, month, day] = value.split('-');
+            if (year && month && day) {
+              const yy = year.slice(-2);
+              const generatedLote = `${yy}${month}${day}`;
+              const loteField = selectedTemplate.headerFields.find(
+                f => f.type === 'text' && f.label.toLowerCase().includes('lote') && !f.label.toLowerCase().includes('entrante')
+              );
+              if (loteField) {
+                nextData[loteField.label] = generatedLote;
+              }
+            }
+          } catch (error) {
+            console.error('Error auto-generando lote:', error);
+          }
+        }
+      }
+      return nextData;
+    });
     setHasUnsavedChanges(true);
-  }, []);
+  }, [selectedTemplate]);
   
   const handleSectionFieldChangeWithAutoSave = useCallback((elementIndex, fieldLabel, value) => {
     setBodyData(prev => prev.map((element, index) => {
@@ -4329,24 +4734,18 @@ useEffect(() => {
           // Autocompletado bidireccional desde ProductoAutocomplete
           baseRow[columnLabel] = value.selectedValue;
           
-          // Actualizar la otra columna (código o nombre).
-          // La columna de "nombre" se detecta por PRODUCTO y también por MATERIAL/INSUMO/EMPAQUE
-          // (así funciona la búsqueda por código en la tabla "MATERIALES DE EMPAQUE E INSUMOS").
-          // Nota: "MATERIAL" (con L) no coincide con "MATERIA PRIMA", así que no afecta la tabla CONTROL.
+          // Actualizar la otra columna (código o nombre). Manda lo elegido en la
+          // plantilla ("Búsqueda de producto"); si no se configuró nada, se
+          // deduce del nombre: CODIGO recibe el código y PRODUCTO/MATERIAL/
+          // INSUMO/EMPAQUE reciben el nombre. Nota: "MATERIAL" (con L) no
+          // coincide con "MATERIA PRIMA", así que no afecta la tabla CONTROL.
           cols.forEach((col, ci) => {
             const colKey = colKeyMap.get(ci);
-            const colUpper = (colKey || '').toUpperCase();
-            const isCodigo = colUpper.includes('CODIGO') || colUpper.includes('CÓDIGO');
-            const isNombreProducto = !isCodigo && (
-              colUpper.includes('PRODUCTO') ||
-              colUpper.includes('MATERIAL') ||
-              colUpper.includes('INSUMO') ||
-              colUpper.includes('EMPAQUE')
-            );
+            const destino = destinoColumnaProducto(col, colKey);
 
-            if (isCodigo && value.codigoErp !== undefined) {
+            if (destino === 'codigo' && value.codigoErp !== undefined) {
               baseRow[colKey] = value.codigoErp;
-            } else if (isNombreProducto && value.nombreProducto !== undefined) {
+            } else if (destino === 'nombre' && value.nombreProducto !== undefined) {
               baseRow[colKey] = value.nombreProducto;
             }
           });
@@ -4533,7 +4932,28 @@ useEffect(() => {
     }));
     setHasUnsavedChanges(true);
   }, [selectedTemplate, shouldEnableAutoSum, apiDetailsData]);
-  
+
+  /**
+   * 📦 Cambio en una celda de inventario / producción.
+   * Se apoya en handleTableFieldChangeWithAutoSave para NO perder nada de lo que
+   * ya hace una celda normal (recalcular fórmulas encadenadas, respetar filas
+   * predefinidas, marcar cambios sin guardar) y encima escribe los valores
+   * derivados: producto, código y clasificación de lo que se acaba de elegir.
+   */
+  const handleInventarioCellChange = useCallback((elementIndex, rowIndex, cellName, value, col, rowActual) => {
+    handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, cellName, value);
+    if (!value) return;
+
+    const cols = selectedTemplate?.bodyElements?.[elementIndex]?.columns || [];
+    const filaSimulada = { ...(rowActual || {}), [cellName]: value };
+    const derivados = autocompletarDesdeFila(cols, filaSimulada, invDatos, col);
+
+    Object.entries(derivados).forEach(([clave, val]) => {
+      if (clave === cellName || val === undefined || val === null || val === '') return;
+      handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, clave, String(val));
+    });
+  }, [selectedTemplate, invDatos, handleTableFieldChangeWithAutoSave]);
+
   // --- API POR CÓDIGO: buscar datos al ingresar un código en la columna gatillo ---
   const handleApiPorCodigoLookup = async (elementIndex, rowIndex, code, tableTemplate) => {
     // 🚫 Si el auto-lookup está deshabilitado para esta tabla, no hacer nada
@@ -4930,31 +5350,78 @@ useEffect(() => {
     const isNumericField = fieldType === 'number' || fieldType === 'temperature' || fieldType === 'percentage' || fieldType === 'calculated';
     const isDateField = fieldType === 'date' || fieldType === 'time' || fieldType === 'datetime';
     
+    // 1a. 🔢 CAMPO DE LOTE DEL ENCABEZADO — SEIS CARACTERES
+    // Un lote de proceso es la fecha (260606). Se colaron lotes con un dígito de
+    // más que no cruzan con nada, así que el cuadro no deja escribir más de seis.
+    const enEncabezado = rowIndex === null || rowIndex === undefined;
+    const etiquetaPlana = String(field.label || '').toUpperCase().normalize('NFD')
+      .replace(/[̀-ͯ]/g, '').replace(/[^A-Z ]/g, '').trim();
+    const esLoteEncabezado = enEncabezado && !isDateField && !isExplicitlySelect
+      && (field.esCampoLotes === true || etiquetaPlana === 'LOTE' || etiquetaPlana === 'LOTE DE PROCESO');
+
+    if (esLoteEncabezado) {
+      const val = String(value ?? '');
+      const incompleto = val.length > 0 && val.length < DIGITOS_LOTE;
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+          <input
+            type="text"
+            value={val}
+            onChange={(e) => onChange(e.target.value.replace(/\s+/g, '').slice(0, DIGITOS_LOTE))}
+            maxLength={DIGITOS_LOTE}
+            inputMode="numeric"
+            required={field.required}
+            disabled={field.readonly}
+            placeholder={field.placeholder || `${DIGITOS_LOTE} dígitos (ej. 260606)`}
+            title={`El lote de proceso tiene ${DIGITOS_LOTE} caracteres`}
+            style={incompleto ? { borderColor: '#f59e0b' } : undefined}
+          />
+          {incompleto && (
+            <span style={{ fontSize: '11px', color: '#b45309', fontWeight: 600 }}>
+              ⚠️ Faltan {DIGITOS_LOTE - val.length} carácter(es): el lote debe tener {DIGITOS_LOTE}.
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    // 1b. ✏️ CAMPO DE ESCRITURA LIBRE
+    // La plantilla manda: esta celda es un input de texto y punto. Gana sobre el
+    // catálogo (apiEndpoint), los datos de lote (apiMap), el autocompletar de
+    // productos y las listas heredadas por nombre de columna. Es la salida para
+    // columnas como "LOTE DE PROCESO" en formularios donde se escribe a mano.
+    if (field.campoLibre && !isNumericField && !isDateField) {
+      return (
+        <input
+          type="text"
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          required={field.required}
+          disabled={field.readonly}
+          placeholder={field.placeholder || "Escriba…"}
+          className={rowIndex !== null && rowIndex !== undefined ? "table-input-expandable" : ""}
+        />
+      );
+    }
+
     // 2. INICIALIZAR OPCIONES (Siempre cargar locales primero)
     // Usamos spread [...] para crear una copia y no mutar el objeto original
     let options = Array.isArray(field.options) ? [...field.options] : [];
 
     // 3a. SELECTOR PRODUCTO (bidireccional por API externa)
-    // Se activa para columnas con apiEndpoint PRODUCTOS_POR_ESPECIE, PRODUCTOS o PRODUCTOS_POR_CODIGO
-    const isCodigoCol = (field.label || '').toUpperCase().includes('CODIGO') || (field.label || '').toUpperCase().includes('CÓDIGO');
-    const isProductoCol = (field.label || '').toUpperCase() === 'PRODUCTO' || (field.label || '').toUpperCase() === 'PRODUCTOS';
-    
-    if (
-      globalUseProductApi &&
-      field.usaApiAutocomplete !== false &&
-      (field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_ESPECIE' ||
-      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS' ||
-      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_CODIGO' ||
-      ((isCodigoCol || isProductoCol) && !field.apiEndpoint))
-    ) {
-      const isCodigo = isCodigoCol;
+    // El sentido de la búsqueda sale de la plantilla (columna "Búsqueda de
+    // producto"); si no se configuró nada, se deduce del nombre de la columna.
+    const searchType = modoBusquedaProducto(field, { apiActiva: globalUseProductApi });
+
+    if (searchType) {
+      const isCodigo = searchType === 'codigoErp';
       return (
         <ProductoAutocomplete
           value={value || ''}
           onChange={onChange}
-          searchType={isCodigo ? 'codigoErp' : 'nombreProducto'}
+          searchType={searchType}
           getToken={ensureApiToken}
-          placeholder={isCodigo ? 'Buscar por código...' : 'Buscar producto...'}
+          placeholder={isCodigo ? 'Buscar por código...' : `Buscar ${(field.label || 'producto').toLowerCase()}...`}
           onSelect={(product) => {
             if (rowIndex !== null) {
               onChange({
@@ -5132,7 +5599,11 @@ useEffect(() => {
     // Lógica para validación numérica (porcentajes, enteros)
     const labelLower = fieldLabel.toLowerCase();
     const isPercentage = field.type === 'percentage' || labelLower.includes('%') || labelLower.includes('por ciento') || labelLower.includes('glaseo');
-    const shouldBeInteger = labelLower.includes('cajas') || labelLower.includes('unidades') || labelLower.includes('piezas') || labelLower.includes('cantidad') || labelLower.includes('número');
+    // ⚠️ NO adivinar por el nombre de la columna si un campo admite decimales.
+    // Antes existía un "shouldBeInteger" que, si el título contenía "cantidad", "cajas",
+    // "unidades", "piezas" o "número", redondeaba el valor al salir del campo: escribías
+    // 2.5 y se guardaba 3. En producción se pesan medias cajas y medias unidades, así que
+    // todos los campos numéricos aceptan decimales.
     
     switch (field.type) {
         // ✅ Nota estática — muestra el texto definido en la plantilla (no editable por el usuario)
@@ -5576,20 +6047,16 @@ useEffect(() => {
           }
           
           return (
-            <input 
-              type="number" 
-              step={shouldBeInteger ? "1" : "0.01"}
+            <input
+              type="number"
+              step="any"
               min={isPercentage ? "0" : undefined}
               max={isPercentage ? "100" : undefined}
-              value={value || ""} 
+              value={value || ""}
               onChange={handleNumberChange}
               required={field.required}
               placeholder={field.placeholder || ""}
               className={rowIndex !== null && rowIndex !== undefined ? "table-input-expandable" : ""}
-              onBlur={(e) => {
-                const val = parseFloat(e.target.value);
-                if (shouldBeInteger && !Number.isInteger(val) && !isNaN(val)) onChange(Math.round(val).toString());
-              }}
             />
           );
         
@@ -5652,18 +6119,10 @@ useEffect(() => {
       const progress = totalFields > 0 ? Math.round((filledFields / totalFields) * 100) : 0;
       console.log('📋 [DRAFT] Progreso calculado:', progress, '%');
       
-      // Preparar firmas sin imágenes pesadas
-      const firmasSinImagenes = Object.keys(firmasData).reduce((acc, puesto) => {
-        const firma = firmasData[puesto];
-        acc[puesto] = {
-          nombre: firma?.nombre || '',
-          fecha: firma?.fecha || '',
-          hora: firma?.hora || '',
-          email: firma?.email || '',
-          hasFirma: !!firma?.firma
-        };
-        return acc;
-      }, {});
+      // 🖊️ Firmas COMPLETAS (con su imagen y metadatos), no solo `hasFirma`
+      const firmasParaBorrador = firmasParaGuardar(firmasData);
+      const firmadosGuardados = Object.values(firmasParaBorrador).filter(tieneFirma).length;
+      console.log(`📋 [DRAFT] Firmas conservadas en el borrador: ${firmadosGuardados}`);
       
       const draftPayload = {
         templateID: selectedTemplate.templateID,
@@ -5674,7 +6133,7 @@ useEffect(() => {
         userRole: currentUser?.rol || '',
         headerData: JSON.stringify(headerData),
         bodyData: JSON.stringify(bodyData),
-        firmasData: JSON.stringify(firmasSinImagenes),
+        firmasData: JSON.stringify(firmasParaBorrador),
         templateSnapshot: JSON.stringify(selectedTemplate),
         progress: Math.min(progress, 100),
         nota: ''
@@ -5822,6 +6281,56 @@ useEffect(() => {
       return;
     }
     
+    // ⚖️ NO SE PUEDE PRODUCIR MÁS DE LO QUE ENTRÓ.
+    //    Las tablas con el control activado comparan su producción contra la
+    //    materia prima declarada arriba. Se avisa pero NO se bloquea: con
+    //    glaseo el peso de salida sube legítimamente, así que la última
+    //    palabra la tiene el operario.
+    const avisosMp = (selectedTemplate.bodyElements || [])
+      .map((el, idx) => validarMateriaPrimaVsProduccion(el, selectedTemplate.bodyElements, bodyData, idx))
+      .filter(r => r.aplica && !r.ok);
+
+    if (avisosMp.length > 0) {
+      const detalle = avisosMp.map(r => `• ${r.mensaje}`).join('\n\n');
+      const seguir = window.confirm(
+        `⚠️ La producción supera a la materia prima\n\n${detalle}\n\n` +
+        `Si es por glaseo o reproceso podés continuar. ¿Guardar de todas formas?`
+      );
+      if (!seguir) {
+        console.warn('💾 [SAVE] ❌ Cancelado por control de materia prima');
+        isSavingRef.current = false;
+        setFormSaving(false);
+        return;
+      }
+    }
+
+    // ✍️ FIRMA DE RESPONSABILIDAD OBLIGATORIA.
+    //    Se estaban guardando registros sin ninguna firma. Si la plantilla tiene
+    //    puestos de firma, al menos uno tiene que estar firmado para guardar.
+    const puestosFirma = (selectedTemplate.firmas || []).filter(f => f?.puesto);
+    if (puestosFirma.length > 0) {
+      const firmados = puestosFirma.filter(f => tieneFirma(firmasData[f.puesto]));
+      if (firmados.length === 0) {
+        console.warn('💾 [SAVE] ❌ Sin firma de responsabilidad, abortando');
+        alert(
+          '✍️ Falta la firma de responsabilidad.\n\n'
+          + 'No se puede guardar un registro sin firmar. Firmá tu puesto abajo, '
+          + 'en la sección de firmas, y volvé a guardar.\n\n'
+          + `Puestos disponibles: ${puestosFirma.map(f => f.puesto).join(', ')}`
+        );
+        setError('Falta la firma de responsabilidad: firmá tu puesto antes de guardar.');
+        isSavingRef.current = false;
+        setFormSaving(false);
+        // Abrir las firmas y llevar al operario hasta ahí: suelen quedar al final
+        // del formulario y con el acordeón cerrado.
+        setExpandedSections(prev => ({ ...prev, signatures: true }));
+        setTimeout(() => {
+          document.querySelector('.seccion-firmas')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+        return;
+      }
+    }
+
     const finalHeaderData = { ...headerData };
     const fechaCampos = ['fecha', 'Fecha', 'date', 'Date'];
     const tieneFecha = fechaCampos.some(campo => finalHeaderData[campo]);
@@ -5984,8 +6493,17 @@ useEffect(() => {
         }
 
         // ── 3. Tablas normales con columna de lote ────────────────────────────
-        for (const element of cleanedBodyData) {
+        for (let elIdx = 0; elIdx < cleanedBodyData.length; elIdx++) {
+          const element = cleanedBodyData[elIdx];
           if (element.type !== 'table' || !Array.isArray(element.data)) continue;
+
+          // 📦 Las tablas enlazadas al Inventario CONSUMEN lotes existentes: no deben
+          //    crear lotes nuevos a partir de sus propias filas.
+          const cfgTabla = selectedTemplate?.bodyElements?.[elIdx];
+          const consumeInventario = cfgTabla?.descuentaInventario
+            || (cfgTabla?.columns || []).some(c => c?.type === 'inventario');
+          if (consumeInventario) continue;
+
           for (const row of element.data) {
             // Encontrar clave que represente el número de lote
             const loteKey = Object.keys(row).find(k => /lote/i.test(k));
@@ -6027,10 +6545,81 @@ useEffect(() => {
         }
       }
 
-      // AUTO-GUARDAR RESUMEN DE LOTE si esta configurado en la plantilla
-      if (isResumenAutoEnabled(selectedTemplate?.templateID)) {
+      // ➕ REGISTRAR EN EL INVENTARIO: tablas con "Guardar en el Inventario de Lotes".
+      //    Va ANTES del descuento para que un lote creado acá pueda consumirse
+      //    en la misma pasada si otra tabla del formulario lo resta.
+      if (templateGuardaInventario(selectedTemplate)) {
+        const entFormId = responseData?.formID || responseData?.id || (id ? Number(id) : null);
+        try {
+          const resEnt = await aplicarEntradasInventario({
+            template: selectedTemplate,
+            bodyData: cleanedBodyData,
+            formId: entFormId,
+            procesoDefault: selectedTemplate?.proceso || selectedTemplate?.nombre || '',
+            fecha: (headerData?.[Object.keys(headerData || {}).find(k => /fecha/i.test(k))] || '')
+              .toString().split('T')[0] || undefined,
+          });
+          console.log('📥 [INVENTARIO] Entradas:', resEnt);
+          const textoEnt = resumenEntradas(resEnt);
+          if (textoEnt) alert(textoEnt);
+          if (resEnt.creados.length > 0) await refrescarInventario();
+        } catch (entErr) {
+          console.warn('⚠️ [INVENTARIO] No se pudieron registrar lotes:', entErr.message);
+        }
+      }
+
+      // ➖ DESCONTAR DEL INVENTARIO: tablas con "Restar del Inventario de Lotes" activo.
+      //    Se aplica una sola vez por celda: si el formulario se reguarda, el servicio
+      //    detecta lo ya descontado en el kardex y solo aplica la diferencia.
+      if (templateUsaInventario(selectedTemplate)) {
+        const invFormId = responseData?.formID || responseData?.id || (id ? Number(id) : null);
+        try {
+          const resInv = await aplicarDescuentosInventario({
+            template: selectedTemplate,
+            bodyData: cleanedBodyData,
+            formId: invFormId,
+            procesoDefault: selectedTemplate?.proceso || selectedTemplate?.nombre || '',
+            lotes: invLotes,
+          });
+          console.log('📦 [INVENTARIO] Descuentos:', resInv);
+          const textoInv = resumenDescuentos(resInv);
+          if (textoInv) alert(textoInv);
+          if (resInv.aplicados.length > 0) await refrescarInventario();
+        } catch (invErr) {
+          console.warn('⚠️ [INVENTARIO] No se pudo descontar del inventario:', invErr.message);
+        }
+      }
+
+      // AUTO-GUARDAR RESUMEN DE LOTE — formularios que ARRANCAN la cadena.
+      //
+      // Excepción legítima, no deuda técnica: el PD-04 (fileteo) recibe su materia
+      // prima desde RECEPCIÓN, no desde el inventario. Sus filas traen el código de
+      // la API externa (_apiCodigoId) y el lote de origen todavía NO existe como
+      // lote de inventario. El rol genérico «Guardar en el Inventario de Lotes»
+      // asume lo contrario —que el origen ya está registrado— así que no aplica
+      // acá. Estos formularios crean el primer eslabón de la cadena; del PD-05 en
+      // adelante ya se puede trabajar contra el inventario.
+      //
+      // Se declara en la plantilla con `materiaPrimaDesdeRecepcion`. Mientras no
+      // esté seteada se cae al reconocimiento por código, que es como venía
+      // funcionando, para no romper las plantillas ya guardadas.
+      const declaraEntradas = templateGuardaInventario(selectedTemplate);
+      const arrancaDesdeRecepcion =
+        selectedTemplate?.materiaPrimaDesdeRecepcion === true
+        || (selectedTemplate?.materiaPrimaDesdeRecepcion === undefined
+            && (/PD-?04/i.test(selectedTemplate?.codigo || '')
+                || Number(selectedTemplate?.templateID) === 101));
+
+      if (arrancaDesdeRecepcion) {
+        console.log('📦 [RESUMEN] Arranca desde recepción: crea el primer eslabón de la cadena.');
+      } else if (declaraEntradas) {
+        console.log('📦 [RESUMEN] La plantilla declara entradas de inventario: se usa el camino genérico.');
+      }
+
+      if (arrancaDesdeRecepcion
+          || (!declaraEntradas && isResumenAutoEnabled(selectedTemplate?.templateID))) {
         const newFormId = responseData?.formID || responseData?.id || null;
-        console.log('📦 [RESUMEN] Auto-guardado activado. responseData:', responseData, '| newFormId:', newFormId);
+        console.log('📦 [RESUMEN] Auto-guardado activado (esPD04:', esPD04, '). responseData:', responseData, '| newFormId:', newFormId);
         await handleGuardarResumenLote(true, newFormId);
       }
 
@@ -7872,6 +8461,113 @@ useEffect(() => {
           </div>
         )}
 
+        {/* 🏷️ MODAL SELECTOR DE PRODUCCIÓN PD-04 */}
+        {showProdSelector && (
+          <div
+            style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(0,0,0,0.55)', zIndex: 10000,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+            }}
+            onClick={() => setShowProdSelector(false)}
+          >
+            <div
+              style={{
+                background: '#fff', borderRadius: 12, width: '100%', maxWidth: 820,
+                maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                boxShadow: '0 12px 40px rgba(0,0,0,0.3)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div style={{ background: 'linear-gradient(135deg,#7b2ff7,#f107a3)', color: '#fff', padding: '14px 18px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ fontSize: '1.05rem' }}>🏷️ Producción PD-04 — elegí un producto</strong>
+                  <button
+                    onClick={() => setShowProdSelector(false)}
+                    style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1.4rem', cursor: 'pointer', lineHeight: 1 }}
+                  >×</button>
+                </div>
+                <div style={{ fontSize: '0.8rem', opacity: 0.9, marginTop: 4 }}>
+                  Al hacer clic se agrega una fila con el Lote de proceso y el Tipo de producto.
+                </div>
+              </div>
+
+              {/* Buscador */}
+              <div style={{ padding: '10px 14px', borderBottom: '1px solid #eee' }}>
+                <input
+                  type="text"
+                  value={prodSelectorSearch}
+                  onChange={(e) => setProdSelectorSearch(e.target.value)}
+                  placeholder="Buscar por lote, código o producto…"
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #cfdae5', borderRadius: 8, fontSize: '0.9rem' }}
+                />
+              </div>
+
+              {/* Lista */}
+              <div style={{ overflowY: 'auto', padding: '8px 14px 14px' }}>
+                {prodSelectorLoading ? (
+                  <div style={{ textAlign: 'center', color: '#777', padding: 30 }}>⏳ Cargando producción…</div>
+                ) : prodSelectorError ? (
+                  <div style={{ color: '#b71c1c', background: '#fdecea', border: '1px solid #f5c6cb', borderRadius: 8, padding: 12 }}>
+                    ⚠️ {prodSelectorError}
+                  </div>
+                ) : (() => {
+                  const q = prodSelectorSearch.trim().toLowerCase();
+                  const filtradas = (prodSelectorData || []).filter(it =>
+                    !q ||
+                    (it.loteProceso || '').toLowerCase().includes(q) ||
+                    (it.codigoProducto || '').toLowerCase().includes(q) ||
+                    (it.producto || '').toLowerCase().includes(q)
+                  );
+                  if (filtradas.length === 0) {
+                    return <div style={{ textAlign: 'center', color: '#888', padding: 24 }}>No hay producción para mostrar.</div>;
+                  }
+                  return (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', color: '#555' }}>
+                          <th style={{ padding: '6px 8px', borderBottom: '2px solid #eee' }}>Form</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '2px solid #eee' }}>Fecha</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '2px solid #eee' }}>Lote proceso</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '2px solid #eee' }}>Código</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '2px solid #eee' }}>Producto</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '2px solid #eee' }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtradas.map((it, i) => (
+                          <tr key={`${it.formId}-${it.codigoProducto}-${i}`} style={{ borderBottom: '1px solid #f2f2f2' }}>
+                            <td style={{ padding: '6px 8px', color: '#999' }}>#{it.formId}</td>
+                            <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{String(it.fecha || '').slice(0, 10)}</td>
+                            <td style={{ padding: '6px 8px', fontWeight: 700, color: '#0d3b66' }}>{it.loteProceso || '—'}</td>
+                            <td style={{ padding: '6px 8px' }}>{it.codigoProducto || '—'}</td>
+                            <td style={{ padding: '6px 8px' }}>{it.producto || '—'}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                              <button
+                                onClick={() => pickProdItem(it)}
+                                style={{ background: '#2e7d32', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                              >➕ Agregar</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: '10px 14px', borderTop: '1px solid #eee', textAlign: 'right' }}>
+                <button
+                  onClick={() => setShowProdSelector(false)}
+                  style={{ background: '#eef2f6', border: '1px solid #d5dee6', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}
+                >Listo</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 🚀 MODAL DE IMPORTADOR DE COLUMNAS AUTOMÁTICO */}
         {showColumnImporter && (
           <div style={{
@@ -8553,11 +9249,17 @@ useEffect(() => {
                       {field.label}{field.required && <span className="required">*</span>}
                     </label>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                      {renderField(
-                        field,
-                        headerData[field.label], 
-                        (value) => handleHeaderChangeWithAutoSave(field.label, value)
-                      )}
+                      {(() => {
+                        const isAutoLote = field.type === 'text' && 
+                                           field.label.toLowerCase().includes('lote') && 
+                                           !field.label.toLowerCase().includes('entrante') &&
+                                           selectedTemplate.headerFields.some(f => f.type === 'date' && f.autoGenerarLote);
+                        return renderField(
+                          { ...field, readonly: field.readonly || isAutoLote },
+                          headerData[field.label], 
+                          (value) => handleHeaderChangeWithAutoSave(field.label, value)
+                        );
+                      })()}
                       {/* 🆕 Botón para abrir selector de datos */}
                       <button
                         onClick={() => {
@@ -8599,6 +9301,46 @@ useEffect(() => {
                   );
                 })}
               </div>
+
+              {/* 🔗 Varios lotes de proceso: se cargan acá y alimentan la columna
+                  de código padre de las tablas que la tengan. */}
+              {(() => {
+                const tablaPadre = (selectedTemplate?.bodyElements || []).find(tablaTieneLotePadre);
+                const campos = camposLoteDeTemplate(selectedTemplate);
+                if (!tablaPadre && campos.length === 0) return null;
+                // El campo marcado puede pedir que no se sugiera nada (origenLotes: 'libre')
+                const campoCfg = (selectedTemplate?.headerFields || []).find(f => f?.esCampoLotes);
+                const sinSugerencias = campoCfg?.origenLotes === 'libre';
+                // Si la plantilla eligió a mano los lotes padre, el encabezado
+                // sugiere esos y nada más (con su saldo si están en inventario).
+                const sugerencias = () => {
+                  const todas = opcionesLoteProceso(invLotes, prodCellOptions.lotes, {
+                    soloConSaldo: !!tablaPadre?.lotePadreSoloDisponibles,
+                  });
+                  if (!usaListaLotePadre(tablaPadre)) return todas;
+                  const conDatos = filtrarLotesElegidos(tablaPadre, todas);
+                  const faltantes = listaLotePadreDe(tablaPadre)
+                    .filter(v => !conDatos.some(o => o.value === v))
+                    .map(v => ({ value: v, label: v, saldo: 0 }));
+                  return [...conDatos, ...faltantes];
+                };
+                return (
+                  <div style={{ marginTop: '12px' }}>
+                    <LotesEncabezado
+                      headerData={headerData}
+                      onChange={handleHeaderChangeWithAutoSave}
+                      campos={campos}
+                      columnaLabel={(tablaPadre?.columns || []).find(esColumnaLotePadre)?.label}
+                      unico={modoUnLote}
+                      onUnicoChange={setModoUnLote}
+                      columnaOculta={ocultarColumnaLotePadre(
+                        tablaPadre, headerData, campos, { unLote: modoUnLote },
+                      )}
+                      lotesProceso={sinSugerencias ? [] : sugerencias()}
+                    />
+                  </div>
+                );
+              })()}
             </AccordionSection>
         )}
 
@@ -9144,6 +9886,13 @@ useEffect(() => {
             const groupedColumns = processColumnGroups(element.columns);
             const rowCount = (currentElementData.data || []).filter(r => !r?._deleted).length;
 
+            // 🔗 Con un solo lote, la columna de código padre no se dibuja: sería
+            // el mismo lote del encabezado repetido en cada fila. Se llena sola.
+            const ocultaLotePadre = ocultarColumnaLotePadre(
+              element, headerData, camposLoteDeTemplate(selectedTemplate), { unLote: modoUnLote },
+            );
+            const columnaOculta = (col) => ocultaLotePadre && esColumnaLotePadre(col);
+
             // 📦 Paneles de Lotes Entrantes vinculados a esta tabla
             const loteRef = element.loteEntranteRef;
             // Soporta loteEntranteRefs (array) y loteEntranteRef (string legacy)
@@ -9563,9 +10312,11 @@ useEffect(() => {
                         {loteRefs.length > 0 && (
                           <th rowSpan="2" style={{ background: '#166534', color: 'white', minWidth: '120px', fontSize: '0.68rem', verticalAlign: 'middle', textAlign: 'center', whiteSpace: 'normal' }}>📦 Lote</th>
                         )}
-                        {groupedColumns.map((group, index) => (
-                          <th key={index} colSpan={group.columns.length}>{group.groupName}</th>
-                        ))}
+                        {groupedColumns.map((group, index) => {
+                          const visibles = group.columns.filter(c => !columnaOculta(c)).length;
+                          if (visibles === 0) return null;
+                          return <th key={index} colSpan={visibles}>{group.groupName}</th>;
+                        })}
                         {selectedTemplate && isTrazaEnabled(selectedTemplate.templateID) && (
                           <>
                             <th rowSpan="2" style={{ background: '#064e3b', color: '#d1fae5', minWidth: '110px', whiteSpace: 'normal', fontSize: '0.68rem', verticalAlign: 'middle', textAlign: 'center' }}>Clasificación</th>
@@ -9573,10 +10324,12 @@ useEffect(() => {
                             <th rowSpan="2" style={{ background: '#064e3b', color: '#d1fae5', minWidth: '110px', whiteSpace: 'normal', fontSize: '0.68rem', verticalAlign: 'middle', textAlign: 'center' }}>Nuevo Lote</th>
                           </>
                         )}
-                        <th rowSpan="2" style={{ background: '#4b5563', color: 'white', position: 'sticky', right: 0, zIndex: 12, minWidth: '80px' }}>Acciones</th>
+                        {/* Un solo desplegable ⋮ en vez de tres botones apilados */}
+                        <th rowSpan="2" style={{ background: '#4b5563', color: 'white', position: 'sticky', right: 0, zIndex: 12, minWidth: '56px', width: '56px', fontSize: '0.68rem' }}>Acciones</th>
                       </tr>
                       <tr>
                         {(element.columns || []).map((col, colIndex) => {
+                          if (columnaOculta(col)) return null;   // 🔗 un solo lote
                           const headerText = col.label || col.header || `Col ${colIndex + 1}`;
                           const colType = (col.type || '').toLowerCase();
                           const isFormulaCol = colType === 'formula' || colType === 'calculated' || colType === 'percentage';
@@ -9585,7 +10338,17 @@ useEffect(() => {
                           const isEspecieProductoCol =
                             col.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_ESPECIE' ||
                             col.apiEndpoint?.toUpperCase() === 'PRODUCTOS';
-                          const isSelectCol = colType === 'select' || (col.apiEndpoint && !isEspecieProductoCol) || hasOptions;
+                          // 📦🏷️ Una columna enlazada (inventario / producción /
+                          // catálogo de clasificaciones) también se puede aplicar a
+                          // todas las filas eligiendo de su propia lista, en vez de
+                          // tener que escribir el valor a mano una y otra vez.
+                          const opcionesEnlazadas = esColumnaInventario(col)
+                            ? opcionesInventario(invDatos, element.columns || [], col, {})
+                            : [];
+                          const isSelectCol = colType === 'select'
+                            || (col.apiEndpoint && !isEspecieProductoCol)
+                            || hasOptions
+                            || opcionesEnlazadas.length > 0;
                           const cellName = (element._columnNameMap instanceof Map ? element._columnNameMap.get(colIndex) : null) || col.label || col.header || col.id;
                           const rangePanelKey = `${elementIndex}-${colIndex}`;
                           const totalRowsCount = (element.data || []).filter(r => !r?._deleted).length;
@@ -9672,9 +10435,13 @@ useEffect(() => {
                                     >
                                       <option value="">⬇ Todas</option>
                                       <option value="__VACIAR__">🚫 Vacío</option>
-                                      {(col.options || []).map((opt, oi) => (
-                                        <option key={oi} value={opt}>{opt}</option>
-                                      ))}
+                                      {opcionesEnlazadas.length > 0
+                                        ? opcionesEnlazadas.map((o) => (
+                                            <option key={o.value} value={o.value}>{o.label}</option>
+                                          ))
+                                        : (col.options || []).map((opt, oi) => (
+                                            <option key={oi} value={opt}>{opt}</option>
+                                          ))}
                                     </select>
                                   ) : (
                                     <button
@@ -9851,7 +10618,8 @@ useEffect(() => {
         
         {/* RENDERIZADO DE CELDAS */}
         {(element.columns || []).map((col, colIndex) => {
-          
+          if (columnaOculta(col)) return null;   // 🔗 un solo lote: se llena sola
+
           // 🔗 SOPORTE FILAS PREDEFINIDAS CON COMBINACIÓN (rowSpan) — DIRECTO DESDE TEMPLATE
           const predefinedRows = element.predefinedRows || [];
           let cellRowSpan = undefined;
@@ -10018,7 +10786,11 @@ useEffect(() => {
 
           // 4. CASO NORMAL (Resto de formularios o columnas normales)
           const tableTemplateForApiCodigo = element.usaApiPorCodigo || element.apiCodigoUrl ? element : (Array.isArray(selectedTemplate?.bodyElements) ? selectedTemplate?.bodyElements?.[elementIndex] : (typeof selectedTemplate?.bodyElements === 'string' ? JSON.parse(selectedTemplate.bodyElements)[elementIndex] : null)) || element;
-          const isApiCodigoTrigger = tableTemplateForApiCodigo?.usaApiPorCodigo && col.label === tableTemplateForApiCodigo?.apiCodigoTriggerCol;
+          // Una columna marcada como "solo escribir" (campoLibre) nunca dispara la
+          // búsqueda por código: se escribe a mano y listo.
+          const isApiCodigoTrigger = !col.campoLibre
+            && tableTemplateForApiCodigo?.usaApiPorCodigo
+            && col.label === tableTemplateForApiCodigo?.apiCodigoTriggerCol;
           const apiCodigoLoadKey = `${elementIndex}-${rowIndex}`;
           const isApiCodigoLoading = apiCodigoLoadingRows[apiCodigoLoadKey];
 
@@ -10080,6 +10852,169 @@ useEffect(() => {
             && !esColumnaCodigoOBusqueda
             && rowCargadaDesdeApi;
 
+          // 📦 COLUMNA DE INVENTARIO: desplegable con los lotes reales del Inventario de Lotes.
+          //    Configurada en la plantilla (Tipo = "📦 Inventario"), no por nombre de columna.
+          // 🔗 COLUMNA DE CÓDIGO PADRE: desplegable con los lotes del encabezado.
+          //    Un formulario puede procesar varios lotes a la vez y cada fila
+          //    tiene que decir de cuál sale.
+          if (esColumnaLotePadre(col) && !col.campoLibre) {
+            // El lote padre ES el lote de proceso: se ofrecen los del encabezado
+            // y los lotes de proceso reales, según lo configurado en la plantilla.
+            const cfgPadre = selectedTemplate?.bodyElements?.[elementIndex] || element;
+            const { delEncabezado: lotesCab, deProceso: lotesProc } = opcionesLotePadre(
+              cfgPadre, headerData, invLotes, prodCellOptions.lotes,
+              camposLoteDeTemplate(selectedTemplate),
+              // Con origen 'tabla' los lotes salen del cuadro de materia prima
+              // de este mismo formulario, así que hay que darle las filas vivas.
+              { bodyElements: selectedTemplate?.bodyElements, bodyRows: bodyData, col },
+            );
+            const valorAct = row[resolvedCellName] || '';
+            const hayOpciones = lotesCab.length > 0 || lotesProc.length > 0;
+            const fuera = valorAct
+              && !lotesCab.includes(valorAct)
+              && !lotesProc.some(o => o.value === valorAct);
+            return (
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border">
+                {hayOpciones ? (
+                  <select
+                    value={valorAct}
+                    onChange={e => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, e.target.value)}
+                    required={col.required}
+                    className="form-select table-input-expandable"
+                    style={{ width: '100%', border: '1px solid #93c5fd', background: valorAct ? '#eff6ff' : 'white' }}
+                    title="Lote de proceso (padre) al que pertenece esta fila"
+                  >
+                    <option value="">— Lote de proceso —</option>
+                    {fuera && <option value={valorAct}>{valorAct} (fuera de la lista)</option>}
+                    {hayOpciones && (
+                      <optgroup label="🏭 Lotes de proceso">
+                        {lotesCab.map(l => <option key={`cab-${l}`} value={l}>{l}</option>)}
+                        {lotesProc.map(o => <option key={`proc-${o.value}`} value={o.value}>{o.label}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={valorAct}
+                    onChange={e => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, e.target.value)}
+                    placeholder="Escriba el lote de proceso"
+                    style={{ width: '100%', padding: '4px 8px', border: '1px dashed #93c5fd', borderRadius: '4px', fontSize: '13px', background: '#f8fafc' }}
+                  />
+                )}
+              </td>
+            );
+          }
+
+          if (col.type === 'inventario' && !col.campoLibre) {
+            const cfgTabla  = selectedTemplate?.bodyElements?.[elementIndex] || element;
+            const colsTpl   = cfgTabla?.columns || element.columns || [];
+            const opciones  = opcionesInventario(invDatos, colsTpl, col, row);
+            const valorAct  = row[resolvedCellName] || '';
+            const esProd    = esColumnaProduccion(col);
+            const campoCol  = col.invCampo || (esProd ? 'loteProceso' : 'numeroLote');
+            const esColLote = campoCol === 'numeroLote' || campoCol === 'loteProceso';
+            // Saldo a mostrar: con origen inventario es el lote elegido; con origen
+            // de producción es el lote hijo real que resolvería el descuento.
+            let loteSel = null;
+            if (esColLote && valorAct) {
+              loteSel = esProd
+                ? (saldoDeFila(invLotes, cfgTabla, { ...row, [resolvedCellName]: valorAct })?.lote || null)
+                : buscarLote(invLotes, valorAct);
+            }
+            // Si la tabla descuenta inventario, avisar cuando la cantidad supera el saldo.
+            const cantDesc = cfgTabla?.descuentaInventario && loteSel
+              ? Number(String(leerCelda(row, cfgTabla.descuentaCantidadCol) ?? '').replace(',', '.'))
+              : NaN;
+            const excedeSaldo = Number.isFinite(cantDesc) && cantDesc > saldoDe(loteSel);
+            const fueraDeLista = valorAct && !opciones.some(o => o.value === valorAct);
+
+            return (
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border">
+                {opciones.length > 0 ? (
+                  <select
+                    value={valorAct}
+                    onChange={e => handleInventarioCellChange(elementIndex, rowIndex, resolvedCellName, e.target.value, col, row)}
+                    required={col.required}
+                    className="form-select table-input-expandable"
+                    style={{ width: '100%', border: '1px solid #60a5fa', background: valorAct ? '#eff6ff' : 'white' }}
+                    title={esProd ? 'Valor tomado del resumen de producción del formulario configurado' : 'Valor tomado del Inventario de Lotes'}
+                  >
+                    <option value="">
+                      {campoCol === 'clasificacion' ? '— Clasificación —' : (esProd ? '— Producción —' : '— Inventario —')}
+                    </option>
+                    {fueraDeLista && <option value={valorAct}>{valorAct} (fuera de inventario)</option>}
+                    {opciones.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={valorAct}
+                    onChange={e => handleInventarioCellChange(elementIndex, rowIndex, resolvedCellName, e.target.value, col, row)}
+                    placeholder={esProd ? 'Sin producción registrada — escriba manual' : 'Sin lotes en inventario — escriba manual'}
+                    style={{ width: '100%', padding: '4px 8px', border: '1px dashed #60a5fa', borderRadius: '4px', fontSize: '13px', background: '#f8fafc' }}
+                  />
+                )}
+                {loteSel && (
+                  <div style={{ marginTop: '3px', fontSize: '10.5px', color: excedeSaldo ? '#b91c1c' : '#1d4ed8', fontWeight: 600 }}>
+                    ⚖️ Saldo {saldoDe(loteSel).toFixed(2)} Lbs
+                    {esProd && loteSel.numeroLote !== valorAct && ` · lote ${loteSel.numeroLote}`}
+                    {loteSel.estado && loteSel.estado !== 'disponible' && ` · ${loteSel.estado}`}
+                    {excedeSaldo && ` · ⚠️ se intenta restar ${cantDesc} Lbs`}
+                  </div>
+                )}
+              </td>
+            );
+          }
+
+          // 🏷️ Convertir LOTE DE PROCESO / TIPO DE PRODUCTO en <select> con la producción PD-04.
+          //     Solo si hay opciones cargadas; si no, se deja el input normal (sin regresión).
+          let colForRender = col;
+
+          // 🔎 La columna que se está pintando puede venir de una copia vieja del
+          //    formulario (borrador autoguardado o snapshot creado antes de tocar
+          //    la plantilla), y ahí todavía no existe lo configurado después. Para
+          //    "Búsqueda de producto" manda la plantilla actual, igual que ya se
+          //    hace arriba con la API por código.
+          const colDePlantilla = (elementosDe(selectedTemplate)?.[elementIndex]?.columns || [])[colIndex];
+          if (
+            colDePlantilla &&
+            colDePlantilla.label === col.label &&
+            colDePlantilla.busquedaProducto !== col.busquedaProducto
+          ) {
+            colForRender = { ...colForRender, busquedaProducto: colDePlantilla.busquedaProducto };
+          }
+          // La tabla puede apagar este atajo desde la plantilla (sinAutoProduccion):
+          // entonces las columnas quedan como las definió la plantilla.
+          const cfgAutoProd = selectedTemplate?.bodyElements?.[elementIndex] || element;
+          if (!col.campoLibre && usaAutoProduccionLegacy(cfgAutoProd)) {
+            const curVal = row[resolvedCellName];
+            const withCur = (arr) => (curVal && !arr.includes(curVal) ? [curVal, ...arr] : arr);
+            if (/lote\s*de\s*proceso/i.test(colLabel)) {
+              // 🔗 Prioridad a los lotes escritos en el encabezado de ESTE formulario.
+              // Si la plantilla lo pide (autoProduccionSoloEncabezado) NUNCA se cae al
+              // listado completo; si no, ese listado sirve de respaldo cuando el
+              // encabezado todavía no tiene ningún lote escrito.
+              const lotesCabecera = lotesDelEncabezado(headerData, camposLoteDeTemplate(selectedTemplate));
+              const soloEncabezado = !!cfgAutoProd?.autoProduccionSoloEncabezado;
+              const listaLotes = (lotesCabecera.length > 0 || soloEncabezado)
+                ? lotesCabecera
+                : prodCellOptions.lotes;
+              if (listaLotes.length > 0) {
+                colForRender = { ...colForRender, type: 'select', options: withCur(listaLotes) };
+              }
+            } else if (/tipo\s*de\s*producto/i.test(colLabel)) {
+              // 🔗 Desplegable dependiente: solo los productos del LOTE DE PROCESO elegido en ESTA fila.
+              const loteKey = Object.keys(row).find(k => /lote\s*de\s*proceso/i.test(k));
+              const loteVal = loteKey ? (row[loteKey] || '').trim() : '';
+              const delLote = loteVal ? prodCellOptions.porLote[loteVal] : null;
+              const prods = (Array.isArray(delLote) && delLote.length > 0) ? delLote : prodCellOptions.productos;
+              if (prods.length > 0) {
+                colForRender = { ...colForRender, type: 'select', options: withCur(prods) };
+              }
+            }
+          }
+
           return (
             <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border">
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -10139,7 +11074,7 @@ useEffect(() => {
                         background: '#f3f4f6', color: '#374151', cursor: 'not-allowed'
                       }}
                     />
-                  ) : renderField(col, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
+                  ) : renderField(colForRender, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
                 </div>
                 {isApiCodigoTrigger && (
                   <button
@@ -10161,6 +11096,83 @@ useEffect(() => {
                 )}
                 {col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', whiteSpace: 'nowrap', fontWeight: 500 }}>{col.unit}</span>}
               </div>
+
+              {/* ➖ Saldo proyectado: solo en la columna que descuenta inventario */}
+              {(() => {
+                const tablaCfg = selectedTemplate?.bodyElements?.[elementIndex] || element;
+                if (!tablaCfg?.descuentaInventario) return null;
+                if ((tablaCfg.descuentaCantidadCol || '') !== (col.label || '')) return null;
+
+                const { numeroLote, lote, columna: loteColLabel } = resolverLoteDeFila(invLotes, tablaCfg, row);
+                if (!numeroLote) return null;
+
+                if (!lote) {
+                  // Diagnóstico: casi siempre es que la columna de lote configurada
+                  // apunta a otra columna (se lee la cantidad, un código, etc.).
+                  const pareceCantidad = /^\d+([.,]\d+)?$/.test(numeroLote) && Number(numeroLote) < 10000;
+                  return (
+                    <div style={{ marginTop: '3px', fontSize: '10.5px', color: '#b45309', fontWeight: 600, lineHeight: 1.5 }}>
+                      ⚠️ "{numeroLote}" (columna <em>{loteColLabel || '—'}</em>) no existe en el Inventario
+                      de Lotes — esta fila no se descontará.
+                      {pareceCantidad && (
+                        <div style={{ color: '#b91c1c' }}>
+                          Parece un número de cantidad, no un lote: revisá en la plantilla
+                          «Columna con el número de lote».
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                const aNumero = (v) => {
+                  const n = Number(String(v ?? '').replace(',', '.'));
+                  return Number.isFinite(n) ? n : 0;
+                };
+                const cantidad = aNumero(row[resolvedCellName]);
+                // Otras filas de ESTA tabla que consumen el mismo lote también bajan el saldo
+                const otrasFilas = (allRowsForTable || []).reduce((acc, r, ri) => {
+                  if (ri === rowIndex || r?._deleted) return acc;
+                  const otro = resolverLoteDeFila(invLotes, tablaCfg, r).numeroLote;
+                  return otro === numeroLote ? acc + aNumero(leerCelda(r, col.label)) : acc;
+                }, 0);
+
+                const saldo = saldoDe(lote);
+                const restante = Number((saldo - otrasFilas - cantidad).toFixed(2));
+                const excede = restante < -0.0001;
+
+                if (cantidad <= 0) {
+                  return (
+                    <div style={{ marginTop: '3px', fontSize: '10.5px', color: '#1d4ed8', fontWeight: 600, lineHeight: 1.5 }}>
+                      ⚖️ Hay {(saldo - otrasFilas).toFixed(2)} Lbs del lote {numeroLote}
+                      {otrasFilas > 0 && (
+                        <span style={{ fontWeight: 500 }}> (ya comprometidas {otrasFilas.toFixed(2)} Lbs en otras filas)</span>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{
+                    marginTop: '3px', fontSize: '10.5px', fontWeight: 700,
+                    color: excede ? '#b91c1c' : '#15803d',
+                    background: excede ? '#fee2e2' : 'transparent',
+                    border: excede ? '1px solid #fca5a5' : 'none',
+                    borderRadius: '4px', padding: excede ? '2px 5px' : 0,
+                  }}>
+                    {excede ? (
+                      `⛔ Saldo insuficiente: hay ${(saldo - otrasFilas).toFixed(2)} Lbs del lote ${numeroLote} y se piden ${cantidad.toFixed(2)} Lbs`
+                    ) : (
+                      <>
+                        ⚖️ Hay <strong>{saldo.toFixed(2)}</strong> → quedarán{' '}
+                        <strong>{restante.toFixed(2)}</strong> Lbs al guardar
+                        <div style={{ fontWeight: 500, color: '#166534' }}>
+                          Lote {numeroLote} · −{cantidad.toFixed(2)} Lbs esta fila
+                          {otrasFilas > 0 && ` · −${otrasFilas.toFixed(2)} Lbs otras filas`}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* 💡 Sugerencias por recepción: una por cabId, filtradas por lo que se escribe */}
               {isApiCodigoTrigger && !row[resolvedCellName] && loadedIds.length > 0 && (
@@ -10286,33 +11298,53 @@ useEffect(() => {
         })()}
         {(() => {
           const delRowIndex = capturedRowIndex;
+          const oculta = !!row._hiddenRow;
+
+          // 🧰 Las acciones de la fila van en un solo desplegable: tres botones
+          //    sueltos se apilaban en la columna angosta y estiraban el alto de
+          //    toda la fila. Se elige la acción y el desplegable vuelve a "⋮".
+          const ejecutarAccion = (accion) => {
+            if (accion === 'limpiar') {
+              clearRowContent(elementIndex, delRowIndex);
+              return;
+            }
+            if (accion === 'ocultar') {
+              toggleHiddenRow(elementIndex, delRowIndex, !oculta);
+              return;
+            }
+            if (accion === 'eliminar') {
+              const totalRows = (currentElementData.data || []).filter(r => !r?._deleted).length;
+              let msg = `¿Eliminar la fila ${displayNum}?`;
+              if (totalRows - 1 <= 0) {
+                msg += '\n\n⚠️ ¡ATENCIÓN! Esto eliminará TODAS las filas. Puedes restaurarlas con el botón "🔄 Restaurar Filas".';
+              }
+              if (window.confirm(msg)) removeTableRow(elementIndex, delRowIndex);
+            }
+          };
+
           return (
-            <td style={{ textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'middle', position: 'sticky', right: 0, background: (rowIndex % 2 === 0) ? 'white' : '#f9fafb', zIndex: 2, boxShadow: '-2px 0 4px rgba(0,0,0,0.1)' }}>
-              <button onClick={() => clearRowContent(elementIndex, delRowIndex)} className="btn-remove-row" title="Limpiar contenido de esta fila (sin eliminar)"
-                style={{ background: '#f59e0b', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '2px 5px', fontSize: '0.75rem', marginRight: '2px' }}>
-                🧹
-              </button>
-              <button onClick={() => {
-                console.log('🗑️ Click en botón eliminar:', { elementIndex, delRowIndex, displayNum, puntoMuestreo: row['Punto de Muestreo'] || row['MARCA DE BALANZA'] || Object.values(row).find(v => v && typeof v === 'string' && v.length > 2) });
-                const totalRows = (currentElementData.data || []).filter(r => !r?._deleted).length;
-                const remaining = totalRows - 1;
-                let msg = `¿Eliminar la fila ${displayNum}?`;
-                if (remaining <= 0) {
-                  msg += '\n\n⚠️ ¡ATENCIÓN! Esto eliminará TODAS las filas. Puedes restaurarlas con el botón "🔄 Restaurar Filas".';
-                }
-                if (window.confirm(msg)) {
-                  removeTableRow(elementIndex, delRowIndex);
-                }
-              }} className="btn-remove-row" title="Eliminar fila">
-                🗑️
-              </button>
-              <button
-                onClick={() => toggleHiddenRow(elementIndex, delRowIndex, !row._hiddenRow)}
-                className="btn-remove-row"
-                title={row._hiddenRow ? 'Fila oculta en Ver/PDF/Excel — clic para mostrar' : 'Ocultar esta fila en Ver/PDF/Excel'}
-                style={{ background: row._hiddenRow ? '#dc2626' : '#e5e7eb', color: row._hiddenRow ? 'white' : '#374151', border: 'none', borderRadius: '4px', cursor: 'pointer', padding: '2px 5px', fontSize: '0.75rem', marginLeft: '2px' }}>
-                🚫
-              </button>
+            <td style={{ textAlign: 'center', whiteSpace: 'nowrap', verticalAlign: 'middle', position: 'sticky', right: 0, background: (rowIndex % 2 === 0) ? 'white' : '#f9fafb', zIndex: 2, boxShadow: '-2px 0 4px rgba(0,0,0,0.1)', padding: '2px 4px' }}>
+              <select
+                value=""
+                onChange={(e) => { const v = e.target.value; e.target.value = ''; if (v) ejecutarAccion(v); }}
+                title={oculta
+                  ? 'Fila oculta en Ver/PDF/Excel — acciones de la fila'
+                  : 'Acciones de la fila (limpiar, ocultar, eliminar)'}
+                style={{
+                  width: '46px', padding: '2px', fontSize: '0.8rem', textAlign: 'center',
+                  border: `1px solid ${oculta ? '#dc2626' : '#cbd5e1'}`, borderRadius: '4px',
+                  background: oculta ? '#fee2e2' : 'white',
+                  color: oculta ? '#b91c1c' : '#334155',
+                  cursor: 'pointer', lineHeight: 1.2,
+                }}
+              >
+                <option value="">{oculta ? '🚫' : '⋮'}</option>
+                <option value="limpiar">🧹 Limpiar contenido</option>
+                <option value="ocultar">
+                  {oculta ? '👁️ Mostrar en Ver/PDF/Excel' : '🚫 Ocultar en Ver/PDF/Excel'}
+                </option>
+                <option value="eliminar">🗑️ Eliminar fila</option>
+              </select>
             </td>
           );
         })()}
@@ -10450,11 +11482,96 @@ useEffect(() => {
 })()}
 
                   </table>
+
+                  {/* 📦 IMPACTO EN EL INVENTARIO: saldo de hoy → saldo proyectado, por lote */}
+                  {(() => {
+                    const tablaCfg = selectedTemplate?.bodyElements?.[elementIndex] || element;
+                    if (!tablaCfg?.descuentaInventario) return null;
+                    const cantCol = tablaCfg.descuentaCantidadCol;
+                    if (!cantCol) return null;
+
+                    const filas = (currentElementData?.data || []).filter(r => !r?._deleted);
+                    if (filas.length === 0) return null;
+
+                    const aNumero = (v) => {
+                      const n = Number(String(v ?? '').replace(',', '.'));
+                      return Number.isFinite(n) ? n : 0;
+                    };
+
+                    // Varias filas pueden consumir el mismo lote: se acumulan.
+                    const porLote = new Map();
+                    filas.forEach(r => {
+                      const { numeroLote, lote } = resolverLoteDeFila(invLotes, tablaCfg, r);
+                      if (!numeroLote) return;
+                      const cant = aNumero(leerCelda(r, cantCol));
+                      const acc = porLote.get(numeroLote) || { lote, pedido: 0 };
+                      if (cant > 0) acc.pedido += cant;
+                      porLote.set(numeroLote, acc);
+                    });
+                    if (porLote.size === 0) return null;
+
+                    const items = [...porLote.entries()].map(([numeroLote, info]) => {
+                      const saldo = info.lote ? saldoDe(info.lote) : null;
+                      return {
+                        numeroLote,
+                        existe: !!info.lote,
+                        saldo,
+                        pedido: Number(info.pedido.toFixed(2)),
+                        restante: saldo === null ? null : Number((saldo - info.pedido).toFixed(2)),
+                      };
+                    });
+                    const hayProblema = items.some(i => !i.existe || (i.restante !== null && i.restante < -0.0001));
+
+                    return (
+                      <div style={{
+                        marginTop: '10px',
+                        background: hayProblema ? '#fef2f2' : '#f0fdf4',
+                        border: `1.5px solid ${hayProblema ? '#fca5a5' : '#86efac'}`,
+                        borderRadius: '10px',
+                        padding: '10px 12px',
+                      }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: hayProblema ? '#991b1b' : '#166534', marginBottom: '6px' }}>
+                          📦 Impacto en el Inventario de Lotes al guardar
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {items.map(i => (
+                            <div key={i.numeroLote} style={{ fontSize: '11.5px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'baseline' }}>
+                              <strong style={{ color: '#0f172a', minWidth: '130px' }}>{i.numeroLote}</strong>
+                              {!i.existe ? (
+                                <span style={{ color: '#b45309', fontWeight: 600 }}>
+                                  no está en el inventario — no se descontará
+                                </span>
+                              ) : (
+                                <>
+                                  <span style={{ color: '#475569' }}>
+                                    hay <strong>{i.saldo.toFixed(2)}</strong> Lbs
+                                  </span>
+                                  <span style={{ color: '#475569' }}>− {i.pedido.toFixed(2)} Lbs</span>
+                                  <span style={{
+                                    fontWeight: 700,
+                                    color: i.restante < -0.0001 ? '#b91c1c' : '#15803d',
+                                  }}>
+                                    → {i.restante < -0.0001
+                                      ? `faltan ${Math.abs(i.restante).toFixed(2)} Lbs`
+                                      : `quedarán ${i.restante.toFixed(2)} Lbs`}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '6px' }}>
+                          Proyección sobre el saldo de ahora. Si este formulario ya se guardó antes,
+                          al volver a guardar solo se aplica la diferencia — nunca se descuenta dos veces.
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </AccordionSection>
             );
           }
-          
+
           // Renderizar tinas (Control de Tinas)
           if (element.type === 'tinas') {
             const config = element.config || {};
@@ -10914,9 +12031,14 @@ useEffect(() => {
         {/* FIRMAS CON ACORDEÓN - REQUIERE REVISAR DOCUMENTO ANTES DE FIRMAR */}
         {selectedTemplate.firmas?.length > 0 && (
           <AccordionSection
+            className="seccion-firmas"
             title="Firmas y Aprobaciones"
             icon="✍️"
-            badge={`${selectedTemplate.firmas.length} firmas`}
+            badge={
+              selectedTemplate.firmas.some(f => tieneFirma(firmasData[f?.puesto]))
+                ? `${selectedTemplate.firmas.length} firmas`
+                : `⚠️ obligatorio · ${selectedTemplate.firmas.length} firmas`
+            }
             isExpanded={expandedSections.signatures}
             onToggle={() => toggleSection('signatures')}
           >
@@ -10928,35 +12050,84 @@ useEffect(() => {
                     const nombreAsignado = firma.nombreCompleto || '';
                     const currentUserName = (currentUser?.nombre || currentUser?.username || '').toLowerCase().trim();
 
-                    // ¿Es el titular?
-                    const isCurrentUserSlot = nombreAsignado && currentUserName &&
-                      nombreAsignado.toLowerCase().trim() === currentUserName;
+                    // Normaliza nombres para comparar sin que una tilde, mayúscula o espacio de más
+                    // rompa el reconocimiento (ej. "José" vs "Jose", "Juan  Pérez" vs "Juan Perez").
+                    const normNombre = (s) => (s || '')
+                      .toString()
+                      .normalize('NFD').replace(/[̀-ͯ]/g, '') // quita tildes
+                      .toLowerCase()
+                      .replace(/\s+/g, ' ')
+                      .trim();
+                    const currentUserNorm = normNombre(currentUser?.nombre || currentUser?.username || '');
 
-                    // ¿Está en lista de reemplazos definidos en la plantilla?
+                    // ¿Es el titular?
+                    const isCurrentUserSlot = !!nombreAsignado && !!currentUserNorm &&
+                      normNombre(nombreAsignado) === currentUserNorm;
+
+                    // ¿Está en la lista de reemplazos definidos en la plantilla?
+                    // El reemplazo es ÚNICAMENTE quien figura en esta lista.
                     const reemplazosDefinidos = (firma.reemplazos || []).filter(Boolean);
                     const esReemplazoDefinido = reemplazosDefinidos.some(
-                      r => r.toLowerCase().trim() === currentUserName
+                      r => normNombre(r) === currentUserNorm
                     );
 
                     // Puede firmar: titular, reemplazo definido, o slot sin titular
                     const puedeFiremar = isCurrentUserSlot || esReemplazoDefinido || !nombreAsignado;
 
-                    // Nombre a mostrar: reemplazo muestra su propio nombre
-                    const nombreParaMostrar = esReemplazoDefinido && !isCurrentUserSlot
-                      ? (currentUser?.nombre || currentUser?.username || '')
-                      : (firmasData[firma.puesto]?.nombre || nombreAsignado || '');
+                    const nombreUsuarioActual = currentUser?.nombre || currentUser?.username || '';
+                    const yaTieneFirma = !!(firmasData[firma.puesto]?.firma?.url || firmasData[firma.puesto]?.firma?.base64);
 
-                    // 🔑 Opciones de firmante para PIN: titular + reemplazos definidos en la plantilla
+                    // 🔑 Opciones de firmante: SOLO el titular y los reemplazos DEFINIDOS
+                    // en la plantilla. El reemplazo es únicamente quien figura en esa lista.
                     const opcionesFirmantesPin = [nombreAsignado, ...reemplazosDefinidos.filter(
-                      r => r.toLowerCase().trim() !== nombreAsignado.toLowerCase().trim()
+                      r => normNombre(r) !== normNombre(nombreAsignado)
                     )].filter(Boolean);
-                    const firmantePinSeleccionado = pinFirmanteByPuesto[firma.puesto] || nombreAsignado;
+
+                    // Firmante activo del slot. Prioridad:
+                    // 1) lo elegido a mano en la lista desplegable
+                    // 2) el reemplazo que está en sesión, SI el puesto todavía no está firmado
+                    // 3) quien ya firmó (formulario en edición)
+                    // 4) el titular
+                    //
+                    // 🔧 FIX: el paso 2 iba después del nombre ya guardado. Como el slot viene precargado
+                    // con el titular desde la plantilla, la lista se quedaba siempre en el titular y el
+                    // reemplazo tenía que cambiarla a mano; si no se acordaba, firmaba y el registro
+                    // quedaba a nombre del titular. Ahora, mientras nadie haya firmado, la lista se
+                    // posiciona sola en el usuario que está en sesión (sin dejar de ser modificable).
+                    // Si el puesto YA tiene firma se respeta el nombre guardado, para no reescribir
+                    // la firma de otra persona por el solo hecho de abrir el formulario.
+                    const reemplazoDeLista = reemplazosDefinidos.find(r => normNombre(r) === currentUserNorm);
+                    const nombreYaGuardado = firmasData[firma.puesto]?.nombre || '';
+                    const nombreGuardadoValido = opcionesFirmantesPin.some(
+                      o => normNombre(o) === normNombre(nombreYaGuardado)
+                    ) ? nombreYaGuardado : '';
+                    const firmantePinSeleccionado = pinFirmanteByPuesto[firma.puesto]
+                      || (!yaTieneFirma ? reemplazoDeLista : '')
+                      || nombreGuardadoValido || reemplazoDeLista || nombreAsignado;
                     const esPinReemplazo = !!firmantePinSeleccionado && !!nombreAsignado &&
-                      firmantePinSeleccionado.toLowerCase().trim() !== nombreAsignado.toLowerCase().trim();
+                      normNombre(firmantePinSeleccionado) !== normNombre(nombreAsignado);
                     const pinReemplazoInfo = esPinReemplazo ? {
                       reemplazandoA: nombreAsignado,
                       cargoFirmante: firma.cargoReemplazos?.[firmantePinSeleccionado.toLowerCase().trim()] || ''
                     } : null;
+                    // Alias usados en el flujo "firmar con mi PIN" (el firmante activo es quien pone el PIN)
+                    const pinPropioReemplazoInfo = pinReemplazoInfo;
+
+                    // Nombre a mostrar: el del firmante activo (titular o reemplazo elegido)
+                    const nombreParaMostrar = esPinReemplazo
+                      ? firmantePinSeleccionado
+                      : (nombreYaGuardado || nombreAsignado || '');
+
+                    // ¿Hay más de un firmante posible? Entonces se muestra la lista desplegable.
+                    const tieneReemplazosDisponibles = opcionesFirmantesPin.length > 1;
+
+                    // Firmantes autorizados de este puesto: contra ellos se prueba el PIN, de modo
+                    // que cada uno pone el suyo sin tener que seleccionarse antes en la lista.
+                    const contextoPinDelPuesto = {
+                      candidatos: opcionesFirmantesPin,
+                      titular: nombreAsignado,
+                      cargoReemplazos: firma.cargoReemplazos
+                    };
 
                     // Estilo del box
                     let boxBorder = '1px solid #e5e7eb';
@@ -11011,25 +12182,63 @@ useEffect(() => {
                           <div className="form-field">
                             <label>
                               Nombre:
-                              {esReemplazoDefinido && !isCurrentUserSlot
+                              {esPinReemplazo
                                 ? <span className="lock-hint" style={{fontSize: '11px', color: '#92400e', marginLeft: '5px'}}>🔄 Firmando como reemplazo</span>
-                                : <span className="lock-hint" style={{fontSize: '11px', color: '#4b5563', marginLeft: '5px'}}>🔒 Definido en plantilla</span>
+                                : tieneReemplazosDisponibles
+                                  ? <span className="lock-hint" style={{fontSize: '11px', color: '#4b5563', marginLeft: '5px'}}>🔄 Titular o reemplazo</span>
+                                  : <span className="lock-hint" style={{fontSize: '11px', color: '#4b5563', marginLeft: '5px'}}>🔒 Definido en plantilla</span>
                               }
                             </label>
-                            <input
-                              type="text"
-                              value={nombreParaMostrar}
-                              readOnly
-                              disabled
-                              style={{
-                                backgroundColor: esReemplazoDefinido && !isCurrentUserSlot ? '#fef3c7' : '#f5f5f5',
-                                color: esReemplazoDefinido && !isCurrentUserSlot ? '#92400e' : '#4b5563',
-                                borderColor: esReemplazoDefinido && !isCurrentUserSlot ? '#f59e0b' : '#ccc',
-                                cursor: 'not-allowed',
-                                fontWeight: esReemplazoDefinido && !isCurrentUserSlot ? 'bold' : 'normal'
-                              }}
-                            />
-                            {esReemplazoDefinido && !isCurrentUserSlot && (
+                            {/* 🔄 Lista desplegable: permite cambiar el firmante al reemplazo
+                                definido en la plantilla cuando el titular no está. */}
+                            {tieneReemplazosDisponibles ? (
+                              <select
+                                value={firmantePinSeleccionado}
+                                onChange={(e) => {
+                                  const nuevo = e.target.value;
+                                  const esReemp = normNombre(nuevo) !== normNombre(nombreAsignado);
+                                  handleCambiarFirmante(firma.puesto, nuevo, esReemp ? {
+                                    reemplazandoA: nombreAsignado,
+                                    cargoFirmante: firma.cargoReemplazos?.[nuevo.toLowerCase().trim()] || ''
+                                  } : null);
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  backgroundColor: esPinReemplazo ? '#fef3c7' : '#ffffff',
+                                  color: esPinReemplazo ? '#92400e' : '#1f2937',
+                                  border: `1px solid ${esPinReemplazo ? '#f59e0b' : '#cbd5e1'}`,
+                                  fontWeight: esPinReemplazo ? 'bold' : 'normal',
+                                  cursor: 'pointer'
+                                }}
+                                title="Selecciona quién va a firmar: el titular o uno de sus reemplazos"
+                              >
+                                {opcionesFirmantesPin.map((nombre, oIdx) => (
+                                  <option key={`firmante-${index}-${oIdx}`} value={nombre}>
+                                    {oIdx === 0
+                                      ? `${nombre} (Titular)`
+                                      : `${nombre} (Reemplazo${firma.cargoReemplazos?.[nombre.toLowerCase().trim()] ? ' — ' + firma.cargoReemplazos[nombre.toLowerCase().trim()] : ''})`}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                value={nombreParaMostrar}
+                                readOnly
+                                disabled
+                                style={{
+                                  backgroundColor: esPinReemplazo ? '#fef3c7' : '#f5f5f5',
+                                  color: esPinReemplazo ? '#92400e' : '#4b5563',
+                                  borderColor: esPinReemplazo ? '#f59e0b' : '#ccc',
+                                  cursor: 'not-allowed',
+                                  fontWeight: esPinReemplazo ? 'bold' : 'normal'
+                                }}
+                              />
+                            )}
+                            {esPinReemplazo && (
                               <span style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px', display: 'block' }}>
                                 Reemplazando a: {nombreAsignado}
                               </span>
@@ -11048,24 +12257,95 @@ useEffect(() => {
                         </div>
                         {/* 🔐 Firma Digital */}
                         {puedeFiremar ? (
-                          <SignatureUploader
-                            key={`${firma.puesto}-${nombreParaMostrar}`}
-                            puesto={firma.puesto}
-                            firmaData={{ ...firmasData[firma.puesto], nombre: nombreParaMostrar }}
-                            onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, {
-                              ...updatedData,
-                              nombre: nombreParaMostrar,
-                              ...(esReemplazoDefinido && !isCurrentUserSlot ? {
-                                esReemplazo: true,
-                                reemplazandoA: nombreAsignado,
-                                cargoFirmante: firma.cargoReemplazos?.[currentUserName] || ''
-                              } : {})
-                            })}
-                            cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
-                            cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
-                            currentUser={currentUser}
-                            canSign={true}
-                          />
+                          <>
+                            <SignatureUploader
+                              key={`${firma.puesto}-${nombreParaMostrar}`}
+                              puesto={firma.puesto}
+                              firmaData={{ ...firmasData[firma.puesto], nombre: nombreParaMostrar }}
+                              onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, {
+                                ...updatedData,
+                                nombre: nombreParaMostrar,
+                                ...(pinReemplazoInfo ? {
+                                  esReemplazo: true,
+                                  reemplazandoA: pinReemplazoInfo.reemplazandoA,
+                                  cargoFirmante: pinReemplazoInfo.cargoFirmante
+                                } : { esReemplazo: false, reemplazandoA: '', cargoFirmante: '' })
+                              })}
+                              cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
+                              cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
+                              currentUser={currentUser}
+                              canSign={true}
+                            />
+
+                            {/* 🔑 Firmar con MI PIN: aplica la firma guardada de quien está autorizado
+                                (titular, reemplazo o slot libre) sin tener que dibujarla otra vez. */}
+                            {!yaTieneFirma && nombreUsuarioActual && (
+                              <div style={{ marginTop: '10px', textAlign: 'center' }}>
+                                {!pinOpenByPuesto[firma.puesto] ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPinOpenByPuesto(prev => ({ ...prev, [firma.puesto]: true }))}
+                                    style={{
+                                      background: 'linear-gradient(135deg, #6366f1, #4f46e5)', color: 'white',
+                                      border: 'none', borderRadius: '8px', padding: '7px 14px', fontSize: '12px',
+                                      fontWeight: 'bold', cursor: 'pointer'
+                                    }}
+                                  >
+                                    🔑 Firmar con mi PIN
+                                  </button>
+                                ) : (
+                                  <div style={{
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
+                                    padding: '12px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '8px'
+                                  }}>
+                                    <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>
+                                      Ingresa tu PIN para aplicar tu firma guardada
+                                      {tieneReemplazosDisponibles && (
+                                        <><br /><span style={{ color: '#6b7280' }}>
+                                          Sirve el PIN del titular o el de cualquiera de sus reemplazos;
+                                          la firma se registra a nombre de quien lo ingresa.
+                                        </span></>
+                                      )}
+                                    </p>
+                                    <input
+                                      type="password"
+                                      inputMode="numeric"
+                                      autoComplete="off"
+                                      value={pinInputByPuesto[firma.puesto] || ''}
+                                      onChange={(e) => setPinInputByPuesto(prev => ({ ...prev, [firma.puesto]: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') handleFirmarConPin(firma.puesto, firmantePinSeleccionado || nombreUsuarioActual, pinPropioReemplazoInfo, contextoPinDelPuesto); }}
+                                      placeholder="PIN"
+                                      style={{
+                                        padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: '8px',
+                                        fontSize: '16px', letterSpacing: '4px', width: '130px', textAlign: 'center'
+                                      }}
+                                    />
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleFirmarConPin(firma.puesto, firmantePinSeleccionado || nombreUsuarioActual, pinPropioReemplazoInfo, contextoPinDelPuesto)}
+                                        disabled={pinLoadingByPuesto[firma.puesto]}
+                                        style={{
+                                          background: pinLoadingByPuesto[firma.puesto] ? '#9ca3af' : '#10b981', color: 'white',
+                                          border: 'none', borderRadius: '8px', padding: '7px 14px', fontSize: '12px',
+                                          fontWeight: 'bold', cursor: pinLoadingByPuesto[firma.puesto] ? 'not-allowed' : 'pointer'
+                                        }}
+                                      >
+                                        {pinLoadingByPuesto[firma.puesto] ? '⏳...' : '✅ Aplicar mi firma'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { setPinOpenByPuesto(prev => ({ ...prev, [firma.puesto]: false })); setPinInputByPuesto(prev => ({ ...prev, [firma.puesto]: '' })); }}
+                                        style={{ background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '8px', padding: '7px 14px', fontSize: '12px', cursor: 'pointer' }}
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </>
                         ) : (firmasData[firma.puesto]?.firma?.url || firmasData[firma.puesto]?.firma?.base64) ? (
                           // ✅ Ya firmado por PIN: mostrar la firma aplicada (solo lectura)
                           <div style={{
@@ -11109,6 +12389,11 @@ useEffect(() => {
                             </p>
                             <p style={{ color: '#4b5563', fontSize: '12px', margin: '0 0 12px 0' }}>
                               Asignado a <strong>{nombreAsignado}</strong>
+                              {tieneReemplazosDisponibles && (
+                                <span style={{ display: 'block', fontSize: '11px', color: '#92400e', marginTop: '4px' }}>
+                                  🔄 Si no está, elige su reemplazo en la lista de arriba
+                                </span>
+                              )}
                             </p>
 
                             {!pinOpenByPuesto[firma.puesto] ? (
@@ -11125,39 +12410,14 @@ useEffect(() => {
                               </button>
                             ) : (
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                {/* 🔄 Selector de firmante: titular o alguno de sus reemplazos */}
-                                {opcionesFirmantesPin.length > 1 ? (
-                                  <>
-                                    <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>
-                                      ¿Quién va a firmar con su PIN?
-                                    </p>
-                                    <select
-                                      value={firmantePinSeleccionado}
-                                      onChange={(e) => {
-                                        setPinFirmanteByPuesto(prev => ({ ...prev, [firma.puesto]: e.target.value }));
-                                        setPinInputByPuesto(prev => ({ ...prev, [firma.puesto]: '' }));
-                                      }}
-                                      style={{
-                                        padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: '8px',
-                                        fontSize: '13px', maxWidth: '100%'
-                                      }}
-                                    >
-                                      {opcionesFirmantesPin.map((nombre, oIdx) => (
-                                        <option key={`pin-firmante-${index}-${oIdx}`} value={nombre}>
-                                          {oIdx === 0 ? `${nombre} (Titular)` : `${nombre} (Reemplazo)`}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    {esPinReemplazo && (
-                                      <span style={{ fontSize: '10px', color: '#92400e', background: '#fef3c7', padding: '2px 8px', borderRadius: '8px' }}>
-                                        🔄 Firmará como reemplazo de {nombreAsignado}
-                                      </span>
-                                    )}
-                                  </>
-                                ) : (
-                                  <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>
-                                    Pide a <strong>{nombreAsignado}</strong> que ingrese su PIN:
-                                  </p>
+                                {/* El firmante se elige en la lista desplegable de "Nombre" (arriba) */}
+                                <p style={{ fontSize: '11px', color: '#4b5563', margin: 0 }}>
+                                  Pide a <strong>{firmantePinSeleccionado}</strong> que ingrese su PIN:
+                                </p>
+                                {esPinReemplazo && (
+                                  <span style={{ fontSize: '10px', color: '#92400e', background: '#fef3c7', padding: '2px 8px', borderRadius: '8px' }}>
+                                    🔄 Firmará como reemplazo de {nombreAsignado}
+                                  </span>
                                 )}
                                 <input
                                   type="password"

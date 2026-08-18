@@ -105,6 +105,41 @@
 .li-search { flex: 1; min-width: 200px; }
 .li-count { color: #94a3b8; font-size: 11px; margin-left: auto; }
 
+/* ── Paginación ── */
+.li-pagination {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 4px;
+  flex-wrap: wrap;
+}
+.li-pag-btn {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.li-pag-active {
+  background: #2563eb;
+  color: #fff;
+  border: 2px solid #2563eb;
+  border-radius: 6px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: default;
+}
+.li-pag-info {
+  color: #64748b;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
 /* ── Tabla ── */
 .li-table-wrap { overflow-x: auto; }
 
@@ -383,6 +418,14 @@
 /* ── Botón Detalle ── */
 .li-btn-det { background: #eff6ff; color: #2563eb; }
 .li-btn-det:hover { background: #dbeafe; }
+.li-form-codigo {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1e40af;
+  white-space: nowrap;
+}
+.li-btn-kardex { background: #f5f3ff; color: #6d28d9; }
+.li-btn-kardex:hover { background: #ede9fe; }
 
 /* ── Modal Detalle ── */
 .li-modal-detalle { width: 700px; }
@@ -447,3 +490,83 @@
 .li-bal-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; }
 .li-bal-box strong { font-size: 16px; font-weight: 800; }
 .li-bal-op { font-size: 22px; font-weight: 700; color: #94a3b8; }
+
+/* ── Saldo en el listado ── */
+.li-saldo { white-space: nowrap; }
+.li-saldo-usado {
+  font-size: 10px;
+  color: #b45309;
+  font-weight: 600;
+}
+
+/* ── Kardex del lote (detalle) ── */
+.li-kardex-panel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+}
+.li-kardex-titulo {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.li-kardex-panel .li-kardex-titulo + .li-kardex-wrap { margin-bottom: 4px; }
+.li-kardex-panel h4.li-kardex-titulo:not(:first-child) { margin-top: 16px; }
+.li-kardex-msg { font-size: 12.5px; color: #64748b; }
+.li-kardex-err { color: #b91c1c; }
+.li-kardex-procesos {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.li-kardex-proceso {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 7px 10px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+}
+.li-kardex-proc-nombre { font-weight: 700; color: #7c2d12; font-size: 12.5px; }
+.li-kardex-proc-lbs { color: #b45309; font-size: 13px; }
+.li-kardex-proc-meta { font-size: 11px; color: #92704f; }
+.li-kardex-wrap { overflow-x: auto; }
+.li-kardex {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.li-kardex thead th {
+  background: #f1f5f9;
+  color: #334155;
+  text-align: left;
+  padding: 6px 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.li-kardex tbody td {
+  padding: 5px 9px;
+  border-top: 1px solid #f1f5f9;
+  color: #475569;
+}
+.li-mov { font-weight: 700; white-space: nowrap; }
+.li-mov-entrada { color: #15803d; }
+.li-mov-salida { color: #b45309; }
+.li-kardex-notas {
+  max-width: 260px;
+  overflow-wrap: anywhere;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+/* Aclaración en la barra de revisión: el botón informa, no escribe. */
+.li-sync-note {
+  opacity: 0.75;
+  font-style: italic;
+}

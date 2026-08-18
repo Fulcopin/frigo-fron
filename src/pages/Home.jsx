@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import ScrollButton from "../components/ScrollButton"
+import { ordenarFormularios } from "../utils/ordenFormularios"
 import "./Home.css"
 import { API_BASE_URL } from "../apiConfig";
 
@@ -47,12 +48,9 @@ function Home() {
           usageCount: templateUsageCount[template.templateID] || 0
         }));
 
-        const sortedTemplates = templatesWithUsage
-          .filter(t => !t.isObsolete)
-          .sort((a, b) =>
-            (a.codigo || '').localeCompare(b.codigo || '', 'es', { numeric: true, sensitivity: 'base' })
-          )
-          .slice(0, 6); // Top 6 ordenadas por código
+        const sortedTemplates = ordenarFormularios(
+          templatesWithUsage.filter(t => !t.isObsolete)
+        ).slice(0, 6); // Top 6 por número de formulario
 
         setMostUsedTemplates(sortedTemplates);
 

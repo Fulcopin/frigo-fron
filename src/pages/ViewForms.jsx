@@ -13,8 +13,20 @@ import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import "./ViewForms.css"
 import { API_BASE_URL } from "../apiConfig"; 
 import authService from "../services/authService";
+// 🔍 Auditoría: qué valores se modificaron después de guardado el formulario.
+import {
+  getCambiosFormulario, indexarCambios, textoCambio,
+  claveEncabezado, claveCeldaTabla, claveCampoSeccion,
+} from "../services/cambiosFormularioService";
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
-import { businessHoursBetween } from "../utils/dateUtils";
+import {
+  cargarUmbralBloqueo,
+  estaBloqueadoParaFirma,
+  mensajeBloqueoFirma,
+  UMBRAL_BLOQUEO_POR_DEFECTO,
+} from "../utils/bloqueoFirma";
+import { ordenarFormularios, etiquetaFormulario } from "../utils/ordenFormularios";
+import { entraEnRango, fechaDeBusqueda, fechaDifiereDeGuardado } from "../utils/fechaFormulario";
 //const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
 //const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -188,7 +200,15 @@ function ViewForms() {
 
   const [selectedForm, setSelectedForm] = useState(null)
   const [selectedFormVersionInfo, setSelectedFormVersionInfo] = useState(null)
+
+  // 🔍 Valores modificados después de guardado (solo Admin y Costos).
+  //    cambiosIdx: Map clave-de-celda → { antes, despues, porQuien, ... }
+  const [cambiosIdx, setCambiosIdx] = useState(new Map())
+  const [cambiosTandas, setCambiosTandas] = useState([])
+  const [verPanelCambios, setVerPanelCambios] = useState(false)
+  const puedeVerCambios = authService.puedeVerCambios()
   const [filterTemplate, setFilterTemplate] = useState("")
+  const [searchCode, setSearchCode] = useState("") // 🔍 Búsqueda por texto (código o nombre)
   
   // 📅 NUEVO: Estados para filtro por rango de fechas
   const [startDate, setStartDate] = useState("")
@@ -211,20 +231,10 @@ function ViewForms() {
   const [viewFirmasData, setViewFirmasData] = useState({})
   const [savingSignature, setSavingSignature] = useState(false)
   // 🔒 Umbral de horas para bloqueo (configurable por admin en Gestión de Alertas). Fallback 36.
-  const [lockThreshold, setLockThreshold] = useState(36)
+  const [lockThreshold, setLockThreshold] = useState(UMBRAL_BLOQUEO_POR_DEFECTO)
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/Alerts/config`);
-        if (res.ok) {
-          const cfg = await res.json();
-          if (cfg?.lockThresholdHours > 0) setLockThreshold(cfg.lockThresholdHours);
-        }
-      } catch {
-        // Silencioso: se mantiene el fallback de 36h
-      }
-    })();
+    cargarUmbralBloqueo(API_BASE_URL).then(setLockThreshold);
   }, []);
 
   const loadData = async () => {
@@ -401,10 +411,61 @@ function ViewForms() {
     }
   }, [selectedForm]);
 
+  // 🔍 Traer qué valores se modificaron después de guardado. Solo lo ven Admin
+  //    y Costos; para el resto la pantalla queda exactamente igual que antes.
+  useEffect(() => {
+    if (!selectedForm?.formID || !puedeVerCambios) {
+      setCambiosIdx(new Map());
+      setCambiosTandas([]);
+      return;
+    }
+    let cancelado = false;
+    getCambiosFormulario(selectedForm.formID).then(({ tandas }) => {
+      if (cancelado) return;
+      setCambiosTandas(tandas);
+      setCambiosIdx(indexarCambios(tandas));
+    });
+    return () => { cancelado = true; };
+  }, [selectedForm?.formID, puedeVerCambios]);
+
+  /**
+   * Busca si una celda fue modificada. Se prueban varias claves porque el dato
+   * puede estar guardado con la etiqueta de la columna, su id, o el sufijo
+   * "_colN" de las tablas con columnas repetidas.
+   */
+  const buscarCambio = (...claves) => {
+    if (cambiosIdx.size === 0) return null;
+    for (const clave of claves) {
+      if (!clave) continue;
+      const encontrado = cambiosIdx.get(clave);
+      if (encontrado) return encontrado;
+    }
+    return null;
+  };
+
+  /** Envuelve un valor mostrado marcándolo si fue modificado. */
+  const marcarSiCambio = (contenido, cambio) => {
+    if (!cambio) return contenido;
+    return (
+      <span className="valor-modificado" title={textoCambio(cambio)}>
+        {contenido}
+        <span className="valor-modificado-icono">✏️</span>
+        <span className="valor-modificado-antes">antes: {String(cambio.antes ?? '').trim() || '(vacío)'}</span>
+      </span>
+    );
+  };
+
   // ✍️ Handler para actualizar firma desde la vista
   const handleViewFirmaUpdate = async (puesto, firmaData) => {
     console.log('✍️ Actualizando firma en vista para:', puesto);
-    
+
+    // 🔒 El registro puede haberse pasado del límite mientras la pantalla estaba abierta.
+    // El backend igual lo rechaza, pero así se avisa antes de perder la firma cargada.
+    if (firmaData.firma && estaBloqueadoParaFirma(selectedForm, lockThreshold)) {
+      alert(mensajeBloqueoFirma(lockThreshold));
+      return;
+    }
+
     // Auto-captura de fecha y hora
     let updatedFirmaData = { ...firmaData };
     if (firmaData.firma) {
@@ -726,26 +787,22 @@ function ViewForms() {
 
   // 🔍 FILTRADO MEJORADO: Template + Rango de Fechas
   const filteredForms = forms.filter((form) => {
-    // Filtro por template
+    // Filtro por template (dropdown)
     const matchesTemplate = filterTemplate ? form.templateCodigo === filterTemplate : true;
+
+    // 🔍 Filtro por búsqueda de texto (código o nombre)
+    const matchesSearch = searchCode
+      ? (form.templateCodigo || '').toLowerCase().includes(searchCode.toLowerCase()) ||
+        (form.templateNombre || '').toLowerCase().includes(searchCode.toLowerCase())
+      : true;
     
-    // Filtro por rango de fechas
-    let matchesDateRange = true;
-    if (startDate || endDate) {
-      const formDate = new Date(form.createdAt);
-      const start = startDate ? new Date(startDate) : null;
-      const end = endDate ? new Date(endDate) : null;
-      
-      // Ajustar end date para incluir todo el día
-      if (end) {
-        end.setHours(23, 59, 59, 999);
-      }
-      
-      if (start && formDate < start) matchesDateRange = false;
-      if (end && formDate > end) matchesDateRange = false;
-    }
+    // Filtro por rango de fechas: manda la FECHA ESCRITA DENTRO del formulario.
+    // Un registro del día 30 que se guardó al otro día salía como "31" y no lo
+    // encontraba ninguna de las dos búsquedas. Se compara texto 'YYYY-MM-DD'
+    // contra 'YYYY-MM-DD', así que no hay corrimientos de zona horaria.
+    const matchesDateRange = entraEnRango(form, startDate, endDate);
     
-    return matchesTemplate && matchesDateRange;
+    return matchesTemplate && matchesSearch && matchesDateRange;
   });
 
   // 📄 Lógica de Paginación
@@ -883,6 +940,76 @@ function ViewForms() {
             />
           )}
           
+          {/* 🔍 AVISO DE MODIFICACIONES (solo Admin y Costos) */}
+          {puedeVerCambios && cambiosIdx.size > 0 && (
+            <div className="aviso-modificado">
+              <div className="aviso-modificado-cabecera">
+                <span className="aviso-modificado-titulo">
+                  ✏️ Este reporte fue modificado después de guardado —{' '}
+                  <strong>{cambiosIdx.size} valor{cambiosIdx.size !== 1 ? 'es' : ''}</strong>
+                </span>
+                <button
+                  type="button"
+                  className="aviso-modificado-btn"
+                  onClick={() => setVerPanelCambios(v => !v)}
+                >
+                  {verPanelCambios ? '▲ Ocultar detalle' : '▼ Ver detalle'}
+                </button>
+              </div>
+              <div className="aviso-modificado-sub">
+                Los valores tocados quedan marcados con ✏️ dentro del formulario, con lo que decían antes.
+                {cambiosTandas.length > 0 && (
+                  <> Última modificación:{' '}
+                    <strong>{cambiosTandas[0].changedBy || '(sin identificar)'}</strong>
+                    {cambiosTandas[0].updatedAt && ` · ${new Date(cambiosTandas[0].updatedAt).toLocaleString('es-ES')}`}
+                  </>
+                )}
+              </div>
+
+              {verPanelCambios && (
+                <div className="aviso-modificado-tabla-wrap">
+                  <table className="aviso-modificado-tabla">
+                    <thead>
+                      <tr>
+                        <th>Quién</th>
+                        <th>Cuándo</th>
+                        <th>Dónde</th>
+                        <th>Antes</th>
+                        <th>Ahora</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cambiosTandas.map((tanda) => {
+                        const detalle = tanda?.cambios?.['$values'] ?? tanda?.cambios ?? [];
+                        return (Array.isArray(detalle) ? detalle : []).map((c, i) => (
+                          <tr key={`${tanda.id}-${i}`}>
+                            <td>
+                              {tanda.changedBy || '(sin identificar)'}
+                              {tanda.changedByRole && (
+                                <span className="aviso-modificado-rol">{tanda.changedByRole}</span>
+                              )}
+                            </td>
+                            <td>{tanda.updatedAt ? new Date(tanda.updatedAt).toLocaleString('es-ES') : '—'}</td>
+                            <td>
+                              {c.ambito === 'encabezado'
+                                ? 'Encabezado'
+                                : c.ambito === 'tabla'
+                                  ? `Tabla ${Number(c.elemento) + 1} · fila ${Number(c.fila) + 1}`
+                                  : `Sección ${Number(c.elemento) + 1}`}
+                              {' · '}<strong>{c.campo}</strong>
+                            </td>
+                            <td className="aviso-modificado-antes-celda">{String(c.antes ?? '').trim() || '(vacío)'}</td>
+                            <td className="aviso-modificado-ahora-celda">{String(c.despues ?? '').trim() || '(vacío)'}</td>
+                          </tr>
+                        ));
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Campos del Header usando el template */}
           {(() => {
             const rawHf = Array.isArray(correspondingTemplate?.headerFields) ? correspondingTemplate.headerFields : (typeof correspondingTemplate?.headerFields === 'string' ? safeParse(correspondingTemplate.headerFields, []) : []);
@@ -922,6 +1049,10 @@ function ViewForms() {
                     const isTextarea = field.type === 'textarea' || (typeof value === 'string' && value.length > 60);
                     // Siempre pasar por renderCellValue para formatear fechas ISO (quita la T)
                     const displayValue = renderCellValue(value, field.type);
+                    // 🔍 ¿Este valor del encabezado fue modificado después?
+                    const cambio = buscarCambio(
+                      claveEncabezado(field.label), claveEncabezado(field.name), claveEncabezado(field.id),
+                    );
                     return (
                       <div key={index} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
                         <span className="data-label">{field.label || field.name || field.id}:</span>
@@ -930,9 +1061,9 @@ function ViewForms() {
                             border: '1.5px solid #7c3aed', borderRadius: '6px', padding: '8px 10px',
                             background: '#faf5ff', color: '#4c1d95', fontSize: '0.875rem',
                             lineHeight: '1.5', whiteSpace: 'pre-wrap', minHeight: '36px'
-                          }}>{displayValue}</div>
+                          }}>{marcarSiCambio(displayValue, cambio)}</div>
                         ) : (
-                          <div className="data-value">{displayValue}</div>
+                          <div className="data-value">{marcarSiCambio(displayValue, cambio)}</div>
                         )}
                       </div>
                     );
@@ -1109,18 +1240,20 @@ function ViewForms() {
                         );
                       }
                       const isImg = typeof value === 'string' && isImageUrl(value);
+                      const cambioCampo = buscarCambio(claveCampoSeccion(elementIndex, key));
                       return (
                         <div key={key} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
                           <span className="data-label">{key}:</span>
-                          <div className="data-value">{renderCellValue(value, fieldDef.type)}</div>
+                          <div className="data-value">{marcarSiCambio(renderCellValue(value, fieldDef.type), cambioCampo)}</div>
                         </div>
                       );
                     }) || Object.entries(sectionData).map(([key, value]) => {
                       const isImg = typeof value === 'string' && isImageUrl(value);
+                      const cambioCampo = buscarCambio(claveCampoSeccion(elementIndex, key));
                       return (
                         <div key={key} className={`data-item ${isImg ? 'data-item-image' : ''}`} style={isImg ? { gridColumn: '1 / -1' } : {}}>
                           <span className="data-label">{key}:</span>
-                          <div className="data-value">{renderCellValue(value, null)}</div>
+                          <div className="data-value">{marcarSiCambio(renderCellValue(value, null), cambioCampo)}</div>
                         </div>
                       );
                     })}
@@ -1149,9 +1282,16 @@ function ViewForms() {
                 }
               }
 
-              // 🚫 Quitar filas marcadas como ocultas (_hiddenRow) para este registro
+              // 🚫 Quitar filas marcadas como ocultas (_hiddenRow) para este registro.
+              // Se guarda el índice ORIGINAL de cada fila: la auditoría de cambios
+              // numera las filas como están guardadas, no como se muestran.
+              let idxOriginalDeFila = [];
               if (Array.isArray(tableRows)) {
-                tableRows = tableRows.filter(r => !(r && r._hiddenRow));
+                const conIndice = tableRows
+                  .map((r, i) => ({ fila: r, i }))
+                  .filter(({ fila }) => !(fila && fila._hiddenRow));
+                tableRows = conIndice.map(({ fila }) => fila);
+                idxOriginalDeFila = conIndice.map(({ i }) => i);
               }
 
               {
@@ -1269,9 +1409,25 @@ function ViewForms() {
                                 }
                               }
 
+                              // 🔍 ¿Esta celda fue modificada después de guardada?
+                              const filaOriginal = idxOriginalDeFila[rowIndex] ?? rowIndex;
+                              const cambioCelda = buscarCambio(
+                                preciseKey ? claveCeldaTabla(elementIndex, filaOriginal, preciseKey) : null,
+                                claveCeldaTabla(elementIndex, filaOriginal, colLabel),
+                                claveCeldaTabla(elementIndex, filaOriginal, col.header),
+                                claveCeldaTabla(elementIndex, filaOriginal, colId),
+                                claveCeldaTabla(elementIndex, filaOriginal, col.name),
+                              );
+
                               return (
-                                <td key={`cell-${rowIndex}-${col.originalIndex}`} rowSpan={vfRowSpan || undefined} style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: rawCols.length > 12 ? '60px' : rawCols.length > 8 ? '75px' : '100px' }}>
-                                  {renderCellValue(cellValue, col.type)}{col.unit && cellValue !== undefined && cellValue !== null && cellValue !== '' && cellValue !== '-' ? <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '2px' }}>{col.unit}</span> : null}
+                                <td
+                                  key={`cell-${rowIndex}-${col.originalIndex}`}
+                                  rowSpan={vfRowSpan || undefined}
+                                  className={cambioCelda ? 'celda-modificada' : undefined}
+                                  style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: rawCols.length > 12 ? '60px' : rawCols.length > 8 ? '75px' : '100px' }}
+                                >
+                                  {marcarSiCambio(renderCellValue(cellValue, col.type), cambioCelda)}
+                                  {col.unit && cellValue !== undefined && cellValue !== null && cellValue !== '' && cellValue !== '-' ? <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '2px' }}>{col.unit}</span> : null}
                                 </td>
                               );
                             })}
@@ -1578,6 +1734,15 @@ function ViewForms() {
                   // 🔧 FILTRAR: Solo mostrar firmas que existen en la plantilla actual
                   const templateFirmas = correspondingTemplate?.firmas || [];
                   const puestosValidos = templateFirmas.map(f => f.puesto);
+
+                  // Comparación tolerante de nombres: unifica tildes (ñ/Ñ pueden venir compuestas o
+                  // precompuestas según el teclado), mayúsculas y espacios repetidos. Con la comparación
+                  // estricta anterior, un nombre visualmente idéntico podía no reconocerse.
+                  const normNombre = (v) => (v || '')
+                    .normalize('NFC')
+                    .toLowerCase()
+                    .replace(/\s+/g, ' ')
+                    .trim();
                   
                   // Filtrar firmasData para solo incluir puestos que están en la plantilla
                   const firmasFiltradas = Object.entries(viewFirmasData)
@@ -1589,8 +1754,8 @@ function ViewForms() {
                   
                   return firmasFiltradas.map(([puesto, data]) => {
                     // 🔐 Verificar si el usuario logueado es el asignado a este puesto
-                    const nombreAsignado = (data.nombre || '').toLowerCase().trim();
-                    const currentUserName = (currentUser?.nombre || currentUser?.username || '').toLowerCase().trim();
+                    const nombreAsignado = normNombre(data.nombre);
+                    const currentUserName = normNombre(currentUser?.nombre || currentUser?.username);
                     const currentUserEmail = (currentUser?.email || '').toLowerCase().trim();
                     const isCurrentUserSlot = nombreAsignado && currentUserName && nombreAsignado === currentUserName;
                     const yaFirmado = !!(data.firma && (data.firma.url || data.firma.base64));
@@ -1599,12 +1764,11 @@ function ViewForms() {
                     const templateFirmaConfig = templateFirmas.find(tf => tf.puesto === puesto);
                     const reemplazosDefinidos = (templateFirmaConfig?.reemplazos || []).filter(Boolean);
                     const esReemplazoDefinido = reemplazosDefinidos.some(
-                      r => r.toLowerCase().trim() === currentUserName
+                      r => normNombre(r) === currentUserName
                     );
 
                     // El usuario puede firmar si: es su slot O es reemplazo, Y aún no ha firmado
-                    const hoursElapsedView = businessHoursBetween(selectedForm?.createdAt || selectedForm?.createdDate || new Date(), new Date());
-                    const isTimeLockedView = hoursElapsedView > lockThreshold && !selectedForm?.headerData?.unlocked36h;
+                    const isTimeLockedView = estaBloqueadoParaFirma(selectedForm, lockThreshold);
                     const canSignHere = (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && !isTimeLockedView;
                     
                     console.log(`🔐 [${puesto}] Validación de firma:`, {
@@ -1616,10 +1780,21 @@ function ViewForms() {
                       canSignHere
                     });
 
-                    // Nombre que se debe usar al firmar
-                    const nombreParaFirmar = esReemplazoDefinido && !isCurrentUserSlot
-                      ? (currentUser?.nombre || currentUser?.username || '')
-                      : (data.nombre || '');
+                    // Nombre que se debe usar al firmar.
+                    // 🔧 FIX: en esta pantalla firma SIEMPRE el usuario en sesión (no existe aquí el
+                    // flujo de PIN donde otra persona puede firmar con su clave), así que el nombre sale
+                    // de la sesión igual que el email.
+                    // Antes esto dependía de esReemplazoDefinido: si el sistema no lograba confirmar que
+                    // el usuario era reemplazo (nombre escrito distinto en la plantilla, tildes, etc.),
+                    // caía al nombre del TITULAR y se guardaba el nombre de una persona junto al email
+                    // de otra, atribuyendo la firma a quien no firmó.
+                    const nombreDelUsuarioEnSesion = (currentUser?.nombre || currentUser?.username || '').trim();
+                    const nombreParaFirmar = nombreDelUsuarioEnSesion || (data.nombre || '');
+
+                    // Titular que tenía asignado el puesto, para dejar constancia de a quién se reemplaza.
+                    const titularDelPuesto = data.nombre || templateFirmaConfig?.nombreCompleto || '';
+                    const firmaEsDeUnReemplazo = !!titularDelPuesto &&
+                      normNombre(titularDelPuesto) !== normNombre(nombreParaFirmar);
                     
                     return (
                       <div key={puesto} className="signature-box-view" style={{
@@ -1705,9 +1880,11 @@ function ViewForms() {
                                 ...updatedData,
                                 nombre: nombreParaFirmar,
                                 email: currentUser?.email || updatedData.email || '',
-                                ...(esReemplazoDefinido && !isCurrentUserSlot ? { 
-                                  esReemplazo: true, 
-                                  reemplazandoA: data.nombre || templateFirmaConfig?.nombreCompleto || '',
+                                // Se marca como reemplazo comparando quién firma contra el titular real,
+                                // no según si figuraba en la lista de la plantilla.
+                                ...(firmaEsDeUnReemplazo ? {
+                                  esReemplazo: true,
+                                  reemplazandoA: titularDelPuesto,
                                   cargoFirmante: templateFirmaConfig?.cargoReemplazos?.[nombreParaFirmar.toLowerCase().trim()] || ''
                                 } : {})
                               })}
@@ -1716,7 +1893,7 @@ function ViewForms() {
                               currentUser={currentUser}
                               canSign={true}
                             />
-                          ) : (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && businessHoursBetween(selectedForm?.createdAt || selectedForm?.createdDate || new Date(), new Date()) > lockThreshold && !selectedForm?.headerData?.unlocked36h ? (
+                          ) : (isCurrentUserSlot || esReemplazoDefinido) && !yaFirmado && isTimeLockedView ? (
                             <div style={{ padding: '12px', background: '#fef2f2', border: '1px dashed #ef4444', borderRadius: '8px', textAlign: 'center', margin: '8px 0' }}>
                               <span style={{ fontSize: '18px' }}>🔒</span>
                               <p style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '12px', margin: '4px 0 0 0' }}>
@@ -1774,12 +1951,23 @@ function ViewForms() {
         <div className="filters-container-view">
           <div className="filter-row">
             <div className="filter-group">
-              <label>📂 Plantilla:</label>
+              <label>� Buscar:</label>
+              <input
+                type="text"
+                placeholder="Código o nombre (ej: PD-04)..."
+                value={searchCode}
+                onChange={(e) => { setSearchCode(e.target.value); setCurrentPage(1); }}
+                style={{ minWidth: '200px' }}
+              />
+            </div>
+            <div className="filter-group">
+              <label>�📂 Plantilla:</label>
               <select value={filterTemplate} onChange={(e) => { setFilterTemplate(e.target.value); setCurrentPage(1); }}>
                 <option value="">Todas las plantillas</option>
-                {templates.map((t) => (
+                {/* Ordenados por número de formulario: PD-04 antes que PD-14 */}
+                {ordenarFormularios(templates).map((t) => (
                   <option key={t.templateID} value={t.codigo}>
-                    {t.codigo} - {t.nombre}
+                    {etiquetaFormulario(t)}
                   </option>
                 ))}
               </select>
@@ -1809,6 +1997,7 @@ function ViewForms() {
               className="btn-clear-filters" 
               onClick={() => {
                 setFilterTemplate("");
+                setSearchCode("");
                 setStartDate("");
                 setEndDate("");
                 setCurrentPage(1);
@@ -1830,12 +2019,12 @@ function ViewForms() {
           {/* Contador de resultados */}
           <div className="results-count">
             {filteredForms.length} formulario{filteredForms.length !== 1 ? 's' : ''} encontrado{filteredForms.length !== 1 ? 's' : ''}
-            {(filterTemplate || startDate || endDate) && ` (filtrado de ${forms.length} total${forms.length !== 1 ? 'es' : ''})`}
+            {(filterTemplate || searchCode || startDate || endDate) && ` (filtrado de ${forms.length} total${forms.length !== 1 ? 'es' : ''})`}
           </div>
         </div>
       </div>
 
-      {(!filterTemplate && !startDate && !endDate) ? (
+      {(!filterTemplate && !searchCode && !startDate && !endDate) ? (
         <div className="empty-state-card" style={{ padding: '40px 20px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px', border: '2px dashed #cbd5e1' }}>
           <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
           <h2 style={{ color: '#334155', marginBottom: '8px' }}>Usa los filtros para buscar formularios</h2>
@@ -1864,6 +2053,11 @@ function ViewForms() {
                 <div className="form-card-header">
                   <div>
                     <span className="form-code">{form.templateCodigo}</span>
+                    {/* 🔢 Número del registro: es como se lo nombra al pedirlo
+                        ("revisá el 1482"), así que va junto al código. */}
+                    <span className="form-num" title={`Registro N° ${form.formID}`}>
+                      # {form.formID}
+                    </span>
                     <h3>{form.templateNombre}</h3>
                   </div>
                   <div className="form-card-actions">
@@ -1940,7 +2134,21 @@ function ViewForms() {
                   </div>
                 </div>
                 <div className="form-card-meta">
-                  <span>📅 {new Date(form.createdAt).toLocaleString("es-EC")}</span>
+                  <span title="Número de este registro">🔢 # Form {form.formID}</span>
+                  {/* 📅 La fecha que vale es la del formulario. Si se guardó otro
+                      día, se aclara — antes se veía solo la de guardado y no
+                      coincidía con lo que decía el registro por dentro. */}
+                  <span title="Fecha escrita en el formulario (es la que se busca)">
+                    📅 {new Date(`${fechaDeBusqueda(form)}T00:00:00`).toLocaleDateString("es-EC")}
+                  </span>
+                  {fechaDifiereDeGuardado(form) && (
+                    <span
+                      className="form-card-guardado"
+                      title="El formulario se guardó un día distinto al que dice adentro"
+                    >
+                      💾 guardado {new Date(form.createdAt).toLocaleString("es-EC")}
+                    </span>
+                  )}
                   <span>👤 {form.filledBy || 'No registrado'}</span>
                   {(() => {
                     const template = templates.find(t => t.templateID === form.templateID);
@@ -2073,7 +2281,7 @@ function ViewForms() {
         <div className="email-modal-overlay" onClick={() => setPreviewForm(null)}>
           <div className="email-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', width: '90%' }}>
             <div className="email-modal-header" style={{ background: '#f59e0b' }}>
-              <h3>⚡ Vista Rápida - {previewForm.templateCodigo}</h3>
+              <h3>⚡ Vista Rápida - {previewForm.templateCodigo} · # Form {previewForm.formID}</h3>
               <button className="email-modal-close" onClick={() => setPreviewForm(null)}>✕</button>
             </div>
             <div className="email-modal-body" style={{ maxHeight: '65vh', overflowY: 'auto', padding: '20px' }}>
@@ -2081,6 +2289,10 @@ function ViewForms() {
                 {previewForm.templateNombre}
               </h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                <div style={{ background: '#f1f5f9', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                  <strong style={{ display: 'block', fontSize: '11px', color: '#475569', textTransform: 'uppercase', marginBottom: '4px' }}>🔢 # Form</strong>
+                  <span style={{ color: '#0f172a', fontWeight: '700', fontSize: '14px' }}>{previewForm.formID}</span>
+                </div>
                 <div style={{ background: '#f1f5f9', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
                   <strong style={{ display: 'block', fontSize: '11px', color: '#475569', textTransform: 'uppercase', marginBottom: '4px' }}>👤 Creado por</strong>
                   <span style={{ color: '#0f172a', fontWeight: '600', fontSize: '14px' }}>{previewForm.filledBy || 'Desconocido'}</span>

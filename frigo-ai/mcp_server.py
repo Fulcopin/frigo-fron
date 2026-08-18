@@ -115,7 +115,7 @@ mcp = FastMCP(
 # TOOL 1: auditar_trazabilidad_lote
 # ===========================================================================
 
-@mcp.tool()
+@mcp.tool(name="rastrear_lote_tool")
 async def auditar_trazabilidad_lote(numero_lote: str) -> str:
     """Rastrea la trazabilidad cronologica completa de un lote en Frigolab.
 
@@ -234,7 +234,7 @@ async def auditar_trazabilidad_lote(numero_lote: str) -> str:
 # TOOL 2: obtener_esquema
 # ===========================================================================
 
-@mcp.tool()
+@mcp.tool(name="obtener_esquema_formulario_tool")
 async def obtener_esquema(nombre_formulario: str) -> str:
     """Obtiene el esquema JSON exacto de un formulario de control de calidad.
 
@@ -308,7 +308,7 @@ async def obtener_esquema(nombre_formulario: str) -> str:
 # TOOL 3: guardar_borrador
 # ===========================================================================
 
-@mcp.tool()
+@mcp.tool(name="guardar_borrador_tool")
 async def guardar_borrador(
     template_id: int,
     json_datos: str,
@@ -436,7 +436,7 @@ async def guardar_borrador(
 # TOOL 4: listar_templates
 # ===========================================================================
 
-@mcp.tool()
+@mcp.tool(name="listar_templates_tool")
 async def listar_templates() -> str:
     """Lista todos los formularios (templates) activos disponibles en Frigolab.
 
@@ -489,7 +489,7 @@ async def _listar_templates_impl() -> str:
 # TOOL 5: consultar_formularios
 # ===========================================================================
 
-@mcp.tool()
+@mcp.tool(name="consultar_formularios_tool")
 async def consultar_formularios(
     template_codigo: str = "",
     fecha_desde: str = "",
@@ -572,7 +572,7 @@ async def consultar_formularios(
 # TOOL 6: estadisticas_formularios
 # ===========================================================================
 
-@mcp.tool()
+@mcp.tool(name="estadisticas_formularios_tool")
 async def estadisticas_formularios(
     fecha_desde: str = "",
     fecha_hasta: str = "",
@@ -688,7 +688,7 @@ async def estadisticas_formularios(
 # TOOL 7: analizar_datos_formulario
 # ===========================================================================
 
-@mcp.tool()
+@mcp.tool(name="analizar_datos_formulario_tool")
 async def analizar_datos_formulario(
     template_codigo: str,
     fecha_desde: str = "",
@@ -835,7 +835,7 @@ async def analizar_datos_formulario(
 # TOOL 8: consultar_alertas
 # ===========================================================================
 
-@mcp.tool()
+@mcp.tool(name="consultar_alertas_tool")
 async def consultar_alertas(
     solo_pendientes: bool = True,
     limite: int = 20,
@@ -956,7 +956,7 @@ async def _mcp_llamar_vision(imagen_b64: str, timeout: float) -> tuple:
         return None, f"ERROR:{exc}"
 
 
-@mcp.tool()
+@mcp.tool(name="analizar_foto_etiqueta_tool")
 async def analizar_foto_etiqueta(imagen_base64: str) -> str:
     """Analiza foto de etiqueta/caja de producto con llama3.2-vision en la A100 de CEDIA.
 
@@ -1028,7 +1028,7 @@ async def analizar_foto_etiqueta(imagen_base64: str) -> str:
 # TOOL 10: obtener_formulario_completo
 # ===========================================================================
 
-@mcp.tool()
+@mcp.tool(name="obtener_formulario_completo_tool")
 async def obtener_formulario_completo(form_id: int) -> str:
     """Obtiene el contenido completo (HeaderData + TODAS las filas del BodyData) de un formulario llenado.
 
@@ -1122,6 +1122,54 @@ async def obtener_formulario_completo(form_id: int) -> str:
         },
     )
 
+
+# --- Nuevas Herramientas Importadas de sql_tools ---
+import sql_tools
+
+@mcp.tool()
+async def listar_lotes_tool(fecha_desde: str = "", fecha_hasta: str = "") -> str:
+    """Lista los lotes de proceso activos o recientes."""
+    return await sql_tools.listar_lotes_tool(fecha_desde, fecha_hasta)
+
+@mcp.tool()
+async def analizar_brecha_lote_tool(numero_lote: str) -> str:
+    """Analiza si un lote esta completo en sus 4 etapas."""
+    return await sql_tools.analizar_brecha_lote_tool(numero_lote)
+
+@mcp.tool()
+async def analizar_rendimiento_tool(
+    fecha_desde: str = "",
+    fecha_hasta: str = "",
+    template_codigo: str = "",
+    producto: str = ""
+) -> str:
+    """Analiza el rendimiento, mermas y saldos."""
+    return await sql_tools.analizar_rendimiento_tool(fecha_desde, fecha_hasta, template_codigo, producto)
+
+@mcp.tool()
+async def calcular_formula_tool(
+    formula: str,
+    template_codigo: str = "",
+    fecha_desde: str = "",
+    fecha_hasta: str = ""
+) -> str:
+    """Calcula formulas matematicas sobre las columnas de la BD."""
+    return await sql_tools.calcular_formula_tool(formula, template_codigo, fecha_desde, fecha_hasta)
+
+@mcp.tool()
+async def revisar_observaciones_tool(
+    busqueda: str = "",
+    template_codigo: str = "",
+    fecha_desde: str = "",
+    fecha_hasta: str = ""
+) -> str:
+    """Busca observaciones y novedades reportadas en los formularios."""
+    return await sql_tools.revisar_observaciones_tool(busqueda, template_codigo, fecha_desde, fecha_hasta)
+
+@mcp.tool()
+async def resumen_negocio_tool(fecha_desde: str = "", fecha_hasta: str = "") -> str:
+    """Da un resumen ejecutivo o dashboard general de la planta."""
+    return await sql_tools.resumen_negocio_tool(fecha_desde, fecha_hasta)
 
 # ---------------------------------------------------------------------------
 # Main - arranca el servidor MCP via stdio o SSE

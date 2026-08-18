@@ -1,0 +1,537 @@
+/* ── Clasificación de Producción (PD-04) ─────────────────────────────── */
+.clasprod {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 16px 60px;
+}
+
+/* ── Encabezado ── */
+.clasprod-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.clasprod-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0d3b66;
+  margin: 0 0 6px;
+}
+.clasprod-subtitle {
+  color: #5a6b7b;
+  font-size: 0.92rem;
+  margin: 0;
+  max-width: 560px;
+  line-height: 1.4;
+}
+.clasprod-stats {
+  display: flex;
+  gap: 12px;
+}
+.clasprod-stat {
+  background: #0d3b66;
+  color: #fff;
+  border-radius: 12px;
+  padding: 12px 18px;
+  text-align: center;
+  min-width: 84px;
+}
+.clasprod-stat-num {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.clasprod-stat-lbl {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.85;
+  margin-top: 4px;
+}
+
+/* ── Filtros ── */
+.clasprod-filtros {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  background: #f4f7fa;
+  border: 1px solid #e0e7ee;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.clasprod-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.clasprod-campo label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #5a6b7b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.clasprod-campo input {
+  border: 1px solid #cfdae5;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  min-width: 150px;
+}
+.clasprod-campo input:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.15);
+}
+.clasprod-btn-recargar {
+  background: #1976d2;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.clasprod-btn-recargar:hover:not(:disabled) {
+  background: #145aa0;
+}
+.clasprod-btn-recargar:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── Botón administrar clasificaciones ── */
+.clasprod-btn-clasif {
+  background: #7b2ff7;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.clasprod-btn-clasif:hover {
+  background: #6321cc;
+}
+
+/* ── Panel administrador de clasificaciones ── */
+.clasprod-clasif-manager {
+  background: #f6f2ff;
+  border: 1px solid #d9c9f7;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.clasprod-clasif-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.clasprod-clasif-add input {
+  flex: 1;
+  min-width: 220px;
+  border: 1px solid #cbb8ef;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+.clasprod-clasif-add input:focus {
+  outline: none;
+  border-color: #7b2ff7;
+  box-shadow: 0 0 0 3px rgba(123, 47, 247, 0.15);
+}
+.clasprod-clasif-add button {
+  background: #2e7d32;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.clasprod-clasif-add button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.clasprod-clasif-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.clasprod-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #cbb8ef;
+  border-radius: 20px;
+  padding: 5px 6px 5px 12px;
+  font-size: 0.85rem;
+  color: #4a2a86;
+  font-weight: 600;
+}
+.clasprod-chip-x {
+  background: #ede4fb;
+  border: none;
+  color: #7b2ff7;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.clasprod-chip-x:hover {
+  background: #f8d7da;
+  color: #b71c1c;
+}
+.clasprod-clasif-vacio {
+  color: #8a7ba8;
+  font-size: 0.85rem;
+}
+
+/* ── Mensajes ── */
+.clasprod-msg {
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  margin-bottom: 14px;
+  font-weight: 500;
+}
+.clasprod-error {
+  background: #fdecea;
+  color: #b71c1c;
+  border: 1px solid #f5c6cb;
+}
+.clasprod-ok {
+  background: #e8f5e9;
+  color: #1b5e20;
+  border: 1px solid #b7dfb9;
+}
+
+/* ── Vacío / cargando ── */
+.clasprod-vacio {
+  text-align: center;
+  color: #7a8a99;
+  padding: 40px 20px;
+  background: #f4f7fa;
+  border-radius: 12px;
+  border: 1px dashed #cfdae5;
+}
+
+/* ── Acordeón ── */
+.clasprod-acordeon {
+  margin-bottom: 12px;
+}
+
+/* ── Tabla ── */
+.clasprod-tabla-wrap {
+  overflow-x: auto;
+}
+.clasprod-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.clasprod-tabla thead th {
+  background: #0d3b66;
+  color: #fff;
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 600;
+}
+.clasprod-tabla thead th:first-child {
+  border-top-left-radius: 8px;
+  width: 44px;
+  text-align: center;
+}
+.clasprod-tabla thead th:last-child {
+  border-top-right-radius: 8px;
+}
+.clasprod-tabla tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2f6;
+  vertical-align: middle;
+}
+.clasprod-tabla tbody tr:hover {
+  background: #f8fbff;
+}
+.clasprod-num {
+  text-align: center;
+  color: #9aa8b5;
+  font-weight: 600;
+}
+.clasprod-lote {
+  font-weight: 700;
+  color: #0d3b66;
+}
+.clasprod-prod {
+  color: #45535f;
+}
+.clasprod-peso {
+  color: #45535f;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.clasprod-select {
+  border: 1px solid #cfdae5;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  min-width: 170px;
+  background: #fff;
+}
+.clasprod-select:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.15);
+}
+.clasprod-btn-guardar {
+  background: #2e7d32;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, opacity 0.15s;
+}
+.clasprod-btn-guardar:hover:not(:disabled) {
+  background: #1b5e20;
+}
+.clasprod-btn-guardar:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Saldo del lote / kardex ── */
+.clasprod-estado {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+.clasprod-estado-parcial {
+  background: #fff8e1;
+  color: #b45309;
+}
+.clasprod-estado-consumido {
+  background: #fdecea;
+  color: #b91c1c;
+}
+.clasprod-sin-lote {
+  font-weight: 600;
+  color: #a16207;
+  background: #fffbeb;
+  border: 1px dashed #fcd34d;
+  border-radius: 8px;
+  padding: 1px 7px;
+  font-size: 0.78rem;
+  cursor: help;
+}
+.clasprod-saldo {
+  color: #1b5e20;
+}
+.clasprod-saldo-cero {
+  color: #b91c1c;
+}
+.clasprod-consumido {
+  color: #8a949e;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.clasprod-btn-kardex {
+  display: block;
+  margin-left: auto;
+  margin-top: 3px;
+  background: #eef4fb;
+  color: #0d47a1;
+  border: 1px solid #cfdae5;
+  border-radius: 8px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.clasprod-btn-kardex:hover {
+  background: #dceaf9;
+  border-color: #1976d2;
+}
+.clasprod-kardex-row > td {
+  background: #f7fafd;
+  padding: 10px 14px !important;
+  border-top: none !important;
+}
+.clasprod-kardex-msg {
+  font-size: 0.85rem;
+  color: #5c6b79;
+}
+.clasprod-kardex-err {
+  color: #b91c1c;
+}
+.clasprod-kardex {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  background: #fff;
+  border: 1px solid #e3ebf3;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.clasprod-kardex thead th {
+  background: #eef4fb;
+  color: #0d3b66;
+  text-align: left;
+  padding: 6px 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.clasprod-kardex tbody td {
+  padding: 5px 10px;
+  border-top: 1px solid #eef2f6;
+  color: #45535f;
+}
+.clasprod-mov {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.clasprod-mov-entrada {
+  color: #2e7d32;
+}
+.clasprod-mov-salida {
+  color: #b45309;
+}
+.clasprod-kardex-notas {
+  max-width: 320px;
+  overflow-wrap: anywhere;
+  color: #78838d;
+  font-size: 0.76rem;
+}
+
+/* ── Responsive / tablet ── */
+@media (max-width: 640px) {
+  .clasprod-header {
+    flex-direction: column;
+  }
+  .clasprod-filtros {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .clasprod-campo input {
+    min-width: 0;
+    width: 100%;
+  }
+  .clasprod-btn-recargar {
+    width: 100%;
+  }
+}
+
+/* ── Clasificación general: un producto por fila, todos los formularios ────── */
+
+/* Filtro "solo sin clasificar" dentro de la barra de filtros */
+.clasprod-filtro-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.clasprod-filtro-check input {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: #7b2ff7;
+  margin: 0;
+}
+
+/* Guardar de una vez todos los productos con cambios */
+.clasprod-btn-guardar-todo {
+  background: #059669;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.clasprod-btn-guardar-todo:hover:not(:disabled) {
+  background: #047857;
+}
+.clasprod-btn-guardar-todo:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+/* Formularios donde apareció el producto */
+.clasprod-forms {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.clasprod-form-chip {
+  display: inline-block;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #3730a3;
+  white-space: nowrap;
+}
+
+/* Cuántos lotes suma el saldo del producto */
+.clasprod-lotes-num {
+  display: block;
+  font-size: 0.68rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+/* Aviso del catálogo único dentro del administrador de clasificaciones */
+.clasprod-clasif-nota {
+  background: #fff;
+  border: 1px solid #cbb8ef;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: #4a2a86;
+}

@@ -4,6 +4,13 @@ import authService from '../services/authService';
 import { Link, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../apiConfig';
 import { toLocalISOString, businessHoursBetween } from '../utils/dateUtils';
+import {
+  cargarUmbralBloqueo,
+  estaBloqueadoParaFirma,
+  mensajeBloqueoFirma,
+  UMBRAL_BLOQUEO_POR_DEFECTO,
+} from '../utils/bloqueoFirma';
+import { ordenarFormularios, etiquetaFormulario } from '../utils/ordenFormularios';
 import './SignatureManagement.css';
 
 export default function SignatureManagement() {
@@ -58,7 +65,7 @@ export default function SignatureManagement() {
   const isSGI = currentUser?.rol === 'admin' || currentUser?.rol === 'sgi';
 
   // 🔒 Umbral de horas para bloqueo (configurable por admin en Gestión de Alertas). Fallback 36.
-  const [lockThreshold, setLockThreshold] = useState(36);
+  const [lockThreshold, setLockThreshold] = useState(UMBRAL_BLOQUEO_POR_DEFECTO);
 
   useEffect(() => {
     loadData();
@@ -70,15 +77,7 @@ export default function SignatureManagement() {
   }, []);
 
   const loadLockThreshold = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/Alerts/config`);
-      if (res.ok) {
-        const cfg = await res.json();
-        if (cfg?.lockThresholdHours > 0) setLockThreshold(cfg.lockThresholdHours);
-      }
-    } catch {
-      // Silencioso: si falla, se mantiene el fallback de 36h
-    }
+    setLockThreshold(await cargarUmbralBloqueo(API_BASE_URL));
   };
 
   const loadData = async () => {
@@ -211,7 +210,11 @@ export default function SignatureManagement() {
   };
 
   const handleSelectAll = () => {
-    if (selectedForms.length === filteredForms.length) {
+    // ¿Está todo lo que se ve ya seleccionado? Con la lista vacía la respuesta
+    // es no: si no, el botón deseleccionaba sin haber nada seleccionado.
+    const todosSeleccionados = filteredForms.length > 0 &&
+      selectedForms.length === filteredForms.length;
+    if (todosSeleccionados) {
       setSelectedForms([]);
     } else {
       setSelectedForms(filteredForms.map(form => form.id));
@@ -223,12 +226,11 @@ export default function SignatureManagement() {
       alert('Por favor selecciona al menos un formulario para firmar');
       return;
     }
-    const lockedSelected = pendingForms.filter(f => selectedForms.includes(f.id)).filter(f => {
-      const h = businessHoursBetween(f.createdDate, new Date());
-      return h > lockThreshold && !f.unlocked36h;
-    });
+    const lockedSelected = pendingForms
+      .filter(f => selectedForms.includes(f.id))
+      .filter(f => estaBloqueadoParaFirma(f, lockThreshold));
     if (lockedSelected.length > 0) {
-      alert(`🔒 Has seleccionado ${lockedSelected.length} formulario(s) con más de 36 horas de antigüedad que están bloqueados. Un Administrador debe habilitarlos en Supervisión General antes de poder firmar.`);
+      alert(`🔒 Has seleccionado ${lockedSelected.length} formulario(s) con más de ${lockThreshold} horas de antigüedad que están bloqueados. Un Administrador debe habilitarlos en Supervisión General antes de poder firmar.`);
       return;
     }
     setIsMassive(massive);
@@ -240,7 +242,7 @@ export default function SignatureManagement() {
   // ✅ Habilitar formularios para firma (sobreescribir bloqueo de 36 horas)
   const handleUnlockSelected = async () => {
     if (selectedForms.length === 0) return;
-    if (!window.confirm(`¿Estás seguro de habilitar ${selectedForms.length} formulario(s) para que puedan ser firmados omitiendo el bloqueo de 36 horas?`)) {
+    if (!window.confirm(`¿Estás seguro de habilitar ${selectedForms.length} formulario(s) para que puedan ser firmados omitiendo el bloqueo de ${lockThreshold} horas?`)) {
       return;
     }
     try {
@@ -261,9 +263,8 @@ export default function SignatureManagement() {
   const openContractPreview = async (formId) => {
     const formToCheck = pendingForms.find(f => f.id === formId);
     if (formToCheck) {
-      const h = businessHoursBetween(formToCheck.createdDate, new Date());
-      if (h > lockThreshold && !formToCheck.unlocked36h) {
-        alert(`🔒 Este registro superó las ${lockThreshold} horas hábiles de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.`);
+      if (estaBloqueadoParaFirma(formToCheck, lockThreshold)) {
+        alert(mensajeBloqueoFirma(lockThreshold));
         return;
       }
     }
@@ -429,21 +430,54 @@ export default function SignatureManagement() {
     }
 
     try {
+      // El backend estampa este nombre en el puesto firmado. Si va vacío no puede saber quién
+      // firmó y termina mostrando el nombre del titular del puesto, así que se usa el mejor
+      // identificador disponible del usuario en sesión.
+      const nombreFirmante = (currentUser.nombre || currentUser.username || currentUser.email || '').trim();
+
       const signatureData = {
         signatureImage,
         signedBy: currentUser.email,
-        signerNombre: currentUser.nombre,
+        signerNombre: nombreFirmante,
         signedDate: toLocalISOString(),
         comments,
       };
 
       if (isMassive) {
-        // En masivo cada formulario puede tener un puesto distinto para el usuario;
-        // el backend resuelve el puesto por titular (corregido). No se envía targetPuesto único.
-        await signatureService.signMultipleForms(selectedForms, signatureData);
-        alert(`✅ ${selectedForms.length} formularios firmados exitosamente`);
+        // 🎯 En masivo cada formulario puede tener un puesto distinto para el mismo usuario.
+        // Resolvemos el puesto de CADA uno y lo mandamos en un mapa { formId: puesto } para que
+        // el backend no adivine: antes no se enviaba ninguno y la firma caía en el puesto de otro.
+        const targetPuestos = {};
+        const sinPuesto = [];
+        selectedForms.forEach(formId => {
+          const form = pendingForms.find(f => f.id === formId);
+          const puesto = form ? resolveTargetPuesto(form) : null;
+          if (puesto) targetPuestos[String(formId)] = puesto;
+          else sinPuesto.push(form?.templateName || `Formulario #${formId}`);
+        });
+
+        if (sinPuesto.length > 0) {
+          const lista = sinPuesto.slice(0, 5).join('\n• ');
+          const resto = sinPuesto.length > 5 ? `\n…y ${sinPuesto.length - 5} más` : '';
+          alert(
+            `⚠️ No se pudo determinar tu puesto en ${sinPuesto.length} formulario(s):\n\n• ${lista}${resto}\n\n` +
+            'Esos no se firmarán, para no poner tu firma en el puesto de otra persona. ' +
+            'Revisa que tu nombre coincida con el titular o con un reemplazo en la plantilla.'
+          );
+        }
+
+        const result = await signatureService.signMultipleForms(selectedForms, { ...signatureData, targetPuestos });
+
+        // Usar el conteo REAL del servidor: algunos pueden rechazarse (bloqueados, ya firmados,
+        // o sin puesto determinable) y antes se avisaba que se habían firmado todos.
+        const count = result?.signedCount ?? selectedForms.length;
+        const fallidos = result?.failedCount ?? 0;
+        alert(
+          fallidos > 0
+            ? `✅ ${count} formulario(s) firmado(s).\n⚠️ ${fallidos} no se pudieron firmar.`
+            : `✅ ${count} formularios firmados exitosamente`
+        );
         // Actualización optimista del dashboard
-        const count = selectedForms.length;
         setStats(prev => ({
           ...prev,
           signedToday: (prev.signedToday || 0) + count,
@@ -674,10 +708,17 @@ export default function SignatureManagement() {
 
   // Filtrado de formularios
   const filteredForms = pendingForms.filter(form => {
-    const matchesSearch = form.templateName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         form.formCode?.toLowerCase().includes(searchTerm.toLowerCase());
+    // Sin texto de búsqueda no se descarta nada (un formulario sin nombre ni
+    // código quedaba fuera aunque la caja estuviera vacía).
+    const busqueda = searchTerm.trim().toLowerCase();
+    const matchesSearch = !busqueda ||
+                         form.templateName?.toLowerCase().includes(busqueda) ||
+                         form.formCode?.toLowerCase().includes(busqueda);
     const matchesArea = !filterArea || form.area === filterArea;
-    const matchesTemplate = !filterTemplate || form.templateId === filterTemplate;
+    // El valor de un <select> siempre es texto y el templateId es número:
+    // comparando con === nunca coincidía y el filtro dejaba la lista vacía.
+    const matchesTemplate = !filterTemplate ||
+                            String(form.templateId ?? '') === String(filterTemplate);
     
     // ✅ Excluir formularios rechazados
     const isNotRejected = !form.isRejected;
@@ -718,11 +759,16 @@ export default function SignatureManagement() {
 
   // Obtener áreas y plantillas únicas para filtros
   const uniqueAreas = [...new Set(pendingForms.map(f => f.area).filter(Boolean))];
-  const uniqueTemplates = Object.values(pendingForms.reduce((acc, f) => {
-    if (!acc[f.templateId]) acc[f.templateId] = { id: f.templateId, name: f.templateName, code: f.formCode };
-    return acc;
-  }, {})).sort((a, b) => 
-    (a.code || '').localeCompare(b.code || '', 'es', { numeric: true, sensitivity: 'base' })
+  // Ordenados por número de formulario (PD-04 antes que PD-14); los que no
+  // tienen número quedan al final.
+  const uniqueTemplates = ordenarFormularios(
+    Object.values(pendingForms.reduce((acc, f) => {
+      // Sin templateId no hay nada por lo que filtrar: entraba como "undefined"
+      if (f.templateId === undefined || f.templateId === null) return acc;
+      const key = String(f.templateId);
+      if (!acc[key]) acc[key] = { id: key, name: f.templateName, code: f.formCode };
+      return acc;
+    }, {}))
   );
 
   if (loading) {
@@ -888,7 +934,7 @@ export default function SignatureManagement() {
             <option value="">Todas las Plantillas</option>
             {uniqueTemplates.map(template => (
               <option key={template.id} value={template.id}>
-                {template.code && template.code !== 'N/A' ? `${template.code} - ` : ''}{template.name}
+                {etiquetaFormulario(template)}
               </option>
             ))}
           </select>
@@ -900,7 +946,9 @@ export default function SignatureManagement() {
             className="btn-secondary"
             disabled={filteredForms.length === 0}
           >
-            {selectedForms.length === filteredForms.length ? '☑️ Deseleccionar Todo' : '☐ Seleccionar Todo'}
+            {filteredForms.length > 0 && selectedForms.length === filteredForms.length
+              ? '☑️ Deseleccionar Todo'
+              : '☐ Seleccionar Todo'}
           </button>
           
           {isSGI && mainTab === 'admin_all' && (
@@ -1040,12 +1088,10 @@ export default function SignatureManagement() {
 
                             <div className="form-card-actions">
                               {(() => {
-                                const hoursElapsedCard = businessHoursBetween(form.createdDate, new Date());
-                                const isTimeLockedCard = hoursElapsedCard > lockThreshold && !form.unlocked36h;
-                                if (isTimeLockedCard) {
+                                if (estaBloqueadoParaFirma(form, lockThreshold)) {
                                   return (
                                     <button
-                                      onClick={() => alert(`🔒 Este registro superó las ${lockThreshold} horas hábiles de antigüedad. Un Administrador debe habilitarlo en Supervisión General antes de poder firmar.`)}
+                                      onClick={() => alert(mensajeBloqueoFirma(lockThreshold))}
                                       className="btn-sign"
                                       style={{ backgroundColor: '#9ca3af', cursor: 'not-allowed' }}
                                     >

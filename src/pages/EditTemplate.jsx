@@ -8,6 +8,8 @@ import { MAPPABLE_API_FIELDS, API_CODIGO_ENDPOINTS, API_CODIGO_JSON_FIELDS } fro
 import UserSelector from "../components/UserSelector";
 import { fetchUsers } from "../services/userService";
 import { isResumenAutoEnabled, setResumenAutoEnabled } from "../hooks/useLoteStore";
+import { InventarioColumnaConfig, InventarioAutoCompletar, InventarioTablaConfig, CampoLoteEncabezadoConfig, ColumnaLotePadreConfig } from "../components/InventarioConfig";
+import BusquedaProductoSelect from "../components/BusquedaProductoSelect";
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
@@ -67,7 +69,13 @@ function EditTemplate() {
   ];
 
   const sectionFieldTypes = fieldTypes.filter(t => true);
-  const tableFieldTypes = fieldTypes.filter(t => t.value !== "image");
+  // 📦 Las tablas además pueden tener columnas alimentadas por el Inventario de Lotes
+  const tableFieldTypes = [
+    ...fieldTypes.filter(t => t.value !== "image"),
+    { value: "inventario", label: "📦 Inventario (Lista desplegable de lotes)" },
+    { value: "lotePadre", label: "🔗 Código padre (lote del encabezado)" },
+    { value: "lotePadreTabla", label: "📥 Código padre (desde Materia Prima)" },
+  ];
 
   // Campos por defecto de Lote Entrante (5 campos)
   const DEFAULT_LE_CAMPOS = [
@@ -862,6 +870,15 @@ function EditTemplate() {
                 <label style={{ color: '#dc2626', fontWeight: 'bold' }}><input type="checkbox" checked={field.isHidden || false} onChange={(e) => updateHeaderField(index, "isHidden", e.target.checked)}/>🚫 Oculto</label>
               </div>
               <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateHeaderField(index, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
+              {field.type === "date" && (
+                <div className="form-group checkbox-group">
+                  <label title="Generar lote automáticamente en formato AAMMDD">
+                    <input type="checkbox" checked={field.autoGenerarLote || false} onChange={(e) => updateHeaderField(index, "autoGenerarLote", e.target.checked)}/>
+                    🔄 Auto-generar Lote
+                  </label>
+                </div>
+              )}
+              <BusquedaProductoSelect valor={field.busquedaProducto} onChange={(v) => updateHeaderField(index, "busquedaProducto", v)} />
               <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                 <button onClick={() => moveHeaderField(index, -1)} className="btn-move-up" disabled={index === 0} title="Mover arriba">⬆️</button>
                 <button onClick={() => moveHeaderField(index, 1)} className="btn-move-down" disabled={index === template.headerFields.length - 1} title="Mover abajo">⬇️</button>
@@ -872,6 +889,14 @@ function EditTemplate() {
 
             {/* Opciones para select/radio/checkbox */}
             {renderOptionsEditor(field, (prop, val) => updateHeaderField(index, prop, val), `hf-opts-${index}`)}
+
+            {/* 🔗 Campo que guarda los lotes de proceso del formulario */}
+            <CampoLoteEncabezadoConfig
+              field={field}
+              bodyElements={template.bodyElements}
+              onChange={(prop, val) => updateHeaderField(index, prop, val)}
+              onColumnasTabla={(elementIndex, cols) => updateBodyElement(elementIndex, 'columns', cols)}
+            />
           </div>
         ))}
         {template.headerFields.length === 0 && (<p className="empty-state">No hay campos de encabezado. Agrega al menos uno.</p>)}
@@ -1129,6 +1154,7 @@ function EditTemplate() {
                         <label style={{ color: '#dc2626', fontWeight: 'bold' }}><input type="checkbox" checked={field.isHidden || false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "isHidden", e.target.checked)}/>🚫 Oculto</label>
                       </div>
                       <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
+                      <BusquedaProductoSelect valor={field.busquedaProducto} onChange={(v) => updateFieldInSection(elementIndex, fieldIndex, "busquedaProducto", v)} />
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                         <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, -1)} className="btn-move-up" disabled={fieldIndex === 0} title="Mover arriba">⬆️</button>
                         <button onClick={() => moveFieldInSection(elementIndex, fieldIndex, 1)} className="btn-move-down" disabled={fieldIndex === (element.fields || []).length - 1} title="Mover abajo">⬇️</button>
@@ -1619,6 +1645,12 @@ function EditTemplate() {
                   );
                 })()}
 
+                {/* ─── 📦 Restar del Inventario de Lotes ─── */}
+                <InventarioTablaConfig
+                  element={element}
+                  onChange={(prop, val) => updateBodyElement(elementIndex, prop, val)}
+                />
+
                 {/* ─────────── PANEL: API POR CÓDIGO ─────────── */}
                 <div style={{
                   background: element.usaApiPorCodigo ? 'linear-gradient(135deg, #fdf4ff, #fae8ff)' : '#f9fafb',
@@ -1959,8 +1991,26 @@ function EditTemplate() {
                         </div>
                       )}
 
+                      {/* 📦 Autocompletar esta columna desde el lote elegido en la fila */}
+                      <InventarioAutoCompletar
+                        column={column}
+                        columnas={element.columns || []}
+                        onChange={(prop, val) => updateColumnInTable(elementIndex, colIndex, prop, val)}
+                      />
+
+                      <ColumnaLotePadreConfig
+                        column={column}
+                        columnas={element.columns || []}
+                        onChange={(prop, val) => updateColumnInTable(elementIndex, colIndex, prop, val)}
+                        onColumnas={(cols) => updateBodyElement(elementIndex, 'columns', cols)}
+                        element={element}
+                        bodyElements={template.bodyElements}
+                      />
+
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={column.required || false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "required", e.target.checked)}/>Requerido</label></div>
                       <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={column.usaApiAutocomplete !== false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
+                      <BusquedaProductoSelect valor={column.busquedaProducto} onChange={(v) => updateColumnInTable(elementIndex, colIndex, "busquedaProducto", v)} />
+                      <div className="form-group checkbox-group"><label title="El operario escribe a mano: sin desplegables, sin catálogo, sin API y sin las listas automáticas de producción"><input type="checkbox" checked={column.campoLibre || false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "campoLibre", e.target.checked)}/>✏️ Solo escribir</label></div>
 
                       {/* 📊 INCLUIR EN AUTO-SUMA */}
                       <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', background: column.includeInSum === false ? '#fff7ed' : '#f0fdf4', border: `1px solid ${column.includeInSum === false ? '#fb923c' : '#86efac'}`, borderRadius: '6px' }}>
@@ -1988,6 +2038,12 @@ function EditTemplate() {
                     
                     {/* Opciones para select/radio/checkbox */}
                     {renderOptionsEditor(column, (prop, val) => updateColumnInTable(elementIndex, colIndex, prop, val), `col-opts-${elementIndex}-${colIndex}`)}
+
+                    {/* 📦 Config de columna alimentada por el Inventario de Lotes */}
+                    <InventarioColumnaConfig
+                      column={column}
+                      onChange={(prop, val) => updateColumnInTable(elementIndex, colIndex, prop, val)}
+                    />
 
                     {/* 📊 CONFIG DE PORCENTAJE EN COLUMNA DE TABLA */}
                     {column.type === "percentage" && (

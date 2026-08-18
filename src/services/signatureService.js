@@ -83,9 +83,12 @@ const signatureService = {
           comments: signatureData.comments || '',
           signerNombre: signatureData.signerNombre || '',
           targetPuesto: signatureData.targetPuesto || null,
+          // Puesto exacto por formulario: { "12": "Jefe de Calidad", "13": "Supervisor" }.
+          // Cada formulario puede tener un puesto distinto para el mismo firmante.
+          targetPuestos: signatureData.targetPuestos || null,
         }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Error al firmar los formularios');

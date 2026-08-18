@@ -1556,7 +1556,141 @@ export const exportMultipleFormsToExcel = async (forms, templates) => {
   }
 };
 
+/**
+ * 📋 LISTA MAESTRA DOCUMENTAL (FOR-SGC-3)
+ *
+ * Sale con el mismo encabezado que cualquier formulario del sistema — logo,
+ * nombre, código, versión y fecha — para que se pueda archivar tal cual, sin
+ * tener que maquetarla a mano en Excel.
+ *
+ * @param {Object} p
+ * @param {Array<Object>} p.filas    — { nombre, codigo, version, fecha, copiaControlada, ubicacion, estado }
+ * @param {string} [p.codigo]        — código del formato (FOR-SGC-3)
+ * @param {string} [p.nombre]        — título del documento
+ * @param {string} [p.version]
+ * @param {string|Date} [p.fecha]
+ * @param {string} [p.nombreArchivo]
+ */
+export const exportarListaMaestraExcel = async ({
+  filas = [],
+  codigo = 'FOR-SGC-3',
+  nombre = 'Lista Maestra Documental',
+  version = '1',
+  fecha = null,
+  nombreArchivo = 'Lista_Maestra_Documental.xlsx',
+} = {}) => {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Frigolab San Mateo';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Lista Maestra', {
+      pageSetup: {
+        paperSize: 9,
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: { left: 0.4, right: 0.4, top: 0.4, bottom: 0.4, header: 0.3, footer: 0.3 }
+      }
+    });
+
+    const COLUMNAS = [
+      { titulo: '#', ancho: 6 },
+      { titulo: 'Nombre de Documento', ancho: 55 },
+      { titulo: 'Código', ancho: 16 },
+      { titulo: 'Versión', ancho: 10 },
+      { titulo: 'Fecha', ancho: 14 },
+      { titulo: 'Copia Controlada', ancho: 18 },
+      { titulo: 'Ubicación', ancho: 26 },
+      { titulo: 'Estado', ancho: 14 },
+    ];
+    const maxCols = COLUMNAS.length;
+    COLUMNAS.forEach((c, i) => { worksheet.getColumn(i + 1).width = c.ancho; });
+
+    // Encabezado Frigolab (el mismo de los formularios), con logo
+    let logoBase64 = null;
+    try {
+      logoBase64 = await getBase64ImageForExcel(logoUrl);
+    } catch (error) {
+      console.warn('⚠️ No se pudo cargar el logo para Excel:', error);
+    }
+
+    let fila = await createFrigolabHeader(
+      worksheet,
+      { nombre, codigo, version, fechaVersion: fecha || new Date() },
+      logoBase64,
+      maxCols
+    );
+
+    fila += 1; // aire entre el encabezado y la tabla
+
+    // Cabecera de la tabla
+    const filaCabecera = fila;
+    COLUMNAS.forEach((col, i) => {
+      const celda = worksheet.getCell(filaCabecera, i + 1);
+      celda.value = col.titulo;
+      celda.font = { bold: true, size: 10, color: { argb: EXCEL_COLORS.white }, name: 'Calibri' };
+      celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.headerBg } };
+      celda.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      applyBorder(celda, EXCEL_COLORS.borderDark);
+    });
+    worksheet.getRow(filaCabecera).height = 26;
+    fila += 1;
+
+    // Filas
+    filas.forEach((d, i) => {
+      const valores = [
+        i + 1,
+        d.nombre || '-',
+        d.codigo || '-',
+        d.version || '-',
+        d.fecha || '-',
+        d.copiaControlada || 'No',
+        d.ubicacion || '',
+        d.estado || 'Activo',
+      ];
+      valores.forEach((valor, c) => {
+        const celda = worksheet.getCell(fila, c + 1);
+        celda.value = valor;
+        celda.font = { size: 10, name: 'Calibri', color: { argb: EXCEL_COLORS.black } };
+        celda.alignment = {
+          vertical: 'middle',
+          horizontal: c === 1 || c === 6 ? 'left' : 'center',
+          wrapText: true,
+        };
+        applyBorder(celda, EXCEL_COLORS.border);
+        if (i % 2 === 1) {
+          celda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_COLORS.lightGray } };
+        }
+      });
+      fila += 1;
+    });
+
+    // Pie con el total, para que el archivo se explique solo
+    const celdaTotal = worksheet.getCell(fila + 1, 1);
+    celdaTotal.value = `Total de documentos: ${filas.length}  ·  Generado el ${new Date().toLocaleString('es-EC')}`;
+    celdaTotal.font = { italic: true, size: 9, color: { argb: EXCEL_COLORS.gray }, name: 'Calibri' };
+    safeMergeCells(worksheet, fila + 1, 1, fila + 1, maxCols);
+
+    // Congelar el encabezado de la tabla al hacer scroll
+    worksheet.views = [{ state: 'frozen', ySplit: filaCabecera }];
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    saveAs(blob, nombreArchivo);
+
+    return { success: true, fileName: nombreArchivo, total: filas.length };
+  } catch (error) {
+    console.error('Error al generar la Lista Maestra:', error);
+    throw new Error(`No se pudo generar el Excel: ${error.message}`);
+  }
+};
+
 export default {
   exportFormToExcel,
-  exportMultipleFormsToExcel
+  exportMultipleFormsToExcel,
+  exportarListaMaestraExcel
 };

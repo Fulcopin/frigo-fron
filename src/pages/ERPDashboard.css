@@ -180,9 +180,67 @@
 
 .col-panel-header strong { font-size: .9rem; color: #1e293b; }
 
+.col-panel-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.col-panel-sub {
+  font-size: .72rem;
+  color: #64748b;
+}
+
 .col-panel-actions {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.col-search {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: .78rem;
+  outline: none;
+  width: 170px;
+}
+
+.col-search:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,.15); }
+
+.col-panel-actions button.col-panel-export {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+.col-panel-actions button.col-panel-export:hover { background: #059669; }
+.col-panel-actions button.col-panel-export:disabled { opacity: .45; cursor: not-allowed; }
+
+.col-panel-empty {
+  font-size: .8rem;
+  color: #94a3b8;
+  padding: 6px 2px;
+}
+
+.col-item-on {
+  background: #eef2ff;
+  border-color: #a5b4fc;
+  color: #3730a3;
+  font-weight: 600;
+}
+
+.col-tag-num {
+  font-size: .62rem;
+  font-style: normal;
+  font-weight: 700;
+  background: #d1fae5;
+  color: #047857;
+  border-radius: 4px;
+  padding: 1px 4px;
+  letter-spacing: .02em;
 }
 
 .col-panel-actions button {
@@ -228,6 +286,410 @@
   margin: 0;
   accent-color: #3b82f6;
   cursor: pointer;
+}
+
+/* ── Barra de modo resumen / tabla dinámica ───────────── */
+.erp-resumen-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  flex-shrink: 0;
+}
+
+.erp-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 20px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 700;
+  color: #334155;
+  user-select: none;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.erp-switch:hover { background: #e0e7ff; border-color: #a5b4fc; }
+
+/* Atajo que deja armado el resumen de una línea por formulario */
+.btn-armar-resumen {
+  padding: 7px 16px;
+  border-radius: 20px;
+  border: 1px solid #4f46e5;
+  background: #4f46e5;
+  color: white;
+  font-size: .82rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-armar-resumen:hover { background: #4338ca; border-color: #4338ca; }
+
+/* Guardar / olvidar la configuración de este formulario */
+.btn-guardar-config,
+.btn-olvidar-config {
+  padding: 7px 14px;
+  border-radius: 20px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #334155;
+  font-size: .8rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-guardar-config:hover { background: #dcfce7; border-color: #4ade80; color: #166534; }
+.btn-olvidar-config:hover { background: #fee2e2; border-color: #f87171; color: #991b1b; }
+
+.erp-config-aviso {
+  font-size: .8rem;
+  font-weight: 700;
+  color: #166534;
+  background: #dcfce7;
+  border-radius: 14px;
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+
+.erp-switch-nota {
+  font-style: normal;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.erp-switch input[type="checkbox"] {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.erp-switch:has(input:checked) {
+  background: #eef2ff;
+  border-color: #6366f1;
+  color: #4338ca;
+}
+
+.erp-resumen-hint {
+  font-size: .75rem;
+  color: #64748b;
+  padding-bottom: 8px;
+}
+
+.btn-ops {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: .8rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s;
+}
+
+.btn-ops:hover { background: #e0e7ff; }
+
+/* ── Panel de operación por columna ───────────────────── */
+.op-panel {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  overflow: hidden;
+  max-height: 340px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.op-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+}
+
+.op-panel-header strong { font-size: .9rem; color: #1e293b; }
+
+.op-panel-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 8px 14px;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+
+.op-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.op-item-off { opacity: .55; background: #f1f5f9; }
+
+.op-item-name {
+  font-size: .78rem;
+  font-weight: 600;
+  color: #334155;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.op-item select {
+  flex-shrink: 0;
+  height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: .76rem;
+  background: white;
+  cursor: pointer;
+  padding: 0 6px;
+}
+
+/* Tabla en modo resumen */
+.erp-table-resumen td.td-num-val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.erp-row-total td {
+  background: #eef2ff !important;
+  font-weight: 800;
+  color: #3730a3;
+  border-top: 2px solid #6366f1;
+}
+
+.btn-excel-det {
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  background: #0f766e;
+  color: white;
+  transition: opacity .15s, transform .1s;
+}
+
+.btn-excel-det:hover    { opacity: .88; transform: translateY(-1px); }
+.btn-excel-det:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+/* ── Modo selección de columnas (checks en la cabecera) ── */
+.btn-check-cols {
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  background: #f59e0b;
+  color: #422006;
+  transition: opacity .15s, transform .1s;
+}
+
+.btn-check-cols:hover { opacity: .88; transform: translateY(-1px); }
+.btn-check-cols.on    { background: #16a34a; color: white; }
+
+.erp-select-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: .8rem;
+  color: #78350f;
+  flex-shrink: 0;
+}
+
+.erp-select-banner-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.erp-select-banner-actions button {
+  padding: 5px 11px;
+  font-size: .78rem;
+  border: 1px solid #d6bd8a;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-weight: 600;
+  color: #78350f;
+}
+
+.erp-select-banner-actions button:hover { background: #fef3c7; }
+
+.erp-select-banner-actions button.banner-export {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+/* ── Barra de filas seleccionadas ─────────────────────────
+   Muestra los totales de lo marcado sin tener que entrar al
+   modo resumen. */
+.erp-sel-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: #eef2ff;
+  border: 1px solid #a5b4fc;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: .8rem;
+  color: #3730a3;
+  flex-shrink: 0;
+}
+
+.erp-sel-count { white-space: nowrap; }
+
+.erp-sel-totales {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 200px;
+}
+
+.erp-sel-total {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  background: white;
+  border: 1px solid #c7d2fe;
+  border-radius: 7px;
+  padding: 4px 10px;
+}
+
+.erp-sel-total em {
+  font-style: normal;
+  font-size: .68rem;
+  color: #6366f1;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.erp-sel-total strong {
+  font-size: .92rem;
+  color: #1e1b4b;
+  font-variant-numeric: tabular-nums;
+}
+
+.erp-sel-vacio { color: #6366f1; font-style: italic; }
+
+.erp-sel-acciones {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.erp-sel-acciones button {
+  padding: 5px 11px;
+  font-size: .78rem;
+  border: 1px solid #a5b4fc;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-weight: 600;
+  color: #3730a3;
+  white-space: nowrap;
+}
+
+.erp-sel-acciones button:hover { background: #e0e7ff; }
+
+.erp-sel-acciones button.banner-export {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+.erp-sel-acciones button.banner-export:hover { background: #059669; }
+
+/* Botón de fusión activo */
+.erp-sel-acciones button.banner-on {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: white;
+}
+
+.erp-sel-acciones button.banner-on:hover { background: #4338ca; }
+
+.erp-sel-acciones button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.erp-select-banner-actions button.banner-export:hover { background: #059669; }
+
+/* Check dentro del encabezado */
+.th-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.th-check input[type="checkbox"] {
+  margin: 0;
+  width: 15px;
+  height: 15px;
+  accent-color: #16a34a;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.erp-table-select th.th-off {
+  background: #f1f5f9 !important;
+  color: #94a3b8 !important;
+}
+
+.erp-table-select td.td-off {
+  background: #f8fafc;
+  color: #cbd5e1;
+  text-decoration: line-through;
 }
 
 /* ── Error ────────────────────────────────────────────── */
@@ -354,9 +816,406 @@
 
 .td-empty { color: #cbd5e1; font-style: italic; }
 
+/* ── Selección de filas ───────────────────────────────────
+   Hay DOS columnas fijas a la izquierda: el check y el número.
+   El check se queda en 0 y el número se corre a su ancho, si no
+   se montan una encima de la otra al hacer scroll horizontal. */
+.th-check-row, .td-check-row {
+  left: 0;
+  width: 38px;
+  min-width: 38px;
+  text-align: center;
+  padding: 7px 6px !important;
+}
+
+.th-check-row input, .td-check-row input {
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  accent-color: #6366f1;
+  margin: 0;
+}
+
+/* Solo en la tabla detallada: la de resumen no tiene columna de check y su
+   número tiene que seguir pegado al borde. */
+.erp-table:not(.erp-table-resumen) .th-num.th-fixed,
+.erp-table:not(.erp-table-resumen) .td-num.td-fixed { left: 38px; }
+
 /* Filas alternadas */
 .erp-row-alt td { background: #fafafa; }
 .erp-row-alt .td-fixed { background: #e8e4fb; }
+
+/* Fila marcada */
+.erp-row-sel td { background: #eef2ff !important; }
+.erp-row-sel .td-fixed { background: #c7d2fe !important; }
+
+/* ── Panel de columnas agrupado por origen ──────────────── */
+.col-grupo {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.col-grupo:first-of-type { border-top: none; margin-top: 0; }
+
+.col-grupo-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.col-grupo-head strong {
+  font-size: .84rem;
+  color: #1e293b;
+}
+
+.col-grupo-count {
+  font-size: .74rem;
+  color: #64748b;
+  background: #f1f5f9;
+  border-radius: 10px;
+  padding: 2px 9px;
+}
+
+.col-grupo-head button {
+  padding: 3px 9px;
+  font-size: .72rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: white;
+  cursor: pointer;
+  font-weight: 600;
+  color: #475569;
+}
+
+.col-grupo-head button:hover { background: #e0e7ff; border-color: #a5b4fc; }
+
+/* ── Croquis del formulario ───────────────────────────────
+   Un dibujo chico del formulario donde se marcan los campos
+   haciendo clic, en vez de buscarlos en una lista de nombres. */
+.btn-croquis {
+  padding: 9px 16px;
+  border-radius: 9px;
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-weight: 700;
+  font-size: .84rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-croquis:hover { background: #fef3c7; }
+
+/* Overlay oscuro detrás del croquis */
+.croquis-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.croquis-panel {
+  background: white;
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 8px 40px rgba(15,23,42,.25);
+  width: 100%;
+  max-width: 1200px;
+  margin: auto;
+}
+
+/* La "hoja": imita el formulario impreso */
+.croquis-hoja {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.croquis-bloque {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: white;
+  overflow: hidden;
+  /* Sin esto, al ser hijos de un flex column con altura máxima, los bloques
+     se achican para entrar y de los campos solo se ve una franja. Deben
+     conservar su alto y que scrollee la hoja. */
+  flex-shrink: 0;
+}
+
+.croquis-bloque-titulo {
+  background: #1e5b8f;
+  color: white;
+  font-size: .76rem;
+  font-weight: 700;
+  padding: 6px 12px;
+  letter-spacing: .3px;
+}
+
+.croquis-encabezado .croquis-bloque-titulo { background: #475569; }
+.croquis-firma .croquis-bloque-titulo      { background: #7c3aed; }
+
+.croquis-campos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+/* El campo y su operación viajan juntos, para que al envolver no se separen */
+.croquis-campo-caja {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.croquis-op {
+  font-size: .7rem;
+  border: 1px solid #4ade80;
+  border-radius: 5px;
+  padding: 3px 3px;
+  background: #f0fdf4;
+  color: #166534;
+  font-weight: 600;
+  max-width: 104px;
+  cursor: pointer;
+}
+
+.croquis-sueltas .croquis-bloque-titulo { background: #64748b; }
+
+.croquis-campo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: .76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+
+.croquis-campo:hover:not(:disabled) { border-color: #6366f1; background: #eef2ff; }
+
+.croquis-campo-on {
+  background: #dcfce7;
+  border-color: #4ade80;
+  color: #166534;
+}
+
+.croquis-campo-vacio {
+  opacity: .45;
+  cursor: not-allowed;
+  border-style: dashed;
+  font-weight: 500;
+}
+
+.croquis-tick { font-size: .85rem; }
+
+/* El interruptor de "una línea por formulario", dentro del croquis */
+.croquis-switch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 13px;
+  border-radius: 18px;
+  background: #eef2ff;
+  border: 1px solid #a5b4fc;
+  cursor: pointer;
+  font-size: .78rem;
+  font-weight: 700;
+  color: #3730a3;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.croquis-switch input { margin: 0; width: 15px; height: 15px; accent-color: #4f46e5; cursor: pointer; }
+
+/* Número de línea en la vista previa */
+.col-preview-num {
+  background: #f1f5f9;
+  font-weight: 700;
+  color: #6366f1;
+  text-align: center;
+}
+
+/* Avance de la carga por tandas */
+.erp-progreso {
+  width: 260px;
+  height: 7px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.erp-progreso-barra {
+  height: 100%;
+  background: #6366f1;
+  border-radius: 4px;
+  transition: width .2s ease;
+}
+
+/* Cada columna del panel lleva el check y, al lado, qué hace al resumir.
+   Las píldoras dejan de ser de ancho automático: con el selector adentro
+   quedaban de distinto tamaño y la lista se veía desprolija. */
+.col-item {
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 260px;
+}
+
+.col-item-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.col-item-check span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-item-op {
+  font-size: .72rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  padding: 2px 4px;
+  background: white;
+  color: #334155;
+  max-width: 108px;
+  cursor: pointer;
+}
+
+.col-item-op-fijo {
+  font-size: .7rem;
+  color: #94a3b8;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* Vista previa de la línea que va a salir en el Excel */
+.col-preview {
+  border-top: 2px solid #cbd5e1;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+.col-preview-head {
+  font-size: .8rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 7px;
+}
+
+.col-preview-head span { font-weight: 600; color: #64748b; }
+
+.col-preview-scroll {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.col-preview-tabla {
+  border-collapse: collapse;
+  font-size: .74rem;
+  white-space: nowrap;
+}
+
+.col-preview-tabla th {
+  background: #1e293b;
+  color: white;
+  padding: 6px 11px;
+  text-align: left;
+  font-weight: 700;
+}
+
+.col-preview-tabla td {
+  padding: 6px 11px;
+  border-top: 1px solid #e2e8f0;
+  color: #334155;
+}
+
+/* Línea fusionada: varias filas marcadas juntadas en una sola */
+.erp-row-fusion td {
+  background: #ecfdf5 !important;
+  color: #065f46;
+  font-weight: 700;
+  border-top: 2px solid #10b981;
+  border-bottom: 2px solid #10b981;
+}
+
+.erp-row-fusion .td-fixed {
+  background: #a7f3d0 !important;
+  color: #065f46;
+}
+
+/* Subtotal por formulario, intercalado entre las filas */
+.erp-row-subtotal td {
+  background: #e0e7ff !important;
+  color: #312e81;
+  font-weight: 700;
+  border-top: 1px solid #a5b4fc;
+  border-bottom: 1px solid #a5b4fc;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Total general, al final de todo */
+.erp-row-total-gral td {
+  background: #312e81 !important;
+  color: #fff;
+  font-weight: 800;
+  border-top: 2px solid #1e1b4b;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.erp-row-subtotal .td-fixed,
+.erp-row-total-gral .td-fixed { text-align: center; }
+
+/* El rótulo del subtotal va a la izquierda, no alineado como número */
+.td-subtotal-label {
+  text-align: left !important;
+  font-weight: 700;
+  max-width: none !important;
+}
+
+/* Pie con los totales de lo marcado */
+.erp-row-total-sel td {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: #4f46e5 !important;
+  color: #fff;
+  font-weight: 700;
+  border-top: 2px solid #3730a3;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.erp-row-total-sel .td-fixed {
+  z-index: 25;
+  text-align: center;
+}
 
 /* Hover */
 .erp-table tbody tr:hover td { background: #eff6ff; }

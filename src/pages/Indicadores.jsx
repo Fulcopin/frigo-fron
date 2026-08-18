@@ -1,12 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import consumptionService from '../services/consumptionService';
 import { API_BASE_URL } from '../apiConfig';
 import SimpleChart from '../components/SimpleChart';
+import { compararCodigos } from '../utils/ordenFormularios';
 import './Indicadores.css';
 
 const TOP_N = 20;
 const ALL = '__ALL__';
+const TAB = '__TAB__';           // "el formulario que diga la pestaña" (hereda el alcance)
+const REFRESH_MS = 30000;        // tiempo real: refresco automático cada 30 s
 
 const AGG_LABELS = { sum: 'Suma', avg: 'Promedio', count: 'Conteo', max: 'Máximo', min: 'Mínimo' };
 const CHART_LABELS = { bar: '📊 Barras', line: '📈 Línea', donut: '🍩 Pastel', kpi: '🔢 Tarjeta (KPI)' };
@@ -15,6 +18,9 @@ const OP_LABELS = {
   div: 'División (A ÷ B)', pct: 'Porcentaje (A ÷ B × 100)'
 };
 const MULTI_OPS = ['add', 'mul']; // permiten más de 2 términos
+
+// Pestaña fija: contiene los indicadores que no pertenecen a ninguna pestaña creada.
+const GENERAL_TAB = { id: null, nombre: 'General', scopeTipo: 'todos', scopeValor: null, fija: true };
 
 // ---------- Helpers de datos ----------
 
@@ -54,6 +60,11 @@ const isNumeric = (v) => v !== null && v !== undefined && v !== '' && Number.isF
 const toNum = (v) => parseFloat(String(v ?? '').replace(',', '.')) || 0;
 const fmtNum = (n) => new Intl.NumberFormat('es-EC', { maximumFractionDigits: 2 }).format(n || 0);
 const formName = (f) => f.templateName || f.templateCode || 'Formulario';
+const procesoOf = (f) => f.proceso || f.area || 'Sin proceso';
+
+// "Cualquier formulario": ★ Todos, o ◆ heredar de la pestaña (los datos ya vienen filtrados por la pestaña)
+const isAnyForm = (n) => !n || n === ALL || n === TAB;
+const isAnyTable = (n) => !n || n === ALL;
 
 function dateBucket(iso, granularity) {
   const d = new Date(iso);
@@ -73,15 +84,61 @@ function dateBucket(iso, granularity) {
   return `${y}-${m}-${day}`;
 }
 
+// ---------- Alcance de la pestaña ----------
+
+// Deja solo los formularios que corresponden a la pestaña activa.
+// Todo lo que se dibuje dentro de la pestaña usa ESTOS datos.
+function applyScope(data, tab) {
+  if (!tab || tab.scopeTipo === 'todos' || !tab.scopeValor) return data;
+  const forms = (data.forms || []).filter(f => (
+    tab.scopeTipo === 'registro' ? formName(f) === tab.scopeValor : procesoOf(f) === tab.scopeValor
+  ));
+  return { forms };
+}
+
+function tabScopeLabel(tab) {
+  if (!tab || tab.scopeTipo === 'todos') return 'Todos los registros';
+  if (tab.scopeTipo === 'registro') return `Registro: ${tab.scopeValor}`;
+  return `Proceso: ${tab.scopeValor}`;
+}
+
+/**
+ * Formularios disponibles, CON su número, ordenados por número.
+ *
+ * El valor que se guarda en el indicador sigue siendo el nombre (es la clave con
+ * la que se filtran los datos y con la que quedaron guardados los indicadores
+ * viejos); el número va solo en la etiqueta que se muestra, que es por donde la
+ * gente busca.
+ *
+ * @returns {Array<{nombre: string, codigo: string, etiqueta: string}>}
+ */
 function listForms(data) {
+  const porNombre = new Map();
+  (data.forms || []).forEach(f => {
+    const nombre = formName(f);
+    const codigo = String(f.templateCode || '').trim();
+    // Si el mismo formulario aparece varias veces, gana el que traiga código.
+    if (!porNombre.has(nombre) || (codigo && !porNombre.get(nombre))) porNombre.set(nombre, codigo);
+  });
+
+  return [...porNombre.entries()]
+    .map(([nombre, codigo]) => ({
+      nombre,
+      codigo,
+      etiqueta: codigo && codigo !== nombre ? `${codigo} — ${nombre}` : nombre,
+    }))
+    .sort((a, b) => compararCodigos(a.codigo, b.codigo)
+      || a.nombre.localeCompare(b.nombre, 'es', { numeric: true }));
+}
+function listProcesos(data) {
   const set = new Set();
-  (data.forms || []).forEach(f => set.add(formName(f)));
+  (data.forms || []).forEach(f => set.add(procesoOf(f)));
   return Array.from(set).sort();
 }
 function listTables(data, scopeForm) {
   const set = new Set();
   (data.forms || []).forEach(f => {
-    if (scopeForm && scopeForm !== ALL && formName(f) !== scopeForm) return;
+    if (!isAnyForm(scopeForm) && formName(f) !== scopeForm) return;
     (f.sections || []).forEach(s => set.add(s.sectionTitle || 'Sección'));
   });
   return Array.from(set).sort();
@@ -90,9 +147,9 @@ function columnsForScope(data, scopeForm, scopeTable) {
   const colset = new Set();
   const stats = new Map();
   (data.forms || []).forEach(f => {
-    if (scopeForm && scopeForm !== ALL && formName(f) !== scopeForm) return;
+    if (!isAnyForm(scopeForm) && formName(f) !== scopeForm) return;
     (f.sections || []).forEach(s => {
-      if (scopeTable && scopeTable !== ALL && (s.sectionTitle || 'Sección') !== scopeTable) return;
+      if (!isAnyTable(scopeTable) && (s.sectionTitle || 'Sección') !== scopeTable) return;
       const cols = (s.columns && s.columns.length) ? s.columns : (s.rows[0] ? Object.keys(s.rows[0]) : []);
       cols.forEach(c => { if (c && !String(c).startsWith('_') && c !== 'id') colset.add(c); });
       (s.rows || []).forEach(r => {
@@ -114,6 +171,7 @@ function columnsForScope(data, scopeForm, scopeTable) {
 
 function groupKeyOf(groupBy, r, f) {
   if (groupBy === '__FORM__') return formName(f);
+  if (groupBy === '__PROCESO__') return procesoOf(f);
   if (groupBy === '__DATE_DAY__') return dateBucket(f.createdAt, 'day');
   if (groupBy === '__DATE_WEEK__') return dateBucket(f.createdAt, 'week');
   if (groupBy === '__DATE_MONTH__') return dateBucket(f.createdAt, 'month');
@@ -126,9 +184,9 @@ function groupKeyOf(groupBy, r, f) {
 function termBuckets(term, data, groupBy) {
   const buckets = new Map();
   (data.forms || []).forEach(f => {
-    if (term.formName && term.formName !== ALL && formName(f) !== term.formName) return;
+    if (!isAnyForm(term.formName) && formName(f) !== term.formName) return;
     (f.sections || []).forEach(s => {
-      if (term.tableName && term.tableName !== ALL && (s.sectionTitle || 'Sección') !== term.tableName) return;
+      if (!isAnyTable(term.tableName) && (s.sectionTitle || 'Sección') !== term.tableName) return;
       (s.rows || []).forEach(r => {
         if (term.agg !== 'count') {
           const raw = getVal(r, term.valueCol);
@@ -207,8 +265,10 @@ function scopeLabel(ind) {
     const opTxt = OP_LABELS[ind.op]?.split(' ')[0] || 'Combinado';
     return `${opTxt} · ${(ind.terms || []).length} columnas`;
   }
-  const f = (!ind.formName || ind.formName === ALL) ? 'Todos los formularios' : ind.formName;
-  const t = (!ind.tableName || ind.tableName === ALL) ? 'Todas las tablas' : ind.tableName;
+  const f = ind.formName === TAB ? 'Según la pestaña'
+    : (!ind.formName || ind.formName === ALL) ? 'Todos los formularios'
+    : ind.formName;
+  const t = isAnyTable(ind.tableName) ? 'Todas las tablas' : ind.tableName;
   return `${f} · ${t}`;
 }
 
@@ -218,6 +278,7 @@ function autoTitle(d) {
   const agg = AGG_LABELS[d.agg] || d.agg;
   const val = d.agg === 'count' ? 'registros' : (d.valueCol || 'valor');
   const grp = d.groupBy === '__FORM__' ? 'formulario'
+    : d.groupBy === '__PROCESO__' ? 'proceso'
     : d.groupBy === '__TOTAL__' ? 'total'
     : d.groupBy?.startsWith('__DATE_') ? 'fecha'
     : d.groupBy;
@@ -226,6 +287,7 @@ function autoTitle(d) {
 
 // ---------- Persistencia: base de datos vía API ----------
 const IND_URL = `${API_BASE_URL}/Indicadores`;
+const TAB_URL = `${API_BASE_URL}/Tableros`;
 
 // ---------- Componente principal ----------
 
@@ -235,68 +297,222 @@ export default function Indicadores() {
   const [loading, setLoading] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   const [indicators, setIndicators] = useState([]);
   const [indError, setIndError] = useState('');
   const [showBuilder, setShowBuilder] = useState(false);
   const [draft, setDraft] = useState(null);
-  const [expanded, setExpanded] = useState(null); // indicador abierto en grande
+  const [editingId, setEditingId] = useState(null); // dbId del indicador que se está editando
+  const [expanded, setExpanded] = useState(null);   // indicador abierto en grande
 
-  useEffect(() => { loadData(); loadIndicators(); /* eslint-disable-next-line */ }, []);
+  // Pestañas (tableros)
+  const [tabs, setTabs] = useState([]);             // solo las creadas en la BD
+  const [activeTabId, setActiveTabId] = useState(null); // null = pestaña "General"
+  const [tabDraft, setTabDraft] = useState(null);   // pestaña en edición/creación
+
+  const inFlight = useRef(false);
+
+  const loadData = useCallback(async (f, { silent = false } = {}) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      if (!silent) { setLoading(true); }
+      setLoadError('');
+      const raw = await consumptionService.getAllSectionsData(f);
+      setAllData(normalizeSectionsData(raw));
+      setLastUpdated(new Date());
+      setLoadedOnce(true);
+    } catch (e) {
+      console.error('Error al cargar datos de indicadores:', e);
+      if (!silent) {
+        setAllData({ forms: [] });
+        setLoadError('No se pudieron cargar los datos. Verifica la conexión con el servidor.');
+        setLoadedOnce(true);
+      } else {
+        setLoadError('El refresco automático falló. Mostrando los últimos datos cargados.');
+      }
+    } finally {
+      inFlight.current = false;
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   // Cargar indicadores desde la BASE DE DATOS (API)
-  const loadIndicators = async () => {
+  const loadIndicators = useCallback(async () => {
     try {
       const res = await fetch(IND_URL);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) throw await httpError(res);
       const data = await res.json();
       const list = (Array.isArray(data) ? data : data.$values || []).map(row => ({
         ...(safeParse(row.configJson) || {}),
-        id: `db_${row.id}`, dbId: row.id, title: row.titulo || 'Indicador'
+        id: `db_${row.id}`, dbId: row.id, title: row.titulo || 'Indicador',
+        tableroId: row.tableroId ?? null
       }));
       setIndicators(list);
       setIndError('');
     } catch (e) {
       console.error('No se pudieron cargar indicadores desde el servidor:', e);
       setIndicators([]);
-      setIndError('No se pudo conectar con el servidor de indicadores. Verifica que la API esté actualizada y en línea.');
+      setIndError(`No se pudo conectar con el servidor de indicadores. Verifica que la API esté actualizada y en línea. (${e.message})`);
     }
-  };
+  }, []);
 
-  const loadData = async (f = filters) => {
+  // Cargar pestañas desde la BASE DE DATOS (API)
+  const loadTabs = useCallback(async () => {
     try {
-      setLoading(true); setLoadError('');
-      const raw = await consumptionService.getAllSectionsData(f);
-      setAllData(normalizeSectionsData(raw));
-      setLoadedOnce(true);
+      const res = await fetch(TAB_URL);
+      if (!res.ok) throw await httpError(res);
+      const data = await res.json();
+      const list = (Array.isArray(data) ? data : data.$values || []).map(row => ({
+        id: row.id, nombre: row.nombre, scopeTipo: row.scopeTipo || 'todos',
+        scopeValor: row.scopeValor ?? null, orden: row.orden ?? 0
+      }));
+      setTabs(list);
     } catch (e) {
-      console.error('Error al cargar datos de indicadores:', e);
-      setAllData({ forms: [] });
-      setLoadError('No se pudieron cargar los datos. Verifica la conexión con el servidor.');
-      setLoadedOnce(true);
-    } finally { setLoading(false); }
-  };
+      console.error('No se pudieron cargar las pestañas:', e);
+      setTabs([]);
+    }
+  }, []);
+
+  useEffect(() => { loadData(filters); loadIndicators(); loadTabs(); /* eslint-disable-next-line */ }, []);
+
+  // Tiempo real: refresca los datos solo, sin parpadeo, mientras la pestaña del navegador esté visible
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+    const tick = () => { if (!document.hidden) loadData(filters, { silent: true }); };
+    const id = setInterval(tick, REFRESH_MS);
+    return () => clearInterval(id);
+  }, [autoRefresh, filters, loadData]);
 
   const verTodo = () => { const empty = { startDate: '', endDate: '' }; setFilters(empty); loadData(empty); };
 
-  const formNames = useMemo(() => listForms(allData), [allData]);
+  // ----- Pestaña activa y datos con su alcance aplicado -----
+  const allTabs = useMemo(() => [GENERAL_TAB, ...tabs], [tabs]);
+  const activeTab = useMemo(
+    () => allTabs.find(t => t.id === activeTabId) || GENERAL_TAB,
+    [allTabs, activeTabId]
+  );
+  const scopedData = useMemo(() => applyScope(allData, activeTab), [allData, activeTab]);
+  const tabIndicators = useMemo(
+    () => indicators.filter(i => (i.tableroId ?? null) === (activeTab.id ?? null)),
+    [indicators, activeTab]
+  );
+
   const hasData = allData.forms && allData.forms.length > 0;
+  const hasScopedData = scopedData.forms && scopedData.forms.length > 0;
 
   const dataDateRange = useMemo(() => {
-    const ds = (allData.forms || []).map(f => f.createdAt).filter(Boolean).map(d => new Date(d)).filter(d => !Number.isNaN(d.getTime()));
+    const ds = (scopedData.forms || []).map(f => f.createdAt).filter(Boolean).map(d => new Date(d)).filter(d => !Number.isNaN(d.getTime()));
     if (!ds.length) return null;
     ds.sort((a, b) => a - b);
     const iso = (d) => d.toISOString().slice(0, 10);
     return { min: iso(ds[0]), max: iso(ds[ds.length - 1]) };
-  }, [allData]);
+  }, [scopedData]);
 
-  const globalCols = useMemo(() => columnsForScope(allData, ALL, ALL), [allData]);
+  // Las columnas del constructor salen de los datos YA filtrados por la pestaña
+  const globalCols = useMemo(() => columnsForScope(scopedData, ALL, ALL), [scopedData]);
 
-  const openBuilder = (preset = null) => {
+  // ----- CRUD de pestañas -----
+  const newTab = () => setTabDraft({ id: null, nombre: '', scopeTipo: 'registro', scopeValor: '', orden: tabs.length + 1 });
+  const editTab = (t) => setTabDraft({ ...t });
+
+  const saveTab = async () => {
+    if (!tabDraft) return;
+    const nombre = (tabDraft.nombre || '').trim() || (tabDraft.scopeValor || 'Nueva pestaña');
+    if (tabDraft.scopeTipo !== 'todos' && !tabDraft.scopeValor) {
+      alert('Elige el registro o el proceso de la pestaña.');
+      return;
+    }
+    const body = {
+      nombre,
+      scopeTipo: tabDraft.scopeTipo,
+      scopeValor: tabDraft.scopeTipo === 'todos' ? null : tabDraft.scopeValor,
+      orden: tabDraft.orden ?? tabs.length + 1
+    };
+    try {
+      const editando = tabDraft.id != null;
+      const res = await fetch(editando ? `${TAB_URL}/${tabDraft.id}` : TAB_URL, {
+        method: editando ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const saved = await res.json();
+      const t = { id: saved.id, nombre: saved.nombre, scopeTipo: saved.scopeTipo, scopeValor: saved.scopeValor, orden: saved.orden };
+      setTabs(prev => (editando ? prev.map(x => (x.id === t.id ? t : x)) : [...prev, t]));
+      setActiveTabId(t.id);
+      setTabDraft(null);
+    } catch (e) {
+      console.error('Error al guardar la pestaña:', e);
+      alert('❌ No se pudo guardar la pestaña. Verifica que la API esté en línea y actualizada.');
+    }
+  };
+
+  const removeTab = async (t) => {
+    const cuantos = indicators.filter(i => i.tableroId === t.id).length;
+    const msg = cuantos > 0
+      ? `¿Eliminar la pestaña "${t.nombre}" y sus ${cuantos} indicador(es)?`
+      : `¿Eliminar la pestaña "${t.nombre}"?`;
+    if (!window.confirm(msg)) return;
+    try {
+      const res = await fetch(`${TAB_URL}/${t.id}`, { method: 'DELETE' });
+      if (!res.ok && res.status !== 404) throw new Error('HTTP ' + res.status);
+      setTabs(prev => prev.filter(x => x.id !== t.id));
+      setIndicators(prev => prev.filter(i => i.tableroId !== t.id));
+      if (activeTabId === t.id) setActiveTabId(null);
+    } catch (e) {
+      console.error('Error al eliminar la pestaña:', e);
+      alert('❌ No se pudo eliminar la pestaña.');
+    }
+  };
+
+  // Duplica la pestaña con TODOS sus indicadores: solo hay que cambiarle el registro.
+  const duplicateTab = async (t) => {
+    try {
+      const res = await fetch(TAB_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre: `${t.nombre} (copia)`,
+          scopeTipo: t.scopeTipo === 'todos' ? 'todos' : t.scopeTipo,
+          scopeValor: t.scopeTipo === 'todos' ? null : t.scopeValor,
+          orden: tabs.length + 1
+        })
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const saved = await res.json();
+      const nueva = { id: saved.id, nombre: saved.nombre, scopeTipo: saved.scopeTipo, scopeValor: saved.scopeValor, orden: saved.orden };
+
+      const origen = indicators.filter(i => (i.tableroId ?? null) === (t.id ?? null));
+      const copias = [];
+      for (const ind of origen) {
+        const config = stripRuntime(ind);
+        const r = await fetch(IND_URL, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titulo: ind.title, configJson: JSON.stringify(config), tableroId: nueva.id })
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const s = await r.json();
+        copias.push({ ...config, title: ind.title, id: `db_${s.id}`, dbId: s.id, tableroId: nueva.id });
+      }
+
+      setTabs(prev => [...prev, nueva]);
+      setIndicators(prev => [...prev, ...copias]);
+      setActiveTabId(nueva.id);
+      setTabDraft(nueva); // abre el editor para que le cambies el registro de una vez
+    } catch (e) {
+      console.error('Error al duplicar la pestaña:', e);
+      alert('❌ No se pudo duplicar la pestaña.');
+    }
+  };
+
+  // ----- CRUD de indicadores -----
+  const openBuilder = (preset = null, editing = null) => {
     const base = {
       title: preset?.title || '',
       mode: preset?.mode || 'single',
-      formName: preset?.formName || ALL,
+      formName: preset?.formName || TAB,
       tableName: preset?.tableName || ALL,
       valueCol: preset?.valueCol || '',
       agg: preset?.agg || 'count',
@@ -307,8 +523,10 @@ export default function Indicadores() {
       unit: preset?.unit || '',
     };
     setDraft(base);
+    setEditingId(editing);
     setShowBuilder(true);
   };
+  const closeBuilder = () => { setShowBuilder(false); setDraft(null); setEditingId(null); };
 
   const updateDraft = (patch) => setDraft(prev => {
     const next = { ...prev, ...patch };
@@ -339,16 +557,19 @@ export default function Indicadores() {
     if (!canSave) return;
     const title = (draft.title || '').trim() || autoTitle(draft);
     const config = stripRuntime({ ...draft, title });
+    const tableroId = activeTab.id ?? null;
     try {
-      const res = await fetch(IND_URL, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titulo: title, configJson: JSON.stringify(config) })
+      const editando = editingId != null;
+      const res = await fetch(editando ? `${IND_URL}/${editingId}` : IND_URL, {
+        method: editando ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo: title, configJson: JSON.stringify(config), tableroId })
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const saved = await res.json();
-      const ind = { ...config, title, id: `db_${saved.id}`, dbId: saved.id };
-      setIndicators(prev => [...prev, ind]);
-      setShowBuilder(false); setDraft(null);
+      const ind = { ...config, title, id: `db_${saved.id}`, dbId: saved.id, tableroId };
+      setIndicators(prev => (editando ? prev.map(i => (i.dbId === editingId ? ind : i)) : [...prev, ind]));
+      closeBuilder();
     } catch (e) {
       console.error('Error al guardar indicador:', e);
       alert('❌ No se pudo guardar el indicador en la base de datos. Verifica que la API esté en línea y actualizada.');
@@ -373,11 +594,15 @@ export default function Indicadores() {
     const list = [];
     const cant = find(/CANTIDAD|CONSUMO|USADO/);
     const mat = globalCols.all.find(c => /MATERIAL|INSUMO|PRODUCTO/.test(c.toUpperCase()));
-    if (cant && mat) list.push({ key: 'ins', label: '📦 Consumo por material', preset: { title: 'Consumo por material', mode: 'single', formName: ALL, tableName: ALL, valueCol: cant, agg: 'sum', groupBy: mat, chart: 'bar' } });
+    if (cant && mat) list.push({ key: 'ins', label: '📦 Consumo por material', preset: { title: 'Consumo por material', mode: 'single', formName: TAB, tableName: ALL, valueCol: cant, agg: 'sum', groupBy: mat, chart: 'bar' } });
+    const peso = find(/PESO|KILO|LIBRA/);
+    if (peso) list.push({ key: 'peso', label: '⚖️ Peso por día', preset: { title: `Suma de ${peso} por día`, mode: 'single', formName: TAB, tableName: ALL, valueCol: peso, agg: 'sum', groupBy: '__DATE_DAY__', chart: 'bar' } });
+    const lote = globalCols.all.find(c => /LOTE/.test(c.toUpperCase()));
+    if (peso && lote) list.push({ key: 'pesolote', label: '🏷️ Peso por lote', preset: { title: `Suma de ${peso} por lote`, mode: 'single', formName: TAB, tableName: ALL, valueCol: peso, agg: 'sum', groupBy: lote, chart: 'bar' } });
     const neto = find(/NETO/), bruto = find(/BRUTO/);
-    if (neto && bruto) list.push({ key: 'rend', label: '⚖️ Rendimiento (neto ÷ bruto)', preset: { title: 'Rendimiento % (neto ÷ bruto)', mode: 'combined', op: 'pct', terms: [{ formName: ALL, tableName: ALL, valueCol: neto, agg: 'sum' }, { formName: ALL, tableName: ALL, valueCol: bruto, agg: 'sum' }], groupBy: '__DATE_MONTH__', chart: 'line', unit: '%' } });
-    list.push({ key: 'permes', label: '📈 Registros por mes', preset: { title: 'Registros por mes', mode: 'single', formName: ALL, tableName: ALL, valueCol: '', agg: 'count', groupBy: '__DATE_MONTH__', chart: 'line' } });
-    list.push({ key: 'porform', label: '📊 Registros por formulario', preset: { title: 'Registros por formulario', mode: 'single', formName: ALL, tableName: ALL, valueCol: '', agg: 'count', groupBy: '__FORM__', chart: 'bar' } });
+    if (neto && bruto) list.push({ key: 'rend', label: '⚖️ Rendimiento (neto ÷ bruto)', preset: { title: 'Rendimiento % (neto ÷ bruto)', mode: 'combined', op: 'pct', terms: [{ formName: TAB, tableName: ALL, valueCol: neto, agg: 'sum' }, { formName: TAB, tableName: ALL, valueCol: bruto, agg: 'sum' }], groupBy: '__DATE_MONTH__', chart: 'line', unit: '%' } });
+    list.push({ key: 'permes', label: '📈 Registros por mes', preset: { title: 'Registros por mes', mode: 'single', formName: TAB, tableName: ALL, valueCol: '', agg: 'count', groupBy: '__DATE_MONTH__', chart: 'line' } });
+    list.push({ key: 'porform', label: '📊 Registros por formulario', preset: { title: 'Registros por formulario', mode: 'single', formName: TAB, tableName: ALL, valueCol: '', agg: 'count', groupBy: '__FORM__', chart: 'bar' } });
     return list;
   }, [globalCols]);
 
@@ -389,7 +614,8 @@ export default function Indicadores() {
         <option value="__DATE_MONTH__">Fecha — Mes</option>
       </optgroup>
       <optgroup label="General">
-        <option value="__FORM__">Formulario</option>
+        <option value="__FORM__">Formulario (registro)</option>
+        <option value="__PROCESO__">Proceso</option>
         <option value="__TOTAL__">Total (sin agrupar)</option>
       </optgroup>
       <optgroup label="Columnas">
@@ -403,10 +629,71 @@ export default function Indicadores() {
       <div className="ind-header">
         <div>
           <h1>📈 Indicadores</h1>
-          <p className="ind-sub">Combina columnas de <strong>varias tablas</strong> con operaciones (suma, división, %) y arma gráficos</p>
+          <p className="ind-sub">Una <strong>pestaña por registro o proceso</strong>. Los indicadores se filtran solos según la pestaña.</p>
         </div>
         <Link to="/" className="ind-btn-sec">← Volver</Link>
       </div>
+
+      {/* ---------- Barra de pestañas ---------- */}
+      <div className="ind-tabs">
+        {allTabs.map(t => (
+          <div key={t.id ?? 'general'} className={`ind-tab ${activeTab.id === t.id ? 'active' : ''}`}>
+            <button className="ind-tab-btn" onClick={() => setActiveTabId(t.id)} title={tabScopeLabel(t)}>
+              <span className="ind-tab-name">{t.nombre}</span>
+              <span className="ind-tab-scope">{tabScopeLabel(t)}</span>
+            </button>
+            {activeTab.id === t.id && (
+              <span className="ind-tab-tools">
+                <button onClick={() => duplicateTab(t)} title="Duplicar pestaña con sus indicadores">⧉</button>
+                {!t.fija && <button onClick={() => editTab(t)} title="Editar pestaña">✎</button>}
+                {!t.fija && <button onClick={() => removeTab(t)} title="Eliminar pestaña">✕</button>}
+              </span>
+            )}
+          </div>
+        ))}
+        <button className="ind-tab-new" onClick={newTab} disabled={!hasData} title={hasData ? 'Crear una pestaña' : 'Primero carga datos'}>＋ Nueva pestaña</button>
+      </div>
+
+      {/* ---------- Editor de pestaña ---------- */}
+      {tabDraft && (
+        <div className="ind-builder">
+          <h3>{tabDraft.id != null ? 'Editar pestaña' : 'Nueva pestaña'}</h3>
+          <div className="ind-builder-grid">
+            <label className="ind-field">
+              <span>Nombre de la pestaña</span>
+              <input type="text" value={tabDraft.nombre} placeholder={tabDraft.scopeValor || 'Ej: Recepción'}
+                onChange={e => setTabDraft(p => ({ ...p, nombre: e.target.value }))} />
+            </label>
+            <label className="ind-field">
+              <span>Esta pestaña muestra</span>
+              <select value={tabDraft.scopeTipo}
+                onChange={e => setTabDraft(p => ({ ...p, scopeTipo: e.target.value, scopeValor: '' }))}>
+                <option value="registro">Un registro de producción</option>
+                <option value="proceso">Un proceso completo (varios registros)</option>
+                <option value="todos">Todos los datos</option>
+              </select>
+            </label>
+            {tabDraft.scopeTipo !== 'todos' && (
+              <label className="ind-field">
+                <span>{tabDraft.scopeTipo === 'registro' ? 'Registro' : 'Proceso'}</span>
+                <select value={tabDraft.scopeValor || ''}
+                  onChange={e => setTabDraft(p => ({ ...p, scopeValor: e.target.value, nombre: p.nombre || e.target.value }))}>
+                  <option value="">— Selecciona —</option>
+                  {tabDraft.scopeTipo === 'registro'
+                    ? listForms(allData).map(f => (
+                        <option key={f.nombre} value={f.nombre}>{f.etiqueta}</option>
+                      ))
+                    : listProcesos(allData).map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            )}
+          </div>
+          <div className="ind-builder-actions">
+            <button className="ind-btn-primary" onClick={saveTab}>✅ Guardar pestaña</button>
+            <button className="ind-btn-sec" onClick={() => setTabDraft(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
 
       <div className="ind-filters">
         <div className="ind-filter-group">
@@ -417,11 +704,16 @@ export default function Indicadores() {
           <label>Hasta</label>
           <input type="date" value={filters.endDate} onChange={e => setFilters(p => ({ ...p, endDate: e.target.value }))} />
         </div>
-        <button className="ind-btn-primary" onClick={() => loadData()} disabled={loading}>{loading ? '⏳ Cargando...' : '🔍 Buscar'}</button>
+        <button className="ind-btn-primary" onClick={() => loadData(filters)} disabled={loading}>{loading ? '⏳ Cargando...' : '🔍 Buscar'}</button>
         <button className="ind-btn-sec" onClick={verTodo} disabled={loading}>Ver todo</button>
+        <label className="ind-live" title={`Vuelve a consultar el servidor cada ${REFRESH_MS / 1000} segundos`}>
+          <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
+          <span className={`ind-live-dot ${autoRefresh ? 'on' : ''}`} />
+          Tiempo real ({REFRESH_MS / 1000}s)
+        </label>
         <span className="ind-hint">
           {loading ? 'Cargando formularios… puede tardar unos segundos'
-            : loadedOnce ? `${allData.forms.length} formularios${dataDateRange ? ` · datos del ${dataDateRange.min} al ${dataDateRange.max}` : ''} · guardado en base de datos` : ''}
+            : loadedOnce ? `${scopedData.forms.length} de ${allData.forms.length} formularios${dataDateRange ? ` · datos del ${dataDateRange.min} al ${dataDateRange.max}` : ''}${lastUpdated ? ` · actualizado ${lastUpdated.toLocaleTimeString('es-EC')}` : ''}` : ''}
         </span>
       </div>
 
@@ -429,15 +721,19 @@ export default function Indicadores() {
       {indError && <div className="ind-error">{indError}</div>}
 
       <div className="ind-actions">
-        <button className="ind-btn-primary" onClick={() => openBuilder()} disabled={!hasData || loading}>+ Agregar indicador</button>
-        {hasData && presets.map(p => (
+        <button className="ind-btn-primary" onClick={() => openBuilder()} disabled={!hasScopedData || loading}>+ Agregar indicador</button>
+        {hasScopedData && presets.map(p => (
           <button key={p.key} className="ind-btn-preset" onClick={() => openBuilder(p.preset)}>{p.label}</button>
         ))}
       </div>
 
       {showBuilder && draft && (
         <div className="ind-builder">
-          <h3>Configurar indicador</h3>
+          <h3>{editingId != null ? 'Editar indicador' : 'Configurar indicador'}</h3>
+          <p className="ind-note">
+            Se guardará en la pestaña <strong>{activeTab.nombre}</strong> ({tabScopeLabel(activeTab)}).
+            Si dejas el formulario en <strong>“El de la pestaña”</strong>, el mismo indicador sirve en cualquier pestaña.
+          </p>
 
           {/* Modo de métrica */}
           <div className="ind-mode">
@@ -451,7 +747,7 @@ export default function Indicadores() {
 
           {draft.mode === 'single' ? (
             <div className="ind-builder-grid">
-              <FormTableCols data={allData} value={draft} onChange={updateDraft} showAgg />
+              <FormTableCols data={scopedData} value={draft} onChange={updateDraft} showAgg />
             </div>
           ) : (
             <div className="ind-combined">
@@ -470,7 +766,7 @@ export default function Indicadores() {
                     )}
                   </div>
                   <div className="ind-builder-grid">
-                    <FormTableCols data={allData} value={t} onChange={(patch) => updateTerm(i, patch)} showAgg />
+                    <FormTableCols data={scopedData} value={t} onChange={(patch) => updateTerm(i, patch)} showAgg />
                   </div>
                 </div>
               ))}
@@ -506,8 +802,10 @@ export default function Indicadores() {
           </div>
 
           <div className="ind-builder-actions">
-            <button className="ind-btn-primary" onClick={saveIndicator} disabled={!canSave}>✅ Crear indicador</button>
-            <button className="ind-btn-sec" onClick={() => { setShowBuilder(false); setDraft(null); }}>Cancelar</button>
+            <button className="ind-btn-primary" onClick={saveIndicator} disabled={!canSave}>
+              {editingId != null ? '✅ Guardar cambios' : '✅ Crear indicador'}
+            </button>
+            <button className="ind-btn-sec" onClick={closeBuilder}>Cancelar</button>
           </div>
         </div>
       )}
@@ -523,25 +821,37 @@ export default function Indicadores() {
           <button className="ind-btn-primary" onClick={verTodo}>Ver todo</button>
         </div>
       )}
-      {!loading && hasData && indicators.length === 0 && !showBuilder && (
-        <div className="ind-empty"><div className="ind-empty-icon">📊</div><h3>Aún no hay indicadores</h3><p>Usa "+ Agregar indicador" o un preset rápido.</p></div>
+      {!loading && hasData && !hasScopedData && (
+        <div className="ind-empty">
+          <div className="ind-empty-icon">🔎</div>
+          <h3>Esta pestaña no tiene datos</h3>
+          <p>No hay formularios de <strong>{tabScopeLabel(activeTab)}</strong> en el rango de fechas elegido.</p>
+        </div>
+      )}
+      {!loading && hasScopedData && tabIndicators.length === 0 && !showBuilder && (
+        <div className="ind-empty"><div className="ind-empty-icon">📊</div><h3>Esta pestaña aún no tiene indicadores</h3><p>Usa "+ Agregar indicador" o un preset rápido.</p></div>
       )}
 
       <div className="ind-grid">
-        {indicators.map(ind => (
-          <IndicatorCard key={ind.id} ind={ind} data={allData} onRemove={() => removeIndicator(ind)} onExpand={() => setExpanded(ind)} />
+        {tabIndicators.map(ind => (
+          <IndicatorCard
+            key={ind.id} ind={ind} data={scopedData}
+            onRemove={() => removeIndicator(ind)}
+            onEdit={() => openBuilder(ind, ind.dbId)}
+            onExpand={() => setExpanded(ind)}
+          />
         ))}
       </div>
 
       {expanded && (
-        <ExpandedModal ind={expanded} data={allData} onClose={() => setExpanded(null)} />
+        <ExpandedModal ind={expanded} data={scopedData} tabLabel={tabScopeLabel(activeTab)} onClose={() => setExpanded(null)} />
       )}
     </div>
   );
 }
 
 // Modal para ver un indicador en grande
-function ExpandedModal({ ind, data, onClose }) {
+function ExpandedModal({ ind, data, tabLabel, onClose }) {
   const series = useMemo(() => computeIndicator(ind, data), [ind, data]);
   const total = series.reduce((s, d) => s + (Number(d.value) || 0), 0);
   useEffect(() => {
@@ -555,7 +865,7 @@ function ExpandedModal({ ind, data, onClose }) {
         <div className="ind-modal-head">
           <div>
             <h2>{ind.title}</h2>
-            <span className="ind-card-meta">{scopeLabel(ind)} · {AGG_LABELS[ind.agg] || (ind.mode === 'combined' ? 'combinado' : '')}</span>
+            <span className="ind-card-meta">{tabLabel} · {scopeLabel(ind)} · {AGG_LABELS[ind.agg] || (ind.mode === 'combined' ? 'combinado' : '')}</span>
           </div>
           <button className="ind-modal-close" onClick={onClose} title="Cerrar (Esc)">✕</button>
         </div>
@@ -582,15 +892,16 @@ function ExpandedModal({ ind, data, onClose }) {
 
 // Selector Formulario → Tabla → Columna + Agregación (reutilizable para simple y para cada término)
 function FormTableCols({ data, value, onChange, showAgg }) {
-  const tables = useMemo(() => listTables(data, value.formName || ALL), [data, value.formName]);
-  const cols = useMemo(() => columnsForScope(data, value.formName || ALL, value.tableName || ALL), [data, value.formName, value.tableName]);
+  const tables = useMemo(() => listTables(data, value.formName || TAB), [data, value.formName]);
+  const cols = useMemo(() => columnsForScope(data, value.formName || TAB, value.tableName || ALL), [data, value.formName, value.tableName]);
   return (
     <>
       <label className="ind-field">
         <span>Formulario</span>
-        <select value={value.formName || ALL} onChange={e => onChange({ formName: e.target.value })}>
+        <select value={value.formName || TAB} onChange={e => onChange({ formName: e.target.value })}>
+          <option value={TAB}>◆ El de la pestaña (hereda)</option>
           <option value={ALL}>★ Todos</option>
-          {listForms(data).map(n => <option key={n} value={n}>{n}</option>)}
+          {listForms(data).map(f => <option key={f.nombre} value={f.nombre}>{f.etiqueta}</option>)}
         </select>
       </label>
       <label className="ind-field">
@@ -620,7 +931,7 @@ function FormTableCols({ data, value, onChange, showAgg }) {
   );
 }
 
-function IndicatorCard({ ind, data, onRemove, onExpand }) {
+function IndicatorCard({ ind, data, onRemove, onEdit, onExpand }) {
   const series = useMemo(() => computeIndicator(ind, data), [ind, data]);
   const total = series.reduce((s, d) => s + (Number(d.value) || 0), 0);
   return (
@@ -632,6 +943,7 @@ function IndicatorCard({ ind, data, onRemove, onExpand }) {
         </div>
         <div className="ind-card-actions">
           <button className="ind-card-expand" onClick={onExpand} title="Ver en grande">⛶</button>
+          <button className="ind-card-edit" onClick={onEdit} title="Editar indicador">✎</button>
           <button className="ind-card-remove" onClick={onRemove} title="Eliminar indicador">✕</button>
         </div>
       </div>
@@ -657,6 +969,18 @@ function IndicatorCard({ ind, data, onRemove, onExpand }) {
 }
 
 // ---------- utilidades ----------
-function emptyTerm() { return { formName: ALL, tableName: ALL, valueCol: '', agg: 'sum' }; }
+function emptyTerm() { return { formName: TAB, tableName: ALL, valueCol: '', agg: 'sum' }; }
 function safeParse(s) { try { return typeof s === 'string' ? JSON.parse(s) : s; } catch { return null; } }
-function stripRuntime(ind) { const { id, dbId, ...rest } = ind; return rest; }
+
+// Convierte una respuesta fallida en un Error con el motivo real del servidor
+// (campo "detalle"/"message" del JSON) en vez de un escueto "HTTP 500".
+async function httpError(res) {
+  let detalle = '';
+  try {
+    const txt = await res.text();
+    const body = safeParse(txt);
+    detalle = body ? (body.detalle || body.message || '') : txt.slice(0, 300);
+  } catch { /* respuesta sin cuerpo legible */ }
+  return new Error(`HTTP ${res.status}${detalle ? ' — ' + detalle : ''}`);
+}
+function stripRuntime(ind) { const { id, dbId, tableroId, ...rest } = ind; return rest; }

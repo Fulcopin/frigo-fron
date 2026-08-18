@@ -1039,98 +1039,20 @@ async def run_agent(user_message: str, conversation_history: list | None = None)
 # AGENTE MCP — Zero Trust (herramientas descubiertas del servidor MCP)
 # ===========================================================================
 
-_mcp_session = None
-_mcp_ctx = None
-_mcp_tools_list = None
-_mcp_initialized = False
-_mcp_lock = asyncio.Lock()
-
-
-async def _ensure_mcp() -> bool:
-    """Inicializa la sesión MCP si no está activa. Thread-safe con lock.
-
-    Returns True si MCP está disponible, False si debe usar fallback SQL.
-    """
-    global _mcp_session, _mcp_ctx, _mcp_tools_list, _mcp_initialized
-
-    if _mcp_initialized and _mcp_session is not None:
-        return True
-
-    if inyectar_herramientas_mcp is None:
-        log.warning("mcp_client no importado — usando tools SQL directos.")
-        _mcp_initialized = True
-        return False
-
-    async with _mcp_lock:
-        # Double-check after acquiring lock
-        if _mcp_initialized and _mcp_session is not None:
-            return True
-        try:
-            llm = _build_llm(temperature=0.1)
-            _, session, ctx, mcp_tools = await inyectar_herramientas_mcp(llm)
-            _mcp_session = session
-            _mcp_ctx = ctx
-            _mcp_tools_list = mcp_tools
-            _mcp_initialized = True
-            log.info("MCP inicializado con %d herramientas: %s",
-                     len(mcp_tools), [t.name for t in mcp_tools])
-            return True
-        except Exception as exc:
-            log.warning("MCP no disponible (fallback SQL): %s", exc)
-            _mcp_initialized = True
-            return False
-
-
-def _build_mcp_langchain_tools() -> list:
-    """Construye tools LangChain que ejecutan via MCP session.
-
-    Cada tool wrappea session.call_tool() para que LangGraph
-    pueda usarlos como tools nativos con el agente ReAct.
-    """
-    if not _mcp_tools_list or not _mcp_session:
-        return []
-
-    from langchain_core.tools import StructuredTool
-
-    tools = []
-    for mcp_tool in _mcp_tools_list:
-        # Capturamos session y tool_name en los defaults para evitar
-        # el bug de closure-in-loop (cada iteracion reutilizaria la misma variable).
-        session = _mcp_session
-        tool_name = mcp_tool.name
-
-        async def _run_mcp_tool(_tool_name=tool_name, _session=session, **kwargs) -> str:
-            result = await ejecutar_tool_mcp(_session, _tool_name, kwargs)
-            return result
-
-        # Crear el tool LangChain
-        lc_tool = StructuredTool.from_function(
-            coroutine=_run_mcp_tool,
-            name=tool_name,
-            description=mcp_tool.description or tool_name,
-        )
-        tools.append(lc_tool)
-
-    return tools
-
-
 async def get_mcp_tools() -> list:
     """Retorna las tools MCP como tools LangChain, o fallback a SQL tools."""
-    mcp_ok = await _ensure_mcp()
-    if mcp_ok:
-        mcp_tools = _build_mcp_langchain_tools()
-        if mcp_tools:
+    if _MCP_AVAILABLE:
+        if mcp_is_active():
+            mcp_tools = _mcp_get_active_tools()
             log.info("Usando %d herramientas MCP", len(mcp_tools))
             return mcp_tools
+        elif initialize_mcp is not None and await initialize_mcp():
+            mcp_tools = _mcp_get_active_tools()
+            log.info("Usando %d herramientas MCP (recien inicializado)", len(mcp_tools))
+            return mcp_tools
+            
     log.info("Usando herramientas SQL directas (fallback)")
     return list(_TOOLS)
-
-
-async def ejecutar_tool_via_mcp(tool_name: str, arguments: dict) -> str:
-    """Ejecuta una herramienta a través del servidor MCP."""
-    if _mcp_session is None:
-        return "Error: Sesión MCP no inicializada."
-    return await ejecutar_tool_mcp(_mcp_session, tool_name, arguments)
 
 
 # ---------------------------------------------------------------------------

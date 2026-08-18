@@ -12,6 +12,13 @@ import "./FillForm.css" // Reutilizamos los estilos de FillForm
 import { loadFormForEdit, updateFilledForm, autosaveForm } from "../utils/filledFormsUtils"
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import ProductoAutocomplete from "../components/ProductoAutocomplete"
+import { modoBusquedaProducto, destinoColumnaProducto } from "../utils/busquedaProducto"
+import {
+  cargarUmbralBloqueo,
+  estaBloqueadoParaFirma,
+  mensajeBloqueoFirma,
+  UMBRAL_BLOQUEO_POR_DEFECTO,
+} from "../utils/bloqueoFirma"
 
 // Configuración para autoguardado
 const AUTOSAVE_INTERVAL = 30000; // 30 segundos
@@ -32,6 +39,8 @@ function EditFilledForm() {
     observaciones: ""
   });
   const [formCreatedAt, setFormCreatedAt] = useState(null); // ✅ Fecha de creación del formulario
+  // 🔒 Umbral de horas para bloqueo de firma (lo configura el admin en Gestión de Alertas).
+  const [lockThreshold, setLockThreshold] = useState(UMBRAL_BLOQUEO_POR_DEFECTO);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -47,6 +56,23 @@ function EditFilledForm() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState(null);
   const [apiToken, setApiToken] = useState(null);
+
+  // 🔍 Búsqueda de otros formularios para navegar mientras se edita
+  const [showFormSearch, setShowFormSearch] = useState(false);
+  const [allForms, setAllForms] = useState([]);
+  const [formSearchText, setFormSearchText] = useState('');
+  const [loadingFormSearch, setLoadingFormSearch] = useState(false);
+
+  // 🔓 Filas desbloqueadas manualmente para edición: { [elementIndex]: Set<rowIndex> }
+  const [unlockedRows, setUnlockedRows] = useState({});
+
+  const toggleRowLock = (elementIndex, rowIndex) => {
+    setUnlockedRows(prev => {
+      const set = new Set(prev[elementIndex] || []);
+      if (set.has(rowIndex)) set.delete(rowIndex); else set.add(rowIndex);
+      return { ...prev, [elementIndex]: set };
+    });
+  };
 
   // 🔐 Obtener token de autenticación para la API externa
   const ensureApiToken = async () => {
@@ -132,8 +158,22 @@ function EditFilledForm() {
     loadCatalogo();
   }, []);
 
+  // 🔒 Umbral de bloqueo por antigüedad
+  useEffect(() => {
+    cargarUmbralBloqueo(API_BASE_URL).then(setLockThreshold);
+  }, []);
+
   // Cargar el formulario llenado existente
   useEffect(() => {
+    // Resetear estado al cambiar de formulario
+    setTemplate(null);
+    setFilledForm(null);
+    setFormData({ headerData: {}, bodyData: [], firmasData: {}, observaciones: "" });
+    setError(null);
+    setShowSuccess(false);
+    setHasUnsavedChanges(false);
+    setAutoSaveStatus('');
+
     const loadFilledForm = async () => {
       try {
         setLoading(true);
@@ -308,10 +348,35 @@ function EditFilledForm() {
 
   // Funciones para manejar cambios en los datos con autoguardado
   const updateHeaderData = (fieldLabel, value) => {
-    setFormData(prev => ({
-      ...prev,
-      headerData: { ...prev.headerData, [fieldLabel]: value }
-    }));
+    setFormData(prev => {
+      const nextHeaderData = { ...prev.headerData, [fieldLabel]: value };
+      
+      if (template && template.headerFields) {
+        const fieldConfig = template.headerFields.find(f => f.label === fieldLabel);
+        if (fieldConfig && fieldConfig.type === 'date' && fieldConfig.autoGenerarLote && value) {
+          try {
+            const [year, month, day] = value.split('-');
+            if (year && month && day) {
+              const yy = year.slice(-2);
+              const generatedLote = `${yy}${month}${day}`;
+              const loteField = template.headerFields.find(
+                f => f.type === 'text' && f.label.toLowerCase().includes('lote') && !f.label.toLowerCase().includes('entrante')
+              );
+              if (loteField) {
+                nextHeaderData[loteField.label] = generatedLote;
+              }
+            }
+          } catch (error) {
+            console.error('Error auto-generando lote:', error);
+          }
+        }
+      }
+      
+      return {
+        ...prev,
+        headerData: nextHeaderData
+      };
+    });
     setHasUnsavedChanges(true);
   };
 
@@ -338,13 +403,41 @@ function EditFilledForm() {
     setHasUnsavedChanges(true);
   };
 
-  const updateTableCell = (elementIndex, rowIndex, columnLabel, value) => {
+  const updateTableCell = (elementIndex, rowIndex, columnLabel, value, columnas = []) => {
     setFormData(prev => {
       const newBodyData = [...prev.bodyData];
       if (!newBodyData[elementIndex]) newBodyData[elementIndex] = { rows: [] };
       if (!newBodyData[elementIndex].rows[rowIndex]) newBodyData[elementIndex].rows[rowIndex] = {};
-      
-      newBodyData[elementIndex].rows[rowIndex][columnLabel] = value;
+
+      const fila = newBodyData[elementIndex].rows[rowIndex];
+
+      // Autocompletado bidireccional: al elegir en el buscador llega un objeto
+      // con el producto entero, no un texto. Se escribe la celda tocada y su
+      // pareja (código ↔ nombre). Sin esto la celda guardaría "[object Object]".
+      if (value && typeof value === 'object' && value.isProductUpdate) {
+        fila[columnLabel] = value.selectedValue;
+
+        columnas.forEach((col, ci) => {
+          const etiqueta = col?.label || col?.header || col?.name;
+          if (!etiqueta) return;
+
+          // La fila puede guardar la columna con sufijo ("PRODUCTO_col7"):
+          // hay que escribir en la clave real o el valor no se ve.
+          const clave = Object.prototype.hasOwnProperty.call(fila, etiqueta)
+            ? etiqueta
+            : Object.keys(fila).find(k => k === `${etiqueta}_col${ci}`) || etiqueta;
+
+          const destino = destinoColumnaProducto(col, etiqueta);
+          if (destino === 'codigo' && value.codigoErp !== undefined) {
+            fila[clave] = value.codigoErp;
+          } else if (destino === 'nombre' && value.nombreProducto !== undefined) {
+            fila[clave] = value.nombreProducto;
+          }
+        });
+      } else {
+        fila[columnLabel] = value;
+      }
+
       return { ...prev, bodyData: newBodyData };
     });
     setHasUnsavedChanges(true);
@@ -390,10 +483,23 @@ function EditFilledForm() {
     setHasUnsavedChanges(true);
   };
 
+  // 🔒 ¿El registro ya pasó el límite de horas para poder firmarse?
+  // Solo frena la FIRMA: corregir los datos de un registro viejo se sigue pudiendo.
+  // El unlocked36h que escribe el Administrador viaja dentro de headerData.
+  const firmaBloqueadaPorAntiguedad = estaBloqueadoParaFirma(
+    { createdAt: formCreatedAt, headerData: formData.headerData },
+    lockThreshold
+  );
+
   // Actualizar firma completa (con imagen desde SignatureUploader)
   const handleFirmaUpdate = (puesto, firmaData) => {
+    if (firmaData.firma && firmaBloqueadaPorAntiguedad) {
+      alert(mensajeBloqueoFirma(lockThreshold));
+      return;
+    }
+
     let updatedFirmaData = { ...firmaData };
-    
+
     // 🔧 FIX: Auto-capturar fecha y hora al firmar (antes no se capturaba)
     if (firmaData.firma) {
       const ahora = new Date();
@@ -491,31 +597,70 @@ function EditFilledForm() {
     navigate('/view-forms');
   };
 
+  // 🔍 Buscador para saltar a otro registro sin salir de la edición.
+  // La búsqueda la hace el servidor: bajarse todos los formularios al navegador
+  // para filtrarlos acá se volvió inusable con la cantidad de registros que hay.
+  const buscarFormularios = async (texto) => {
+    setLoadingFormSearch(true);
+    try {
+      const q = texto.trim() ? `?q=${encodeURIComponent(texto.trim())}` : '';
+      const res = await fetch(`${API_BASE_URL}/FilledForms/buscar${q}`);
+      if (!res.ok) throw new Error(`Error ${res.status}`);
+      const data = await res.json();
+      setAllForms(Array.isArray(data) ? data : data.$values || []);
+    } catch (e) {
+      console.error('Error buscando formularios:', e);
+      setAllForms([]);
+    } finally {
+      setLoadingFormSearch(false);
+    }
+  };
+
+  const handleOpenFormSearch = () => {
+    if (showFormSearch) {
+      setShowFormSearch(false);
+      return;
+    }
+    setShowFormSearch(true);
+    setFormSearchText('');
+    buscarFormularios('');   // arranca mostrando los últimos
+  };
+
+  // Se busca mientras se escribe, esperando a que la persona pare de tipear
+  // para no disparar una consulta por cada tecla.
+  useEffect(() => {
+    if (!showFormSearch) return;
+    const t = setTimeout(() => buscarFormularios(formSearchText), 350);
+    return () => clearTimeout(t);
+  }, [formSearchText, showFormSearch]);
+
+  // El servidor ya devuelve filtrado y ordenado por fecha; acá solo se suben
+  // los del mismo código que el que se está editando, que es lo más probable
+  // que se esté buscando.
+  const filteredSearchForms = [...allForms].sort((a, b) => {
+    const mismoA = (a.codigo || '') === (template?.codigo || '') ? 0 : 1;
+    const mismoB = (b.codigo || '') === (template?.codigo || '') ? 0 : 1;
+    return mismoA - mismoB;
+  });
+
   // Renderizar campo según su tipo
   const renderField = (field, value, onChange, disabled = false, rowIndex = null) => {
     const isTableContext = rowIndex !== null && rowIndex !== undefined;
     const tableInputClass = isTableContext ? "table-input-expandable" : "";
 
     // 3a. SELECTOR PRODUCTO (bidireccional por API externa)
-    const isCodigoCol = (field.label || '').toUpperCase().includes('CODIGO') || (field.label || '').toUpperCase().includes('CÓDIGO');
-    const isProductoCol = (field.label || '').toUpperCase() === 'PRODUCTO' || (field.label || '').toUpperCase() === 'PRODUCTOS';
-    
-    if (
-      globalUseProductApi &&
-      field.usaApiAutocomplete !== false &&
-      (field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_ESPECIE' ||
-      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS' ||
-      field.apiEndpoint?.toUpperCase() === 'PRODUCTOS_POR_CODIGO' ||
-      ((isCodigoCol || isProductoCol) && !field.apiEndpoint))
-    ) {
-      const isCodigo = isCodigoCol;
+    // El sentido lo decide la plantilla; si no se configuró, se deduce del nombre.
+    const searchType = modoBusquedaProducto(field, { apiActiva: globalUseProductApi });
+
+    if (searchType) {
+      const isCodigo = searchType === 'codigoErp';
       return (
         <ProductoAutocomplete
           value={value || ''}
           onChange={onChange}
-          searchType={isCodigo ? 'codigoErp' : 'nombreProducto'}
+          searchType={searchType}
           getToken={ensureApiToken}
-          placeholder={isCodigo ? 'Buscar por código...' : 'Buscar producto...'}
+          placeholder={isCodigo ? 'Buscar por código...' : `Buscar ${(field.label || 'producto').toLowerCase()}...`}
           onSelect={(product) => {
             if (rowIndex !== null) {
               onChange({
@@ -731,11 +876,111 @@ Template: ${template?.nombre}
           <button onClick={handleCancel} className="btn-secondary">
             Cancelar
           </button>
+          <button onClick={handleOpenFormSearch} className="btn-secondary" title="Buscar otro formulario para editar"
+            style={{ background: showFormSearch ? '#0369a1' : undefined, color: showFormSearch ? 'white' : undefined }}
+          >
+            {showFormSearch ? '✕ Cerrar búsqueda' : '🔍 Buscar otro formulario'}
+          </button>
           <button onClick={handleSubmit} className="btn-primary">
             💾 Actualizar Formulario
           </button>
         </div>
       </div>
+
+      {/* 🔍 PANEL DE BÚSQUEDA DE OTROS FORMULARIOS */}
+      {showFormSearch && (
+        <div style={{
+          background: '#f0f9ff',
+          border: '2px solid #0ea5e9',
+          borderRadius: '10px',
+          padding: '16px',
+          marginBottom: '20px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+            <strong style={{ color: '#0369a1', whiteSpace: 'nowrap' }}>🔍 Cambiar formulario:</strong>
+            <input
+              type="text"
+              placeholder="Buscar por código, nombre, lote o quién lo llenó (ej: PD-04)..."
+              value={formSearchText}
+              onChange={(e) => setFormSearchText(e.target.value)}
+              autoFocus
+              style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', border: '2px solid #0ea5e9', fontSize: '14px' }}
+            />
+            {formSearchText && (
+              <button type="button" onClick={() => setFormSearchText('')} style={{
+                background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '6px',
+                padding: '8px 12px', cursor: 'pointer', fontWeight: 'bold'
+              }}>🗑 Limpiar</button>
+            )}
+          </div>
+          {loadingFormSearch && <p style={{ color: '#0369a1' }}>⏳ Cargando formularios...</p>}
+          {!loadingFormSearch && formSearchText && filteredSearchForms.length === 0 && (
+            <p style={{ color: '#dc2626', fontWeight: 'bold' }}>❌ No se encontraron formularios con "{formSearchText}"</p>
+          )}
+          {!loadingFormSearch && (
+            <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {filteredSearchForms.map(f => {
+                const fid = f.formID || f.FormID;
+                const isCurrent = String(fid) === String(id);
+                return (
+                  <button
+                    type="button"
+                    key={fid}
+                    onClick={() => {
+                      if (isCurrent) return;
+                      // Saltar a otro registro descarta lo que no se guardó
+                      if (hasUnsavedChanges &&
+                          !window.confirm('Tenés cambios sin guardar en este formulario.\n\n¿Abrir el otro registro igual? Se pierden los cambios.')) {
+                        return;
+                      }
+                      setFormSearchText('');
+                      navigate(`/edit-filled-form/${fid}`);
+                    }}
+                    style={{
+                      textAlign: 'left',
+                      background: isCurrent ? '#dbeafe' : 'white',
+                      border: isCurrent ? '2px solid #3b82f6' : '1px solid #e0f2fe',
+                      borderRadius: '6px',
+                      padding: '10px 14px',
+                      cursor: isCurrent ? 'default' : 'pointer',
+                      display: 'flex',
+                      gap: '12px',
+                      alignItems: 'center',
+                      fontSize: '13px',
+                      opacity: isCurrent ? 0.8 : 1,
+                    }}
+                  >
+                    <span style={{ fontWeight: 'bold', color: '#0369a1', minWidth: '90px' }}>{f.codigo}</span>
+                    <span style={{ color: '#374151', flex: 1 }}>{f.templateName}</span>
+                    {/* Lote y quién lo llenó: sin esto dos registros de la misma
+                        plantilla se ven idénticos y no se sabe cuál abrir */}
+                    {f.lote && (
+                      <span style={{
+                        color: '#065f46', background: '#d1fae5', borderRadius: '4px',
+                        padding: '2px 8px', fontSize: '12px', whiteSpace: 'nowrap'
+                      }}>
+                        Lote {f.lote}
+                      </span>
+                    )}
+                    {f.filledBy && (
+                      <span style={{ color: '#6b7280', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                        {f.filledBy}
+                      </span>
+                    )}
+                    <span style={{ color: '#9ca3af', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                      #{fid} · {f.createdAt ? new Date(f.createdAt).toLocaleDateString('es-ES') : ''}
+                    </span>
+                    {isCurrent && <span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '11px' }}>← ACTUAL</span>}
+                  </button>
+                );
+              })}
+              {filteredSearchForms.length === 0 && !loadingFormSearch && !formSearchText && (
+                <p style={{ color: '#6b7280', fontSize: '13px', padding: '8px' }}>No hay formularios disponibles.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 🔔 NOTIFICACIÓN DE GUARDADO EXITOSO - Overlay fijo visible desde cualquier posición de scroll */}
       {showSuccess && (
@@ -834,11 +1079,18 @@ Template: ${template?.nombre}
                 {template.headerFields.map((field, index) => (
                   <div key={index} className="field-group">
                     <label>{field.label}{field.required && " *"}</label>
-                    {renderField(
-                      field,
-                      formData.headerData[field.label],
-                      (value) => updateHeaderData(field.label, value)
-                    )}
+                    {(() => {
+                      const isAutoLote = field.type === 'text' && 
+                                         field.label.toLowerCase().includes('lote') && 
+                                         !field.label.toLowerCase().includes('entrante') &&
+                                         template.headerFields.some(f => f.type === 'date' && f.autoGenerarLote);
+                      return renderField(
+                        field,
+                        formData.headerData[field.label],
+                        (value) => updateHeaderData(field.label, value),
+                        isAutoLote // disabled prop
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -974,7 +1226,10 @@ Template: ${template?.nombre}
                     </thead>
                     <tbody>
   {/* 1. Primero recorremos cada FILA (row) de la tabla */}
-  {formData.bodyData[elementIndex]?.rows?.map((row, rowIndex) => (
+  {formData.bodyData[elementIndex]?.rows?.map((row, rowIndex) => {
+    // Determinar si la fila viene de la API (para el botón de desbloquear)
+    const rowCargadaDesdeApiRow = !!(row._apiCabId || row._apiCodigoId);
+    return (
     <tr key={rowIndex}>
       {/* 2. Luego recorremos cada COLUMNA del template */}
       {element.columns?.map((column, colIndex) => {
@@ -1031,11 +1286,12 @@ Template: ${template?.nombre}
         // 🔒 Bloquear SOLO filas que realmente vienen de la API de recepción (marcador
         // _apiCabId/_apiCodigoId). No cambia mientras se escribe, así que las filas manuales
         // quedan siempre editables y no se pierde el foco al escribir.
-        const rowCargadaDesdeApi = !!(row._apiCabId || row._apiCodigoId);
+        const rowCargadaDesdeApi = rowCargadaDesdeApiRow;
         const isLockedByRecepcionApi = esTablaBloqueablePorApi
           && !isApiCodigoTrigger
           && !esColumnaCodigoOBusqueda
-          && rowCargadaDesdeApi;
+          && rowCargadaDesdeApi
+          && !(unlockedRows[elementIndex]?.has(rowIndex));
 
         return (
           <td key={colIndex}>
@@ -1060,7 +1316,7 @@ Template: ${template?.nombre}
               renderField(
                 column,
                 row[cellName],
-                (value) => updateTableCell(elementIndex, rowIndex, cellName, value),
+                (value) => updateTableCell(elementIndex, rowIndex, cellName, value, element.columns),
                 false,
                 rowIndex
               )
@@ -1069,8 +1325,26 @@ Template: ${template?.nombre}
         );
       })}
 
-      {/* 3. Columna de acción (Eliminar fila) */}
-      <td>
+      {/* 3. Columna de acción (Editar / Eliminar fila) */}
+      <td style={{ whiteSpace: 'nowrap' }}>
+        {rowCargadaDesdeApiRow && (
+          <button
+            type="button"
+            onClick={() => toggleRowLock(elementIndex, rowIndex)}
+            title={unlockedRows[elementIndex]?.has(rowIndex) ? 'Bloquear fila (descartar edición)' : 'Desbloquear fila para editar'}
+            style={{
+              marginRight: '4px',
+              background: unlockedRows[elementIndex]?.has(rowIndex) ? '#fef3c7' : '#eff6ff',
+              border: `1px solid ${unlockedRows[elementIndex]?.has(rowIndex) ? '#f59e0b' : '#3b82f6'}`,
+              borderRadius: '4px',
+              padding: '4px 8px',
+              cursor: 'pointer',
+              fontSize: '14px',
+            }}
+          >
+            {unlockedRows[elementIndex]?.has(rowIndex) ? '🔒' : '✏️'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => removeTableRow(elementIndex, rowIndex)}
@@ -1080,7 +1354,8 @@ Template: ${template?.nombre}
         </button>
       </td>
     </tr>
-  ))}
+    );
+  })}
 
   {/* 4. Si la tabla está vacía, mostramos el mensaje */}
   {(!formData.bodyData[elementIndex]?.rows || formData.bodyData[elementIndex].rows.length === 0) && (
@@ -1226,14 +1501,36 @@ Template: ${template?.nombre}
                         )}
                       </div>
 
-                      {/* Componente de carga de firma PNG */}
-                      <SignatureUploader
-                        puesto={firma.puesto}
-                        firmaData={firmaObj}
-                        onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
-                        cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
-                        cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
-                      />
+                      {/* Componente de carga de firma PNG.
+                          🔒 Si el registro está bloqueado por antigüedad no se muestra: antes por
+                          acá se podía firmar un registro que Gestión de Firmas ya no dejaba tocar.
+                          Las firmas que YA estaban se siguen viendo. */}
+                      {firmaBloqueadaPorAntiguedad && !(firmaObj?.firma?.url || firmaObj?.firma?.base64) ? (
+                        <div style={{
+                          padding: '12px',
+                          background: '#fef2f2',
+                          border: '1px dashed #ef4444',
+                          borderRadius: '8px',
+                          textAlign: 'center',
+                          margin: '8px 0'
+                        }}>
+                          <span style={{ fontSize: '18px' }}>🔒</span>
+                          <p style={{ color: '#b91c1c', fontWeight: 'bold', fontSize: '12px', margin: '4px 0 0 0' }}>
+                            Bloqueado (&gt;{lockThreshold}h)
+                          </p>
+                          <p style={{ color: '#7f1d1d', fontSize: '10px', margin: '2px 0 0 0' }}>
+                            Un Administrador debe habilitarlo en Supervisión General
+                          </p>
+                        </div>
+                      ) : (
+                        <SignatureUploader
+                          puesto={firma.puesto}
+                          firmaData={firmaObj}
+                          onFirmaChange={(updatedData) => handleFirmaUpdate(firma.puesto, updatedData)}
+                          cloudinaryCloudName={CLOUDINARY_CONFIG.cloudName}
+                          cloudinaryUploadPreset={CLOUDINARY_CONFIG.uploadPreset}
+                        />
+                      )}
                     </div>
                   );
                 })}

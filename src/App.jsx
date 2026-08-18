@@ -33,6 +33,8 @@ import TrazabilidadConfig from "./pages/TrazabilidadConfig";
 import TrazabilidadBusqueda from "./pages/TrazabilidadBusqueda";
 import MassBalanceForm from "./pages/MassBalanceForm"
 import LotesInventario from "./pages/LotesInventario"
+import Kardex from "./pages/Kardex"
+import ClasificacionProduccion from "./pages/ClasificacionProduccion"
 import FrigoVoice from "./components/FrigoVoice"
 import "./App.css"
 
@@ -92,6 +94,8 @@ function Navigation() {
     { to: "/trazabilidad-config", icon: "🔗", label: "Config. Trazabilidad", show: isAdminOrSupervisor },
     { to: "/mass-balance", icon: "⚖️", label: "Balance de Masas", show: true },
     { to: "/lotes-inventario", icon: "📦", label: "Inventario de Lotes", show: true },
+    { to: "/kardex", icon: "📒", label: "Kardex y Costos", show: true },
+    { to: "/clasificacion-produccion", icon: "🏷️", label: "Clasificación Producción", show: true },
   ]
 
   return (
@@ -219,6 +223,8 @@ function getPageName(pathname) {
     '/trazabilidad-config': 'Configuración de Trazabilidad',
     '/mass-balance': 'Balance de Masas',
     '/lotes-inventario': 'Inventario de Lotes',
+    '/kardex': 'Kardex y Costos',
+    '/clasificacion-produccion': 'Clasificación de Producción',
   }
   
   // Para rutas dinámicas como /edit-template/:id
@@ -423,6 +429,24 @@ function App() {
                 <ProtectedRoute>
                   <ErrorBoundary>
                     <LotesInventario />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } />
+
+              {/* Kardex valorizado de productos - Acceso para todos (editar costos: admin/costos) */}
+              <Route path="/kardex" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <Kardex />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } />
+
+              {/* Clasificación de Producción (PD-04) - Acceso para todos */}
+              <Route path="/clasificacion-produccion" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <ClasificacionProduccion />
                   </ErrorBoundary>
                 </ProtectedRoute>
               } />

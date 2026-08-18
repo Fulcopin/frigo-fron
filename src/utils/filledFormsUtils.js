@@ -296,6 +296,27 @@ function processBodyData(bodyDataString) {
 }
 
 /**
+ * Usuario logueado, en el formato que espera el backend para la auditoría de
+ * cambios. Si no hay sesión se manda vacío: el backend lo anota como
+ * "(sin identificar)" en vez de perder el registro.
+ * @returns {{filledBy?: string, filledByEmail?: string, filledByRole?: string}}
+ */
+function usuarioQueModifica() {
+  try {
+    const bruto = localStorage.getItem('fishcort_user');
+    if (!bruto) return {};
+    const u = JSON.parse(bruto);
+    return {
+      filledBy: u?.nombre || u?.nombreCompleto || u?.username || u?.email || '',
+      filledByEmail: u?.email || '',
+      filledByRole: u?.rol || '',
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Función para actualizar un formulario llenado
  * @param {number} formId - ID del formulario a actualizar
  * @param {object} formData - Datos del formulario
@@ -308,7 +329,10 @@ export const updateFilledForm = async (formId, formData) => {
       headerData: JSON.stringify(formData.headerData),
       bodyData: JSON.stringify(formData.bodyData),
       firmasData: JSON.stringify(formData.firmasData),
-      observaciones: formData.observaciones
+      observaciones: formData.observaciones,
+      // 🔍 Quién está modificando: el backend lo guarda en el historial de
+      // cambios para poder decir después "esto lo tocó Fulano tal día".
+      ...usuarioQueModifica(),
     };
 
     const response = await fetch(`${API_URL_FILLED_FORMS}/${formId}`, {
@@ -321,13 +345,30 @@ export const updateFilledForm = async (formId, formData) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Error del servidor: ${response.status} - ${errorText}`);
+      // El backend rechaza con { message: "..." } (por ejemplo el bloqueo por antigüedad).
+      // Ese texto está escrito para el usuario, así que se muestra tal cual en vez del JSON crudo.
+      let mensaje = `Error del servidor: ${response.status} - ${errorText}`;
+      let esMensajeParaElUsuario = false;
+      try {
+        const cuerpo = JSON.parse(errorText);
+        if (cuerpo?.message) {
+          mensaje = cuerpo.message;
+          esMensajeParaElUsuario = true;
+        }
+      } catch { /* no era JSON: queda el texto crudo */ }
+
+      const err = new Error(mensaje);
+      err.mensajeParaElUsuario = esMensajeParaElUsuario;
+      throw err;
     }
 
     // El nuevo endpoint devuelve confirmación con datos útiles
     return await response.json();
     
   } catch (error) {
+    // Si el backend ya explicó el motivo en castellano, se pasa tal cual: envolverlo
+    // en "Error al actualizar formulario: ..." solo ensucia el aviso al usuario.
+    if (error.mensajeParaElUsuario) throw error;
     throw new Error(`Error al actualizar formulario: ${error.message}`);
   }
 };
@@ -355,6 +396,8 @@ export const autosaveForm = async (formId, partialData) => {
     if (partialData.observaciones !== undefined) {
       payload.observaciones = partialData.observaciones;
     }
+    // 🔍 El autoguardado también modifica valores ya guardados: va firmado.
+    Object.assign(payload, usuarioQueModifica());
 
     const response = await fetch(`${API_URL_FILLED_FORMS}/${formId}/autosave`, {
       method: 'PATCH',

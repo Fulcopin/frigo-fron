@@ -13,7 +13,8 @@ class AuthService {
     this.roleMapping = {
       'ADMIN': 'admin',           // Acceso total
       'SUPERVISOR': 'supervisor',  // Acceso total
-      'OPERADOR': 'trabajador'     // Solo ver y llenar formularios
+      'OPERADOR': 'trabajador',    // Solo ver y llenar formularios
+      'COSTOS': 'costos'           // Control de costos: ve qué valores se modificaron
     };
   }
 
@@ -205,6 +206,19 @@ class AuthService {
     const user = this.getCurrentUser();
     if (!user || !user.rol) return false;
     return user.rol === 'admin' || user.rol === 'supervisor';
+  }
+
+  /**
+   * ¿Puede ver QUÉ valores se modificaron después de guardado un formulario?
+   *
+   * Es información de control: sirve para detectar que alguien tocó un reporte
+   * que ya estaba revisado. Solo Admin y Costos la ven; al resto la pantalla
+   * VER se les muestra igual que siempre.
+   */
+  puedeVerCambios() {
+    const user = this.getCurrentUser();
+    if (!user || !user.rol) return false;
+    return user.rol === 'admin' || user.rol === 'costos';
   }
 
   /**

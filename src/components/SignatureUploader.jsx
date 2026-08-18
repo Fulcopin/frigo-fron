@@ -58,6 +58,23 @@ const SignatureUploader = ({
   const isCurrentUserSelected = selectedName && selectedName.toLowerCase() === currentUserName.toLowerCase();
   const canUploadSignature = !selectedName || canSign || isCurrentUserSelected;
 
+  /**
+   * Identidad de quien está firmando AHORA.
+   *
+   * Las tres formas de firmar (usar mi firma guardada, subir imagen, dibujar)
+   * las hace el usuario logueado, así que el puesto tiene que quedar a nombre de
+   * quien REALMENTE firmó. Antes solo se guardaba la imagen y el `nombre` seguía
+   * siendo el que hubiera antes: al limpiar una firma y volver a firmar con otro
+   * usuario, quedaba la firma nueva con el responsable viejo.
+   *
+   * Sin sesión no se toca nada, para no borrar un nombre ya cargado.
+   */
+  const identidadDelFirmante = () => {
+    const nombre = currentUser?.nombre || currentUser?.username || '';
+    if (!nombre) return {};
+    return { nombre, email: currentUser?.email || '' };
+  };
+
   // ❌ Auto-carga de firma DESHABILITADA
   // La firma ya NO se carga automáticamente. El usuario debe revisar todo el documento
   // y luego firmar manualmente usando el botón "Usar Mi Firma Guardada".
@@ -214,7 +231,9 @@ const SignatureUploader = ({
 
       onFirmaChange({
         ...firmaData,
-        firma: firmaInfo
+        firma: firmaInfo,
+        // Queda registrado quien firma, no el que estaba antes en el puesto
+        ...identidadDelFirmante()
       });
 
       setError(null);
@@ -266,7 +285,9 @@ const SignatureUploader = ({
 
       onFirmaChange({
         ...firmaData,
-        firma: firmaInfo
+        firma: firmaInfo,
+        // Queda registrado quien firma, no el que estaba antes en el puesto
+        ...identidadDelFirmante()
       });
 
       console.log('🎉 Firma cargada exitosamente para:', puesto);
@@ -524,7 +545,9 @@ const SignatureUploader = ({
 
       onFirmaChange({
         ...firmaData,
-        firma: firmaInfo
+        firma: firmaInfo,
+        // Queda registrado quien firma, no el que estaba antes en el puesto
+        ...identidadDelFirmante()
       });
 
       console.log('🎉 Firma dibujada guardada para:', puesto);

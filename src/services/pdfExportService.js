@@ -681,8 +681,14 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
   console.log('Es array?:', Array.isArray(firmasData));
   console.log('startY:', startY, 'pageHeight:', pageHeight);
   
-  // Verificar si hay espacio suficiente para header + al menos una firma (~60mm)
-  if (currentY + 60 > pageHeight) {
+  // 📏 Altura máxima que puede ocupar un bloque de firma (texto + imagen PNG + "Firma Digital").
+  // Se reserva SIEMPRE este alto antes de dibujar, para que la firma nunca quede cortada
+  // ni pisando el pie de página ("Página X de Y…", que se dibuja en pageHeight - 8).
+  const FIRMA_BLOCK_H = 72;
+  const safeBottom = pageHeight - 15; // margen inferior seguro por encima del pie de página
+
+  // Verificar si hay espacio para el título de la sección + al menos una firma completa.
+  if (currentY + 15 + FIRMA_BLOCK_H > safeBottom) {
     doc.addPage();
     currentY = 20;
   }
@@ -706,13 +712,24 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
     // 🔧 FILTRAR: Solo incluir firmas que están en la plantilla actual
     const templateFirmas = template?.firmas || [];
     const puestosValidos = templateFirmas.map(f => f.puesto);
-    
+
+    // 🔑 Normalizar puesto para comparar SIN sensibilidad a mayúsculas, tildes ni espacios.
+    // Evita que una firma "desaparezca" del PDF cuando se edita la plantilla y el texto del
+    // puesto cambia de casing/acento/espacios respecto al que se guardó al firmar.
+    const normPuesto = (p) => (p || '')
+      .toString()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .trim();
+    const puestosValidosNorm = puestosValidos.map(normPuesto);
+
     console.log('🔍 Puestos válidos en template:', puestosValidos);
     console.log('🔍 Puestos en formulario guardado:', Object.keys(firmasData));
-    
+
     // Si el template no define puestos de firmas, mostrar todas las firmas del formulario
     const firmasArray = puestosValidos.length > 0
-      ? Object.entries(firmasData).filter(([puesto]) => puestosValidos.includes(puesto))
+      ? Object.entries(firmasData).filter(([puesto]) => puestosValidosNorm.includes(normPuesto(puesto)))
       : Object.entries(firmasData);
     
     const totalFirmas = firmasArray.length;
@@ -751,9 +768,10 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       // Si es una nueva fila, ajustar Y
       if (columna === 0 && index > 0) {
         currentY += 52; // Espacio entre filas (ajustado para firma más alta)
-        
-        // Verificar si hay espacio
-        if (currentY + 52 > pageHeight - 15) {
+
+        // Verificar que la fila completa (incluida la imagen) quepa por encima del pie de
+        // página. Si no cabe, saltar a una página nueva para que la firma NUNCA se corte.
+        if (currentY + FIRMA_BLOCK_H > safeBottom) {
           doc.addPage();
           currentY = 20;
         }
@@ -881,37 +899,56 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
         console.log('   firmaImg preview:', firmaImg.substring(0, 100));
         
         try {
-          // Dimensiones de la imagen de firma
-          const firmaImgWidth = anchoColumna - 8;
-          const firmaImgHeight = 28; // Altura ajustada para mayor visibilidad
-          
-          console.log('   📐 Dimensiones:', { width: firmaImgWidth, height: firmaImgHeight, x: xPos, y: localY });
-          
-          // Convertir imagen a PNG Base64 via canvas (soporta WebP, JPG, etc.)
+          // 📐 Caja MÁXIMA disponible para la firma dentro de la columna.
+          // La imagen se escala para caber aquí SIN deformarse (mantiene su proporción real).
+          const maxFirmaW = anchoColumna - 8;
+          const maxFirmaH = 24; // alto máximo de la firma (proporcional, sin deformar)
+
+          // Convertir imagen a PNG Base64 via canvas (soporta WebP, JPG, etc.) y obtener
+          // sus dimensiones reales para poder escalarla proporcionalmente.
           let imageToAdd = firmaImg;
-          
+          let natW = 0, natH = 0;
+
           if (firmaImg.startsWith('http') || firmaImg.startsWith('data:image')) {
             console.log('   Convirtiendo imagen de firma a PNG Base64...');
             try {
-              imageToAdd = await getBase64Image(firmaImg);
-              console.log('   Convertido a PNG Base64 exitosamente');
+              const imgData = await getImageDataAndDims(firmaImg);
+              imageToAdd = imgData.dataURL;
+              natW = imgData.width;
+              natH = imgData.height;
+              console.log('   Convertido a PNG Base64 exitosamente', { natW, natH });
             } catch (fetchError) {
               console.error('   Error al convertir imagen de firma:', fetchError);
               throw new Error(`No se pudo convertir la imagen: ${fetchError.message}`);
             }
           }
-          
-          // Añadir imagen de firma (ahora en PNG Base64)
-          doc.addImage(imageToAdd, 'PNG', xPos, localY, firmaImgWidth, firmaImgHeight);
+
+          // Escalar proporcionalmente: usar el factor más chico para que entre en la caja
+          // tanto de ancho como de alto. Si no conocemos las dimensiones, usar la caja completa.
+          let firmaImgWidth = maxFirmaW;
+          let firmaImgHeight = maxFirmaH;
+          if (natW > 0 && natH > 0) {
+            const scale = Math.min(maxFirmaW / natW, maxFirmaH / natH);
+            firmaImgWidth = natW * scale;
+            firmaImgHeight = natH * scale;
+          }
+
+          // Centrar la imagen horizontalmente dentro de la columna.
+          const firmaImgX = xPos + (maxFirmaW - firmaImgWidth) / 2;
+
+          console.log('   📐 Dimensiones firma:', { firmaImgWidth, firmaImgHeight, x: firmaImgX, y: localY });
+
+          // Añadir imagen de firma (ahora en PNG Base64, escalada y proporcional)
+          doc.addImage(imageToAdd, 'PNG', firmaImgX, localY, firmaImgWidth, firmaImgHeight);
           console.log('   ✅ Imagen agregada exitosamente');
-          
+
           localY += firmaImgHeight + 2;
-          
-          // Texto "Firma Digital" centrado bajo la imagen
+
+          // Texto "Firma Digital" centrado bajo la imagen (respecto al ancho de la columna)
           doc.setFontSize(7);
           doc.setTextColor(100, 100, 100);
           const firmaTextWidth = doc.getTextWidth('Firma Digital');
-          doc.text('Firma Digital', xPos + (firmaImgWidth - firmaTextWidth) / 2, localY + 3.5);
+          doc.text('Firma Digital', xPos + (maxFirmaW - firmaTextWidth) / 2, localY + 3.5);
           doc.setTextColor(...COLORS.text);
           localY += 5;
         } catch (error) {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import ScrollButton from "../components/ScrollButton";
+import { ordenarFormularios, etiquetaFormulario } from "../utils/ordenFormularios";
 import "../styles/DailyForms.css";
 
 // Configuración API
@@ -556,9 +557,10 @@ function DailyForms() {
               className="template-select"
             >
               <option value="all">Todas las plantillas</option>
-              {templates.map(t => (
+              {/* Ordenados por número de formulario: PD-04 antes que PD-14 */}
+              {ordenarFormularios(templates).map(t => (
                 <option key={t.id} value={t.id}>
-                  {t.code ? `${t.code} - ` : ''}{t.name}
+                  {etiquetaFormulario(t)}
                 </option>
               ))}
             </select>

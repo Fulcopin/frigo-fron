@@ -7,6 +7,8 @@ import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig";
 import { MAPPABLE_API_FIELDS, API_CODIGO_ENDPOINTS, API_CODIGO_JSON_FIELDS } from "../api/apiMappings";
 import UserSelector from "../components/UserSelector";
 import { fetchUsers } from "../services/userService";
+import { InventarioColumnaConfig, InventarioAutoCompletar, InventarioTablaConfig, CampoLoteEncabezadoConfig, ColumnaLotePadreConfig } from "../components/InventarioConfig";
+import BusquedaProductoSelect from "../components/BusquedaProductoSelect";
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
@@ -59,8 +61,13 @@ function CreateTemplate() {
   // Tipos de campo para secciones (incluye imagen y fórmula)
   const sectionFieldTypes = fieldTypes.filter(t => true);
   
-  // Tipos de campo para tablas (SIN imagen, CON fórmula)
-  const tableFieldTypes = fieldTypes.filter(t => t.value !== "image");
+  // Tipos de campo para tablas (SIN imagen, CON fórmula, CON inventario)
+  const tableFieldTypes = [
+    ...fieldTypes.filter(t => t.value !== "image"),
+    { value: "inventario", label: "📦 Inventario (Lista desplegable de lotes)" },
+    { value: "lotePadre", label: "🔗 Código padre (lote del encabezado)" },
+    { value: "lotePadreTabla", label: "📥 Código padre (desde Materia Prima)" },
+  ];
 
   // Campos por defecto de Lote Entrante (5 campos)
   const DEFAULT_LE_CAMPOS = [
@@ -670,12 +677,31 @@ function CreateTemplate() {
                   ))}
                 </select>
               </div>
-              <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required} onChange={(e) => updateHeaderField(index, "required", e.target.checked)}/>Requerido</label></div>
+              <div className="form-group checkbox-group">
+                <label><input type="checkbox" checked={field.required} onChange={(e) => updateHeaderField(index, "required", e.target.checked)}/>Requerido</label>
+              </div>
               <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateHeaderField(index, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
+              {field.type === "date" && (
+                <div className="form-group checkbox-group">
+                  <label title="Generar lote automáticamente en formato AAMMDD">
+                    <input type="checkbox" checked={field.autoGenerarLote || false} onChange={(e) => updateHeaderField(index, "autoGenerarLote", e.target.checked)}/>
+                    🔄 Auto-generar Lote
+                  </label>
+                </div>
+              )}
+              <BusquedaProductoSelect valor={field.busquedaProducto} onChange={(v) => updateHeaderField(index, "busquedaProducto", v)} />
               <button onClick={() => removeHeaderField(index)} className="btn-remove" title="Eliminar campo">🗑️</button>
             </div>
             )}
-            
+
+            {/* 🔗 Campo que guarda los lotes de proceso del formulario */}
+            <CampoLoteEncabezadoConfig
+              field={field}
+              bodyElements={template.bodyElements}
+              onChange={(prop, val) => updateHeaderField(index, prop, val)}
+              onColumnasTabla={(elementIndex, cols) => updateBodyElement(elementIndex, 'columns', cols)}
+            />
+
             {/* 📝 OPCIONES MANUALES: Para select, radio y checkbox (si no tiene API) */}
             {(field.type === "select" || field.type === "radio" || field.type === "checkbox") && !field.apiMap && !field.apiEndpoint && (
               <div style={{ 
@@ -1072,6 +1098,7 @@ function CreateTemplate() {
                       </div>
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)}/>Requerido</label></div>
                       <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
+                      <BusquedaProductoSelect valor={field.busquedaProducto} onChange={(v) => updateFieldInSection(elementIndex, fieldIndex, "busquedaProducto", v)} />
                       <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
                     </div>
                     )}
@@ -1706,6 +1733,12 @@ function CreateTemplate() {
                   );
                 })()}
 
+                {/* ─── 📦 Restar del Inventario de Lotes ─── */}
+                <InventarioTablaConfig
+                  element={element}
+                  onChange={(prop, val) => updateBodyElement(elementIndex, prop, val)}
+                />
+
                 {/* ─────────── PANEL: API POR CÓDIGO ─────────── */}
                 <div style={{
                   background: element.usaApiPorCodigo ? 'linear-gradient(135deg, #fdf4ff, #fae8ff)' : '#f9fafb',
@@ -2032,11 +2065,35 @@ function CreateTemplate() {
                         </div>
                       )}
 
+                      {/* 📦 Autocompletar esta columna desde el lote elegido en la fila */}
+                      <InventarioAutoCompletar
+                        column={column}
+                        columnas={element.columns || []}
+                        onChange={(prop, val) => updateColumnInTable(elementIndex, colIndex, prop, val)}
+                      />
+
+                      <ColumnaLotePadreConfig
+                        column={column}
+                        columnas={element.columns || []}
+                        onChange={(prop, val) => updateColumnInTable(elementIndex, colIndex, prop, val)}
+                        onColumnas={(cols) => updateBodyElement(elementIndex, 'columns', cols)}
+                        element={element}
+                        bodyElements={template.bodyElements}
+                      />
+
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={column.required} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "required", e.target.checked)}/>Requerido</label></div>
                       <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={column.usaApiAutocomplete !== false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
+                      <BusquedaProductoSelect valor={column.busquedaProducto} onChange={(v) => updateColumnInTable(elementIndex, colIndex, "busquedaProducto", v)} />
+                      <div className="form-group checkbox-group"><label title="El operario escribe a mano: sin desplegables, sin catálogo, sin API y sin las listas automáticas de producción"><input type="checkbox" checked={column.campoLibre || false} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "campoLibre", e.target.checked)}/>✏️ Solo escribir</label></div>
                       <button onClick={() => removeColumnFromTable(elementIndex, colIndex)} className="btn-remove" title="Eliminar columna">🗑️</button>
                     </div>
-                    
+
+                    {/* 📦 Config de columna alimentada por el Inventario de Lotes */}
+                    <InventarioColumnaConfig
+                      column={column}
+                      onChange={(prop, val) => updateColumnInTable(elementIndex, colIndex, prop, val)}
+                    />
+
                     {/* 🆕 OPCIONES PERSONALIZADAS PARA SELECT: Solo si NO tiene API */}
                     {(column.type === "select" || column.type === "radio" || column.type === "checkbox") && !column.apiMap && !column.apiEndpoint && (
                       <div style={{ 

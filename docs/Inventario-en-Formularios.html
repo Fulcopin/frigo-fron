@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Enlace de Tablas con el Inventario de Lotes — Frigolab</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 10.5pt; line-height: 1.55; color: #1f2937; margin: 0;
+  }
+  h1 { font-size: 20pt; color: #0f4c81; margin: 0 0 4px; letter-spacing: -0.3px; }
+  h2 {
+    font-size: 13pt; color: #0f4c81; margin: 22px 0 8px;
+    border-bottom: 2px solid #dbeafe; padding-bottom: 4px; page-break-after: avoid;
+  }
+  h3 { font-size: 11pt; color: #1e40af; margin: 14px 0 5px; page-break-after: avoid; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0 6px 18px; padding: 0; }
+  li { margin: 3px 0; }
+  code {
+    font-family: Consolas, "Courier New", monospace; font-size: 9.5pt;
+    background: #f1f5f9; padding: 1px 4px; border-radius: 3px; color: #0f172a;
+  }
+  pre {
+    font-family: Consolas, "Courier New", monospace; font-size: 9pt;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #0f4c81;
+    border-radius: 4px; padding: 8px 10px; margin: 8px 0; overflow-x: auto;
+    page-break-inside: avoid; white-space: pre-wrap;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 9.5pt; page-break-inside: avoid; }
+  th {
+    background: #0f4c81; color: #fff; text-align: left; padding: 6px 8px;
+    font-weight: 600; border: 1px solid #0f4c81;
+  }
+  td { padding: 5px 8px; border: 1px solid #d7dee8; vertical-align: top; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .header {
+    border-bottom: 3px solid #0f4c81; padding-bottom: 10px; margin-bottom: 18px;
+    display: flex; justify-content: space-between; align-items: flex-end;
+  }
+  .meta { font-size: 9pt; color: #64748b; text-align: right; line-height: 1.5; }
+  .sub { color: #475569; font-size: 10.5pt; margin: 2px 0 0; }
+  .nota {
+    background: #fffbeb; border: 1px solid #fcd34d; border-left: 4px solid #f59e0b;
+    border-radius: 4px; padding: 8px 12px; margin: 10px 0; font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  .ok {
+    background: #f0fdf4; border: 1px solid #86efac; border-left: 4px solid #16a34a;
+    border-radius: 4px; padding: 8px 12px; margin: 10px 0; font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  .paso {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px;
+    padding: 9px 12px; margin: 7px 0; page-break-inside: avoid;
+  }
+  .paso b { color: #0f4c81; }
+  .tag {
+    display: inline-block; background: #dbeafe; color: #1e40af; border-radius: 3px;
+    padding: 0 5px; font-size: 9pt; font-weight: 600;
+  }
+  footer {
+    margin-top: 26px; padding-top: 8px; border-top: 1px solid #d7dee8;
+    font-size: 8.5pt; color: #94a3b8; text-align: center;
+  }
+  .break { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Enlace de Tablas con el Inventario de Lotes</h1>
+    <p class="sub">Columnas con lista desplegable de datos reales y descuento automático de saldo</p>
+  </div>
+  <div class="meta">
+    Sistema Frigolab — Formularios Dinámicos<br>
+    Versión 1.0 · 26 de julio de 2026<br>
+    Documentación funcional y técnica
+  </div>
+</div>
+
+<h2>1. Resumen</h2>
+
+<p>
+  Hasta ahora, para que una columna de una tabla mostrara datos reales (lotes, productos) había que
+  programarlo: el sistema reconocía únicamente las columnas llamadas <code>LOTE DE PROCESO</code> y
+  <code>TIPO DE PRODUCTO</code>, y solo en los formularios donde ese nombre coincidía exactamente.
+  Cualquier formulario nuevo o cualquier columna con otro nombre quedaba fuera.
+</p>
+
+<p>Esta actualización convierte eso en <b>configuración</b>. Desde las pantallas de Crear y Editar Plantilla, cualquier usuario autorizado puede ahora:</p>
+
+<ul>
+  <li>Enlazar <b>cualquier columna</b> de <b>cualquier tabla</b> a los datos reales del sistema, para que el operario elija de una lista en vez de escribir a mano.</li>
+  <li>Hacer que otras columnas de la misma fila <b>se rellenen solas</b> con los datos del elemento elegido.</li>
+  <li>Activar que una tabla <b>descuente inventario</b>: la cantidad registrada se resta del saldo del lote y queda asentada en el libro de movimientos.</li>
+</ul>
+
+<div class="ok">
+  <b>Sin cambios en formularios existentes.</b> Las plantillas que ya funcionaban siguen igual. La
+  configuración es opcional y se activa formulario por formulario.
+</div>
+
+<h2>2. Las dos fuentes de datos</h2>
+
+<p>Al enlazar una columna, lo primero que se elige es el origen de los valores. Son dos bases distintas:</p>
+
+<table>
+  <tr>
+    <th style="width:30%">Origen</th>
+    <th style="width:35%">Qué contiene</th>
+    <th style="width:35%">Cuándo se usa</th>
+  </tr>
+  <tr>
+    <td><b>Inventario de Lotes</b><br><span class="tag">saldos</span></td>
+    <td>Lotes físicos con peso de entrada, desperdicio, peso neto y <b>saldo disponible</b> que sube y baja al consumirse.</td>
+    <td>Cuando la tabla consume producto, o cuando el operario necesita ver cuánto queda de un lote.
+        <b>Es obligatorio para el descuento.</b></td>
+  </tr>
+  <tr>
+    <td><b>Producción PD-04</b><br><span class="tag">resumen</span></td>
+    <td>Se arma leyendo los formularios PD-04 guardados: lote de proceso, tipo de producto, código y la
+        clasificación asignada en la página Clasificación Producción. No maneja saldos.</td>
+    <td>Cuando la columna refleja lo producido: lote de proceso, tipo de producto o su clasificación.</td>
+  </tr>
+</table>
+
+<p><b>Regla práctica:</b> si la celda tiene que restar peso o mostrar cuánto queda, el origen es <i>Inventario de Lotes</i>. Si la celda copia lo que se produjo o clasificó, el origen es <i>Producción PD-04</i>.</p>
+
+<h3>Campos disponibles según el origen</h3>
+
+<table>
+  <tr><th style="width:30%">Origen</th><th>Campos que puede listar la columna</th></tr>
+  <tr><td>Inventario de Lotes</td><td>Número de Lote · Producto · Clasificación · Proceso · Tipo de Desperdicio</td></tr>
+  <tr><td>Producción PD-04</td><td>Lote de Proceso · Tipo de Producto · Código de Producto · Clasificación del producto</td></tr>
+</table>
+
+<h2>3. Configuración paso a paso</h2>
+
+<p>El procedimiento es idéntico en <b>Crear Plantilla</b> y en <b>Editar Plantilla</b>. Al crear una plantilla nueva, primero se agrega la tabla y sus columnas; de ahí en adelante los pasos son los mismos.</p>
+
+<div class="paso">
+  <b>Paso 1 — Definir las columnas.</b> Dentro de la tabla, en <i>Columnas de la Tabla</i>, crear las
+  columnas con sus nombres definitivos. Este paso va primero: los selectores posteriores se alimentan de esos nombres.
+</div>
+
+<div class="paso">
+  <b>Paso 2 — Enlazar la columna.</b> En la columna deseada, abrir el desplegable <i>Tipo</i> y elegir
+  <b>Inventario (Lista desplegable de lotes)</b>. Se despliega un panel azul con:
+  <ul>
+    <li><i>¿De dónde salen los valores?</i> — el origen (ver sección 2).</li>
+    <li><i>Campo que se lista</i> — qué dato aparece en el menú.</li>
+    <li><i>Mostrar solo lotes con saldo disponible</i> — oculta los ya consumidos.</li>
+    <li><i>Mostrar el saldo en la opción</i> — el operario ve cuánto queda al elegir.</li>
+    <li><i>Desplegable dependiente</i> — filtra las opciones según lo ya elegido en esa misma fila.</li>
+  </ul>
+</div>
+
+<div class="paso">
+  <b>Paso 3 — Autocompletado (opcional).</b> En las demás columnas aparece el selector
+  <i>Autocompletar desde el lote / desde la producción</i>. Se elige qué campo la rellena
+  automáticamente: producto, código, clasificación, saldo, peso neto, fecha, etc.
+  Este selector solo aparece después del Paso 2.
+</div>
+
+<div class="paso">
+  <b>Paso 4 — Descuento de inventario (opcional).</b> Al principio de la tabla, en
+  <i>Configuración de la Tabla</i>, marcar <b>Restar del Inventario de Lotes</b> e indicar:
+  <ul>
+    <li><b>Columna con el número de lote</b> — de dónde se toma el lote a descontar.</li>
+    <li><b>Columna de producto</b> (opcional) — cuando el lote de proceso tiene lotes hijos por producto
+        (ej. <code>260725-P01</code>), esto asegura que se descuente el hijo correcto y no el lote padre.</li>
+    <li><b>Columna con la cantidad a restar</b> — la celda cuyo valor baja el saldo.</li>
+    <li><b>Proceso del movimiento</b> — queda registrado en el kardex. Si se deja vacío usa el proceso de la plantilla.</li>
+  </ul>
+</div>
+
+<div class="paso">
+  <b>Paso 5 — Guardar la plantilla.</b> La configuración viaja dentro del JSON de la plantilla, junto
+  con el resto de su definición.
+</div>
+
+<h2 class="break">4. Cómo se ve al llenar el formulario</h2>
+
+<ol>
+  <li>La celda enlazada se muestra como <b>menú desplegable</b> con datos reales:
+      <pre>260725-P01 — Mahi filete cp 3-4 · 867.0 lbs disp.
+260725-P02 — Mahi filetes cp 4-7 · 2847.0 lbs disp.</pre></li>
+  <li>Al elegir un valor, las columnas con autocompletado <b>se llenan solas</b> (producto, código, clasificación…).</li>
+  <li>Con el desplegable dependiente activo, elegir el lote de proceso deja únicamente los productos de ese lote; elegir el producto trae su clasificación.</li>
+  <li>Si la tabla descuenta inventario, debajo de la celda de cantidad aparece el saldo proyectado:
+      <pre>⚖️ 867.00 → 800.00 Lbs al guardar</pre></li>
+  <li>Si la cantidad supera el saldo, la celda se marca en rojo con <b>Saldo insuficiente</b> y esa fila no se descuenta.</li>
+  <li>Al guardar, el sistema muestra el resumen de lo aplicado:
+      <pre>📦 Inventario actualizado (1 descuento):
+   • 260725-P01: −67 Lbs → saldo 800.00 Lbs</pre></li>
+</ol>
+
+<div class="ok">
+  <b>Nunca bloquea al operario.</b> Si el inventario está vacío o el servidor no responde, la celda
+  vuelve a comportarse como un campo de texto normal y el formulario se llena igual.
+</div>
+
+<h2>5. Cómo se descuenta y qué queda registrado</h2>
+
+<p>El descuento se aplica <b>una sola vez, al guardar el formulario</b>. No se escribe en la base con cada tecla: mientras el operario escribe solo ve una proyección.</p>
+
+<h3>Trazabilidad</h3>
+<p>Cada salida queda asentada en el libro de movimientos (<code>MovimientosInventario</code>) con:</p>
+<table>
+  <tr><th style="width:28%">Dato</th><th>Contenido</th></tr>
+  <tr><td>Número de lote</td><td>El lote afectado, ya resuelto al hijo correcto si aplica</td></tr>
+  <tr><td>Tipo / Cantidad</td><td><code>salida</code> y las libras descontadas</td></tr>
+  <tr><td>Saldo resultante</td><td>Foto del saldo después del movimiento, para auditoría</td></tr>
+  <tr><td>Proceso</td><td>El configurado en la tabla, o el proceso de la plantilla</td></tr>
+  <tr><td>Formulario</td><td><b>ID del formulario</b> que generó la salida</td></tr>
+  <tr><td>Notas</td><td>Etiqueta de control, tabla y filas de origen. Ej: <code>#inv:1402:t1:260725-P01 MATERIA PRIMA · fila(s) 1, 3</code></td></tr>
+</table>
+
+<p>El lote, por su parte, ya guardaba de qué formulario nació (<code>FormId</code> y <code>TemplateId</code>). Con esto la cadena queda cerrada: se puede saber qué formulario creó cada lote y qué formularios lo consumieron.</p>
+
+<h3>Protección contra doble descuento</h3>
+<p>
+  La etiqueta <code>#inv:&lt;formulario&gt;:t&lt;tabla&gt;:&lt;lote&gt;</code> identifica cada consumo.
+  Si el mismo formulario se vuelve a guardar, el sistema consulta lo ya descontado y aplica
+  únicamente la diferencia. Reguardar un formulario <b>no</b> vuelve a restar el inventario.
+  El agrupamiento es por lote y no por número de fila, de modo que borrar o reordenar filas al
+  reeditar tampoco descuadra el cálculo.
+</p>
+
+<p>Además, el servidor rechaza cualquier consumo mayor al saldo disponible: <b>el inventario no puede quedar en negativo</b>.</p>
+
+<h2>6. Requisitos técnicos</h2>
+
+<table>
+  <tr><th style="width:32%">Requisito</th><th>Detalle</th></tr>
+  <tr>
+    <td>Migración de base de datos</td>
+    <td><code>20260722190059_AddInventarioSaldoYMovimientos</code> — agrega la columna <code>Saldo</code>
+        a <code>LotesInventario</code> y crea la tabla <code>MovimientosInventario</code>.
+        Debe aplicarse en cada base por separado (planta y desarrollo).
+        Se incluye el script idempotente <code>AddInventarioSaldoYMovimientos.sql</code>.</td>
+  </tr>
+  <tr>
+    <td>Backend desplegado</td>
+    <td>El servidor debe incluir el endpoint <code>POST /api/LotesInventario/consumir-cantidad</code>.</td>
+  </tr>
+  <tr>
+    <td>Frontend</td>
+    <td>Compilación publicada. Los usuarios deben recargar con <b>Ctrl+F5</b> la primera vez.</td>
+  </tr>
+</table>
+
+<div class="nota">
+  <b>Diagnóstico útil:</b> si la migración no está aplicada, el descuento devuelve un error 500 con
+  cuerpo vacío que el navegador reporta como si fuera un problema de CORS. No es CORS: es la columna
+  o la tabla que falta.
+</div>
+
+<h2>7. Alcance y pendientes</h2>
+
+<h3>Cubierto</h3>
+<ul>
+  <li>Todas las tablas del cuerpo del formulario, en cualquier plantilla.</li>
+  <li>Columnas de fórmula: al elegir del desplegable se recalculan igual que con una celda normal.</li>
+  <li>Filas predefinidas, autoguardado y borradores siguen funcionando sin cambios.</li>
+  <li>Las tablas enlazadas al inventario ya no crean lotes nuevos a partir de sus propias filas: consumen los existentes.</li>
+</ul>
+
+<h3>Fuera de alcance por ahora</h3>
+<ul>
+  <li><b>Tablas dentro de una sección:</b> usan otro renderizador y todavía no admiten columnas enlazadas.</li>
+  <li><b>Clasificación por fecha:</b> hoy la clasificación es única y permanente por producto. No existe la
+      posibilidad de asignar una clasificación distinta para un día concreto; requiere cambio de backend.</li>
+  <li><b>Entradas en el kardex:</b> los lotes creados de forma masiva (los que genera el PD-04) no registran
+      su movimiento de entrada. El saldo es correcto, pero el historial arranca solo con las salidas.</li>
+  <li><b>Consulta de movimientos:</b> el historial existe en la API pero aún no tiene pantalla propia.</li>
+</ul>
+
+<div class="nota">
+  <b>Punto de atención operativo:</b> si se renombra una columna después de configurada, la referencia
+  del descuento se guarda por nombre y deja de encontrarla, sin mostrar error. Tras renombrar columnas
+  hay que volver al panel de descuento y reseleccionarlas.
+</div>
+
+<footer>
+  Sistema Frigolab — Formularios Dinámicos · Documentación generada el 26 de julio de 2026
+</footer>
+
+</body>
+</html>

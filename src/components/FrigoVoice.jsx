@@ -16,6 +16,10 @@ import {
   speak,
 } from '../services/aiService';
 import authService from '../services/authService';
+import {
+  enviarMensajeAdmin, listarMensajes, responderMensaje, cambiarEstado,
+  contarPendientes, esAdminDeMensajes, ESTADOS_MENSAJE,
+} from '../services/mensajesAdminService';
 import './FrigoVoice.css';
 
 const SUGGESTIONS = [
@@ -48,9 +52,27 @@ const PERIODOS = [
   { dias: 30, label: '30 días' },
 ];
 
+// Pestañas de la ventana
+const TABS = {
+  CHAT: 'chat',
+  ADMIN: 'admin',
+};
+
 export default function FrigoVoice() {
   const [isOpen, setIsOpen] = useState(false);
+  const [tab, setTab] = useState(TABS.CHAT);
   const [mode, setMode] = useState(MODES.AGENT);
+
+  // ✉️ Canal "Mensaje a ADMIN": los mensajes se guardan como tickets.
+  const esAdmin = esAdminDeMensajes();
+  const [msgAsunto, setMsgAsunto] = useState('');
+  const [msgTexto, setMsgTexto] = useState('');
+  const [msgEnviando, setMsgEnviando] = useState(false);
+  const [msgAviso, setMsgAviso] = useState(null);   // { tipo: 'ok'|'error', texto }
+  const [mensajes, setMensajes] = useState([]);
+  const [msgCargando, setMsgCargando] = useState(false);
+  const [respuestas, setRespuestas] = useState({}); // { [ticketId]: texto }
+  const pendientes = esAdmin ? contarPendientes(mensajes) : 0;
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -79,6 +101,68 @@ export default function FrigoVoice() {
       getTemplateFields().then(setTemplatesCat).catch(() => setTemplatesCat([]));
     }
   }, [showGuided, templatesCat.length]);
+
+  // ── ✉️ Mensaje a ADMIN ──────────────────────────────────────────────────
+  const cargarMensajes = useCallback(async () => {
+    setMsgCargando(true);
+    try {
+      setMensajes(await listarMensajes());
+    } catch {
+      setMensajes([]); // sin conexión: la pestaña sigue sirviendo para escribir
+    } finally {
+      setMsgCargando(false);
+    }
+  }, []);
+
+  // Al abrir la ventana se traen los mensajes: así el admin ve el contador de
+  // pendientes en la pestaña sin tener que entrar.
+  useEffect(() => {
+    if (isOpen) cargarMensajes();
+  }, [isOpen, cargarMensajes]);
+
+  // Mientras la ventana está abierta se refresca solo, para que un mensaje
+  // nuevo aparezca sin recargar la página.
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = setInterval(cargarMensajes, 60000);
+    return () => clearInterval(id);
+  }, [isOpen, cargarMensajes]);
+
+  const enviarAlAdmin = async (e) => {
+    e.preventDefault();
+    setMsgEnviando(true);
+    setMsgAviso(null);
+    try {
+      await enviarMensajeAdmin({ asunto: msgAsunto, mensaje: msgTexto });
+      setMsgAsunto('');
+      setMsgTexto('');
+      setMsgAviso({ tipo: 'ok', texto: '✅ Mensaje enviado. El administrador fue notificado.' });
+      await cargarMensajes();
+    } catch (err) {
+      setMsgAviso({ tipo: 'error', texto: `❌ ${err.message || 'No se pudo enviar.'}` });
+    } finally {
+      setMsgEnviando(false);
+    }
+  };
+
+  const enviarRespuesta = async (ticket, cerrar) => {
+    try {
+      await responderMensaje(ticket, respuestas[ticket.id], cerrar);
+      setRespuestas(prev => ({ ...prev, [ticket.id]: '' }));
+      await cargarMensajes();
+    } catch (err) {
+      setMsgAviso({ tipo: 'error', texto: `❌ ${err.message || 'No se pudo responder.'}` });
+    }
+  };
+
+  const cambiarEstadoMensaje = async (ticket, estado) => {
+    try {
+      await cambiarEstado(ticket, estado);
+      await cargarMensajes();
+    } catch (err) {
+      setMsgAviso({ tipo: 'error', texto: `❌ ${err.message || 'No se pudo cambiar el estado.'}` });
+    }
+  };
 
   const selectedTemplateCat = templatesCat.find(t => t.codigo === guidedTemplate);
 
@@ -298,36 +382,179 @@ export default function FrigoVoice() {
               <div>
                 <strong>FrigoVoice AI</strong>
                 <small>
-                  {mode === MODES.AGENT ? 'Agente Inteligente' : 'Busqueda RAG'}
+                  {tab === TABS.ADMIN
+                    ? (esAdmin ? 'Mensajes recibidos' : 'Escribir al administrador')
+                    : (mode === MODES.AGENT ? 'Agente Inteligente' : 'Busqueda RAG')}
                 </small>
               </div>
             </div>
             <div className="frigovoice-header__actions">
-              {/* 🎯 Consulta guiada */}
-              <button
-                className="frigovoice-mode-toggle"
-                onClick={() => setShowGuided(!showGuided)}
-                title="Consulta guiada: elige formulario, columna y operación"
-                style={{ background: showGuided ? '#7c3aed' : undefined, color: showGuided ? '#fff' : undefined }}
-              >
-                🎯
-              </button>
-              {/* Toggle de modo */}
-              <button
-                className={`frigovoice-mode-toggle ${mode === MODES.AGENT ? 'frigovoice-mode-toggle--agent' : ''}`}
-                onClick={() => setMode(mode === MODES.AGENT ? MODES.RAG : MODES.AGENT)}
-                title={mode === MODES.AGENT
-                  ? 'Modo: Agente (SQL directo + Tools). Click para cambiar a RAG.'
-                  : 'Modo: RAG (ChromaDB). Click para cambiar a Agente.'}
-              >
-                {mode === MODES.AGENT ? 'Agent' : 'RAG'}
-              </button>
+              {/* Los controles del asistente no aplican en la pestaña de mensajes */}
+              {tab === TABS.CHAT && (
+                <>
+                  {/* 🎯 Consulta guiada */}
+                  <button
+                    className="frigovoice-mode-toggle"
+                    onClick={() => setShowGuided(!showGuided)}
+                    title="Consulta guiada: elige formulario, columna y operación"
+                    style={{ background: showGuided ? '#7c3aed' : undefined, color: showGuided ? '#fff' : undefined }}
+                  >
+                    🎯
+                  </button>
+                  {/* Toggle de modo */}
+                  <button
+                    className={`frigovoice-mode-toggle ${mode === MODES.AGENT ? 'frigovoice-mode-toggle--agent' : ''}`}
+                    onClick={() => setMode(mode === MODES.AGENT ? MODES.RAG : MODES.AGENT)}
+                    title={mode === MODES.AGENT
+                      ? 'Modo: Agente (SQL directo + Tools). Click para cambiar a RAG.'
+                      : 'Modo: RAG (ChromaDB). Click para cambiar a Agente.'}
+                  >
+                    {mode === MODES.AGENT ? 'Agent' : 'RAG'}
+                  </button>
+                </>
+              )}
               <button className="frigovoice-header__close" onClick={() => setIsOpen(false)}>
                 {'\u2715'}
               </button>
             </div>
           </div>
 
+          {/* Pestañas: asistente / mensaje al administrador */}
+          <div className="frigovoice-tabs">
+            <button
+              className={`frigovoice-tab ${tab === TABS.CHAT ? 'frigovoice-tab--active' : ''}`}
+              onClick={() => setTab(TABS.CHAT)}
+            >
+              💬 Asistente
+            </button>
+            <button
+              className={`frigovoice-tab ${tab === TABS.ADMIN ? 'frigovoice-tab--active' : ''}`}
+              onClick={() => { setTab(TABS.ADMIN); setMsgAviso(null); }}
+              title={esAdmin
+                ? 'Mensajes que te mandaron desde la app'
+                : 'Escribile al administrador; te contesta desde acá'}
+            >
+              ✉️ Mensaje a ADMIN
+              {pendientes > 0 && <span className="frigovoice-tab__badge">{pendientes}</span>}
+            </button>
+          </div>
+
+          {/* ✉️ PESTAÑA: MENSAJE A ADMIN */}
+          {tab === TABS.ADMIN && (
+            <div className="frigovoice-admin">
+              {msgAviso && (
+                <div className={`frigovoice-admin__aviso frigovoice-admin__aviso--${msgAviso.tipo}`}>
+                  {msgAviso.texto}
+                </div>
+              )}
+
+              {/* Escribir al administrador: lo puede hacer cualquiera */}
+              <form className="frigovoice-admin__form" onSubmit={enviarAlAdmin}>
+                <input
+                  type="text"
+                  value={msgAsunto}
+                  onChange={(e) => setMsgAsunto(e.target.value)}
+                  placeholder="Asunto (ej: Error al guardar el PD-04)"
+                  maxLength={150}
+                />
+                <textarea
+                  value={msgTexto}
+                  onChange={(e) => setMsgTexto(e.target.value)}
+                  placeholder="Contá qué pasó, en qué formulario y con qué lote…"
+                  rows={3}
+                />
+                <button type="submit" disabled={msgEnviando || !msgAsunto.trim() || !msgTexto.trim()}>
+                  {msgEnviando ? 'Enviando…' : '📨 Enviar al administrador'}
+                </button>
+                <small>
+                  Se registra como ticket y le llega una notificación por correo al administrador.
+                </small>
+              </form>
+
+              {/* Bandeja: el admin ve todo; el resto, solo lo suyo con la respuesta */}
+              <div className="frigovoice-admin__lista">
+                <div className="frigovoice-admin__lista-cab">
+                  <strong>
+                    {esAdmin
+                      ? `🔔 Notificaciones recibidas (${mensajes.length})`
+                      : `📬 Mis mensajes (${mensajes.length})`}
+                  </strong>
+                  <button type="button" onClick={cargarMensajes} disabled={msgCargando}>
+                    {msgCargando ? '⏳' : '🔄'}
+                  </button>
+                </div>
+
+                {mensajes.length === 0 && !msgCargando && (
+                  <div className="frigovoice-admin__vacio">
+                    {esAdmin ? 'No hay mensajes todavía.' : 'Todavía no enviaste ningún mensaje.'}
+                  </div>
+                )}
+
+                {mensajes.map((t) => {
+                  const estado = String(t.estado || 'abierto').toLowerCase();
+                  return (
+                    <div key={t.id} className={`frigovoice-admin__item frigovoice-admin__item--${estado}`}>
+                      <div className="frigovoice-admin__item-cab">
+                        <strong>{t.titulo}</strong>
+                        <span className="frigovoice-admin__estado">
+                          {ESTADOS_MENSAJE.find(e => e.value === estado)?.label || estado}
+                        </span>
+                      </div>
+                      <div className="frigovoice-admin__meta">
+                        👤 {t.creadoPorNombre || 'Desconocido'}
+                        {t.creadoEn && ` · ${new Date(t.creadoEn).toLocaleString('es-EC')}`}
+                      </div>
+                      <div className="frigovoice-admin__texto">{t.descripcion}</div>
+
+                      {t.respuestaAdmin && (
+                        <div className="frigovoice-admin__respuesta">
+                          <strong>↩️ Respuesta{t.respondidoPor ? ` de ${t.respondidoPor}` : ''}:</strong>
+                          <div>{t.respuestaAdmin}</div>
+                        </div>
+                      )}
+
+                      {/* Contestar y cerrar: solo el administrador */}
+                      {esAdmin && (
+                        <div className="frigovoice-admin__acciones">
+                          <textarea
+                            value={respuestas[t.id] || ''}
+                            onChange={(e) => setRespuestas(p => ({ ...p, [t.id]: e.target.value }))}
+                            placeholder="Escribí la respuesta…"
+                            rows={2}
+                          />
+                          <div className="frigovoice-admin__botones">
+                            <button
+                              type="button"
+                              onClick={() => enviarRespuesta(t, false)}
+                              disabled={!String(respuestas[t.id] || '').trim()}
+                            >
+                              ↩️ Responder
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => enviarRespuesta(t, true)}
+                              disabled={!String(respuestas[t.id] || '').trim()}
+                            >
+                              ✅ Responder y cerrar
+                            </button>
+                            <select value={estado} onChange={(e) => cambiarEstadoMensaje(t, e.target.value)}>
+                              {ESTADOS_MENSAJE.map(e => (
+                                <option key={e.value} value={e.value}>{e.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 💬 PESTAÑA: ASISTENTE */}
+          {tab === TABS.CHAT && (
+          <>
           {/* Mensajes */}
           <div className="frigovoice-messages">
             {messages.map((msg, i) => (
@@ -536,6 +763,8 @@ export default function FrigoVoice() {
               </button>
             )}
           </div>
+          </>
+          )}
         </div>
       )}
     </>
