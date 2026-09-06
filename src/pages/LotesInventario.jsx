@@ -7,6 +7,7 @@ import {
   liberarLote,
   addLote,
   getArbol,
+  getRaicesLotes,
   getMovimientos,
   sincronizarDesdeFormularios,
   getCambioProcesoResumen,
@@ -41,6 +42,7 @@ const EMPTY_NUEVO = {
 function ArbolNodo({ nodo, nivel = 0 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = nodo.hijos?.length > 0;
+  const tieneRendimiento = nodo.rendimientoAcumuladoPct != null;
   return (
     <div className="li-arbol-nodo" style={{ paddingLeft: nivel * 22 }}>
       <div className="li-arbol-item" onClick={() => hasChildren && setExpanded(e => !e)}>
@@ -51,6 +53,16 @@ function ArbolNodo({ nodo, nivel = 0 }) {
         <span className="li-arbol-prod">{nodo.producto}</span>
         <span className={`li-arbol-estado li-estado-${nodo.estado}`}>{nodo.estado}</span>
         <span className="li-arbol-peso">{n(nodo.pesoNeto).toFixed(2)} lbs neto</span>
+        {hasChildren && (
+          <span className="li-arbol-acumulado" title="Peso neto acumulado de todos los descendientes finales (hojas)">
+            ↳ {n(nodo.pesoNetoAcumuladoHojas).toFixed(2)} lbs acumulado
+          </span>
+        )}
+        {tieneRendimiento && (
+          <span className="li-arbol-rendimiento" title="% acumulado respecto al peso de entrada de la materia prima raíz">
+            {nodo.rendimientoAcumuladoPct.toFixed(2)}% rendimiento
+          </span>
+        )}
       </div>
       {expanded && hasChildren && nodo.hijos.map(h => (
         <ArbolNodo key={h.id} nodo={h} nivel={nivel + 1} />
@@ -217,6 +229,9 @@ export default function LotesInventario() {
   const [nuevo, setNuevo]      = useState({ ...EMPTY_NUEVO });
   const [arbolLote, setArbolLote] = useState(null);
   const [arbolData, setArbolData] = useState(null);
+  // Lotes "raíz" (materia prima, sin LotePadre) para elegir sin escribir a mano
+  const [raicesLotes, setRaicesLotes] = useState([]);
+  const [raicesCargadas, setRaicesCargadas] = useState(false);
   const [filtroProc, setFiltroProc] = useState('');
   const [loading, setLoading]  = useState(false);
   const [error, setError]      = useState(null);
@@ -254,6 +269,12 @@ export default function LotesInventario() {
   useEffect(() => {
     cargarLotes();
   }, [cargarLotes]);
+
+  // Materia prima raíz para el selector rápido: se pide solo la primera vez
+  // que se entra a la pestaña del árbol.
+  useEffect(() => {
+    if (tab === 'arbol') cargarRaices();
+  }, [tab, cargarRaices]);
 
   // Las plantillas dan el código legible (FOR-PD-04) del templateId del lote.
   // Si falla, el filtro cae al templateId crudo y la página sigue andando.
@@ -373,6 +394,20 @@ export default function LotesInventario() {
       setArbolData(null);
     }
   };
+
+  // Materia prima raíz: se carga una sola vez, la primera vez que se entra a
+  // la pestaña del árbol (evita pedirla si el usuario nunca la usa).
+  const cargarRaices = useCallback(async () => {
+    if (raicesCargadas) return;
+    try {
+      const data = await getRaicesLotes();
+      setRaicesLotes(Array.isArray(data) ? data : []);
+    } catch {
+      setRaicesLotes([]);
+    } finally {
+      setRaicesCargadas(true);
+    }
+  }, [raicesCargadas]);
 
   // ── Sincronizar desde formularios ──
   const handleSincronizar = async () => {
@@ -497,6 +532,23 @@ export default function LotesInventario() {
       {/* ── ÁRBOL ── */}
       {tab === 'arbol' && (
         <div className="li-arbol-panel">
+          {raicesLotes.length > 0 && (
+            <div className="li-arbol-search">
+              <label>Materia prima (lotes raíz):</label>
+              <select
+                className="li-input"
+                value=""
+                onChange={e => { if (e.target.value) handleVerArbol(e.target.value); }}
+              >
+                <option value="">Elegir de la lista…</option>
+                {raicesLotes.map(r => (
+                  <option key={r.id ?? r.lote} value={r.lote}>
+                    {r.lote} — {r.producto || r.proceso || 'Sin producto'} ({n(r.pesoEntrada).toFixed(0)} lbs)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="li-arbol-search">
             <label>Buscar árbol por lote:</label>
             <input

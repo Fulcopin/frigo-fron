@@ -388,6 +388,8 @@
 .li-arbol-proc { color: #64748b; min-width: 100px; }
 .li-arbol-prod { color: #374151; flex: 1; }
 .li-arbol-peso { color: #15803d; font-family: monospace; font-size: 11px; }
+.li-arbol-acumulado { color: #7c3aed; font-family: monospace; font-size: 11px; white-space: nowrap; }
+.li-arbol-rendimiento { color: #b45309; font-family: monospace; font-size: 11px; font-weight: 700; white-space: nowrap; }
 
 /* ── Responsive ── */
 @media (max-width: 640px) {

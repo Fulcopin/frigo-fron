@@ -1468,13 +1468,11 @@ function CambioProcesosConfig({ element, onChange }) {
 
           {(element?.cambioProcesLoteCol || columnasLote[0]?.label) && element?.cambioProcesoCantidadCol && (
             <div style={{ fontSize: '12px', color: '#15803d', fontWeight: 600, lineHeight: 1.6 }}>
-              ✅ Por cada fila se anota <strong>{element?.cambioProcesoCantidadCol}</strong> del lote
-              de <strong>{element?.cambioProcesLoteCol || columnasLote[0]?.label}</strong>
+              ✅ Por cada fila: saldo del lote de <strong>{element?.cambioProcesLoteCol || columnasLote[0]?.label}</strong>{' '}
+              − valor de <strong>{element?.cambioProcesoCantidadCol}</strong>
               {element?.cambioProcesoDest && <> → proceso <strong>{element.cambioProcesoDest}</strong></>}.
               <div style={{ color: '#166534', fontWeight: 500, marginTop: '2px' }}>
-                <strong>El saldo NO se resta:</strong> el lote cambió de etapa, no se consumió.
-                En Inventario aparece como 🔄 Cambio de Proceso con la cantidad enviada.
-                Para que además descuente, activá «Restar del Inventario de Lotes».
+                En Inventario de Lotes aparecerá como 🔄 Cambio de Proceso con la cantidad enviada.
               </div>
             </div>
           )}

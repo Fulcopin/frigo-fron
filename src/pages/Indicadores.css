@@ -101,3 +101,57 @@
 .ind-card-table th { background: #f8fafc; color: #64748b; }
 .ind-num { text-align: right; font-variant-numeric: tabular-nums; }
 .ind-total-row td { border-top: 2px solid #e2e8f0; }
+
+/* En vivo: marca los indicadores que suman formularios todavia sin cerrar. */
+.ind-vivo {
+  margin-left: 4px;
+  color: #b45309;
+  font-weight: 800;
+  cursor: help;
+}
+
+.ind-aviso-vivo {
+  margin: 6px 0 10px;
+  padding: 8px 12px;
+  border: 1px solid #fcd34d;
+  border-left: 4px solid #f59e0b;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #78350f;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+/* Indicador apagado: se explica por que, en vez de un grafico vacio. */
+.ind-card-problema {
+  margin: 4px 0 8px;
+  padding: 12px 14px;
+  border: 1px solid #fcd34d;
+  border-left: 4px solid #f59e0b;
+  border-radius: 8px;
+  background: #fffbeb;
+  text-align: left;
+}
+
+.ind-problema-motivo {
+  margin: 0 0 6px;
+  color: #78350f;
+  font-weight: 600;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.ind-problema-sug {
+  margin: 0 0 6px;
+  color: #78350f;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.ind-problema-cols {
+  margin: 0 0 10px;
+  color: #92400e;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  word-break: break-word;
+}

@@ -145,6 +145,16 @@ const ERPDashboard = () => {
     const [colSearch, setColSearch]     = useState('');   // buscador dentro del panel
     const [modoSeleccion, setModoSeleccion] = useState(false); // checks en la cabecera
 
+    // ─── Orden de las columnas ──────────────────────────────────────────────
+    // El orden de esta lista es el orden de las columnas del Excel. Antes salía
+    // siempre el orden del formulario y había que mover las columnas a mano en
+    // Excel después de cada descarga.
+    // [] = todavía no se tocó nada: manda el orden del formulario.
+    const [colOrder, setColOrder]         = useState([]);
+    const [showOrdenPanel, setShowOrdenPanel] = useState(false);
+    const [dragCol, setDragCol]           = useState(null);   // columna que se está arrastrando
+    const [dropCol, setDropCol]           = useState(null);   // columna sobre la que se va a soltar
+
     // Une las tablas de un mismo formulario en una sola fila (por posición) y
     // descarta las filas que quedan sin ningún dato. Sin esto el Excel sale con
     // las filas dispersas: una trae solo las horas, la siguiente solo las libras.
@@ -298,6 +308,12 @@ const ERPDashboard = () => {
     // Verifica si una clave (ya limpia) debe ignorarse
     const isIgnored = (rawKey) => {
         if (!rawKey) return true;
+        // Todo lo que arranca con "_" es dato interno de la fila, no una columna
+        // del reporte: _deleted, _rowSpan, _apiCodigoDe/_apiCodigoId y el
+        // desglose de la calculadora de celda (_calc_<columna>, que es un JSON).
+        // Sin esto el Excel salía con una columna "CALC PESO NETO TOTAL" con el
+        // JSON crudo adentro.
+        if (String(rawKey).trim().startsWith('_')) return true;
         const upper = String(rawKey).toUpperCase().trim();
         return IGNORED.has(upper) || upper === '' || upper === 'ID';
     };
@@ -594,7 +610,11 @@ const ERPDashboard = () => {
         if (guardada?.visibleCols?.length) {
             // Cargar todas las columnas guardadas (incluyendo las que actualmente
             // no tienen datos en el rango — el usuario las eligió explícitamente).
-            setVisibleCols(new Set(guardada.visibleCols.length ? guardada.visibleCols : columns));
+            setVisibleCols(new Set(guardada.visibleCols));
+            // El armado guardado se graba EN ORDEN, así que ese mismo array es
+            // el orden de las columnas. No se pisa el orden que el usuario
+            // pueda estar acomodando ahora mismo (al recargar datos).
+            setColOrder(prev => (prev.length ? prev : guardada.visibleCols));
         } else {
             setVisibleCols(new Set(columns));
         }
@@ -605,16 +625,39 @@ const ERPDashboard = () => {
     // colsMostradas = lo que se dibuja en pantalla; en modo selección se
     //                 muestran TODAS (las desmarcadas en gris) para poder
     //                 volver a marcarlas desde la misma cabecera
-    const marcadasCols = useMemo(() => {
-        // Columnas con datos reales que están marcadas
-        const fromData = columns.filter(c => !visibleCols || visibleCols.has(c));
-        // Columnas elegidas explícitamente en el croquis que aún no tienen datos
-        // en el rango actual (p.ej. columnas de totales o de otro período).
-        if (!visibleCols) return fromData;
+
+    // Todas las columnas conocidas: las que traen datos en el rango, más las
+    // elegidas explícitamente en el croquis que todavía no tienen datos
+    // (p.ej. columnas de totales o de otro período).
+    const todasLasCols = useMemo(() => {
+        if (!visibleCols) return columns;
         const dataSet = new Set(columns);
         const extras = Array.from(visibleCols).filter(c => !dataSet.has(c));
-        return extras.length > 0 ? [...fromData, ...extras] : fromData;
+        return extras.length > 0 ? [...columns, ...extras] : columns;
     }, [columns, visibleCols]);
+
+    // Aplica el orden elegido por el usuario. Las columnas que él nunca movió
+    // (o que aparecieron después) se quedan al final, en el orden del formulario.
+    const ordenarCols = useCallback((cols) => {
+        if (colOrder.length === 0) return cols;
+        const pos = new Map(colOrder.map((c, i) => [c, i]));
+        return [...cols].sort((a, b) => {
+            const pa = pos.has(a) ? pos.get(a) : Number.MAX_SAFE_INTEGER;
+            const pb = pos.has(b) ? pos.get(b) : Number.MAX_SAFE_INTEGER;
+            return pa - pb;   // sort estable: entre las no movidas manda el formulario
+        });
+    }, [colOrder]);
+
+    // Orden completo (marcadas y no marcadas): es la referencia para mover.
+    const ordenCompleto = useMemo(
+        () => ordenarCols(todasLasCols),
+        [todasLasCols, ordenarCols]
+    );
+
+    const marcadasCols = useMemo(
+        () => ordenCompleto.filter(c => !visibleCols || visibleCols.has(c)),
+        [ordenCompleto, visibleCols]
+    );
 
     // ─── Columnas numéricas (candidatas a sumarse) ──────────────────────────
     // El N° de registro es un identificador: sumarlo no significa nada.
@@ -741,9 +784,11 @@ const ERPDashboard = () => {
     const { resumenRows, sumCols } = useMemo(() => {
         // Las puestas en "Listar filas" no se totalizan: su celda trae los
         // valores de las filas, no un número.
-        const cols = numericCols.filter(c =>
+        // Se respeta el orden elegido para las columnas: el resumen y su Excel
+        // salen acomodados igual que el detalle.
+        const cols = ordenarCols(numericCols.filter(c =>
             (!visibleCols || visibleCols.has(c)) && opDe(c) !== 'no' && opDe(c) !== 'lista'
-        );
+        ));
         const porFormulario = agruparPor === CLAVE_FORM;
         const grpCol = !porFormulario && agruparPor && columns.includes(agruparPor)
             ? agruparPor : null;
@@ -784,7 +829,7 @@ const ERPDashboard = () => {
         }
 
         return { resumenRows: out, sumCols: cols };
-    }, [rows, columns, numericCols, visibleCols, agruparPor, opDe, formLabels]);
+    }, [rows, columns, numericCols, visibleCols, agruparPor, opDe, formLabels, ordenarCols]);
 
     // Título de la primera columna del resumen
     const etiquetaGrupo = agruparPor === CLAVE_FORM
@@ -1055,7 +1100,7 @@ const ERPDashboard = () => {
 
     // colsMostradas = lo que se dibuja; en modo selección de columnas se
     // muestran TODAS (las desmarcadas en gris) para poder volver a marcarlas.
-    const colsMostradas = modoSeleccion ? columns : activeCols;
+    const colsMostradas = modoSeleccion ? ordenCompleto : activeCols;
 
     // ─── Nombre base del archivo ────────────────────────────────────────────
     const nombreArchivo = () => (filters.templateId
@@ -1069,9 +1114,19 @@ const ERPDashboard = () => {
     const downloadExcelVista = () => {
         const wb = XLSX.utils.book_new();
         let sheet, data;
+        // Orden de las columnas del archivo. Se pasa explícito a json_to_sheet:
+        // deducirlo de las claves del objeto no garantiza el orden elegido.
+        let cabecera;
 
         if (modoResumen) {
             const etiqueta = etiquetaGrupo;
+            const tituloOp = (c) =>
+                `${c} (${OPERACIONES.find(op => op.value === opDe(c))?.label})`;
+            cabecera = [
+                etiqueta,
+                ...colsFijasVisibles.map(f => f.label),
+                ...sumCols.map(tituloOp),
+            ];
             data = resumenRows.map(g => {
                 const o = { [etiqueta]: g.label };
                 // FORMULARIOS y REGISTROS salen solo si están incluidos en ⚙️
@@ -1135,6 +1190,7 @@ const ERPDashboard = () => {
             }
 
             sheet = filasSeleccionadas.length > 0 ? 'Selección' : 'Datos';
+            cabecera = activeCols;
         }
 
         if (data.length === 0 || Object.keys(data[0]).length === 0) {
@@ -1145,7 +1201,7 @@ const ERPDashboard = () => {
         const conSubtotales = !modoResumen && subtotalPorForm;
         const hayFilaTotal  = !modoResumen && (subtotalPorForm || filasSeleccionadas.length > 0);
 
-        const ws = XLSX.utils.json_to_sheet(data);
+        const ws = XLSX.utils.json_to_sheet(data, { header: cabecera });
         const rango = XLSX.utils.decode_range(ws['!ref']);
         styleSheet(ws, rango);
 
@@ -1163,6 +1219,20 @@ const ERPDashboard = () => {
         if (modoResumen) sufijo = '_TOTALES';
         else if (filasSeleccionadas.length > 0) sufijo = '_SELECCION';
         XLSX.writeFile(wb, `${nombreArchivo()}${sufijo}_${filters.inicio}_${filters.fin}.xlsx`);
+    };
+
+    // Encabezado de una pestaña con las columnas en el orden elegido por el
+    // usuario. `fijas` van siempre primero (la identidad del formulario) y las
+    // columnas que él nunca movió quedan al final, como venían.
+    const cabeceraOrdenada = (filas, fijas = []) => {
+        const vistas = [];
+        const yaEsta = new Set();
+        filas.forEach(f => Object.keys(f).forEach(k => {
+            if (!yaEsta.has(k)) { yaEsta.add(k); vistas.push(k); }
+        }));
+        const primeras = fijas.filter(c => yaEsta.has(c));
+        const resto = vistas.filter(c => !primeras.includes(c));
+        return [...primeras, ...ordenarCols(resto)];
     };
 
     // ─── Descarga Excel multi-pestaña (una pestaña por sección) ─────────────
@@ -1295,7 +1365,10 @@ const ERPDashboard = () => {
 
         // ── Pestaña 1: Info General (header + firmas) ─────────────────────
         if (infoRows.length > 0) {
-            const ws = XLSX.utils.json_to_sheet(infoRows);
+            // Mismo orden de columnas que se armó en pantalla
+            const ws = XLSX.utils.json_to_sheet(infoRows, {
+                header: cabeceraOrdenada(infoRows, ID_COLS),
+            });
             styleSheet(ws, XLSX.utils.decode_range(ws['!ref']));
             XLSX.utils.book_append_sheet(wb, ws, 'Info General');
         }
@@ -1314,7 +1387,9 @@ const ERPDashboard = () => {
             while (usedNames.has(attempt)) attempt = `${name.substring(0, 26)}_${n++}`;
             usedNames.add(attempt);
 
-            const ws = XLSX.utils.json_to_sheet(secRows);
+            const ws = XLSX.utils.json_to_sheet(secRows, {
+                header: cabeceraOrdenada(secRows, ID_COLS),
+            });
             styleSheet(ws, XLSX.utils.decode_range(ws['!ref']));
             XLSX.utils.book_append_sheet(wb, ws, attempt);
             secIdx++;
@@ -1325,7 +1400,11 @@ const ERPDashboard = () => {
             const exportRows = rows.map(r =>
                 Object.fromEntries(activeCols.map(c => [c, r[c] ?? '-']))
             );
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportRows), 'Datos');
+            XLSX.utils.book_append_sheet(
+                wb,
+                XLSX.utils.json_to_sheet(exportRows, { header: activeCols }),
+                'Datos'
+            );
         }
 
         XLSX.writeFile(wb, `${fileLabel}_${filters.inicio}_${filters.fin}.xlsx`);
@@ -1365,6 +1444,49 @@ const ERPDashboard = () => {
     const toggleAll = (val) => {
         setVisibleCols(val ? new Set(columns) : new Set());
     };
+    // ─── Mover columnas ──────────────────────────────────────────────────────
+    // Lo que se ordena acá es el Excel: la tabla de la pantalla y el archivo
+    // salen con las columnas en este orden, así no hay que acomodarlas a mano.
+
+    // Deja `col` pegada a `ref` (antes o después) y mantiene el resto del orden,
+    // incluidas las columnas ocultas: no se reacomoda todo por mover una.
+    const soltarColumnaSobre = (col, ref, despues = false) => {
+        if (!col || !ref || col === ref) return;
+        const base = ordenCompleto.filter(c => c !== col);
+        let at = base.indexOf(ref);
+        if (at < 0) at = base.length;
+        else if (despues) at += 1;
+        base.splice(at, 0, col);
+        setColOrder(base);
+    };
+
+    // Un paso a la izquierda / derecha DENTRO de la lista que se está viendo:
+    // si se contaran las columnas ocultas, el botón parecería no hacer nada.
+    const moverColumna = (col, paso, lista) => {
+        const i = lista.indexOf(col);
+        const destino = i + paso;
+        if (i < 0 || destino < 0 || destino >= lista.length) return;
+        soltarColumnaSobre(col, lista[destino], paso > 0);
+    };
+
+    // Arrastre: al soltar, la columna toma el lugar de la de destino
+    const soltarArrastre = (ref) => {
+        if (dragCol && ref && dragCol !== ref) {
+            const desde = ordenCompleto.indexOf(dragCol);
+            const hasta = ordenCompleto.indexOf(ref);
+            soltarColumnaSobre(dragCol, ref, desde < hasta);
+        }
+        setDragCol(null);
+        setDropCol(null);
+    };
+
+    const ordenarAlfabetico = () => {
+        setColOrder([...ordenCompleto].sort((a, b) => a.localeCompare(b, 'es')));
+    };
+
+    // Vuelve al orden con el que viene armado el formulario
+    const restaurarOrden = () => setColOrder([]);
+
     // Deja marcadas solo las numéricas + las de identidad (fecha/plantilla)
     const toggleSoloNumericas = () => {
         setVisibleCols(new Set(['FECHA', 'PLANTILLA', ...numericCols]
@@ -1438,7 +1560,9 @@ const ERPDashboard = () => {
 
     const guardarConfigActual = async () => {
         const actual = {
-            visibleCols: Array.from(visibleCols ?? columns),
+            // Se graba EN EL ORDEN elegido: al volver a abrir el formulario las
+            // columnas salen acomodadas igual que en la última descarga.
+            visibleCols: marcadasCols.length ? marcadasCols : Array.from(visibleCols ?? columns),
             opPorCol,
             unaLineaPorForm,
             ocultarVacias,
@@ -1498,6 +1622,7 @@ const ERPDashboard = () => {
 
         setConfigForm({ estado: 'lista', data: null });
         setVisibleCols(new Set(columns));
+        setColOrder([]);   // vuelve el orden del formulario
         setConfigGuardadaAviso('🗑 Configuración borrada. Vuelve a mostrarse todo.');
         setTimeout(() => setConfigGuardadaAviso(''), 4000);
     };
@@ -1766,6 +1891,13 @@ const ERPDashboard = () => {
                             >
                                 🗂️ Columnas {visibleCols ? `(${visibleCols.size}/${columns.length})` : ''}
                             </button>
+                            <button
+                                className={`btn-orden${colOrder.length ? ' on' : ''}`}
+                                onClick={() => setShowOrdenPanel(p => !p)}
+                                title="Acomodar el orden de las columnas antes de descargar, para no tener que moverlas en Excel"
+                            >
+                                ↕️ Orden de columnas
+                            </button>
                         </>
                     )}
 
@@ -1773,7 +1905,7 @@ const ERPDashboard = () => {
                         onClick={downloadExcelVista}
                         className="btn-excel-erp"
                         disabled={rows.length === 0}
-                        title="Exporta lo que ves: solo las columnas seleccionadas (y los totales si el modo resumen está activo)"
+                        title="Exporta lo que ves: las columnas seleccionadas, en el orden que armaste (y los totales si el modo resumen está activo)"
                     >
                         📥 {modoResumen ? 'Excel totales' : 'Excel vista'}
                     </button>
@@ -1782,7 +1914,7 @@ const ERPDashboard = () => {
                         onClick={downloadExcel}
                         className="btn-excel-det"
                         disabled={rows.length === 0}
-                        title="Exporta el detalle completo, una pestaña por sección del formulario"
+                        title="Exporta el detalle completo, una pestaña por sección del formulario, con las columnas en el orden que armaste"
                     >
                         📚 Detallado
                     </button>
@@ -2042,6 +2174,12 @@ const ERPDashboard = () => {
                                 📄 Armar resumen de una línea
                             </button>
                             <button
+                                onClick={() => { setShowOrdenPanel(true); setShowColPanel(false); }}
+                                title="Acomodar el orden en que salen las columnas elegidas"
+                            >
+                                ↕️ Ordenar columnas
+                            </button>
+                            <button
                                 onClick={guardarConfigActual}
                                 title="Guarda este armado en el servidor para este formulario"
                             >
@@ -2119,6 +2257,113 @@ const ERPDashboard = () => {
                     {/* Cómo va a salir la primera línea del Excel con lo que
                         está marcado ahora. Sin esto hay que descargar el archivo
                         para descubrir si el armado quedó bien. */}
+                    {renderVistaPrevia()}
+                </div>
+            )}
+
+            {/* ── ORDEN DE LAS COLUMNAS ──────────────────────────────────────
+                El Excel sale con las columnas en este orden. Se arrastra la
+                columna, o se la mueve con ▲▼ (en la tablet el arrastre no
+                siempre responde, y con los botones siempre se puede). */}
+            {showOrdenPanel && (
+                <div className="orden-panel">
+                    <div className="col-panel-header">
+                        <div className="col-panel-title">
+                            <strong>↕️ Orden de las columnas del Excel</strong>
+                            <span className="col-panel-sub">
+                                Arrastrá una columna o movela con ▲▼ · el primero de la lista es
+                                la primera columna del archivo · <strong>{marcadasCols.length}</strong> columnas
+                                {colOrder.length === 0 && ' · ahora sale en el orden del formulario'}
+                            </span>
+                        </div>
+                        <div className="col-panel-actions">
+                            <button
+                                onClick={restaurarOrden}
+                                disabled={colOrder.length === 0}
+                                title="Vuelve al orden con el que está armado el formulario"
+                            >
+                                ↩️ Orden del formulario
+                            </button>
+                            <button onClick={ordenarAlfabetico} title="Ordena las columnas por nombre">
+                                🔤 A-Z
+                            </button>
+                            <button
+                                onClick={guardarConfigActual}
+                                title="Guarda este orden (y las columnas marcadas) en el servidor para este formulario"
+                            >
+                                💾 Guardar armado
+                            </button>
+                            <button
+                                className="col-panel-export"
+                                onClick={downloadExcelVista}
+                                disabled={rows.length === 0 || activeCols.length === 0}
+                                title="Descarga el Excel con las columnas en este orden"
+                            >
+                                📥 Descargar así ordenado
+                            </button>
+                            <button onClick={() => setShowOrdenPanel(false)}>✕ Cerrar</button>
+                        </div>
+                    </div>
+
+                    {marcadasCols.length === 0 ? (
+                        <p className="col-panel-empty">
+                            No hay columnas marcadas todavía: elegilas en 🗂️ Columnas.
+                        </p>
+                    ) : (
+                        <ol className="orden-lista">
+                            {marcadasCols.map((col, i) => {
+                                // Las marcadas pero vacías no llegan al archivo mientras
+                                // esté activo "sin columnas vacías": conviene avisarlo acá.
+                                const sale = activeCols.includes(col);
+                                let clase = 'orden-item';
+                                if (dragCol === col) clase += ' orden-item-drag';
+                                else if (dropCol === col && dragCol) clase += ' orden-item-drop';
+                                if (!sale) clase += ' orden-item-off';
+                                return (
+                                    <li
+                                        key={col}
+                                        className={clase}
+                                        draggable
+                                        onDragStart={() => setDragCol(col)}
+                                        onDragOver={e => {
+                                            if (!dragCol) return;
+                                            e.preventDefault();
+                                            if (dropCol !== col) setDropCol(col);
+                                        }}
+                                        onDrop={e => { e.preventDefault(); soltarArrastre(col); }}
+                                        onDragEnd={() => { setDragCol(null); setDropCol(null); }}
+                                    >
+                                        <span className="orden-pos">{i + 1}</span>
+                                        <span className="orden-asa" title="Arrastrar para mover">⠿</span>
+                                        <span className="orden-nombre" title={col}>{col}</span>
+                                        {!sale && (
+                                            <em className="orden-nota" title="No tiene datos en el rango: con “sin columnas vacías” no sale en el Excel">
+                                                vacía
+                                            </em>
+                                        )}
+                                        <span className="orden-flechas">
+                                            <button
+                                                onClick={() => moverColumna(col, -1, marcadasCols)}
+                                                disabled={i === 0}
+                                                title="Moverla una posición hacia la izquierda del Excel"
+                                            >
+                                                ▲
+                                            </button>
+                                            <button
+                                                onClick={() => moverColumna(col, 1, marcadasCols)}
+                                                disabled={i === marcadasCols.length - 1}
+                                                title="Moverla una posición hacia la derecha del Excel"
+                                            >
+                                                ▼
+                                            </button>
+                                        </span>
+                                    </li>
+                                );
+                            })}
+                        </ol>
+                    )}
+
+                    {/* Cómo queda el archivo con este orden */}
                     {renderVistaPrevia()}
                 </div>
             )}
@@ -2340,7 +2585,17 @@ const ERPDashboard = () => {
                                 {sumCols.map(col => (
                                     <th
                                         key={col}
-                                        title={`${OPERACIONES.find(o => o.value === opDe(col))?.label} de ${col}`}
+                                        draggable
+                                        onDragStart={() => setDragCol(col)}
+                                        onDragOver={e => {
+                                            if (!dragCol) return;
+                                            e.preventDefault();
+                                            if (dropCol !== col) setDropCol(col);
+                                        }}
+                                        onDrop={e => { e.preventDefault(); soltarArrastre(col); }}
+                                        onDragEnd={() => { setDragCol(null); setDropCol(null); }}
+                                        className={dragCol === col ? 'th-drag' : (dropCol === col && dragCol ? 'th-drop' : '')}
+                                        title={`${OPERACIONES.find(o => o.value === opDe(col))?.label} de ${col} — arrastrá el encabezado para cambiar el orden`}
                                     >
                                         {signoDe(opDe(col))} {col}
                                     </th>
@@ -2391,13 +2646,27 @@ const ERPDashboard = () => {
                                     <th className="th-fixed th-num">#</th>
                                     {colsMostradas.map(col => {
                                         const marcada = !visibleCols || visibleCols.has(col);
+                                        // El encabezado se arrastra para cambiar el orden de las
+                                        // columnas: el Excel sale como quedó la tabla.
+                                        let claseTh = modoSeleccion && !marcada ? 'th-off' : '';
+                                        if (dragCol === col) claseTh += ' th-drag';
+                                        else if (dropCol === col && dragCol) claseTh += ' th-drop';
                                         return (
                                             <th
                                                 key={col}
+                                                draggable
+                                                onDragStart={() => setDragCol(col)}
+                                                onDragOver={e => {
+                                                    if (!dragCol) return;
+                                                    e.preventDefault();
+                                                    if (dropCol !== col) setDropCol(col);
+                                                }}
+                                                onDrop={e => { e.preventDefault(); soltarArrastre(col); }}
+                                                onDragEnd={() => { setDragCol(null); setDropCol(null); }}
                                                 title={modoSeleccion
                                                     ? `${col} — clic para ${marcada ? 'quitarla del' : 'incluirla en el'} Excel`
-                                                    : col}
-                                                className={modoSeleccion && !marcada ? 'th-off' : ''}
+                                                    : `${col} — arrastrá el encabezado para cambiar el orden de las columnas`}
+                                                className={claseTh}
                                             >
                                                 {modoSeleccion ? (
                                                     <label className="th-check">

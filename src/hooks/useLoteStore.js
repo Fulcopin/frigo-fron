@@ -104,9 +104,52 @@ export async function getLoteByNumero(numero) {
   return _apiFetch(`${API_LOTES}/numero/${encodeURIComponent(numero)}`).then(_norm);
 }
 
+/**
+ * Normaliza un nodo del árbol de trazabilidad, recursivamente.
+ * ReferenceHandler.Preserve (configurado en el backend) envuelve las listas
+ * como { "$id": "N", "$values": [...] } — sin esto, "hijos" llegaría como un
+ * objeto en vez de un array y la recursión visual del árbol se cortaría en
+ * el primer nivel sin dar ningún error.
+ */
+function _normArbolNodo(nodo) {
+  if (!nodo) return nodo;
+  const hijosCrudos = Array.isArray(nodo.hijos) ? nodo.hijos
+    : (nodo.hijos && Array.isArray(nodo.hijos['$values'])) ? nodo.hijos['$values']
+    : [];
+  return {
+    ...nodo,
+    id:            nodo.id            ?? nodo.Id,
+    lote:          nodo.lote          ?? nodo.Lote          ?? '',
+    proceso:       nodo.proceso       ?? nodo.Proceso       ?? '',
+    producto:      nodo.producto      ?? nodo.Producto      ?? '',
+    clasificacion: nodo.clasificacion ?? nodo.Clasificacion ?? '',
+    pesoEntrada:   nodo.pesoEntrada   ?? nodo.PesoEntrada   ?? 0,
+    desperdicio:   nodo.desperdicio   ?? nodo.Desperdicio   ?? 0,
+    pesoNeto:      nodo.pesoNeto      ?? nodo.PesoNeto      ?? 0,
+    estado:        nodo.estado        ?? nodo.Estado        ?? 'disponible',
+    lotePadre:     nodo.lotePadre     ?? nodo.LotePadre     ?? '',
+    fecha:         nodo.fecha         ?? nodo.Fecha         ?? null,
+    formId:        nodo.formId        ?? nodo.FormId        ?? null,
+    templateId:    nodo.templateId    ?? nodo.TemplateId    ?? '',
+    pesoNetoAcumuladoHojas: Number(nodo.pesoNetoAcumuladoHojas ?? nodo.PesoNetoAcumuladoHojas ?? nodo.pesoNeto ?? nodo.PesoNeto ?? 0),
+    rendimientoAcumuladoPct: nodo.rendimientoAcumuladoPct ?? nodo.RendimientoAcumuladoPct ?? null,
+    hijos: hijosCrudos.map(_normArbolNodo),
+  };
+}
+
 /** Obtiene el árbol de descendientes de un lote (árbol recursivo desde el backend). */
 export async function getArbol(numeroLote) {
-  return _apiFetch(`${API_LOTES}/arbol/${encodeURIComponent(numeroLote)}`).then(_norm);
+  return _apiFetch(`${API_LOTES}/arbol/${encodeURIComponent(numeroLote)}`).then(_normArbolNodo);
+}
+
+/**
+ * Lotes "raíz" (materia prima, sin LotePadre) para poblar un selector y elegir
+ * uno sin escribir el número a mano.
+ * @param {string} [proceso] — filtro opcional por proceso
+ */
+export async function getRaicesLotes(proceso) {
+  const qs = proceso ? `?proceso=${encodeURIComponent(proceso)}` : '';
+  return _apiFetch(`${API_LOTES}/raices${qs}`).then(_normList);
 }
 
 /** Obtiene estadísticas generales del inventario. */
@@ -235,7 +278,7 @@ export async function consumirCantidad({ numeroLote, cantidad, proceso, formId, 
  * @returns {Promise<Object>} el lote, con el saldo intacto
  */
 export async function registrarTraspaso({ numeroLote, cantidad, proceso, formId, notas }) {
-  const res = await _apiFetch(`${API_LOTES}/registrar-traspaso`, {
+  return _apiFetch(`${API_LOTES}/registrar-traspaso`, {
     method: 'POST',
     body: JSON.stringify({
       numeroLote,
@@ -244,10 +287,7 @@ export async function registrarTraspaso({ numeroLote, cantidad, proceso, formId,
       formId: formId ? Number(formId) : null,
       notas: notas || null,
     }),
-  });
-  // El backend responde { lote, creado }: 'creado' avisa si el lote no existía
-  // y se dio de alta en este mismo traspaso.
-  return _norm(res?.lote ?? res);
+  }).then(_norm);
 }
 
 /**

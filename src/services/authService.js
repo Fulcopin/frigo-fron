@@ -1,12 +1,24 @@
 // Servicio de autenticación para FishCort
 const API_BASE_URL = import.meta.env.VITE_API_EXTERNAL_URL || 'http://188.40.197.172:8094/api'; // API Externa
 
+// ⏳ Cuánto dura la sesión DENTRO de la aplicación.
+//
+// El token de la API externa vence a la hora. Atar la sesión de la app a ese
+// vencimiento echaba al operario en plena carga del formulario: la pantalla
+// saltaba al login y, peor, el borrador que guardaba después quedaba sin dueño
+// (userName vacío) y no aparecía en "Mis Borradores". Un turno de planta dura
+// bastante más que una hora, así que la sesión de la app se maneja aparte y se
+// renueva sola cada vez que se guarda algo.
+const SESION_HORAS = 10;
+
 class AuthService {
   constructor() {
     this.storageKeys = {
       user: 'fishcort_user',
       token: 'fishcort_token',
-      tokenExpiration: 'fishcort_token_expiration'
+      tokenExpiration: 'fishcort_token_expiration',
+      // Vencimiento de la sesión de la app (distinto del token de la API)
+      sessionExpiration: 'fishcort_session_expiration'
     };
     
     // Mapeo de roles de API a roles internos
@@ -111,6 +123,20 @@ class AuthService {
     localStorage.setItem(this.storageKeys.user, JSON.stringify(userData));
     localStorage.setItem(this.storageKeys.token, token);
     localStorage.setItem(this.storageKeys.tokenExpiration, expirationDate.toISOString());
+    this.renewSession();   // la sesión de la app arranca con sus SESION_HORAS
+  }
+
+  /**
+   * Cuándo vence la sesión de la app.
+   * Las sesiones abiertas con la versión anterior no tienen la clave nueva:
+   * para esas se sigue usando el vencimiento del token, como antes.
+   */
+  getSessionExpiration() {
+    const propia = localStorage.getItem(this.storageKeys.sessionExpiration);
+    const fuente = propia || localStorage.getItem(this.storageKeys.tokenExpiration);
+    if (!fuente) return null;
+    const fecha = new Date(fuente);
+    return Number.isNaN(fecha.getTime()) ? null : fecha;
   }
 
   /**
@@ -120,6 +146,7 @@ class AuthService {
     localStorage.removeItem(this.storageKeys.user);
     localStorage.removeItem(this.storageKeys.token);
     localStorage.removeItem(this.storageKeys.tokenExpiration);
+    localStorage.removeItem(this.storageKeys.sessionExpiration);
   }
 
   /**
@@ -151,17 +178,16 @@ class AuthService {
   isSessionActive() {
     const user = this.getCurrentUser();
     const token = this.getToken();
-    const expirationStr = localStorage.getItem(this.storageKeys.tokenExpiration);
+    // Manda el vencimiento de la SESIÓN, no el del token de la API externa:
+    // ese token dura una hora y solo lo necesitan las consultas al ERP.
+    const expirationDate = this.getSessionExpiration();
 
-    if (!user || !token || !expirationStr) {
+    if (!user || !token || !expirationDate) {
       return false;
     }
 
     try {
-      const expirationDate = new Date(expirationStr);
-      const now = new Date();
-
-      if (expirationDate <= now) {
+      if (expirationDate <= new Date()) {
         // Sesión expirada, limpiar
         this.logout();
         return false;
@@ -234,13 +260,11 @@ class AuthService {
    * Obtener tiempo restante de sesión (en minutos)
    */
   getSessionTimeRemaining() {
-    const expirationStr = localStorage.getItem(this.storageKeys.tokenExpiration);
-    if (!expirationStr) return 0;
+    const expirationDate = this.getSessionExpiration();
+    if (!expirationDate) return 0;
 
     try {
-      const expirationDate = new Date(expirationStr);
-      const now = new Date();
-      const diffMs = expirationDate - now;
+      const diffMs = expirationDate - new Date();
       return Math.max(0, Math.floor(diffMs / (1000 * 60)));
     } catch (e) {
       return 0;
@@ -248,7 +272,11 @@ class AuthService {
   }
 
   /**
-   * Renovar sesión (extender expiración)
+   * Renovar la sesión: vuelve a arrancar el contador de SESION_HORAS.
+   *
+   * Se llama cada vez que el usuario guarda (formulario o borrador, incluido el
+   * respaldo automático de cada hora): mientras esté trabajando, la sesión no
+   * se le cae encima.
    */
   renewSession() {
     const user = this.getCurrentUser();
@@ -256,11 +284,16 @@ class AuthService {
 
     if (user && token) {
       const newExpirationDate = new Date();
-      newExpirationDate.setHours(newExpirationDate.getHours() + 8);
-      localStorage.setItem(this.storageKeys.tokenExpiration, newExpirationDate.toISOString());
+      newExpirationDate.setHours(newExpirationDate.getHours() + SESION_HORAS);
+      localStorage.setItem(this.storageKeys.sessionExpiration, newExpirationDate.toISOString());
       return true;
     }
     return false;
+  }
+
+  /** Horas que dura la sesión de la app (para mostrarlo en pantalla) */
+  get horasDeSesion() {
+    return SESION_HORAS;
   }
 }
 

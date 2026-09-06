@@ -282,6 +282,13 @@ const consumptionService = {
       if (filters.endDate) queryParams.append('endDate', filters.endDate);
       if (filters.templateName) queryParams.append('templateName', filters.templateName);
       if (filters.area) queryParams.append('area', filters.area);
+      // Los registros que los operarios todavia tienen abiertos. Vienen
+      // marcados con esBorrador para poder avisar que la cifra puede cambiar.
+      if (filters.incluirBorradores) queryParams.append('incluirBorradores', 'true');
+      // Refresco incremental: solo lo que cambio desde la ultima sincronizacion.
+      // El historico completo son 10 MB; pedirlo cada 30 s no es tiempo real,
+      // es una descarga que nunca termina de llegar.
+      if (filters.modificadoDesde) queryParams.append('modificadoDesde', filters.modificadoDesde);
 
       const url = `${API_URL_CONSUMPTIONS}/all-sections-data${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
       const response = await fetch(url, {

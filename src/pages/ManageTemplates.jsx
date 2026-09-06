@@ -41,6 +41,13 @@ function ManageTemplates() {
   const [showPreview, setShowPreview] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState(null);
 
+  // 📋 Duplicar plantilla
+  const [duplicarOrigen, setDuplicarOrigen] = useState(null);
+  const [duplicarCodigo, setDuplicarCodigo] = useState('');
+  const [duplicarNombre, setDuplicarNombre] = useState('');
+  const [duplicando, setDuplicando] = useState(false);
+  const [duplicarError, setDuplicarError] = useState('');
+
   const currentUser = authService.getCurrentUser();
   
   // 🔒 Solo admin puede eliminar (SGI y tu persona)
@@ -81,6 +88,84 @@ function ManageTemplates() {
     .sort((a, b) =>
       (a.codigo || '').localeCompare(b.codigo || '', 'es', { numeric: true, sensitivity: 'base' })
     );
+
+  // ── 📋 DUPLICAR PLANTILLA ──────────────────────────────────────────────
+  //
+  // Crea una plantilla nueva con TODO el contenido de otra: encabezado, tablas,
+  // firmas y configuración. Lo único que cambia es la identidad —código y
+  // nombre, que se piden en el modal— y que la copia nace activa aunque el
+  // original esté obsoleto: si la estás duplicando es para usarla.
+  //
+  // El código no tiene índice único en la base, así que un duplicado no falla
+  // en el servidor. Se avisa acá y se deja decidir.
+
+  /** Sugiere «PD-04-COPIA», y si ya existe, «PD-04-COPIA 2», «3»… */
+  const sugerirCodigoCopia = (codigo) => {
+    const base = `${(codigo || 'PLANTILLA').trim()}-COPIA`;
+    const usados = new Set(templates.map(t => String(t.codigo || '').trim().toUpperCase()));
+    if (!usados.has(base.toUpperCase())) return base;
+    for (let i = 2; i < 100; i++) {
+      if (!usados.has(`${base} ${i}`.toUpperCase())) return `${base} ${i}`;
+    }
+    return base;
+  };
+
+  const handleOpenDuplicar = (template) => {
+    setDuplicarError('');
+    setDuplicarOrigen(template);
+    setDuplicarCodigo(sugerirCodigoCopia(template.codigo));
+    setDuplicarNombre(`${template.nombre || 'Plantilla'} (copia)`);
+  };
+
+  const handleConfirmDuplicar = async () => {
+    if (!duplicarOrigen) return;
+    const codigo = duplicarCodigo.trim();
+    const nombre = duplicarNombre.trim();
+    if (!codigo || !nombre) { setDuplicarError('El código y el nombre son obligatorios.'); return; }
+
+    setDuplicando(true);
+    setDuplicarError('');
+    try {
+      // Se relee del servidor en vez de copiar el objeto del listado: así la
+      // copia sale del estado guardado real y no de lo que la lista tenga
+      // cargado en memoria.
+      const resGet = await fetch(`${API_URL_TEMPLATES}/${duplicarOrigen.templateID}`);
+      if (!resGet.ok) throw new Error(`No se pudo leer la plantilla original (${resGet.status})`);
+      const original = await resGet.json();
+
+      // Se copia TODO y solo se saca la identidad, para que cualquier campo que
+      // se agregue a la plantilla en el futuro se duplique solo.
+      const copia = { ...original };
+      for (const k of ['templateID', 'TemplateID', 'createdAt', 'CreatedAt',
+                       'updatedAt', 'UpdatedAt', '$id', '$values']) {
+        delete copia[k];
+      }
+      copia.codigo = codigo;
+      copia.nombre = nombre;
+      copia.isObsolete = false;
+      copia.isDraft = false;
+
+      const resPost = await fetch(API_URL_TEMPLATES, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(copia),
+      });
+      if (!resPost.ok) {
+        const detalle = await resPost.text();
+        throw new Error(`El servidor rechazó la copia (${resPost.status}): ${detalle.slice(0, 200)}`);
+      }
+      const creada = await resPost.json();
+
+      // El listado viene ordenado por fecha de creación descendente.
+      setTemplates(prev => [creada, ...prev]);
+      setDuplicarOrigen(null);
+    } catch (err) {
+      console.error('Error al duplicar la plantilla:', err);
+      setDuplicarError(err.message || 'No se pudo duplicar la plantilla.');
+    } finally {
+      setDuplicando(false);
+    }
+  };
 
   const handleDeleteTemplate = async (templateId) => {
     if (!canDelete) {
@@ -461,6 +546,15 @@ function ManageTemplates() {
                   {template.isObsolete ? '✅ Reactivar' : '🚫 Obsoleto'}
                 </button>
 
+                <button
+                  onClick={() => handleOpenDuplicar(template)}
+                  className="btn-secondary"
+                  style={{ background: '#8b5cf6', color: 'white', border: 'none' }}
+                  title="Crear una plantilla nueva con el mismo contenido"
+                >
+                  📋 Duplicar
+                </button>
+
                 <Link 
                   to={`/edit-template/${template.templateID}`} 
                   className="btn-secondary"
@@ -641,6 +735,76 @@ function ManageTemplates() {
       )}
 
       {/* ========== MODAL: PRE-VISUALIZACIÓN ========== */}
+      {/* 📋 MODAL: duplicar plantilla */}
+      {duplicarOrigen && (
+        <div className="modal-overlay" onClick={() => !duplicando && setDuplicarOrigen(null)}>
+          <div className="modal-manual-history" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <div className="modal-header-mh">
+              <div>
+                <h2 className="modal-title-mh">📋 Duplicar plantilla</h2>
+                <p className="modal-subtitle-mh">
+                  Copia de <strong>{duplicarOrigen.codigo}</strong> — {duplicarOrigen.nombre}
+                </p>
+              </div>
+              <button className="modal-close-mh" onClick={() => setDuplicarOrigen(null)} disabled={duplicando}>✕</button>
+            </div>
+
+            <div style={{ padding: '18px 20px' }}>
+              <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#4b5563', lineHeight: 1.5 }}>
+                Se crea una plantilla nueva con el mismo encabezado, las mismas tablas,
+                las mismas firmas y la misma configuración. El original no se toca.
+              </p>
+
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '4px' }}>
+                Código nuevo *
+              </label>
+              <input
+                type="text"
+                value={duplicarCodigo}
+                onChange={(e) => setDuplicarCodigo(e.target.value)}
+                disabled={duplicando}
+                style={{ width: '100%', padding: '9px 11px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', marginBottom: '14px' }}
+              />
+
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '4px' }}>
+                Nombre nuevo *
+              </label>
+              <input
+                type="text"
+                value={duplicarNombre}
+                onChange={(e) => setDuplicarNombre(e.target.value)}
+                disabled={duplicando}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !duplicando) handleConfirmDuplicar(); }}
+                style={{ width: '100%', padding: '9px 11px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px' }}
+              />
+
+              {duplicarError && (
+                <div style={{ marginTop: '14px', padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#b91c1c', fontSize: '13px' }}>
+                  {duplicarError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                <button
+                  onClick={() => setDuplicarOrigen(null)}
+                  disabled={duplicando}
+                  style={{ padding: '9px 16px', border: '1px solid #cbd5e1', background: '#fff', color: '#374151', borderRadius: '8px', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmDuplicar}
+                  disabled={duplicando}
+                  style={{ padding: '9px 16px', border: 'none', background: duplicando ? '#a78bfa' : '#8b5cf6', color: '#fff', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: duplicando ? 'default' : 'pointer' }}
+                >
+                  {duplicando ? '⏳ Duplicando…' : `📋 Crear copia`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showPreview && previewTemplate && (
         <div className="modal-overlay" onClick={() => setShowPreview(false)}>
           <div className="modal-preview" onClick={(e) => e.stopPropagation()}>

@@ -35,6 +35,10 @@ import MassBalanceForm from "./pages/MassBalanceForm"
 import LotesInventario from "./pages/LotesInventario"
 import Kardex from "./pages/Kardex"
 import ClasificacionProduccion from "./pages/ClasificacionProduccion"
+import ResumenLotes from "./pages/ResumenLotes"
+import ProductionPlanForm from "./pages/ProductionPlanForm"
+import RegistroPersonal from "./pages/RegistroPersonal"
+import PersonalDashboard from "./pages/PersonalDashboard"
 import FrigoVoice from "./components/FrigoVoice"
 import "./App.css"
 
@@ -82,6 +86,7 @@ function Navigation() {
     { to: "/catalogo-firmas", icon: "📋", label: "Catálogo Firmas", show: isAdminOrSupervisor },
     { divider: true, label: "Administración", show: isAdminOrSupervisor },
     { to: "/dashboard-erp", icon: "📊", label: "Descargar Datos", show: isAdminOrSupervisor },
+    { to: "/resumen-lotes", icon: "📦", label: "Resumen de Lotes", show: isAdminOrSupervisor },
     { to: "/alerts", icon: "🔔", label: "Alertas", show: isAdminOrSupervisor },
     { to: "/consumptions", icon: "📊", label: "Consumos", show: isAdminOrSupervisor },
     { to: "/indicadores", icon: "📈", label: "Indicadores", show: isAdminOrSupervisor },
@@ -96,6 +101,10 @@ function Navigation() {
     { to: "/lotes-inventario", icon: "📦", label: "Inventario de Lotes", show: true },
     { to: "/kardex", icon: "📒", label: "Kardex y Costos", show: true },
     { to: "/clasificacion-produccion", icon: "🏷️", label: "Clasificación Producción", show: true },
+    { to: "/production-plan", icon: "📊", label: "Comparativo Plan", show: true },
+    { divider: true, label: "Personal", show: true },
+    { to: "/registro-personal", icon: "👥", label: "Registro de Personal", show: true },
+    { to: "/personal-indicadores", icon: "📈", label: "Indicadores de Personal", show: isAdminOrSupervisor },
   ]
 
   return (
@@ -213,6 +222,7 @@ function getPageName(pathname) {
     '/alerts': 'Gestión de Alertas',
     '/tickets': 'Tickets / Mesa de Ayuda',
     '/dashboard-erp': 'Dashboard ERP',
+    '/resumen-lotes': 'Resumen de Lotes',
     '/consumption-dashboard': 'Dashboard de Consumos',
     '/indicadores': 'Indicadores',
     '/session-history': 'Registro de Tiempos',
@@ -225,6 +235,9 @@ function getPageName(pathname) {
     '/lotes-inventario': 'Inventario de Lotes',
     '/kardex': 'Kardex y Costos',
     '/clasificacion-produccion': 'Clasificación de Producción',
+    '/production-plan': 'Comparativo Plan Producción',
+    '/registro-personal': 'Registro de Personal',
+    '/personal-indicadores': 'Indicadores de Personal',
   }
   
   // Para rutas dinámicas como /edit-template/:id
@@ -381,6 +394,22 @@ function App() {
                   <Indicadores />
                 </RoleBasedRoute>
               } />
+
+              {/* Registro de Personal - Acceso para todos los roles */}
+              <Route path="/registro-personal" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <RegistroPersonal />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } />
+
+              {/* Indicadores de Personal - Solo Admin y Supervisor */}
+              <Route path="/personal-indicadores" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <PersonalDashboard />
+                </RoleBasedRoute>
+              } />
               
               {/* Registro de Tiempos - Solo Admin y Supervisor */}
               <Route path="/session-history" element={
@@ -425,6 +454,15 @@ function App() {
               } />
 
               {/* Inventario de Lotes - Acceso para todos */}
+              {/* Resumen de lotes: los pesos de todos los formularios, sumados por lote */}
+              <Route path="/resumen-lotes" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <ResumenLotes />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } />
+
               <Route path="/lotes-inventario" element={
                 <ProtectedRoute>
                   <ErrorBoundary>
@@ -447,6 +485,15 @@ function App() {
                 <ProtectedRoute>
                   <ErrorBoundary>
                     <ClasificacionProduccion />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } />
+
+              {/* Comparativo Plan Producción - Acceso para todos */}
+              <Route path="/production-plan" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <ProductionPlanForm />
                   </ErrorBoundary>
                 </ProtectedRoute>
               } />

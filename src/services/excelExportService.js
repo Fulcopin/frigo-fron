@@ -13,6 +13,8 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
+import { alinearBodyData } from '../utils/emparejarBodyData';
+import { columnasParaDibujar } from '../utils/columnasDelCuadro';
 
 /**
  * 🎨 PALETA DE COLORES CORPORATIVOS FRIGOLAB
@@ -474,6 +476,13 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     return currentRow + 2;
   }
   
+  // Cada seccion se empareja con sus datos mirando el contenido y no solo el
+  // id: si se reordenaron los cuadros en Editar Plantilla con pestanas abiertas,
+  // lo escrito quedo con el id del cuadro vecino y la descarga salia en blanco.
+  // Queda alineado por posicion, que es como lo lee el resto de la funcion.
+  // Ver utils/emparejarBodyData.
+  if (Array.isArray(bodyData)) bodyData = alinearBodyData(bodyElements, bodyData);
+
   // Recorrer cada sección (tabla) definida en bodyElements
   for (let index = 0; index < bodyElements.length; index++) {
     const section = bodyElements[index];
@@ -481,7 +490,7 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     // 👁️ Verificar si la sección está oculta
     let _elementData = null;
     if (Array.isArray(bodyData)) {
-      _elementData = bodyData.find(bd => bd && (bd.id === section.id || String(bd.id) === String(section.id))) || bodyData[index];
+      _elementData = bodyData[index] ?? null;
     } else if (typeof bodyData === 'object' && bodyData !== null) {
       _elementData = bodyData[section.name || section.id || `section_${index}`];
     }
@@ -836,9 +845,13 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     
     // Encabezados de columnas (usar label de las columnas)
     const hiddenColsMap = Array.isArray(bodyData) && bodyData[index] ? bodyData[index].hiddenColumns || {} : {};
-    const columns = (section.columns || []).map((col, originalIndex) => ({
+    // Un formulario guardado se descarga con las columnas con las que se lleno:
+    // si alguna se renombro despues en Editar Plantilla, se recupera con su
+    // nombre de entonces en vez de bajar la columna vacia.
+    const colsParaDibujar = columnasParaDibujar(section, tableData);
+    const columns = colsParaDibujar.map((col, originalIndex) => ({
       ...col,
-      originalIndex,
+      originalIndex: col.originalIndex ?? originalIndex,
       isHidden: hiddenColsMap[col.label || col.name || col.header] === true || col.isHidden === true
     })).filter(c => !c.isHidden);
     

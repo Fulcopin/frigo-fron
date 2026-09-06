@@ -44,6 +44,34 @@ function normalizeSectionsData(raw) {
   return { forms };
 }
 
+/**
+ * Mezcla un refresco parcial con lo que ya estaba en pantalla.
+ *
+ * El servidor manda solo los formularios que cambiaron desde la ultima
+ * sincronizacion; los demas siguen siendo validos y no viajan. Se reemplaza por
+ * formID —un formulario editado pisa a su version vieja— y se agregan los
+ * nuevos.
+ *
+ * `borradoresActivos` son los ids de los borradores que siguen abiertos. Los que
+ * ya no estan se eliminan: el operario cerro el formulario y ese mismo dato ya
+ * llego como formulario guardado. Sin esto la cifra quedaria contada dos veces.
+ */
+export function mezclarFormularios(previo, cambios, borradoresActivos) {
+  const porId = new Map((previo.forms || []).map(f => [f.formID, f]));
+  (cambios || []).forEach(f => porId.set(f.formID, f));
+
+  let forms = [...porId.values()];
+  const vivos = Array.isArray(borradoresActivos)
+    ? borradoresActivos
+    : borradoresActivos?.$values;
+  if (Array.isArray(vivos)) {
+    const abiertos = new Set(vivos);
+    forms = forms.filter(f => !f.esBorrador || abiertos.has(f.formID));
+  }
+  forms.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return { forms };
+}
+
 function getVal(row, colName) {
   if (!row || !colName) return '';
   if (row[colName] !== undefined && row[colName] !== null) return row[colName];
@@ -215,9 +243,85 @@ function termBuckets(term, data, groupBy) {
   return out;
 }
 
+/**
+ * ¿Alguno de los registros que alimentan este indicador esta sin cerrar?
+ * Se recorre el mismo filtro que usa el calculo, para no marcar con asterisco
+ * un indicador que en realidad no toca ningun borrador.
+ */
+function indicadorConBorradores(ind, data) {
+  const terms = getTerms(ind);
+  if (!terms.length) return false;
+  return (data.forms || []).some(f => {
+    if (!f.esBorrador) return false;
+    return terms.some(t => {
+      if (!isAnyForm(t.formName) && formName(f) !== t.formName) return false;
+      return (f.sections || []).some(sec => {
+        if (!isAnyTable(t.tableName) && (sec.sectionTitle || 'Sección') !== t.tableName) return false;
+        return (sec.rows || []).length > 0;
+      });
+    });
+  });
+}
+
 function getTerms(ind) {
   if (ind.mode === 'combined') return (ind.terms || []).filter(t => t && (t.agg === 'count' || t.valueCol));
   return [{ formName: ind.formName, tableName: ind.tableName, valueCol: ind.valueCol, agg: ind.agg }];
+}
+
+/** Para comparar nombres de columna: sin tildes, sin simbolos y sin "de/del/la". */
+function normCol(s) {
+  return String(s ?? '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(de|del|la|el|los|las)\b/g, ' ')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Por que este indicador no muestra nada.
+ *
+ * "Sin datos para mostrar" no distingue entre "ese dia no se produjo" y "la
+ * columna que este indicador busca ya no existe". Lo segundo pasa cada vez que
+ * se renombra una columna en Editar Plantilla: el indicador queda apuntando al
+ * nombre viejo y se apaga en silencio. Aca se dice cual es el caso.
+ *
+ * @returns {null|{motivo:string, disponibles?:string[], sugerencia?:string}}
+ */
+export function diagnosticoIndicador(ind, data) {
+  for (const t of getTerms(ind)) {
+    if (t.agg !== 'count' && !t.valueCol) continue;
+
+    const forms = (data.forms || []).filter(f => isAnyForm(t.formName) || formName(f) === t.formName);
+    if (!forms.length) {
+      return { motivo: `No hay registros de «${t.formName}» en el rango de fechas elegido.` };
+    }
+
+    const secciones = forms.flatMap(f => (f.sections || [])
+      .filter(sec => isAnyTable(t.tableName) || (sec.sectionTitle || 'Sección') === t.tableName));
+    if (!secciones.length) {
+      return { motivo: `Ningún registro de «${t.formName}» trae la tabla «${t.tableName}».` };
+    }
+    if (t.agg === 'count') continue;
+
+    // Se busca con la MISMA regla que usa el calculo, para no avisar de una
+    // columna que en realidad si se esta leyendo.
+    const hayDato = secciones.some(sec => (sec.rows || []).some(r => {
+      const v = getVal(r, t.valueCol);
+      return v !== '' && v !== null && v !== undefined;
+    }));
+    if (hayDato) continue;
+
+    const disponibles = [...new Set(secciones.flatMap(sec => sec.columns || []))];
+    const objetivo = normCol(t.valueCol);
+    const sugerencia = disponibles.find(c => normCol(c) === objetivo)
+      || disponibles.find(c => normCol(c).includes(objetivo) || objetivo.includes(normCol(c)));
+    return {
+      motivo: `La columna «${t.valueCol}» ya no existe en «${t.tableName}»${sugerencia ? '' : ' y no hay ninguna parecida'}.`,
+      disponibles,
+      sugerencia,
+    };
+  }
+  return null;
 }
 
 function computeIndicator(ind, data) {
@@ -299,6 +403,8 @@ export default function Indicadores() {
   const [loadError, setLoadError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  // En vivo: sumar tambien lo que los operarios estan llenando ahora mismo.
+  const [incluirBorradores, setIncluirBorradores] = useState(true);
 
   const [indicators, setIndicators] = useState([]);
   const [indError, setIndError] = useState('');
@@ -313,15 +419,30 @@ export default function Indicadores() {
   const [tabDraft, setTabDraft] = useState(null);   // pestaña en edición/creación
 
   const inFlight = useRef(false);
+  // Reloj del SERVIDOR de la ultima respuesta: es el punto de corte del proximo
+  // refresco incremental. Se usa el del servidor y no el del navegador porque
+  // unos segundos de diferencia entre relojes se comerian formularios.
+  const ultimaSync = useRef(null);
 
-  const loadData = useCallback(async (f, { silent = false } = {}) => {
+  const loadData = useCallback(async (f, { silent = false, incremental = false } = {}) => {
     if (inFlight.current) return;
     inFlight.current = true;
     try {
       if (!silent) { setLoading(true); }
       setLoadError('');
-      const raw = await consumptionService.getAllSectionsData(f);
-      setAllData(normalizeSectionsData(raw));
+      const desde = incremental ? ultimaSync.current : null;
+      const raw = await consumptionService.getAllSectionsData({
+        ...f, incluirBorradores, modificadoDesde: desde || undefined,
+      });
+      const datos = normalizeSectionsData(raw);
+      // Si la API todavia no entiende modificadoDesde devuelve el historico
+      // entero y sin `parcial`: se reemplaza, que es como funcionaba antes.
+      if (desde && raw?.parcial) {
+        setAllData(prev => mezclarFormularios(prev, datos.forms, raw.borradoresActivos));
+      } else {
+        setAllData(datos);
+      }
+      ultimaSync.current = raw?.serverTime || null;
       setLastUpdated(new Date());
       setLoadedOnce(true);
     } catch (e) {
@@ -337,7 +458,7 @@ export default function Indicadores() {
       inFlight.current = false;
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [incluirBorradores]);
 
   // Cargar indicadores desde la BASE DE DATOS (API)
   const loadIndicators = useCallback(async () => {
@@ -381,10 +502,26 @@ export default function Indicadores() {
   // Tiempo real: refresca los datos solo, sin parpadeo, mientras la pestaña del navegador esté visible
   useEffect(() => {
     if (!autoRefresh) return undefined;
-    const tick = () => { if (!document.hidden) loadData(filters, { silent: true }); };
+    const tick = () => {
+      if (document.hidden) return;
+      loadData(filters, { silent: true, incremental: true });
+      // Los indicadores y las pestanas viven en la base: si otro usuario crea
+      // uno, aparece solo. Antes habia que recargar la pagina para verlo.
+      loadIndicators();
+      loadTabs();
+    };
     const id = setInterval(tick, REFRESH_MS);
     return () => clearInterval(id);
-  }, [autoRefresh, filters, loadData]);
+  }, [autoRefresh, filters, loadData, loadIndicators, loadTabs]);
+
+  // Al prender o apagar "en vivo" hay que volver a pedir los datos: la bandera
+  // viaja al servidor, no se filtra en pantalla.
+  const primerRender = useRef(true);
+  useEffect(() => {
+    if (primerRender.current) { primerRender.current = false; return; }
+    loadData(filters);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [incluirBorradores]);
 
   const verTodo = () => { const empty = { startDate: '', endDate: '' }; setFilters(empty); loadData(empty); };
 
@@ -412,6 +549,10 @@ export default function Indicadores() {
   }, [scopedData]);
 
   // Las columnas del constructor salen de los datos YA filtrados por la pestaña
+  const sinCerrar = useMemo(
+    () => (scopedData.forms || []).filter(f => f.esBorrador).length,
+    [scopedData]
+  );
   const globalCols = useMemo(() => columnsForScope(scopedData, ALL, ALL), [scopedData]);
 
   // ----- CRUD de pestañas -----
@@ -711,11 +852,22 @@ export default function Indicadores() {
           <span className={`ind-live-dot ${autoRefresh ? 'on' : ''}`} />
           Tiempo real ({REFRESH_MS / 1000}s)
         </label>
+        <label className="ind-live" title="Suma tambien los formularios que los operadores tienen abiertos y todavia no cerraron. Son cifras que pueden cambiar.">
+          <input type="checkbox" checked={incluirBorradores} onChange={e => setIncluirBorradores(e.target.checked)} />
+          🟡 Incluir lo que se está llenando
+        </label>
         <span className="ind-hint">
           {loading ? 'Cargando formularios… puede tardar unos segundos'
-            : loadedOnce ? `${scopedData.forms.length} de ${allData.forms.length} formularios${dataDateRange ? ` · datos del ${dataDateRange.min} al ${dataDateRange.max}` : ''}${lastUpdated ? ` · actualizado ${lastUpdated.toLocaleTimeString('es-EC')}` : ''}` : ''}
+            : loadedOnce ? `${scopedData.forms.length} de ${allData.forms.length} formularios${sinCerrar ? ` · ${sinCerrar} sin cerrar*` : ''}${dataDateRange ? ` · datos del ${dataDateRange.min} al ${dataDateRange.max}` : ''}${lastUpdated ? ` · actualizado ${lastUpdated.toLocaleTimeString('es-EC')}` : ''}` : ''}
         </span>
       </div>
+
+      {sinCerrar > 0 && (
+        <div className="ind-aviso-vivo">
+          * Hay <strong>{sinCerrar}</strong> {sinCerrar === 1 ? 'registro que un operador todavía no cerró' : 'registros que los operadores todavía no cerraron'}.
+          Los indicadores marcados con <strong>*</strong> los están sumando: esas cifras pueden cambiar hasta que se guarde el formulario.
+        </div>
+      )}
 
       {loadError && <div className="ind-error">{loadError}</div>}
       {indError && <div className="ind-error">{indError}</div>}
@@ -853,6 +1005,7 @@ export default function Indicadores() {
 // Modal para ver un indicador en grande
 function ExpandedModal({ ind, data, tabLabel, onClose }) {
   const series = useMemo(() => computeIndicator(ind, data), [ind, data]);
+  const enVivo = useMemo(() => indicadorConBorradores(ind, data), [ind, data]);
   const total = series.reduce((s, d) => s + (Number(d.value) || 0), 0);
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -864,8 +1017,11 @@ function ExpandedModal({ ind, data, tabLabel, onClose }) {
       <div className="ind-modal" onClick={(e) => e.stopPropagation()}>
         <div className="ind-modal-head">
           <div>
-            <h2>{ind.title}</h2>
-            <span className="ind-card-meta">{tabLabel} · {scopeLabel(ind)} · {AGG_LABELS[ind.agg] || (ind.mode === 'combined' ? 'combinado' : '')}</span>
+            <h2>{ind.title}{enVivo && <span className="ind-vivo" title="Incluye formularios sin cerrar">*</span>}</h2>
+            <span className="ind-card-meta">
+              {tabLabel} · {scopeLabel(ind)} · {AGG_LABELS[ind.agg] || (ind.mode === 'combined' ? 'combinado' : '')}
+              {enVivo && ' · incluye registros sin cerrar, la cifra puede cambiar'}
+            </span>
           </div>
           <button className="ind-modal-close" onClick={onClose} title="Cerrar (Esc)">✕</button>
         </div>
@@ -933,12 +1089,22 @@ function FormTableCols({ data, value, onChange, showAgg }) {
 
 function IndicatorCard({ ind, data, onRemove, onEdit, onExpand }) {
   const series = useMemo(() => computeIndicator(ind, data), [ind, data]);
+  const enVivo = useMemo(() => indicadorConBorradores(ind, data), [ind, data]);
+  const problema = useMemo(
+    () => (series.length === 0 ? diagnosticoIndicador(ind, data) : null),
+    [series.length, ind, data]
+  );
   const total = series.reduce((s, d) => s + (Number(d.value) || 0), 0);
   return (
     <div className="ind-card">
       <div className="ind-card-head">
         <div>
-          <h3>{ind.title}</h3>
+          <h3>
+            {ind.title}
+            {enVivo && (
+              <span className="ind-vivo" title="Incluye formularios que los operadores todavía no cerraron: la cifra puede cambiar.">*</span>
+            )}
+          </h3>
           <span className="ind-card-meta">{scopeLabel(ind)}</span>
         </div>
         <div className="ind-card-actions">
@@ -947,9 +1113,27 @@ function IndicatorCard({ ind, data, onRemove, onEdit, onExpand }) {
           <button className="ind-card-remove" onClick={onRemove} title="Eliminar indicador">✕</button>
         </div>
       </div>
-      <button className="ind-card-chartbtn" onClick={onExpand} title="Ampliar">
-        <SimpleChart type={ind.chart} data={series} unit={ind.unit} kpiSubtitle={ind.title} />
-      </button>
+      {problema ? (
+        <div className="ind-card-problema">
+          <p className="ind-problema-motivo">⚠️ {problema.motivo}</p>
+          {problema.sugerencia && (
+            <p className="ind-problema-sug">
+              Se renombró: ahora se llama <strong>«{problema.sugerencia}»</strong>.
+              Editá el indicador y elegila para que vuelva a calcular.
+            </p>
+          )}
+          {problema.disponibles?.length > 0 && (
+            <p className="ind-problema-cols">
+              Columnas que sí existen hoy: {problema.disponibles.join(' · ')}
+            </p>
+          )}
+          <button className="ind-btn-sec" onClick={onEdit}>✎ Corregir indicador</button>
+        </div>
+      ) : (
+        <button className="ind-card-chartbtn" onClick={onExpand} title="Ampliar">
+          <SimpleChart type={ind.chart} data={series} unit={ind.unit} kpiSubtitle={ind.title} />
+        </button>
+      )}
       {ind.chart !== 'kpi' && series.length > 0 && (
         <details className="ind-card-table">
           <summary>Ver datos ({series.length})</summary>

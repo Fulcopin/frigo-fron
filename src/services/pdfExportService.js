@@ -13,6 +13,8 @@ import autoTable from 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
 import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
+import { alinearBodyData } from '../utils/emparejarBodyData';
+import { columnasParaDibujar } from '../utils/columnasDelCuadro';
 
 /**
  * Limpia texto para que jsPDF pueda renderizarlo correctamente.
@@ -1086,20 +1088,12 @@ export const exportFormToPDF = async (form, template, options = {}) => {
     // 3. Dibujar TODAS las secciones dinámicas del bodyElements
     console.log('📊 Dibujando secciones dinámicas del cuerpo...');
 
-    // Helper: busca el dato correspondiente a una sección en bodyData.
-    // Primero intenta por id (robusto frente a re-ordenamientos de secciones),
-    // luego cae al índice posicional como fallback.
-    const getSectionBodyData = (sectionDef, idx) => {
-      if (!Array.isArray(bodyData)) return null;
-      if (sectionDef.id !== undefined && sectionDef.id !== null) {
-        const byId = bodyData.find(bd =>
-          bd !== null && bd !== undefined &&
-          (bd.id === sectionDef.id || String(bd.id) === String(sectionDef.id))
-        );
-        if (byId !== undefined) return byId;
-      }
-      return bodyData[idx] ?? null;
-    };
+    // Cada seccion se empareja con sus datos mirando el contenido y no solo el
+    // id: si se reordenaron los cuadros en Editar Plantilla con pestanas
+    // abiertas, lo escrito quedo con el id del cuadro vecino y el reporte salia
+    // en blanco. Ver utils/emparejarBodyData.
+    const datosPorSeccion = alinearBodyData(bodyElements, bodyData);
+    const getSectionBodyData = (sectionDef, idx) => datosPorSeccion[idx] ?? null;
     
     for (let index = 0; index < bodyElements.length; index++) {
       const section = bodyElements[index];
@@ -1229,8 +1223,12 @@ export const exportFormToPDF = async (form, template, options = {}) => {
           // Los datos también usan 'label' como key: { "LOTE DE PROCESO": "jnd" }
           const hiddenColsMap = _elementData?.hiddenColumns || {};
           const isHiddenCol = (c) => hiddenColsMap[c.label || c.name || c.header] === true || c.isHidden === true;
-          const columns = section.columns.map((col, colIndex) => ({
-            originalIndex: colIndex,
+          // Un formulario guardado se imprime con las columnas con las que se
+          // lleno: si alguna se renombro despues en Editar Plantilla, se recupera
+          // con su nombre de entonces en vez de salir en blanco.
+          const colsParaDibujar = columnasParaDibujar(section, tableData);
+          const columns = colsParaDibujar.map((col, colIndex) => ({
+            originalIndex: col.originalIndex ?? colIndex,
             header: sanitizeText(col.label || col.name || 'Columna'),
             dataKey: col.label || col.name || col.id || `col_${colIndex}`,
             type: (col.type || '').toLowerCase(),

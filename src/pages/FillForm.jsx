@@ -11,6 +11,7 @@ import UserSelector from "../components/UserSelector"
 import ScrollButton from "../components/ScrollButton"
 import EspecieProductoSelector from "../components/EspecieProductoSelector"
 import ProductoAutocomplete from "../components/ProductoAutocomplete"
+import CalculadoraCelda from "../components/CalculadoraCelda"
 import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import { fetchUsers, filterUsersByPuesto, canUserSignForPuesto } from "../services/userService"
 import "./FillForm.css"
@@ -36,6 +37,8 @@ import {
   saldoDe, leerCelda, columnaLoteDe, esColumnaInventario, elementosDe,
 } from '../services/inventarioCeldaService';
 import { modoBusquedaProducto, destinoColumnaProducto } from '../utils/busquedaProducto';
+import { buscarCodigosEnUso, detalleDeUso } from '../services/codigosEnUsoService';
+import { validaEspecie, especieDelEncabezado, validarEspecieDeCodigo } from '../utils/validacionEspecie';
 import { DIGITOS_LOTE } from '../utils/validacionLote';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
@@ -43,7 +46,43 @@ const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
 
 const AUTOSAVE_INTERVAL = 30000;
+
+// ⏳ Respaldo automático EN EL SERVIDOR: cada hora el formulario abierto se
+// guarda como borrador, callado y sin cerrar la pestaña.
+// El autoguardado de 30 s vive solo en el localStorage de ESA tablet: si el
+// equipo se apaga o se cambia de máquina no hay de dónde sacar lo cargado. Este
+// respaldo sí queda en la base, en "Mis Borradores". Es silencioso a propósito:
+// el operario no tiene que atenderlo ni confirmarlo, solo tiene que estar.
+const DRAFT_AUTOSAVE_INTERVAL = 60 * 60 * 1000;   // 1 hora
 const AUTOSAVE_KEY_PREFIX = 'autosave_form_';
+
+// ➕ Detalle de la calculadora de celda.
+// Se guarda DENTRO de la fila, con la clave de la celda prefijada. Así el
+// desglose viaja con el borrador, con el formulario guardado y con el historial
+// de versiones, sin tabla aparte: las filas no tienen id estable, y una tabla
+// externa apuntando a "fila 3" se desalinea en cuanto alguien inserta una fila.
+// El prefijo "_" es la misma convención que ya usan _apiCodigoDe / _apiCodigoId:
+// quien pinta el formulario recorre las columnas de la plantilla y lo ignora.
+const CALC_PREFIJO = '_calc_';
+const claveCalculo = (cellName) => `${CALC_PREFIJO}${cellName}`;
+
+/** Lee el cálculo guardado de una celda. Una fila vieja o un JSON roto → null. */
+const calculoDeCelda = (row, cellName) => {
+  const crudo = row?.[claveCalculo(cellName)];
+  if (!crudo) return null;
+  try {
+    const d = typeof crudo === 'string' ? JSON.parse(crudo) : crudo;
+    return Array.isArray(d?.valores) ? { op: d.op || '+', valores: d.valores.map(v => String(v ?? '')) } : null;
+  } catch {
+    return null;
+  }
+};
+
+/** "12.5 + 8 + 3" — para el tooltip del botón de una celda ya calculada. */
+const resumenCalculo = (d) => {
+  const signo = { '+': '+', '-': '−', '*': '×', '/': '÷' }[d?.op] || '+';
+  return (d?.valores || []).filter(v => String(v).trim() !== '').join(` ${signo} `);
+};
 
 /**
  * Compara nombres de personas sin que una tilde, una mayúscula o un espacio de más
@@ -191,6 +230,7 @@ function FillForm() {
   const [reemplazosCheckbox, setReemplazosCheckbox] = useState({});
   
   // 🛡️ Guards para prevenir doble ejecución de guardado
+  const lookupsEnCursoRef = useRef(new Set()); // búsquedas por código ya lanzadas (celda + código)
   const isSavingRef = useRef(false);
   const isDraftSavingRef = useRef(false);
 
@@ -268,6 +308,11 @@ function FillForm() {
 
   // 🆕 Especies unificadas (ProductosUnion/Especies) para selector en cascada
   const [especiesUnionData, setEspeciesUnionData] = useState([]);
+
+  // ➕ Calculadora de celda: qué celda la abrió. null = ventana cerrada.
+  // Es una sola ventana para toda la tabla; abrirla por celda pintaría un modal
+  // por cada cuadro de la grilla.
+  const [calcCelda, setCalcCelda] = useState(null);
   // Panel de rango activo: { elementIndex, cellName } | null
   const [activeRangePanel, setActiveRangePanel] = useState(null);
 
@@ -1273,6 +1318,12 @@ useEffect(() => {
           { key: 'clasificacion', activo: true }, { key: 'tipoProducto', activo: true }, { key: 'producto', activo: true }
         ]).filter(c => c.activo !== false).forEach(c => { camposInit[c.key] = ''; });
         newTab.headerData[field.label] = [camposInit];
+      } else if (field.type === 'time' && /(inici|entrada)/i.test(field.label || '')) {
+        // ⏱️ Hora Inicial: se captura sola al abrir el formulario (editable).
+        // La Hora Final se captura al guardar (ver handleSave).
+        const ahora = new Date();
+        newTab.headerData[field.label] = field.defaultValue
+          || `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
       } else {
         newTab.headerData[field.label] = field.defaultValue || "";
       }
@@ -4954,14 +5005,134 @@ useEffect(() => {
     });
   }, [selectedTemplate, invDatos, handleTableFieldChangeWithAutoSave]);
 
+  /**
+   * Claves de fila que rellena la API por código en una tabla.
+   * El sufijo _colN se calcula igual que en handleTableFieldChangeWithAutoSave
+   * para que las etiquetas repetidas apunten a la misma celda.
+   *
+   * @returns {{triggerKey: string|null, keyDe: (ci:number)=>string, derivadas: string[]}}
+   *   derivadas = columnas que la API llena sola (peso, clasificación, …); las
+   *   columnas de escritura libre no entran porque las teclea el operario.
+   */
+  const clavesApiPorCodigo = (tableTemplate) => {
+    const cols = tableTemplate?.columns || [];
+    const idxPorEtiqueta = new Map();
+    const etiquetaDe = (col, ci) => col?.label || col?.header || col?.id || col?.name || `col_${ci}`;
+    cols.forEach((col, ci) => {
+      const lbl = etiquetaDe(col, ci);
+      if (!idxPorEtiqueta.has(lbl)) idxPorEtiqueta.set(lbl, []);
+      idxPorEtiqueta.get(lbl).push(ci);
+    });
+    const keyDe = (ci) => {
+      const lbl = etiquetaDe(cols[ci], ci);
+      return idxPorEtiqueta.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl;
+    };
+    const triggerIdx = cols.findIndex(c => c.label === tableTemplate?.apiCodigoTriggerCol);
+    return {
+      triggerKey: triggerIdx >= 0 ? keyDe(triggerIdx) : null,
+      keyDe,
+      derivadas: cols
+        .map((c, ci) => (c?.apiCodigo && !c.campoLibre && ci !== triggerIdx)
+          ? { key: keyDe(ci), label: etiquetaDe(c, ci), ci }
+          : null)
+        .filter(Boolean),
+    };
+  };
+
+  /**
+   * 🧹 Borra de una fila todo lo que había traído la API por código.
+   *
+   * Sin esto, cambiar o borrar el código deja el peso y la clasificación del
+   * código ANTERIOR pegados a la fila: se guarda un formulario donde el código
+   * dice una cosa y las libras dicen otra (lo que se vio en el PD-04 con una
+   * fila de 52 lb que no correspondía a ese código).
+   *
+   * @param {string} [opts.codigoABorrar] si se pasa, borra además la celda del
+   *   código y cualquier otra celda de la fila con ese mismo valor.
+   */
+  const limpiarDerivadosApiPorCodigo = (elementIndex, rowIndex, tableTemplate, { codigoABorrar = null } = {}) => {
+    const { triggerKey, derivadas } = clavesApiPorCodigo(tableTemplate);
+    // Una misma columna puede estar guardada con la etiqueta pelada o con el
+    // sufijo _colN (filas de formularios viejos), así que se borran ambas.
+    const aBorrar = ['_apiCodigoDe'];
+    derivadas.forEach(d => aBorrar.push(d.key, d.label, `${d.label}_col${d.ci}`));
+    // ⚠️ _apiCodigoId marca que la fila vino de la API y es lo que mantiene sus
+    // celdas bloqueadas. Solo se borra cuando se quita el código entero: si se
+    // borrara mientras el operario reescribe el código, la fila pasaría de
+    // bloqueada a editable en pleno tipeo, se repintaría y se perdería el foco.
+    // Con el código nuevo lo pisa la propia búsqueda.
+    if (codigoABorrar) {
+      aBorrar.push('_apiCodigoId');
+      if (triggerKey) aBorrar.push(triggerKey);
+    }
+    const codigoNorm = codigoABorrar ? String(codigoABorrar).trim().toLowerCase() : null;
+
+    setBodyData(prev => {
+      const el = prev[elementIndex];
+      const filaOriginal = el?.data?.[rowIndex];
+      if (!filaOriginal) return prev;
+
+      const fila = { ...filaOriginal };
+      let cambio = false;
+      const borrar = (k) => {
+        if (String(fila[k] ?? '') === '') return;
+        fila[k] = '';
+        cambio = true;
+      };
+      aBorrar.forEach(k => {
+        if (Object.prototype.hasOwnProperty.call(fila, k)) borrar(k);
+      });
+      if (codigoNorm) {
+        Object.keys(fila).forEach(k => {
+          if (String(fila[k] ?? '').trim().toLowerCase() === codigoNorm) borrar(k);
+        });
+      }
+      // Sin cambios se devuelve el mismo estado: React no repinta la tabla y
+      // escribir el código no "refresca" la pantalla en cada tecla.
+      if (!cambio) return prev;
+
+      const updatedData = [...el.data];
+      updatedData[rowIndex] = fila;
+      const copia = [...prev];
+      copia[elementIndex] = { ...el, data: updatedData };
+      return copia;
+    });
+  };
+
+  /**
+   * 🐟 ¿El código que se acaba de traer es de la especie del encabezado?
+   *
+   * Solo corre si la plantilla activó el control en la tabla
+   * (`validarEspecieCodigo`). Sirve para las dos entradas de datos por código:
+   * la búsqueda de un código suelto y la carga masiva por lote.
+   */
+  const chequearEspecieDeCodigo = (item, tableTemplate, codigo) => {
+    if (!validaEspecie(tableTemplate)) return { aplica: false, ok: true, mensaje: '' };
+    const cols = tableTemplate?.columns || [];
+    const colClasif = cols.find(c => /clasific/i.test(c?.label || c?.header || ''));
+    return validarEspecieDeCodigo({
+      especie: especieDelEncabezado(headerData, tableTemplate?.especieHeaderField),
+      item,
+      clasificacion: colClasif?.apiCodigo ? item?.[colClasif.apiCodigo] : '',
+      codigo,
+    });
+  };
+
   // --- API POR CÓDIGO: buscar datos al ingresar un código en la columna gatillo ---
   const handleApiPorCodigoLookup = async (elementIndex, rowIndex, code, tableTemplate) => {
     // 🚫 Si el auto-lookup está deshabilitado para esta tabla, no hacer nada
     if (disableAutoLookupByTable[elementIndex]) return;
     if (!code || !tableTemplate?.apiCodigoUrl) return;
 
-    // 🚫 1. VALIDACIÓN DE CÓDIGO REPETIDO O USADO: verificar si este código ya fue ingresado en el formulario
+    // La celda dispara la búsqueda al escribir y otra vez al salir del campo.
+    // Sin esto se lanzan dos consultas iguales y el operario ve el mismo aviso
+    // dos veces (y una respuesta atrasada podía pisar a la otra).
     const codeStr = String(code).trim().toLowerCase();
+    const enCursoKey = `${elementIndex}-${rowIndex}-${codeStr}`;
+    if (lookupsEnCursoRef.current.has(enCursoKey)) return;
+    lookupsEnCursoRef.current.add(enCursoKey);
+
+    // 🚫 1. VALIDACIÓN DE CÓDIGO REPETIDO O USADO: verificar si este código ya fue ingresado en el formulario
     let isDuplicate = false;
     bodyData.forEach((element, eIdx) => {
       if (!Array.isArray(element.data)) return;
@@ -4977,25 +5148,37 @@ useEffect(() => {
 
     if (isDuplicate) {
       alert(`⚠️ El código "${code}" ya se encuentra ingresado o utilizado en este formulario. No se permiten códigos repetidos o ya usados.`);
-      // Limpiar el código repetido de la celda actual para quitarlo
-      setBodyData(prev => prev.map((el, eIdx) => {
-        if (eIdx !== elementIndex) return el;
-        const updatedData = [...(el.data || [])];
-        const currentRow = { ...(updatedData[rowIndex] || {}) };
-        Object.keys(currentRow).forEach(k => {
-          if (String(currentRow[k]).trim().toLowerCase() === codeStr) {
-            currentRow[k] = '';
-          }
-        });
-        updatedData[rowIndex] = currentRow;
-        return { ...el, data: updatedData };
-      }));
+      // Quitar el código repetido Y lo que hubiera traído la API para él: si solo
+      // se borra el código, la fila queda con el peso de un código que ya no está.
+      limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplate, { codigoABorrar: code });
+      lookupsEnCursoRef.current.delete(enCursoKey);
       return;
     }
 
     const loadKey = `${elementIndex}-${rowIndex}`;
     setApiCodigoLoadingRows(prev => ({ ...prev, [loadKey]: true }));
     try {
+      // 🚫 1b. ¿ESTA MATERIA PRIMA YA SE CONSUMIÓ EN OTRO FORMULARIO O BORRADOR?
+      // La API externa no ve nuestros borradores: mientras dos formularios están
+      // sin guardar, para ella el código está libre en los dos. Esta consulta va
+      // a nuestra base, que sí los ve. Si el endpoint no existe o no contesta,
+      // no bloquea nada — una verificación caída no puede parar a planta.
+      const enUso = await buscarCodigosEnUso({
+        codigos: [code],
+        templateId: selectedTemplate?.templateID,
+        excluirDraftId: currentDraftId,
+      });
+      if (enUso.usados.length > 0) {
+        alert(
+          `⛔ MATERIA PRIMA CONSUMIDA\n\n` +
+          `El código "${code}" ya está usado en otro formulario:\n\n` +
+          `${detalleDeUso(enUso.usados)}\n\n` +
+          `No se puede volver a cargar aquí.`
+        );
+        limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplate, { codigoABorrar: code });
+        return;
+      }
+
       // Si la URL configurada empieza con "/" o no es absoluta, prefija con API_EXTERNAL_BASE_URL
       let baseUrl = tableTemplate.apiCodigoUrl;
       if (baseUrl.startsWith('/') || (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://'))) {
@@ -5024,44 +5207,37 @@ useEffect(() => {
 
       if (isNoStock || isUsado) {
         alert(`⚠️ Alerta: El código "${code}" ya se encuentra UTILIZADO / USADO ("detTieneStock": false). No se permite seleccionar un código que ya se consumió y no está disponible.`);
-        // Limpiar el código de la celda actual para quitarlo
-        setBodyData(prev => prev.map((el, eIdx) => {
-          if (eIdx !== elementIndex) return el;
-          const updatedData = [...(el.data || [])];
-          const currentRow = { ...(updatedData[rowIndex] || {}) };
-          Object.keys(currentRow).forEach(k => {
-            if (String(currentRow[k]).trim().toLowerCase() === codeStr) {
-              currentRow[k] = '';
-            }
-          });
-          updatedData[rowIndex] = currentRow;
-          return { ...el, data: updatedData };
-        }));
+        // Se borra el código y TODO lo que la API hubiera llenado por él (incluida
+        // una respuesta anterior de la misma celda que llegara antes del aviso).
+        limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplate, { codigoABorrar: code });
         return;
       }
 
-      // Construir mapa de claves deduplicadas igual que en handleTableFieldChangeWithAutoSave
       const cols = tableTemplate.columns || [];
-      const seenLbls = new Map();
-      cols.forEach((col, ci) => {
-        const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
-        if (!seenLbls.has(lbl)) seenLbls.set(lbl, []);
-        seenLbls.get(lbl).push(ci);
-      });
-      const colKeyMap = new Map();
-      cols.forEach((col, ci) => {
-        const lbl = col.label || col.header || col.id || col.name || `col_${ci}`;
-        colKeyMap.set(ci, seenLbls.get(lbl).length > 1 ? `${lbl}_col${ci}` : lbl);
-      });
+      const { triggerKey, keyDe } = clavesApiPorCodigo(tableTemplate);
 
       const updates = {};
       cols.forEach((col, ci) => {
         if (col.apiCodigo && Object.prototype.hasOwnProperty.call(item, col.apiCodigo)) {
-          const key = colKeyMap.get(ci);
+          const key = keyDe(ci);
           const val = item[col.apiCodigo];
           if (val !== undefined && val !== null) updates[key] = String(val);
         }
       });
+      // Con qué código se llenó la fila: permite detectar después que el operario
+      // cambió el código y que lo que se ve ya no le corresponde.
+      // 🐟 3. VALIDACIÓN DE ESPECIE: el código tiene que ser de la especie del
+      // encabezado. Se comprueba antes de escribir nada en la fila y antes de
+      // guardar el cabId, para no arrastrar al pool los códigos de un lote de
+      // otra especie.
+      const chequeoEspecie = chequearEspecieDeCodigo(item, tableTemplate, code);
+      if (chequeoEspecie.aplica && !chequeoEspecie.ok) {
+        alert(chequeoEspecie.mensaje);
+        limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplate, { codigoABorrar: code });
+        return;
+      }
+
+      updates['_apiCodigoDe'] = String(code).trim();
       // Campo ID oculto
       if (tableTemplate.apiCodigoHiddenField && Object.prototype.hasOwnProperty.call(item, tableTemplate.apiCodigoHiddenField)) {
         updates['_apiCodigoId'] = String(item[tableTemplate.apiCodigoHiddenField] ?? '');
@@ -5111,11 +5287,25 @@ useEffect(() => {
         });
       }
 
-      if (Object.keys(updates).length > 0) {
+      if (Object.keys(updates).length > 1) {
         setBodyData(prev => prev.map((element, index) => {
           if (index !== elementIndex) return element;
           const updatedData = [...(element.data || [])];
-          updatedData[rowIndex] = { ...(updatedData[rowIndex] || {}), ...updates };
+          const filaActual = updatedData[rowIndex] || {};
+          // ⏱️ La celda pudo cambiar mientras la API respondía: se tecleó otro
+          // código, se borró la fila o el aviso de "código usado" la limpió. Una
+          // respuesta vieja no puede escribir el peso de un código que ya no está
+          // ahí (así aparecían filas con un código y las libras de otro).
+          // Se mira la celda gatillo y, por si la fila guarda el código bajo otra
+          // clave (filas viejas, etiquetas con sufijo), cualquier celda de la fila.
+          const enPantalla = triggerKey ? String(filaActual[triggerKey] ?? '').trim().toLowerCase() : '';
+          const sigueSiendoElMismo = enPantalla === codeStr
+            || Object.values(filaActual).some(v => String(v ?? '').trim().toLowerCase() === codeStr);
+          if (!sigueSiendoElMismo) {
+            console.warn(`🔍 API por Código: respuesta descartada, la celda ya no tiene "${code}"`);
+            return element;
+          }
+          updatedData[rowIndex] = { ...filaActual, ...updates };
           return { ...element, data: updatedData };
         }));
         setHasUnsavedChanges(true);
@@ -5123,6 +5313,7 @@ useEffect(() => {
     } catch (err) {
       console.warn('❌ API por Código error:', err);
     } finally {
+      lookupsEnCursoRef.current.delete(enCursoKey);
       setApiCodigoLoadingRows(prev => ({ ...prev, [loadKey]: false }));
     }
   };
@@ -5207,6 +5398,56 @@ useEffect(() => {
         return;
       }
 
+      // 🐟 Quitar los códigos que no son de la especie del encabezado.
+      // En la carga masiva importa más que en la carga por código: un lote puede
+      // traer varias especies y sin este filtro entrarían todas de golpe.
+      if (validaEspecie(tableTemplate)) {
+        const campoCodigo = tableTemplate.columns?.find(c => c.label === tableTemplate.apiCodigoTriggerCol)?.apiCodigo || 'detCodigo';
+        const ajenos = [];
+        data = data.filter(item => {
+          const chequeo = chequearEspecieDeCodigo(item, tableTemplate, item?.[campoCodigo]);
+          if (chequeo.aplica && !chequeo.ok) {
+            ajenos.push(`${item?.[campoCodigo] || '(sin código)'} → ${chequeo.especieCodigo}`);
+            return false;
+          }
+          return true;
+        });
+        if (ajenos.length > 0) {
+          const especieForm = especieDelEncabezado(headerData, tableTemplate?.especieHeaderField);
+          alert(
+            `⛔ ALERTA: SE DETECTARON DOS ESPECIES DISTINTAS\n\n` +
+            `Formulario: ${especieForm}\n` +
+            `Se quitaron ${ajenos.length} código(s) de otra especie:\n\n` +
+            ajenos.slice(0, 15).join('\n') +
+            (ajenos.length > 15 ? `\n… y ${ajenos.length - 15} más.` : '')
+          );
+        }
+        if (data.length === 0) return;
+      }
+
+      // 🚫 Quitar los códigos que ya se consumieron en OTRO formulario o borrador.
+      // Es la misma verificación contra nuestra base que hace la carga por código:
+      // la API de recepción no ve los borradores y los deja pasar.
+      const campoCodigoLote = tableTemplate.columns?.find(c => c.label === tableTemplate.apiCodigoTriggerCol)?.apiCodigo || 'detCodigo';
+      const codigosDelLote = data.map(it => it[campoCodigoLote]).filter(Boolean).map(String);
+      if (codigosDelLote.length > 0) {
+        const enUsoLote = await buscarCodigosEnUso({
+          codigos: codigosDelLote,
+          templateId: selectedTemplate?.templateID,
+          excluirDraftId: currentDraftId,
+        });
+        if (enUsoLote.usados.length > 0) {
+          const consumidos = new Set(enUsoLote.usados.map(u => String(u.codigo).trim().toLowerCase()));
+          data = data.filter(it => !consumidos.has(String(it[campoCodigoLote] ?? '').trim().toLowerCase()));
+          alert(
+            `⛔ MATERIA PRIMA CONSUMIDA\n\n` +
+            `Se omitieron ${consumidos.size} código(s) que ya están usados en otro formulario o borrador:\n\n` +
+            `${detalleDeUso(enUsoLote.usados)}`
+          );
+          if (data.length === 0) return;
+        }
+      }
+
       // 🔢 Aplicar filtro de rango si está definido
       const range = rangeFilterByTable[elementIndex];
       if (range?.from || range?.to) {
@@ -5265,6 +5506,8 @@ useEffect(() => {
         if (triggerColKey && item[seqField] != null && !row[triggerColKey]) {
           row[triggerColKey] = String(item[seqField]);
         }
+        // Código con el que se llenó la fila, para poder limpiarla si se edita.
+        if (triggerColKey && row[triggerColKey]) row['_apiCodigoDe'] = String(row[triggerColKey]).trim();
         if (tableTemplate.apiCodigoHiddenField && item[tableTemplate.apiCodigoHiddenField] != null) {
           row['_apiCodigoId'] = String(item[tableTemplate.apiCodigoHiddenField]);
         }
@@ -6064,13 +6307,41 @@ useEffect(() => {
     }
   }, [apiMovimientoData, apiDetailsData, apiCatalogData, forceRenderKey, selectedLotes, lotesConfirmados]);
 
+  /**
+   * ¿Hay algo escrito como para que valga la pena respaldar?
+   * Sin esto, una pestaña abierta y en blanco durante una hora ensuciaría
+   * "Mis Borradores" con un borrador vacío. Las claves internas (_calc_,
+   * _apiCodigoDe, _rowSpan…) no cuentan como dato cargado.
+   */
+  const hayAlgoCargado = () => {
+    const conTexto = (v) => String(v ?? '').trim() !== '';
+    if (Object.values(headerData || {}).some(conTexto)) return true;
+    return (bodyData || []).some(el => {
+      if (el?.type === 'section') return Object.values(el.data || {}).some(conTexto);
+      if (el?.type === 'table') {
+        return (el.data || []).some(fila =>
+          Object.entries(fila || {}).some(([k, v]) => !k.startsWith('_') && conTexto(v))
+        );
+      }
+      return false;
+    });
+  };
+
   // --- GUARDADO DE BORRADOR (Base de datos - persiste hasta 7 días) ---
-  const handleSaveDraft = async () => {
+  const handleSaveDraft = async (opciones = {}) => {
+    // `silencioso` = respaldo automático de cada hora: guarda igual, pero sin
+    // avisos, sin cerrar la pestaña y sin tocar lo que el operario está viendo.
+    // (Como onClick recibe el evento del botón, el flag queda en false ahí.)
+    const silencioso = opciones?.silencioso === true;
+
     // 🛡️ Guard contra doble ejecución
     if (isDraftSavingRef.current) {
       console.warn('📋 [DRAFT] ⚠️ Ya hay un guardado de borrador en curso, ignorando click duplicado');
       return;
     }
+    // El respaldo automático no aplica al editar un formulario ya guardado:
+    // ahí no hay borrador que hacer.
+    if (silencioso && (id || !selectedTemplate || !hayAlgoCargado())) return;
     isDraftSavingRef.current = true;
     
     console.log('📋 [DRAFT] === INICIO handleSaveDraft ===' );
@@ -6080,7 +6351,7 @@ useEffect(() => {
     
     if (!selectedTemplate) {
       console.warn('📋 [DRAFT] ❌ No hay plantilla seleccionada, abortando.');
-      alert('⚠️ Selecciona una plantilla primero');
+      if (!silencioso) alert('⚠️ Selecciona una plantilla primero');
       isDraftSavingRef.current = false;
       return;
     }
@@ -6097,16 +6368,39 @@ useEffect(() => {
     });
     if (hasUploadingImages) {
       console.warn('📋 [DRAFT] ❌ Hay imágenes subiendo, abortando.');
-      alert('⏳ Espera a que terminen de subir las imágenes antes de guardar.');
+      // En el respaldo automático no se avisa: se intenta de nuevo en una hora.
+      if (!silencioso) alert('⏳ Espera a que terminen de subir las imágenes antes de guardar.');
       isDraftSavingRef.current = false;
       return;
     }
     
-    setDraftSaving(true);
+    if (!silencioso) setDraftSaving(true);
     
     try {
       const currentUser = authService.getCurrentUser();
       console.log('📋 [DRAFT] Usuario:', currentUser?.username || currentUser?.nombre);
+
+      // 🔐 SIN SESIÓN NO SE GUARDA EL BORRADOR.
+      // Antes, si no había usuario, el borrador se grababa a nombre de "Anónimo"
+      // y quedaba HUÉRFANO: "Mis Borradores" filtra por nombre de usuario, así
+      // que no le aparecía a nadie y parecía borrado. Pasó con el FOR-CC-20 del
+      // 01/09 (borrador 1456, 17 filas de tinas). Mejor no guardar y avisar: la
+      // pestaña queda abierta con todo lo escrito, así que no se pierde nada.
+      const usuarioBorrador = currentUser?.username || currentUser?.nombre || '';
+      if (!usuarioBorrador) {
+        if (silencioso) {
+          console.warn('📋 [DRAFT] Respaldo automático omitido: no hay sesión activa');
+          return;
+        }
+        alert(
+          '🔐 NO SE PUDO GUARDAR EL BORRADOR\n\n' +
+          'Tu sesión ya no está activa, así que el borrador quedaría sin dueño y ' +
+          'no te aparecería en «Mis Borradores».\n\n' +
+          'NO CIERRES ESTA PESTAÑA: lo que llenaste sigue acá.\n' +
+          'Inicia sesión otra vez en otra pestaña y vuelve a darle a Guardar borrador.'
+        );
+        return;
+      }
       
       // Calcular progreso estimado
       const totalFields = Object.keys(headerData).length + bodyData.length;
@@ -6128,7 +6422,7 @@ useEffect(() => {
         templateID: selectedTemplate.templateID,
         templateName: selectedTemplate.nombre || selectedTemplate.templateName || '',
         templateCodigo: selectedTemplate.codigo || '',
-        userName: currentUser?.username || currentUser?.nombre || 'Anónimo',
+        userName: usuarioBorrador,
         userEmail: currentUser?.email || '',
         userRole: currentUser?.rol || '',
         headerData: JSON.stringify(headerData),
@@ -6164,6 +6458,17 @@ useEffect(() => {
       const savedDraft = await response.json();
       const draftId = savedDraft.draftID || savedDraft.DraftID;
       setCurrentDraftId(draftId);
+      // 🔐 Guardar cuenta como actividad: la sesión vuelve a arrancar sus horas.
+      authService.renewSession();
+
+      // El respaldo automático termina acá: NO cierra la pestaña, no limpia el
+      // autoguardado local y no marca el formulario como guardado — el operario
+      // sigue trabajando exactamente donde estaba y ni se entera.
+      if (silencioso) {
+        console.log(`📋 [DRAFT] 💾 Respaldo automático guardado (ID: ${draftId})`);
+        return;
+      }
+
       setHasUnsavedChanges(false);
       
       console.log(`📋 [DRAFT] ✅ Borrador guardado exitosamente (ID: ${draftId})`);
@@ -6226,13 +6531,35 @@ useEffect(() => {
     } catch (err) {
       console.error('📋 [DRAFT] ❌ Error completo:', err);
       console.error('📋 [DRAFT] ❌ Stack:', err.stack);
-      alert(`❌ Error al guardar borrador: ${err.message}`);
+      // El respaldo automático no molesta con avisos: se reintenta en una hora.
+      if (!silencioso) alert(`❌ Error al guardar borrador: ${err.message}`);
     } finally {
       setDraftSaving(false);
       isDraftSavingRef.current = false;
       console.log('📋 [DRAFT] === FIN handleSaveDraft ===');
     }
   };
+
+  // ⏳ RESPALDO AUTOMÁTICO CADA HORA
+  //
+  // El timer se arma una sola vez por formulario abierto. Si dependiera de
+  // headerData/bodyData se reiniciaría con cada tecla y no llegaría a la hora
+  // nunca, así que la función que guarda se deja en una ref siempre fresca:
+  // el intervalo llama a la última versión, con los datos del momento.
+  const respaldoBorradorRef = useRef(() => {});
+  useEffect(() => {
+    respaldoBorradorRef.current = () => handleSaveDraft({ silencioso: true });
+  });
+
+  useEffect(() => {
+    if (!selectedTemplate || id) return;   // al editar un formulario guardado no hay borrador
+    console.log('⏳ [DRAFT-AUTO] Respaldo automático activado (cada 1 h)');
+    const intervalo = setInterval(() => respaldoBorradorRef.current?.(), DRAFT_AUTOSAVE_INTERVAL);
+    return () => {
+      console.log('⏳ [DRAFT-AUTO] Respaldo automático desactivado');
+      clearInterval(intervalo);
+    };
+  }, [selectedTemplate?.templateID, id]);
 
   // --- GUARDADO FINAL (POST / PUT) ---
  const handleSaveForm = async () => {
@@ -6345,7 +6672,27 @@ useEffect(() => {
         console.log('💾 [SAVE] Fecha auto-asignada:', today);
       }
     }
-    
+
+    // ⏱️ Horas del encabezado: si el operario las dejó vacías, se capturan
+    // solas en el PRIMER guardado (igual que la fecha/hora de las firmas):
+    // "Hora Inicial/Entrada" vacía → hora de ahora (los formularios nuevos ya
+    // la traen desde que se abren; esto cubre borradores viejos), y
+    // "Hora Final/Salida" vacía → hora de este guardado. Siempre editables.
+    // En ediciones posteriores (PUT) no se toca nada: estamparía horas falsas.
+    if (!id) {
+      const ahoraHdr = new Date();
+      const hhmm = `${String(ahoraHdr.getHours()).padStart(2, '0')}:${String(ahoraHdr.getMinutes()).padStart(2, '0')}`;
+      for (const f of (selectedTemplate.headerFields || [])) {
+        if (f.type !== 'time') continue;
+        const k = f.label || f.name;
+        if (!k || String(finalHeaderData[k] ?? '').trim() !== '') continue;
+        if (/(inici|entrada|final|salida|termin)/i.test(k)) {
+          finalHeaderData[k] = hhmm;
+          console.log('💾 [SAVE] Hora auto-capturada:', k, '=', hhmm);
+        }
+      }
+    }
+
     // 🆕 Obtener datos del usuario logueado para guardar quién creó el formulario
     const currentUser = authService.getCurrentUser();
     console.log('💾 [SAVE] Usuario:', currentUser?.nombre || currentUser?.username);
@@ -6408,6 +6755,9 @@ useEffect(() => {
 
       // ✅ EL GUARDADO FUE EXITOSO
       setHasUnsavedChanges(false);
+      // 🔐 La sesión vuelve a arrancar sus horas: quien está guardando
+      // formularios está trabajando, no tiene por qué caérsele la sesión.
+      authService.renewSession();
 
       // 📦 Guardar lotes de trazabilidad en inventario
       if (isTrazaEnabled(selectedTemplate?.templateID) && loteTraza.lotesGenerados?.some(l => l.lote)) {
@@ -6619,7 +6969,7 @@ useEffect(() => {
       if (arrancaDesdeRecepcion
           || (!declaraEntradas && isResumenAutoEnabled(selectedTemplate?.templateID))) {
         const newFormId = responseData?.formID || responseData?.id || null;
-        console.log('📦 [RESUMEN] Auto-guardado activado (esPD04:', esPD04, '). responseData:', responseData, '| newFormId:', newFormId);
+        console.log('📦 [RESUMEN] Auto-guardado activado (arrancaDesdeRecepcion:', arrancaDesdeRecepcion, '). responseData:', responseData, '| newFormId:', newFormId);
         await handleGuardarResumenLote(true, newFormId);
       }
 
@@ -11035,6 +11385,15 @@ useEffect(() => {
                           onChange={e => {
                             const v = e.target.value;
                             handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, v);
+                            // 🧹 El peso y la clasificación que se ven son los del código
+                            // anterior. En cuanto el código deja de ser ese se borran: la
+                            // fila queda vacía hasta que la API confirme el nuevo código,
+                            // nunca con un código y las libras de otro.
+                            const llenadaPorApi = row._apiCodigoDe != null || !!row._apiCodigoId;
+                            const codigoQueLaLleno = row._apiCodigoDe != null ? String(row._apiCodigoDe) : null;
+                            if (llenadaPorApi && codigoQueLaLleno !== v) {
+                              limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplateForApiCodigo);
+                            }
                             // Si coincide exactamente con un código del pool → auto-lookup
                             if (v && pool.includes(v) && !disableAutoLookupByTable[elementIndex]) {
                               handleApiPorCodigoLookup(elementIndex, rowIndex, v, tableTemplateForApiCodigo);
@@ -11094,6 +11453,44 @@ useEffect(() => {
                     {isApiCodigoLoading ? '⏳' : '🔍'}
                   </button>
                 )}
+                {(() => {
+                  // ➕ Calculadora: solo en celdas numéricas que el operario puede
+                  // escribir. Las de fórmula, las de solo lectura y las que llegan
+                  // bloqueadas desde la API de recepción no se tocan a mano, así
+                  // que tampoco por calculadora.
+                  const tipoCelda = colForRender.type || col.type || 'text';
+                  const esNumerica = tipoCelda === 'number' || tipoCelda === 'temperature';
+                  if (!esNumerica || col.editable === false || col.readonly) return null;
+                  if (isLockedByRecepcionApi || isApiCodigoTrigger) return null;
+                  // Si la celda ya se calculó, el botón se pinta lleno y el
+                  // tooltip muestra la cuenta: de un vistazo se distingue lo
+                  // calculado de lo escrito a mano.
+                  const calcGuardado = calculoDeCelda(row, resolvedCellName);
+                  return (
+                    <button
+                      type="button"
+                      title={calcGuardado
+                        ? `Calculado: ${resumenCalculo(calcGuardado)} — click para corregir`
+                        : 'Calcular este valor a partir de varios números'}
+                      onClick={() => setCalcCelda({
+                        elementIndex,
+                        rowIndex,
+                        cellName: resolvedCellName,
+                        titulo: `${element.title || element.label || 'Tabla'} · ${col.label || cellName} · fila ${rowIndex + 1}`,
+                        valorInicial: String(row[resolvedCellName] ?? ''),
+                        detalle: calcGuardado,
+                      })}
+                      style={{
+                        padding: '4px 7px',
+                        background: calcGuardado ? '#0891b2' : '#ecfeff',
+                        color: calcGuardado ? 'white' : '#0e7490',
+                        border: `1px solid ${calcGuardado ? '#0891b2' : '#a5f3fc'}`,
+                        borderRadius: '6px',
+                        cursor: 'pointer', fontSize: '13px', fontWeight: 700, flexShrink: 0, lineHeight: 1,
+                      }}
+                    >{calcGuardado ? 'Σ' : '+'}</button>
+                  );
+                })()}
                 {col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', whiteSpace: 'nowrap', fontWeight: 500 }}>{col.unit}</span>}
               </div>
 
@@ -12510,6 +12907,23 @@ useEffect(() => {
 
       {/* 🔼🔽 Botones de scroll */}
       <ScrollButton />
+
+      {/* ➕ Calculadora de celda */}
+      <CalculadoraCelda
+        abierta={!!calcCelda}
+        titulo={calcCelda?.titulo || ''}
+        valorInicial={calcCelda?.valorInicial || ''}
+        detalleInicial={calcCelda?.detalle || null}
+        onAplicar={(resultado, detalle) => {
+          if (!calcCelda) return;
+          const { elementIndex, rowIndex, cellName } = calcCelda;
+          handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, cellName, resultado);
+          // El desglose se guarda como texto JSON: todo lo que recorre las filas
+          // (autoguardado, guardado, verificación de códigos) trabaja con strings.
+          handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, claveCalculo(cellName), JSON.stringify(detalle));
+        }}
+        onCerrar={() => setCalcCelda(null)}
+      />
 
       {/* 🐟 Panel Especie→Producto: renderizado fuera de la tabla para no sobreponerse */}
       {activeRangePanel && (

@@ -1,0 +1,84 @@
+/* Campo «Proceso - Productivo» de la plantilla: chips + catálogo desplegable. */
+
+.sap-wrap { width: 100%; }
+.sap-disabled { opacity: .6; pointer-events: none; }
+
+.sap-chips {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  min-height: 42px; padding: 8px 10px;
+  border: 1px solid #cbd5e1; border-radius: 8px; background: #fff;
+  cursor: pointer; transition: border-color .15s;
+}
+.sap-chips:hover { border-color: #93c5fd; }
+.sap-placeholder { color: #9ca3af; font-size: 13px; }
+
+.sap-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; line-height: 1.5;
+  border: 1px solid transparent;
+}
+.sap-chip-ico { font-size: 11px; }
+.sap-pescado, .sap-chip.sap-pescado { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
+.sap-chip.sap-camaron { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+.sap-chip.sap-ambas   { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+.sap-chip.sap-custom  { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+
+.sap-chip-x {
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 0 0 0 2px;
+  color: inherit; opacity: .55;
+}
+.sap-chip-x:hover { opacity: 1; }
+
+.sap-barra { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.sap-conteo { font-size: 11.5px; color: #6b7280; }
+
+.sap-btn {
+  border: 1px solid #cbd5e1; background: #f8fafc; color: #334155;
+  border-radius: 7px; padding: 5px 10px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background .15s, border-color .15s;
+}
+.sap-btn:hover { background: #eef2f7; border-color: #94a3b8; }
+.sap-btn-main { background: #1e40af; border-color: #1e40af; color: #fff; }
+.sap-btn-main:hover { background: #1d4ed8; border-color: #1d4ed8; }
+.sap-btn-link { border: 0; background: transparent; color: #b91c1c; padding: 4px 2px; }
+.sap-btn-link:hover { background: transparent; text-decoration: underline; }
+.sap-btn-mini { padding: 4px 8px; font-size: 11.5px; white-space: nowrap; }
+.sap-btn-mini.sap-camaron { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+
+.sap-panel {
+  margin-top: 8px; border: 1px solid #cbd5e1; border-radius: 10px;
+  background: #fff; box-shadow: 0 6px 18px rgba(15, 23, 42, .08); overflow: hidden;
+}
+.sap-panel-top, .sap-panel-bot {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding: 10px; background: #f8fafc;
+}
+.sap-panel-top { border-bottom: 1px solid #e2e8f0; }
+.sap-panel-bot { border-top: 1px solid #e2e8f0; }
+
+.sap-buscar, .sap-nueva {
+  flex: 1 1 200px; min-width: 160px;
+  padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 7px; font-size: 13px;
+}
+.sap-buscar:focus, .sap-nueva:focus { outline: none; border-color: #60a5fa; }
+
+.sap-lista {
+  max-height: 280px; overflow-y: auto; padding: 6px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 2px;
+}
+.sap-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.sap-item:hover { background: #f1f5f9; }
+.sap-item-on { background: #eff6ff; font-weight: 600; }
+.sap-item input { cursor: pointer; margin: 0; }
+.sap-item-ico { font-size: 11px; }
+.sap-item-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sap-vacio { padding: 16px; color: #6b7280; font-size: 13px; text-align: center; grid-column: 1 / -1; }
+
+@media (max-width: 640px) {
+  .sap-lista { grid-template-columns: 1fr; max-height: 220px; }
+}

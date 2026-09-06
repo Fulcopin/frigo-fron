@@ -259,6 +259,34 @@ export default function SignatureManagement() {
     }
   };
 
+  // 🙈 Ocultar en masa de la bandeja de pendientes: los seleccionados dejan de
+  // aparecer para TODOS los firmantes (queda registrado, no se borra nada).
+  const handleHideSelected = async () => {
+    if (selectedForms.length === 0) return;
+    if (!window.confirm(
+      `¿Ocultar ${selectedForms.length} formulario(s) de pendientes de firma?\n\n` +
+      `Dejarán de aparecer para TODOS los firmantes. El formulario NO se borra: ` +
+      `sigue visible en "Ver Formularios". Esta acción queda registrada con tu usuario.`
+    )) return;
+    const motivo = window.prompt('Motivo (opcional — Enter para continuar):', '') ?? '';
+    try {
+      setLoading(true);
+      const res = await signatureService.hideMultipleForms(
+        selectedForms,
+        currentUser?.email || currentUser?.nombre || 'Admin',
+        motivo.trim() || null
+      );
+      alert(`🙈 ${res?.hiddenCount ?? selectedForms.length} formulario(s) ocultado(s) de pendientes de firma.`);
+      setSelectedForms([]);
+      await loadData();
+    } catch (error) {
+      console.error('Error al ocultar:', error);
+      alert('❌ Error al ocultar formularios: ' + (error.message || 'Error desconocido'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Función para cargar el formulario completo y mostrar contrato
   const openContractPreview = async (formId) => {
     const formToCheck = pendingForms.find(f => f.id === formId);
@@ -959,6 +987,18 @@ export default function SignatureManagement() {
               disabled={selectedForms.length === 0}
             >
               🔓 Habilitar Validación (&gt;{lockThreshold}h) ({selectedForms.length})
+            </button>
+          )}
+
+          {isSGI && (
+            <button
+              onClick={handleHideSelected}
+              className="btn-secondary"
+              style={{ backgroundColor: '#64748b', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+              disabled={selectedForms.length === 0}
+              title="Los seleccionados dejan de aparecer en pendientes de firma para todos (no se borra el formulario)"
+            >
+              🙈 Ocultar de Pendientes ({selectedForms.length})
             </button>
           )}
 

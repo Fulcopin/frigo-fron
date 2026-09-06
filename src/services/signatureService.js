@@ -102,6 +102,52 @@ const signatureService = {
   },
 
   /**
+   * Ocultar en masa formularios de la bandeja de pendientes de firma.
+   * No borra el formulario: queda registrado como "hidden" y deja de aparecer
+   * para todos los firmantes. Reversible con unhideMultipleForms.
+   */
+  async hideMultipleForms(formIds, hiddenBy, reason) {
+    try {
+      const response = await fetch(`${API_URL_SIGNATURES}/hide-multiple`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formIds,
+          hiddenBy: hiddenBy || 'Admin',
+          reason: reason || null,
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al ocultar los formularios');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error en hideMultipleForms:', error);
+      throw error;
+    }
+  },
+
+  /** Deshacer el ocultado: los formularios vuelven a pendientes de firma. */
+  async unhideMultipleForms(formIds) {
+    try {
+      const response = await fetch(`${API_URL_SIGNATURES}/unhide-multiple`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ formIds }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error al restaurar los formularios');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Error en unhideMultipleForms:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Habilitar múltiples formularios bloqueados (>36h) para que puedan ser firmados
    */
   async unlockMultipleForms(formIds, unlockedBy) {

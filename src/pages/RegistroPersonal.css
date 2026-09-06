@@ -1,0 +1,147 @@
+/* 👥 Registro de Personal — mismos tokens de color que ResumenLotes / LotesInventario */
+.rp-page {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.rp-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #1e293b;
+}
+
+.rp-sub {
+  margin: 4px 0 10px;
+  font-size: .85rem;
+  color: #64748b;
+}
+
+.rp-link-btn {
+  background: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: .82rem;
+  color: #334155;
+  cursor: pointer;
+}
+.rp-link-btn:hover { background: #f1f5f9; }
+
+.rp-form {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.rp-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rp-campo-ancho { grid-column: 1 / -1; }
+
+.rp-campo label {
+  font-size: .72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.rp-campo input,
+.rp-campo select,
+.rp-campo textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: .9rem;
+  font-family: inherit;
+}
+
+.rp-valor-calculado {
+  font-weight: 700;
+  color: #0f766e;
+  padding: 8px 0;
+}
+
+.rp-alerta {
+  background: #fffbeb;
+  border: 1px solid #fbbf24;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rp-alerta strong { color: #92400e; }
+.rp-alerta p { margin: 0; font-size: .85rem; color: #78350f; }
+.rp-alerta textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: inherit;
+}
+
+.rp-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: .85rem;
+}
+
+.rp-exito {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: .85rem;
+}
+
+.rp-acciones { display: flex; justify-content: flex-end; }
+
+.rp-btn-primary {
+  background: #0ea5e9;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: .9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rp-btn-primary:hover { background: #0284c7; }
+.rp-btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+
+.rp-recientes {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.rp-recientes h3 { margin: 0 0 10px; font-size: .95rem; color: #1e293b; }
+.rp-recientes table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.rp-recientes th, .rp-recientes td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.rp-recientes th { color: #64748b; text-transform: uppercase; font-size: .7rem; }

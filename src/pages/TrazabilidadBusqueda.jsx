@@ -25,7 +25,7 @@ function buildAiContext(pasos, formDataCache, selectedCols, lote) {
   let ctx = `[DATOS DE TRAZABILIDAD â€” LOTE ${lote}]\n\n`;
   pasos.forEach((paso, i) => {
     ctx += `FORMULARIO ${i + 1}: ${paso.template_codigo || ''} â€” ${paso.template_nombre}\n`;
-    ctx += `  Fecha: ${formatDate(paso.created_at)} | Responsable: ${paso.filled_by}\n`;
+    ctx += `  Fecha: ${formatDate(paso.fecha_registro || paso.created_at)} | Responsable: ${paso.filled_by}\n`;
     if (paso.header && Object.keys(paso.header).length > 0) {
       const hEntries = Object.entries(paso.header).map(([k, v]) => `${k}="${v}"`).join(', ');
       ctx += `  Encabezado: ${hEntries}\n`;
@@ -449,7 +449,9 @@ export default function TrazabilidadBusqueda() {
                                 <span className="tb-paso-nombre">{paso.template_nombre}</span>
                               </div>
                               <div className="tb-paso-meta-row">
-                                <span>📅 {formatDate(paso.created_at)}</span>
+                                {/* La fecha del encabezado, que es la del turno.
+                                    created_at (cuando se guardo) queda de respaldo. */}
+                                <span title={`Guardado el ${formatDate(paso.created_at)}`}>📅 {formatDate(paso.fecha_registro || paso.created_at)}</span>
                                 <span>👤 {paso.filled_by || 'N/A'}</span>
                                 {paso.filled_by_role && (
                                   <span className="tb-paso-role">{paso.filled_by_role}</span>

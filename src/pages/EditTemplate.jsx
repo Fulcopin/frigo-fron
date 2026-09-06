@@ -10,6 +10,7 @@ import { fetchUsers } from "../services/userService";
 import { isResumenAutoEnabled, setResumenAutoEnabled } from "../hooks/useLoteStore";
 import { InventarioColumnaConfig, InventarioAutoCompletar, InventarioTablaConfig, CampoLoteEncabezadoConfig, ColumnaLotePadreConfig } from "../components/InventarioConfig";
 import BusquedaProductoSelect from "../components/BusquedaProductoSelect";
+import SelectorActividadesProceso from "../components/SelectorActividadesProceso";
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
@@ -582,7 +583,17 @@ function EditTemplate() {
             </small>
           </div>
           <div className="form-group full-width"><label>Nombre del Registro *</label><input type="text" value={template.nombre} onChange={(e) => handleInputChange("nombre", e.target.value)} placeholder="Ej: CONTROL DE TEMPERATURA DE TÚNELES"/></div>
-          <div className="form-group full-width"><label>Proceso - Productivo</label><input type="text" value={template.supervisa} onChange={(e) => handleInputChange("supervisa", e.target.value)} placeholder="Ej: Jefe de Producción, Supervisor de Calidad"/></div>
+          <div className="form-group full-width">
+            <label>Proceso - Productivo</label>
+            {/* Multi-selección sobre el catálogo completo (pescado + camarón): una
+                plantilla puede cubrir varias actividades. Se guarda como texto
+                separado por comas, igual que antes, así que la vista de
+                formularios, el PDF y el Excel lo siguen imprimiendo tal cual. */}
+            <SelectorActividadesProceso
+              value={template.supervisa}
+              onChange={(v) => handleInputChange("supervisa", v)}
+            />
+          </div>
           <div className="form-group"><label>Proceso</label><input type="text" value={template.proceso} onChange={(e) => handleInputChange("proceso", e.target.value)} placeholder="Ej: Producción, Calidad, Recepción"/></div>
           <div className="form-group"><label>Cuándo se usa</label><input type="text" value={template.cuandoSeUsa} onChange={(e) => handleInputChange("cuandoSeUsa", e.target.value)} placeholder="Ej: Posterior a congelación"/></div>
           <div className="form-group"><label>Quién lo llena</label><input type="text" value={template.quienLoLlena} onChange={(e) => handleInputChange("quienLoLlena", e.target.value)} placeholder="Ej: Asistente de Cámara"/></div>
@@ -1737,6 +1748,43 @@ function EditTemplate() {
                             ))}
                           </select>
                         </div>
+                      </div>
+
+                      {/* ─── CONTROL DE ESPECIE ─── */}
+                      <div style={{ borderTop: '1px solid #d8b4fe', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <input
+                            type="checkbox"
+                            id={`validarEspecieCodigo-${elementIndex}`}
+                            checked={element.validarEspecieCodigo || false}
+                            onChange={(e) => updateBodyElement(elementIndex, 'validarEspecieCodigo', e.target.checked)}
+                            style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#b45309' }}
+                          />
+                          <label htmlFor={`validarEspecieCodigo-${elementIndex}`} style={{ cursor: 'pointer', fontWeight: 600, fontSize: '12px', color: element.validarEspecieCodigo ? '#b45309' : '#4b5563', margin: 0 }}>
+                            🐟 Validar que el código sea de la especie del encabezado
+                          </label>
+                        </div>
+
+                        {element.validarEspecieCodigo && (
+                          <>
+                            <div style={{ fontSize: '11px', color: '#92400e', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '6px 10px' }}>
+                              Al cargar un código se compara la especie del encabezado con la del código (campo <code>detEspecie</code> y, si no viene, la columna <strong>Clasificación</strong>). Basta con que compartan una palabra: “Mahi Mahi” acepta “Mahi Entero 12up frizado”. Si no coinciden, se borra el código con todo lo que trajo y se avisa al operario.
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxWidth: '340px' }}>
+                              <label style={{ fontSize: '12px', fontWeight: 600, color: '#b45309' }}>🐟 Campo del encabezado con la especie</label>
+                              <select
+                                value={element.especieHeaderField || ''}
+                                onChange={(e) => updateBodyElement(elementIndex, 'especieHeaderField', e.target.value)}
+                                style={{ padding: '8px 10px', border: '1.5px solid #fcd34d', borderRadius: '6px', fontSize: '13px', background: 'white' }}
+                              >
+                                <option value="">-- Detectar automáticamente (campo que diga “Especie”) --</option>
+                                {(template.headerFields || []).filter(f => f.label).map((f, fi) => (
+                                  <option key={fi} value={f.label}>{f.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {(element.columns || []).some(c => c.apiCodigo) && (

@@ -1,0 +1,335 @@
+/* 📦 Resumen de Lotes — mismos colores y medidas que Descargar Datos */
+.resumen-lotes {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.rl-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #1e293b;
+}
+
+.rl-sub {
+  margin: 4px 0 0;
+  font-size: .85rem;
+  color: #64748b;
+}
+
+/* ── Filtros ── */
+.rl-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.rl-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rl-campo-ancho { min-width: 260px; flex: 1; }
+
+.rl-campo label {
+  font-size: .72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.rl-campo input,
+.rl-campo select {
+  height: 36px;
+  padding: 0 10px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: .85rem;
+  outline: none;
+  background: white;
+}
+
+.rl-campo input:focus,
+.rl-campo select:focus { border-color: #3b82f6; }
+
+.rl-btn-cargar,
+.rl-btn-excel {
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: .875rem;
+  font-weight: 700;
+  color: white;
+  white-space: nowrap;
+  transition: opacity .15s, transform .1s;
+}
+
+.rl-btn-cargar { background: #3b82f6; }
+.rl-btn-excel  { background: #10b981; }
+
+.rl-btn-cargar:hover:not(:disabled),
+.rl-btn-excel:hover:not(:disabled) { opacity: .88; transform: translateY(-1px); }
+
+.rl-btn-cargar:disabled,
+.rl-btn-excel:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+.rl-progreso {
+  font-size: .85rem;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.rl-error {
+  font-size: .875rem;
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1.5px solid #fca5a5;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.rl-vacio {
+  font-size: .9rem;
+  color: #64748b;
+  background: white;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* ── Totales ── */
+.rl-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rl-stat {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 20px;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.rl-stat-val { font-size: 1.5rem; font-weight: 800; color: #1e293b; }
+.rl-stat-lbl { font-size: .72rem; color: #64748b; text-transform: uppercase; font-weight: 700; }
+
+.rl-stat-total { background: #ecfdf5; border-color: #a7f3d0; }
+.rl-stat-total .rl-stat-val { color: #047857; }
+
+/* ── Tabla ── */
+.rl-tabla-wrap {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow-x: auto;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.rl-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .85rem;
+}
+
+.rl-tabla thead th {
+  background: #1e40af;
+  color: white;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  position: sticky;
+  top: 0;
+}
+
+.rl-num { text-align: right; }
+
+.rl-fila-lote {
+  cursor: pointer;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.rl-fila-lote:hover { background: #eff6ff; }
+.rl-fila-lote td { padding: 10px 12px; color: #334155; }
+
+.rl-toggle { color: #64748b; font-size: .8rem; }
+.rl-lote { font-weight: 700; color: #1e40af; }
+.rl-fechas { font-size: .78rem; color: #64748b; }
+.rl-total { font-weight: 800; color: #047857; }
+
+.rl-fila-detalle > td { padding: 0 12px 12px; background: #f8fafc; }
+
+.rl-detalle {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .78rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rl-detalle thead th {
+  background: #f1f5f9;
+  color: #475569;
+  padding: 6px 10px;
+  text-align: left;
+  font-size: .68rem;
+  text-transform: uppercase;
+  position: static;
+}
+
+.rl-detalle td {
+  padding: 6px 10px;
+  border-top: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.rl-id { color: #94a3b8; font-size: .72rem; }
+.rl-manual { color: #94a3b8; font-style: italic; }
+
+.rl-cuaderno {
+  border: 1px solid #a5f3fc;
+  background: #ecfeff;
+  color: #0e7490;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: .72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rl-cuaderno:hover { background: #cffafe; }
+
+.rl-detalle-total td {
+  background: #f8fafc;
+  font-weight: 700;
+  color: #0f172a;
+  border-top: 2px solid #cbd5e1;
+}
+
+.rl-fila-total td {
+  background: #eef2ff;
+  font-weight: 800;
+  color: #3730a3;
+  padding: 12px;
+  border-top: 3px solid #6366f1;
+}
+
+@media (max-width: 768px) {
+  .resumen-lotes { padding: 12px; }
+  .rl-campo-ancho { min-width: 100%; }
+  .rl-tabla { font-size: .78rem; }
+}
+
+.rl-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .8rem;
+  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  height: 36px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rl-switch input { accent-color: #3b82f6; cursor: pointer; margin: 0; }
+.rl-switch-nota { color: #94a3b8; font-style: normal; font-size: .72rem; }
+
+/* ── Qué significa cada total ── */
+.rl-leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #6366f1;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: .76rem;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.rl-leyenda strong { color: #1e293b; }
+
+/* ── Formularios del lote ── */
+.rl-forms { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.rl-chip {
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #3730a3;
+  border-radius: 20px;
+  padding: 1px 8px;
+  font-size: .7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rl-chip em { color: #6366f1; font-style: normal; }
+.rl-chip-mas { background: #f1f5f9; border-color: #cbd5e1; color: #64748b; }
+
+.rl-cuaderno-total { margin-left: 6px; padding: 1px 6px; }
+
+/* ── Desglose por formulario ── */
+.rl-porform {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.rl-porform-tit {
+  font-size: .68rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.rl-porform-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  border-top: 1px solid #f1f5f9;
+  font-size: .78rem;
+  color: #334155;
+}
+
+.rl-porform-form { font-weight: 700; color: #1e40af; }
+.rl-porform-form em { color: #94a3b8; font-style: normal; font-weight: 600; }
+.rl-porform-proc { color: #64748b; }
+.rl-porform-fecha { color: #94a3b8; font-size: .72rem; }
+.rl-porform-num { color: #64748b; font-size: .72rem; }
+.rl-porform-total { margin-left: auto; font-weight: 800; color: #047857; }

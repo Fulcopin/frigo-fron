@@ -1,0 +1,162 @@
+/* 📈 Indicadores de Personal */
+.pd-page {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.pd-header h1 { margin: 0; font-size: 1.5rem; color: #1e293b; }
+.pd-sub { margin: 4px 0 10px; font-size: .85rem; color: #64748b; }
+
+.pd-link-btn {
+  display: inline-block;
+  background: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: .82rem;
+  color: #334155;
+  text-decoration: none;
+}
+.pd-link-btn:hover { background: #f1f5f9; }
+
+.pd-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.pd-campo { display: flex; flex-direction: column; gap: 4px; }
+.pd-campo-ancho { min-width: 240px; flex: 1; }
+.pd-campo label { font-size: .72rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.pd-campo input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: .9rem;
+}
+
+.pd-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: .85rem;
+}
+
+.pd-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.pd-kpi {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.pd-kpi-label { font-size: .72rem; color: #64748b; text-transform: uppercase; font-weight: 700; }
+.pd-kpi-valor { font-size: 1.6rem; font-weight: 700; color: #0f172a; }
+.pd-kpi-alerta .pd-kpi-valor { color: #d97706; }
+
+.pd-tabs { display: flex; gap: 8px; border-bottom: 1px solid #e2e8f0; }
+.pd-tab {
+  background: none;
+  border: none;
+  padding: 10px 14px;
+  font-size: .85rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.pd-tab.active { color: #0ea5e9; border-bottom-color: #0ea5e9; }
+
+.pd-loading { padding: 24px; text-align: center; color: #64748b; }
+
+.pd-tabla-wrap {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 8px;
+  overflow-x: auto;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.pd-tabla-wrap table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.pd-tabla-wrap th, .pd-tabla-wrap td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  white-space: nowrap;
+}
+.pd-tabla-wrap th { color: #64748b; text-transform: uppercase; font-size: .7rem; }
+.pd-celda-alerta { color: #d97706; font-weight: 700; }
+.pd-obs { white-space: normal; min-width: 220px; }
+.pd-vacio { text-align: center; color: #94a3b8; padding: 20px; }
+
+/* Configuración de estándares por formulario */
+.pd-estandares { display: flex; flex-direction: column; gap: 16px; }
+
+.pd-form-estandar {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pd-form-estandar h3 { margin: 0; font-size: 1rem; color: #1e293b; }
+
+.pd-form-fila { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+
+.pd-campo select {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: .9rem;
+}
+.pd-campo-check { flex-direction: row; align-items: center; gap: 8px; }
+.pd-campo-check label { display: flex; align-items: center; gap: 6px; font-size: .85rem; color: #334155; }
+
+.pd-form-acciones { display: flex; gap: 10px; }
+
+.pd-btn {
+  background: #0ea5e9;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pd-btn:disabled { opacity: .6; cursor: not-allowed; }
+.pd-btn-secundario { background: none; border: 1px solid #cbd5e1; color: #334155; }
+
+.pd-acciones-celda { display: flex; gap: 6px; }
+.pd-btn-mini {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: .75rem;
+  cursor: pointer;
+}
+.pd-btn-mini-danger { color: #b91c1c; border-color: #fca5a5; background: #fef2f2; }

@@ -1053,11 +1053,8 @@ export async function aplicarDescuentosInventario({ template, bodyData, formId, 
           ? (dest || cfg.descuentaProceso || procesoDefault || '')
           : (cfg.descuentaProceso || procesoDefault || '');
         let notaExtra = '';
-        if (esCambioProceso && !cfg.descuentaInventario) {
-          notaExtra = `#cambio_proceso:${dest || destProceso || 'otro'} `;
-        } else if (sinDescontar) {
-          notaExtra = `#traspaso:${dest || destProceso || 'otro'} `;
-        }
+        if (sinDescontar) notaExtra = `#traspaso:${dest || destProceso || 'otro'} `;
+        else if (esCambioProceso && !cfg.descuentaInventario) notaExtra = `#cambio_proceso:${cfg.cambioProcesoDest || 'otro'} `;
 
         const escribir = sinDescontar ? registrarTraspaso : consumirCantidad;
         const lote = await escribir({

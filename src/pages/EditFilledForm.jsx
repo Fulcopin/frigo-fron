@@ -348,35 +348,10 @@ function EditFilledForm() {
 
   // Funciones para manejar cambios en los datos con autoguardado
   const updateHeaderData = (fieldLabel, value) => {
-    setFormData(prev => {
-      const nextHeaderData = { ...prev.headerData, [fieldLabel]: value };
-      
-      if (template && template.headerFields) {
-        const fieldConfig = template.headerFields.find(f => f.label === fieldLabel);
-        if (fieldConfig && fieldConfig.type === 'date' && fieldConfig.autoGenerarLote && value) {
-          try {
-            const [year, month, day] = value.split('-');
-            if (year && month && day) {
-              const yy = year.slice(-2);
-              const generatedLote = `${yy}${month}${day}`;
-              const loteField = template.headerFields.find(
-                f => f.type === 'text' && f.label.toLowerCase().includes('lote') && !f.label.toLowerCase().includes('entrante')
-              );
-              if (loteField) {
-                nextHeaderData[loteField.label] = generatedLote;
-              }
-            }
-          } catch (error) {
-            console.error('Error auto-generando lote:', error);
-          }
-        }
-      }
-      
-      return {
-        ...prev,
-        headerData: nextHeaderData
-      };
-    });
+    setFormData(prev => ({
+      ...prev,
+      headerData: { ...prev.headerData, [fieldLabel]: value }
+    }));
     setHasUnsavedChanges(true);
   };
 
@@ -1079,18 +1054,11 @@ Template: ${template?.nombre}
                 {template.headerFields.map((field, index) => (
                   <div key={index} className="field-group">
                     <label>{field.label}{field.required && " *"}</label>
-                    {(() => {
-                      const isAutoLote = field.type === 'text' && 
-                                         field.label.toLowerCase().includes('lote') && 
-                                         !field.label.toLowerCase().includes('entrante') &&
-                                         template.headerFields.some(f => f.type === 'date' && f.autoGenerarLote);
-                      return renderField(
-                        field,
-                        formData.headerData[field.label],
-                        (value) => updateHeaderData(field.label, value),
-                        isAutoLote // disabled prop
-                      );
-                    })()}
+                    {renderField(
+                      field,
+                      formData.headerData[field.label],
+                      (value) => updateHeaderData(field.label, value)
+                    )}
                   </div>
                 ))}
               </div>

@@ -20,6 +20,26 @@ const norm = (s) => String(s ?? '')
  */
 const NO_ES_LA_FECHA = /VENCIM|CADUC|EXPIR|VERSION|ELABORAC.*ETIQUET|NACIM/;
 
+/**
+ * El encabezado como OBJETO, venga como venga.
+ *
+ * ViewForms parsea headerData antes de guardarlo en su estado, pero el plan, la
+ * calculadora y la búsqueda de trazabilidad trabajan con la respuesta cruda de
+ * la API, donde headerData es un string JSON. Sin esto, esos tres se quedaban
+ * sin fecha interna y caían siempre a la de guardado.
+ */
+export function encabezadoDe(form) {
+  const parse = (x) => {
+    if (!x) return null;
+    if (typeof x === 'object') return x;
+    try { return JSON.parse(x); } catch { return null; }
+  };
+  const hd = parse(form?.headerData ?? form?.HeaderData);
+  if (hd && typeof hd === 'object' && Object.keys(hd).length > 0) return hd;
+  const d = parse(form?.data ?? form?.Data);
+  return (d && typeof d === 'object' && (d.header || d.Header)) || {};
+}
+
 /** Devuelve 'YYYY-MM-DD' a partir de los formatos que se guardan en la app. */
 export function aFechaISO(valor) {
   const v = String(valor ?? '').trim();
@@ -55,7 +75,7 @@ export function aFechaISO(valor) {
  * @returns {string} 'YYYY-MM-DD' o '' si el formulario no tiene fecha propia
  */
 export function fechaInternaDeFormulario(form) {
-  const header = form?.headerData;
+  const header = encabezadoDe(form);
   if (!header || typeof header !== 'object') return '';
 
   const candidatos = [];
@@ -78,7 +98,7 @@ export function fechaInternaDeFormulario(form) {
  * @returns {string} 'YYYY-MM-DD'
  */
 export function fechaDeBusqueda(form) {
-  return fechaInternaDeFormulario(form) || aFechaISO(form?.createdAt);
+  return fechaInternaDeFormulario(form) || aFechaISO(form?.createdAt ?? form?.CreatedAt);
 }
 
 /** ¿La fecha del registro cae dentro del rango elegido? Rango inclusivo. */
@@ -98,4 +118,4 @@ export function fechaDifiereDeGuardado(form) {
   return interna !== aFechaISO(form?.createdAt);
 }
 
-export default { aFechaISO, fechaInternaDeFormulario, fechaDeBusqueda, entraEnRango, fechaDifiereDeGuardado };
+export default { aFechaISO, encabezadoDe, fechaInternaDeFormulario, fechaDeBusqueda, entraEnRango, fechaDifiereDeGuardado };

@@ -5,6 +5,7 @@ import { isTrazaEnabled, setTrazaEnabled, isResumenAutoEnabled, setResumenAutoEn
 import { exportFormToPDF, exportMultipleFormsToPDF } from '../services/pdfExportService';
 import { PDFDocument } from 'pdf-lib';
 import { API_BASE_URL } from '../apiConfig';
+import { fechaDeBusqueda } from '../utils/fechaFormulario';
 import './TrazabilidadConfig.css';
 
 // ─── Constantes de dominio ────────────────────────────────────────────────────
@@ -538,28 +539,14 @@ export default function TrazabilidadConfig() {
         }
       }
 
-      const desde = new Date(fechaDesde + 'T00:00:00');
-      const hasta = new Date(fechaHasta + 'T23:59:59');
-
       const matched = allForms
         .filter(form => {
-          let formDateStr = null;
-          try {
-            const hd = typeof form.headerData === 'string' ? JSON.parse(form.headerData) : (form.headerData || {});
-            const dataObj = typeof form.data === 'string' ? JSON.parse(form.data) : (form.data || {});
-            const header = hd.FECHA ? hd : (dataObj.header || dataObj.Header || hd || {});
-            formDateStr = header['FECHA'] || header['Fecha'] || header['fecha'] || null;
-          } catch(e) {}
-
-          let fDate;
-          if (formDateStr) {
-            fDate = new Date(formDateStr + 'T00:00:00');
-            if (isNaN(fDate.getTime())) fDate = new Date(form.createdAt || form.CreatedAt || 0);
-          } else {
-            fDate = new Date(form.createdAt || form.CreatedAt || 0);
-          }
-
-          if (fDate < desde || fDate > hasta) return false;
+          // La fecha que escribió el operador en el encabezado (con createdAt
+          // como último recurso). Reconoce «Fecha», «FECHA», «Fecha - Hora»,
+          // «Fecha de Proceso»… y descarta vencimientos y controles por día.
+          const fIso = fechaDeBusqueda(form);
+          if (!fIso) return false;
+          if (fIso < fechaDesde || fIso > fechaHasta) return false;
           
           const tid = String(form.templateID ?? form.TemplateID ?? '');
           if (fechaTemplateId && tid !== String(fechaTemplateId)) return false;
@@ -571,18 +558,8 @@ export default function TrazabilidadConfig() {
           const tpl = tplMap[tid];
           const lotes = extractLoteValues(form);
           
-          let formDateStr = null;
-          try {
-            const hd = typeof form.headerData === 'string' ? JSON.parse(form.headerData) : (form.headerData || {});
-            const dataObj = typeof form.data === 'string' ? JSON.parse(form.data) : (form.data || {});
-            const header = hd.FECHA ? hd : (dataObj.header || dataObj.Header || hd || {});
-            formDateStr = header['FECHA'] || header['Fecha'] || header['fecha'] || null;
-          } catch(e) {}
-          let displayDate = form.createdAt || form.CreatedAt;
-          if (formDateStr) {
-            const pd = new Date(formDateStr + 'T00:00:00');
-            if (!isNaN(pd.getTime())) displayDate = pd.toISOString();
-          }
+          // Se muestra y se ordena por la MISMA fecha con la que se filtró.
+          const displayDate = `${fechaDeBusqueda(form)}T00:00:00`;
 
           return {
             ...form,
@@ -643,7 +620,8 @@ export default function TrazabilidadConfig() {
     } else if (fechaSortField === 'proceso') {
       va = (a._proceso || '').toLowerCase(); vb = (b._proceso || '').toLowerCase();
     } else {
-      va = new Date(a.createdAt || 0).getTime(); vb = new Date(b.createdAt || 0).getTime();
+      va = new Date(a._displayDate || a.createdAt || 0).getTime();
+      vb = new Date(b._displayDate || b.createdAt || 0).getTime();
     }
     if (va < vb) return fechaSortDir === 'asc' ? -1 : 1;
     if (va > vb) return fechaSortDir === 'asc' ? 1 : -1;
@@ -1380,8 +1358,10 @@ export default function TrazabilidadConfig() {
                   <tbody>
                     {sortedLoteResults.map(form => {
                       const isChecked = loteChecked.has(form.formID);
-                      const fecha = form.createdAt
-                        ? new Date(form.createdAt).toLocaleString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                      // Misma fecha que usa la búsqueda por rango: la del operador.
+                      const fIso = fechaDeBusqueda(form);
+                      const fecha = fIso
+                        ? new Date(`${fIso}T00:00:00`).toLocaleDateString('es-HN', { day: '2-digit', month: '2-digit', year: 'numeric' })
                         : '—';
                       return form._isMissing ? (
                         <tr key={form.formID} style={{ borderBottom: '1px solid #fecaca', background: '#fef2f2' }}>
