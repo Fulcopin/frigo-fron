@@ -37,6 +37,8 @@ import {
   getResumenProduccion, getFormulariosProduccion, registrarTraspaso,
 } from '../hooks/useLoteStore';
 import { catalogoClasificaciones } from './clasificacionesService';
+// Solo para dejar escrita la relación padre → hijo; no mueve saldos.
+import trazabilidadService from './trazabilidadService';
 
 // ── Origen de los valores de una columna de inventario ───────────────────────
 
@@ -1670,8 +1672,51 @@ export function sugerirConfigEntrada(element) {
  *
  * @returns {Promise<{creados: Array, omitidos: Array, errores: Array}>}
  */
+/**
+ * Lotes de materia prima del formulario, con las libras que se usaron de cada
+ * uno. Son las tablas marcadas con "Restar del Inventario de Lotes": lo que
+ * entró al proceso. De acá salen los padres y sus proporciones.
+ *
+ * @returns {Array<{lote: string, cantidad: number}>}
+ */
+function leerMateriaPrima(elementos, bodyData) {
+  const acumulado = {};
+
+  for (let i = 0; i < elementos.length; i++) {
+    const cfg = elementos[i];
+    if (cfg?.type !== 'table' || !cfg.descuentaInventario) continue;
+
+    const loteCol = cfg.descuentaLoteCol;
+    const cantCol = cfg.descuentaCantidadCol;
+    if (!loteCol || !cantCol) continue;
+
+    const filas = bodyData?.[i]?.data;
+    if (!Array.isArray(filas)) continue;
+
+    for (const row of filas) {
+      if (row?._deleted) continue;
+      const lote = String(leerCelda(row, loteCol) || '').trim();
+      if (!lote) continue;
+      const cant = Number(String(leerCelda(row, cantCol) ?? '').replace(',', '.'));
+      if (!Number.isFinite(cant) || cant <= 0) continue;
+      acumulado[lote] = (acumulado[lote] || 0) + cant;
+    }
+  }
+
+  return Object.entries(acumulado)
+    .map(([lote, cantidad]) => ({ lote, cantidad }))
+    .sort((a, b) => b.cantidad - a.cantidad);
+}
+
+/** El padre que más aportó: materia prima si la hay, si no el de la fila. */
+function padrePrincipal(elementos, bodyData, info) {
+  const mp = leerMateriaPrima(elementos, bodyData);
+  if (mp.length > 0) return mp[0].lote;
+  return Object.entries(info.padres || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || info.lotePadre || '';
+}
+
 export async function aplicarEntradasInventario({ template, bodyData, formId, procesoDefault, fecha }) {
-  const resultado = { creados: [], omitidos: [], errores: [] };
+  const resultado = { creados: [], omitidos: [], errores: [], aristas: [] };
   const elementos = elementosDe(template);
   const templateId = String(template?.templateID || template?.id || '');
 
@@ -1696,19 +1741,52 @@ export async function aplicarEntradasInventario({ template, bodyData, formId, pr
       return Number.isFinite(num) ? num : 0;
     };
 
-    // Varias filas con el mismo lote se suman en un solo registro.
+    // ── Agrupación de filas ───────────────────────────────────────────────
+    // Por defecto varias filas del mismo lote se suman en un registro. Con
+    // separarPorProducto cada producto es su propio lote: el PD-06 genera
+    // "Mahi porción", "Mahi punta" y "Mahi cola" bajo el mismo número, y al
+    // sumarlos se perdían dos de los tres productos y todos los padres menos
+    // el primero.
+    const separar = cfg.guardaSeparaPorProducto !== false && !!cfg.guardaProductoCol;
+
+    const limpiarSufijo = (v) => String(v || '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\-áéíóúñÁÉÍÓÚÑ]/g, '')
+      .slice(0, 40);
+
     const porLote = {};
     for (const row of datos) {
       if (row?._deleted) continue;
       const numeroLote = String(leerCelda(row, loteCol) || '').trim();
       if (!numeroLote) continue;
-      const acc = porLote[numeroLote] || (porLote[numeroLote] = {
+
+      const producto = cfg.guardaProductoCol
+        ? String(leerCelda(row, cfg.guardaProductoCol) || '').trim() : '';
+      const clasificacion = cfg.guardaClasificacionCol
+        ? String(leerCelda(row, cfg.guardaClasificacionCol) || '').trim() : '';
+      // El padre se lee POR FILA: en el PD-06 dos filas vienen de un lote y la
+      // tercera de otro, y antes solo sobrevivía el de la primera fila.
+      const lotePadre = cfg.guardaLotePadreCol
+        ? String(leerCelda(row, cfg.guardaLotePadreCol) || '').trim() : '';
+
+      const sufijo = separar ? limpiarSufijo(producto) : '';
+      const clave = sufijo ? `${numeroLote}-${sufijo}` : numeroLote;
+
+      const acc = porLote[clave] || (porLote[clave] = {
+        loteBase: numeroLote,
         peso: 0,
-        producto: cfg.guardaProductoCol ? String(leerCelda(row, cfg.guardaProductoCol) || '').trim() : '',
-        clasificacion: cfg.guardaClasificacionCol ? String(leerCelda(row, cfg.guardaClasificacionCol) || '').trim() : '',
-        lotePadre: cfg.guardaLotePadreCol ? String(leerCelda(row, cfg.guardaLotePadreCol) || '').trim() : '',
+        producto,
+        clasificacion,
+        lotePadre,
+        // Un mismo lote hijo puede recibir de varios padres: se acumula por padre.
+        padres: {},
       });
-      if (cantCol) acc.peso += aNumero(leerCelda(row, cantCol));
+      const peso = cantCol ? aNumero(leerCelda(row, cantCol)) : 0;
+      acc.peso += peso;
+      if (lotePadre && peso > 0) acc.padres[lotePadre] = (acc.padres[lotePadre] || 0) + peso;
+      if (!acc.producto && producto) acc.producto = producto;
+      if (!acc.clasificacion && clasificacion) acc.clasificacion = clasificacion;
     }
 
     const aCrear = Object.entries(porLote).map(([numeroLote, info]) => ({
@@ -1718,12 +1796,52 @@ export async function aplicarEntradasInventario({ template, bodyData, formId, pr
       clasificacion: info.clasificacion,
       pesoEntrada: Number(info.peso.toFixed(4)),
       desperdicio: 0,
-      lotePadre: info.lotePadre || null,
+      // LotePadre guarda solo el principal, por compatibilidad con lo viejo.
+      // La verdad completa —todos los padres con su cantidad— vive en las aristas.
+      lotePadre: padrePrincipal(elementos, bodyData, info) || null,
       formId: formId || null,
       templateId,
       fecha,
       notas: `Entrada desde ${titulo}`,
     }));
+
+    // ── Aristas: de qué lotes viene cada lote generado ────────────────────
+    //
+    // Cuando el formulario tiene una tabla de MATERIA PRIMA, los padres salen
+    // de ahí y se reparten entre TODOS los hijos en proporción al peso de cada
+    // uno. Es la mezcla real: si diez lotes entran al mismo tanque, cada
+    // producto que sale lleva un poco de los diez. Atribuir una fila a un solo
+    // padre sería inventar un dato que nadie midió.
+    //
+    // Solo si no hay tabla de materia prima se usa el padre fila por fila
+    // (formularios como el PD-20, donde LOTE MP viene en la misma línea y los
+    // lotes no se mezclan entre sí).
+    const padresMp = leerMateriaPrima(elementos, bodyData);
+    const totalHijos = Object.values(porLote).reduce((sum, x) => sum + x.peso, 0);
+
+    if (padresMp.length > 0 && totalHijos > 0) {
+      for (const [hijo, info] of Object.entries(porLote)) {
+        const fraccion = info.peso / totalHijos;
+        for (const p of padresMp) {
+          const cantidad = Number((p.cantidad * fraccion).toFixed(4));
+          if (cantidad <= 0) continue;
+          if (p.lote.toLowerCase() === hijo.toLowerCase()) continue;
+          resultado.aristas.push({ lotePadre: p.lote, loteHijo: hijo, cantidad });
+        }
+      }
+    } else {
+      for (const [hijo, info] of Object.entries(porLote)) {
+        for (const [padre, cantidad] of Object.entries(info.padres)) {
+          if (!padre || cantidad <= 0) continue;
+          if (padre.toLowerCase() === hijo.toLowerCase()) continue;
+          resultado.aristas.push({
+            lotePadre: padre,
+            loteHijo: hijo,
+            cantidad: Number(cantidad.toFixed(4)),
+          });
+        }
+      }
+    }
 
     if (aCrear.length === 0) continue;
 
@@ -1749,6 +1867,27 @@ export async function aplicarEntradasInventario({ template, bodyData, formId, pr
       }
     } catch (err) {
       resultado.errores.push(`${titulo}: ${err.message}`);
+    }
+  }
+
+  // ── Aristas de trazabilidad ─────────────────────────────────────────────
+  // Van al final, cuando los lotes hijo ya existen: una arista que apunte a un
+  // lote inexistente se omitiría. No mueven saldo — de eso ya se encargó la
+  // tabla de materia prima al descontar.
+  if (resultado.aristas.length > 0) {
+    try {
+      const res = await trazabilidadService.registrarAristas({
+        formId: formId ? Number(formId) : null,
+        proceso: procesoDefault || '',
+        aristas: resultado.aristas,
+      });
+      if (Array.isArray(res?.omitidas) && res.omitidas.length > 0) {
+        resultado.omitidos.push(...res.omitidas);
+      }
+    } catch (err) {
+      // Que falle la traza no debe tumbar el guardado del formulario: los
+      // lotes ya se crearon y el inventario quedó bien.
+      resultado.omitidos.push(`No se registraron las relaciones de trazabilidad: ${err.message}`);
     }
   }
 

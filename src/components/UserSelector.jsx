@@ -18,7 +18,7 @@ import './UserSelector.css';
  */
 const UserSelector = ({ users, value, onChange, placeholder, disabled, puesto }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState(value || '');
+  const [searchTerm, setSearchTerm] = useState(typeof value === 'string' ? value : '');
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   
@@ -32,7 +32,7 @@ const UserSelector = ({ users, value, onChange, placeholder, disabled, puesto })
       return;
     }
 
-    const search = searchTerm.toLowerCase().trim();
+    const search = String(searchTerm ?? '').toLowerCase().trim();
     
     if (!search) {
       setFilteredUsers(users);
@@ -69,7 +69,7 @@ const UserSelector = ({ users, value, onChange, placeholder, disabled, puesto })
   // Sincronizar valor externo con búsqueda interna
   useEffect(() => {
     if (value !== searchTerm) {
-      setSearchTerm(value || '');
+      setSearchTerm(typeof value === 'string' ? value : '');
     }
   }, [value]);
 

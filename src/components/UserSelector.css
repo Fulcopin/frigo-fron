@@ -14,6 +14,18 @@
   background: white;
   transition: all 0.2s ease;
   font-family: inherit;
+  /* El color tiene que ser explícito: sin él el input hereda el del contenedor,
+     y en las secciones con cabecera clara el texto salía blanco sobre blanco —
+     se escribía el nombre y no se veía nada. */
+  color: #1f2937;
+  -webkit-text-fill-color: #1f2937;   /* Safari/iOS ignoran color en algunos inputs */
+  opacity: 1;
+}
+
+.user-selector-input::placeholder {
+  color: #9ca3af;
+  -webkit-text-fill-color: #9ca3af;
+  opacity: 1;                          /* Firefox lo aclara por su cuenta */
 }
 
 .user-selector-input:focus {
@@ -24,6 +36,8 @@
 
 .user-selector-input:disabled {
   background-color: #f3f4f6;
+  color: #6b7280;
+  -webkit-text-fill-color: #6b7280;
   cursor: not-allowed;
   opacity: 0.6;
 }
@@ -99,63 +113,74 @@
   border-left-color: #3b82f6;
 }
 
-.user-info {
+.user-selector-item .user-info {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 4px;
 }
 
-.user-name {
+.user-selector-item .user-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  /* UserInfo.css define .user-name con `color: white !important` para la barra
+     superior, que tiene fondo oscuro. En React el CSS es global, así que esa
+     regla también caía sobre este desplegable y los nombres quedaban blancos
+     sobre blanco. Se gana por especificidad anidando bajo el item, y el
+     !important es necesario únicamente porque el otro lo usa. */
+  color: #1f2937 !important;
 }
 
-.user-role {
+.user-selector-item .user-role {
   font-size: 11px;
   font-weight: 600;
-  background: #10b981;
-  color: white;
+  /* Idem: MySignature.css le pone un fondo translúcido que acá lo deja en
+     blanco sobre blanco. Se fija el fondo verde para que el texto se lea. */
+  background: #10b981 !important;
+  color: #ffffff !important;
   padding: 2px 8px;
   border-radius: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  box-shadow: none;
+  backdrop-filter: none;
+  display: inline-block;
+  line-height: 1.4;
 }
 
 /* Roles específicos con colores */
-.user-role[data-role="ADMIN"] {
-  background: #ef4444;
+.user-selector-item .user-role[data-role="ADMIN"] {
+  background: #ef4444 !important;
 }
 
-.user-role[data-role="CAMARA"] {
-  background: #3b82f6;
+.user-selector-item .user-role[data-role="CAMARA"] {
+  background: #3b82f6 !important;
 }
 
-.user-role[data-role="PRODUCCION"] {
-  background: #f59e0b;
+.user-selector-item .user-role[data-role="PRODUCCION"] {
+  background: #f59e0b !important;
 }
 
-.user-role[data-role="CALIDAD"] {
-  background: #10b981;
+.user-selector-item .user-role[data-role="CALIDAD"] {
+  background: #10b981 !important;
 }
 
-.user-role[data-role="MANTENIMIENTO"] {
-  background: #8b5cf6;
+.user-selector-item .user-role[data-role="MANTENIMIENTO"] {
+  background: #8b5cf6 !important;
 }
 
-.user-details {
+.user-selector-item .user-details {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
   color: #6b7280;
 }
 
-.user-email {
+.user-selector-item .user-email {
   font-style: italic;
 }
 
-.user-company {
+.user-selector-item .user-company {
   font-weight: 500;
   color: #6b7280;
 }
@@ -219,7 +244,7 @@
     font-size: 13px;
   }
   
-  .user-details {
+  .user-selector-item .user-details {
     flex-direction: column;
     gap: 4px;
   }

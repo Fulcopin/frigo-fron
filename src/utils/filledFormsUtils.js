@@ -126,14 +126,45 @@ export async function mergeOpcionesActuales(templateProcesado) {
   return templateProcesado;
 }
 
+// El backend usa ReferenceHandler.Preserve (Program.cs): una lista de C# puede
+// llegar como {"$id":"3","$values":[...]} en vez de [...]. Con eso la pantalla
+// de edición reventaba con "bodyElements.map is not a function" (form #2369).
+// Se desenvuelve para trabajar siempre con listas normales.
+export const quitarMetadatosNet = (v) => {
+  if (Array.isArray(v)) return v.map(quitarMetadatosNet);
+  if (v && typeof v === 'object') {
+    if (Array.isArray(v.$values)) return v.$values.map(quitarMetadatosNet);
+    const limpio = {};
+    for (const [k, val] of Object.entries(v)) {
+      if (k !== '$id') limpio[k] = quitarMetadatosNet(val);
+    }
+    return limpio;
+  }
+  return v;
+};
+
 // Parsear los datos JSON de forma segura
 const safeParseJSON = (jsonString, fallback = {}) => {
   try {
     if (jsonString === null || jsonString === undefined || jsonString === 'null' || jsonString === '') {
       return fallback;
     }
-    if (typeof jsonString === 'object') return jsonString;
-    return JSON.parse(jsonString) || fallback;
+    // Puede llegar ya como objeto (cuando el backend lo manda deserializado).
+    let parsed = typeof jsonString === 'object' ? jsonString : JSON.parse(jsonString);
+    // JSON guardado dos veces ("\"{...}\""): al primer parse queda un texto.
+    // Sin esto el formulario se abría vacío y parecía que se había perdido.
+    if (typeof parsed === 'string') {
+      try { parsed = JSON.parse(parsed); } catch { /* era texto de verdad */ }
+    }
+    if (parsed === null || parsed === undefined) return fallback;
+    parsed = quitarMetadatosNet(parsed);
+    // El tipo tiene que coincidir con el esperado: un objeto donde se espera
+    // una lista (o al revés) rompía los .map() de la pantalla de edición.
+    if (Array.isArray(fallback) !== Array.isArray(parsed) || typeof parsed !== 'object') {
+      console.warn('⚠️ JSON con forma inesperada, usando fallback:', parsed);
+      return fallback;
+    }
+    return parsed;
   } catch (error) {
     console.warn('⚠️ Error parsing JSON, usando fallback:', { jsonString, error });
     return fallback;
@@ -205,9 +236,12 @@ function processBodyData(bodyDataString) {
     let parsed;
     if (typeof bodyDataString === 'string') {
       parsed = JSON.parse(bodyDataString);
+      // BodyData guardado dos veces como texto: se decodifica otra vez.
+      if (typeof parsed === 'string') parsed = JSON.parse(parsed);
     } else {
       parsed = bodyDataString; // Ya es un objeto
     }
+    parsed = quitarMetadatosNet(parsed);
     
     console.log('🔧 BodyData parseado:', parsed);
     console.log('🔧 BodyData tipo:', typeof parsed);
@@ -238,7 +272,9 @@ function processBodyData(bodyDataString) {
           // Si tiene formato legacy {data: [...]} para tablas
           else if (item.data && Array.isArray(item.data)) {
             console.log(`🔄 Item ${index} es formato legacy tabla, convirtiendo {data} -> {rows}`);
-            return { ...item, rows: item.data };
+            // Se descartan filas null: vienen de arreglos con huecos y
+            // reventaban la tabla al editar.
+            return { ...item, rows: item.data.filter(r => r && typeof r === 'object' && !Array.isArray(r)) };
           }
           // Si tiene type:table pero sin data ni rows, preservar
           else if (item.type === 'table') {

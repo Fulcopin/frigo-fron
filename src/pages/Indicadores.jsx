@@ -9,7 +9,18 @@ import './Indicadores.css';
 const TOP_N = 20;
 const ALL = '__ALL__';
 const TAB = '__TAB__';           // "el formulario que diga la pestaña" (hereda el alcance)
-const REFRESH_MS = 30000;        // tiempo real: refresco automático cada 30 s
+// Tiempo real por sondeo, con intervalo que se adapta al movimiento.
+//
+// En planta los datos llegan en ráfagas: entra un formulario y después pasa
+// media hora sin nada. Consultar cada 30 s todo el tiempo es gastar red y CPU
+// del servidor para recibir "no cambió nada" una y otra vez.
+//
+// Con esto el intervalo arranca en 30 s y se va duplicando mientras no haya
+// novedades, hasta un tope de 2 minutos. En cuanto llega algo vuelve a 30 s,
+// así que el usuario nunca percibe el ahorro.
+const REFRESH_MIN_MS = 30000;    // hay movimiento: 30 s
+const REFRESH_MAX_MS = 120000;   // todo quieto: 2 min
+const REFRESH_MS = REFRESH_MIN_MS;   // lo que se muestra en el interruptor
 
 const AGG_LABELS = { sum: 'Suma', avg: 'Promedio', count: 'Conteo', max: 'Máximo', min: 'Mínimo' };
 const CHART_LABELS = { bar: '📊 Barras', line: '📈 Línea', donut: '🍩 Pastel', kpi: '🔢 Tarjeta (KPI)' };
@@ -445,6 +456,10 @@ export default function Indicadores() {
       ultimaSync.current = raw?.serverTime || null;
       setLastUpdated(new Date());
       setLoadedOnce(true);
+      // Cuántos formularios trajo. Es la señal de si hubo movimiento: el
+      // serverTime cambia en cada consulta aunque no haya nada nuevo, así que
+      // no sirve para decidir si espaciar el sondeo.
+      return { nuevos: Array.isArray(datos.forms) ? datos.forms.length : 0, parcial: !!raw?.parcial };
     } catch (e) {
       console.error('Error al cargar datos de indicadores:', e);
       if (!silent) {
@@ -454,6 +469,7 @@ export default function Indicadores() {
       } else {
         setLoadError('El refresco automático falló. Mostrando los últimos datos cargados.');
       }
+      return { nuevos: 0, parcial: false, error: true };
     } finally {
       inFlight.current = false;
       if (!silent) setLoading(false);
@@ -499,20 +515,67 @@ export default function Indicadores() {
 
   useEffect(() => { loadData(filters); loadIndicators(); loadTabs(); /* eslint-disable-next-line */ }, []);
 
-  // Tiempo real: refresca los datos solo, sin parpadeo, mientras la pestaña del navegador esté visible
+  // ── Tiempo real ─────────────────────────────────────────────────────────
+  // Refresca sin parpadeo mientras la pestaña esté visible. Tres cosas que no
+  // hacía antes:
+  //
+  //  · Al VOLVER a la pestaña refresca en el acto. Antes había que esperar al
+  //    siguiente tick, así que quien dejaba el tablero 20 minutos de fondo veía
+  //    números viejos al volver y no tenía forma de saberlo.
+  //  · El intervalo se espacia solo cuando nada cambia y vuelve a 30 s en
+  //    cuanto llega algo.
+  //  · Muestra la hora de la última actualización, para que un tablero colgado
+  //    no se confunda con uno donde no pasó nada.
+  const intervaloRef = useRef(REFRESH_MIN_MS);
+
+  const refrescar = useCallback(async ({ inmediato = false } = {}) => {
+    if (document.hidden) return;
+
+    const res = await loadData(filters, { silent: true, incremental: true });
+    loadIndicators();
+    loadTabs();
+
+    // Hubo movimiento si la consulta incremental trajo formularios. Con
+    // `parcial` el backend responde solo lo modificado desde la última vez, así
+    // que cero resultados significa literalmente "no pasó nada".
+    const huboCambios = res?.parcial ? (res.nuevos > 0) : true;
+
+    intervaloRef.current = (huboCambios || inmediato)
+      ? REFRESH_MIN_MS
+      : Math.min(intervaloRef.current * 2, REFRESH_MAX_MS);
+  }, [filters, loadData, loadIndicators, loadTabs]);
+
   useEffect(() => {
     if (!autoRefresh) return undefined;
-    const tick = () => {
-      if (document.hidden) return;
-      loadData(filters, { silent: true, incremental: true });
-      // Los indicadores y las pestanas viven en la base: si otro usuario crea
-      // uno, aparece solo. Antes habia que recargar la pagina para verlo.
-      loadIndicators();
-      loadTabs();
+
+    let timer;
+    let vivo = true;
+    const programar = () => {
+      if (!vivo) return;
+      timer = setTimeout(async () => {
+        await refrescar();
+        programar();   // se reprograma con el intervalo recalculado
+      }, intervaloRef.current);
     };
-    const id = setInterval(tick, REFRESH_MS);
-    return () => clearInterval(id);
-  }, [autoRefresh, filters, loadData, loadIndicators, loadTabs]);
+    programar();
+
+    // Volver a la pestaña: refresco inmediato y ritmo rápido otra vez.
+    const alVolver = () => {
+      if (document.hidden) return;
+      intervaloRef.current = REFRESH_MIN_MS;
+      clearTimeout(timer);
+      refrescar({ inmediato: true }).finally(programar);
+    };
+    document.addEventListener('visibilitychange', alVolver);
+    window.addEventListener('focus', alVolver);
+
+    return () => {
+      vivo = false;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', alVolver);
+      window.removeEventListener('focus', alVolver);
+    };
+  }, [autoRefresh, refrescar]);
 
   // Al prender o apagar "en vivo" hay que volver a pedir los datos: la bandera
   // viaja al servidor, no se filtra en pantalla.
@@ -847,11 +910,27 @@ export default function Indicadores() {
         </div>
         <button className="ind-btn-primary" onClick={() => loadData(filters)} disabled={loading}>{loading ? '⏳ Cargando...' : '🔍 Buscar'}</button>
         <button className="ind-btn-sec" onClick={verTodo} disabled={loading}>Ver todo</button>
-        <label className="ind-live" title={`Vuelve a consultar el servidor cada ${REFRESH_MS / 1000} segundos`}>
+        <label
+          className="ind-live"
+          title={autoRefresh
+            ? `Consulta el servidor cada ${REFRESH_MIN_MS / 1000} s. Si no hay novedades se espacia hasta ${REFRESH_MAX_MS / 1000} s, y vuelve al ritmo rápido en cuanto llega algo. Al volver a esta pestaña refresca en el acto.`
+            : 'Refresco automático apagado: los números se quedan como estaban.'}
+        >
           <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
           <span className={`ind-live-dot ${autoRefresh ? 'on' : ''}`} />
-          Tiempo real ({REFRESH_MS / 1000}s)
+          Tiempo real ({REFRESH_MIN_MS / 1000}s)
         </label>
+
+        {/* Botón de refresco manual: cuando alguien acaba de guardar un
+            formulario y no quiere esperar al siguiente ciclo. */}
+        <button
+          type="button"
+          className="ind-btn-sec ind-refrescar"
+          onClick={() => refrescar({ inmediato: true })}
+          title="Volver a consultar ahora"
+        >
+          🔄 Actualizar
+        </button>
         <label className="ind-live" title="Suma tambien los formularios que los operadores tienen abiertos y todavia no cerraron. Son cifras que pueden cambiar.">
           <input type="checkbox" checked={incluirBorradores} onChange={e => setIncluirBorradores(e.target.checked)} />
           🟡 Incluir lo que se está llenando

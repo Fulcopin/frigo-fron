@@ -1,0 +1,160 @@
+.ap-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.ap-cargando { padding: 40px; text-align: center; color: #64748b; }
+
+/* ── Encabezado ─────────────────────────────────────────────────────────── */
+.ap-encabezado h3 { margin: 0 0 4px; font-size: 1.15rem; color: #1e293b; }
+.ap-encabezado p {
+  margin: 0; font-size: .85rem; color: #64748b; line-height: 1.6; max-width: 780px;
+}
+.ap-badge {
+  display: inline-block; margin-top: 8px;
+  background: #ede9fe; color: #5b21b6;
+  font-size: .72rem; font-weight: 700;
+  border-radius: 999px; padding: 3px 12px;
+}
+
+.ap-error, .ap-ok {
+  margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: .85rem;
+}
+.ap-error { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+.ap-ok    { background: #f0fdf4; border: 1px solid #86efac; color: #15803d; }
+
+/* ── Cuerpo en dos columnas ─────────────────────────────────────────────── */
+.ap-cuerpo {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 20px;
+  margin-top: 18px;
+  align-items: start;
+}
+
+/* ── Lista ──────────────────────────────────────────────────────────────── */
+.ap-filtros { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+
+.ap-input {
+  width: 100%; padding: 8px 10px;
+  border: 1.5px solid #cbd5e1; border-radius: 6px;
+  font-size: .85rem; color: #0f172a; background: #fff;
+  font-family: inherit;
+}
+.ap-input:focus { outline: none; border-color: #0ea5e9; }
+.ap-input:disabled { background: #f1f5f9; color: #94a3b8; }
+
+.ap-check-inline {
+  display: flex; align-items: center; gap: 7px;
+  font-size: .8rem; color: #475569; cursor: pointer;
+}
+.ap-check-inline input { accent-color: #0ea5e9; cursor: pointer; }
+
+.ap-lista-cabecera {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; background: #f8fafc;
+  border: 1px solid #e2e8f0; border-bottom: none;
+  border-radius: 8px 8px 0 0;
+}
+.ap-contador { font-size: .78rem; font-weight: 700; color: #0369a1; }
+
+.ap-lista {
+  list-style: none; margin: 0; padding: 0;
+  max-height: 460px; overflow-y: auto;
+  border: 1px solid #e2e8f0; border-radius: 0 0 8px 8px;
+}
+.ap-vacio { padding: 24px; text-align: center; color: #94a3b8; font-size: .85rem; }
+
+.ap-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-bottom: 1px solid #f1f5f9;
+  border-left: 3px solid transparent;
+}
+.ap-item:last-child { border-bottom: none; }
+.ap-item:hover { background: #f8fafc; }
+.ap-item.elegida { background: #eff6ff; border-left-color: #0ea5e9; }
+.ap-item.propia:not(.elegida) { border-left-color: #c4b5fd; }
+
+.ap-item-check input { width: 17px; height: 17px; accent-color: #0ea5e9; cursor: pointer; }
+.ap-item-datos { flex: 1; min-width: 0; cursor: pointer; }
+
+.ap-item-titulo { display: flex; align-items: baseline; gap: 8px; }
+.ap-item-titulo strong { font-size: .82rem; color: #0f172a; }
+.ap-item-nombre {
+  font-size: .78rem; color: #64748b;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.ap-item-config { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 3px; }
+.ap-tag {
+  font-size: .68rem; font-weight: 600;
+  background: #f1f5f9; color: #475569;
+  border-radius: 999px; padding: 2px 8px;
+}
+.ap-tag-on     { background: #dcfce7; color: #15803d; }
+.ap-tag-off    { background: #fee2e2; color: #991b1b; }
+.ap-tag-propia { background: #ede9fe; color: #5b21b6; }
+.ap-tag-hereda { background: #f1f5f9; color: #94a3b8; }
+
+.ap-btn-copiar {
+  border: 1px solid #ddd6fe; background: #f5f3ff; color: #6d28d9;
+  border-radius: 5px; padding: 3px 8px; cursor: pointer; font-size: .9rem;
+}
+.ap-btn-copiar:hover { background: #ede9fe; }
+
+/* ── Formulario ─────────────────────────────────────────────────────────── */
+.ap-form-zona {
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 10px; padding: 16px;
+  position: sticky; top: 16px;
+}
+.ap-form-zona h4 { margin: 0 0 14px; font-size: .95rem; color: #1e293b; }
+
+.ap-check-grande {
+  display: flex; align-items: flex-start; gap: 10px;
+  cursor: pointer; margin-bottom: 16px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;
+}
+.ap-check-grande input { width: 18px; height: 18px; accent-color: #0ea5e9; margin-top: 2px; cursor: pointer; }
+.ap-check-grande strong { font-size: .85rem; color: #0f172a; display: block; }
+.ap-check-grande small { font-size: .74rem; color: #64748b; line-height: 1.45; }
+
+.ap-campo { margin-bottom: 14px; }
+.ap-campo > label {
+  display: block; font-size: .72rem; font-weight: 700;
+  color: #475569; text-transform: uppercase; margin-bottom: 5px;
+}
+.ap-campo small { display: block; font-size: .72rem; color: #94a3b8; margin-top: 4px; }
+.ap-apagado { opacity: .5; }
+
+.ap-horas { display: flex; align-items: center; gap: 8px; }
+.ap-horas .ap-input { width: 80px; }
+.ap-horas span { font-size: .78rem; color: #64748b; }
+
+.ap-atajos { display: flex; gap: 5px; margin-top: 7px; flex-wrap: wrap; }
+.ap-atajos button {
+  border: 1px solid #cbd5e1; background: #fff; color: #475569;
+  border-radius: 5px; padding: 3px 10px; font-size: .75rem; cursor: pointer;
+}
+.ap-atajos button.activo { background: #0ea5e9; border-color: #0ea5e9; color: #fff; font-weight: 700; }
+.ap-atajos button:disabled { opacity: .4; cursor: not-allowed; }
+
+.ap-acciones { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.ap-btn {
+  border: none; border-radius: 8px; padding: 10px 16px;
+  font-size: .85rem; font-weight: 600; cursor: pointer;
+}
+.ap-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ap-btn-primario   { background: #16a34a; color: #fff; }
+.ap-btn-primario:hover:not(:disabled) { background: #15803d; }
+.ap-btn-secundario { background: #fff; color: #475569; border: 1.5px solid #cbd5e1; }
+.ap-btn-secundario:hover:not(:disabled) { background: #f1f5f9; }
+
+.ap-nota { font-size: .76rem; color: #94a3b8; text-align: center; margin: 10px 0 0; }
+
+@media (max-width: 900px) {
+  .ap-cuerpo { grid-template-columns: 1fr; }
+  .ap-form-zona { position: static; }
+}

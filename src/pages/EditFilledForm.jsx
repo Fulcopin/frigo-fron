@@ -24,6 +24,22 @@ import {
 const AUTOSAVE_INTERVAL = 30000; // 30 segundos
 const AUTOSAVE_KEY_PREFIX = 'autosave_edit_form_';
 
+// ── Saneamiento de datos guardados ─────────────────────────────────────
+// Un arreglo con huecos se guarda en JSON como null. Una fila null hacía
+// reventar toda la pantalla (Object.keys(null) / row._apiCabId) y aparecía
+// el "Oops! Algo salió mal" en cada recarga.
+const esObjetoPlano = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const sanearFilas = (rows) =>
+  Array.isArray(rows) ? rows.filter(esObjetoPlano) : rows;
+const sanearBodyData = (bodyData) =>
+  Array.isArray(bodyData)
+    ? bodyData.map(item => (esObjetoPlano(item) && Array.isArray(item.rows))
+        ? { ...item, rows: sanearFilas(item.rows) }
+        : item)
+    : [];
+/** Texto seguro para .trim()/.toUpperCase(): los ids y etiquetas pueden venir como número. */
+const txt = (v) => (v === null || v === undefined ? '' : String(v));
+
 function EditFilledForm() {
   const { id } = useParams(); // ID del formulario llenado
   const navigate = useNavigate();
@@ -186,7 +202,7 @@ function EditFilledForm() {
         
         setTemplate(template);
         setFilledForm(formInfo);
-        setFormData(formData);
+        setFormData({ ...formData, bodyData: sanearBodyData(formData.bodyData) });
         setFormCreatedAt(formInfo.createdAt); // ✅ Guardar fecha de creación
         
         console.log('📅 Formulario cargado - CreatedAt:', formInfo.createdAt);
@@ -204,13 +220,63 @@ function EditFilledForm() {
         }
 
         // 🔧 CORRECCIÓN: Asegurar que bodyData tenga la estructura correcta para cada tabla
-        const bodyDataCopy = formData.bodyData ? [...formData.bodyData] : [];
-        
+        const bodyDataGuardado = formData.bodyData ? [...formData.bodyData] : [];
+
+        // ── EMPAREJAR POR ID, NO POR POSICIÓN ────────────────────────────
+        //
+        // Antes se hacía bodyDataCopy[index], asumiendo que la tabla N de la
+        // plantilla se corresponde con el dato N del formulario. Deja de ser
+        // cierto en cuanto alguien edita la plantilla: si se agrega, borra o
+        // mueve una tabla, todo lo posterior queda corrido una posición.
+        //
+        // En el FOR-PD-05 eso hacía que la tabla de PRODUCCIÓN mostrara los
+        // datos de MATERIA PRIMA —una sola fila, con otras columnas— y que las
+        // columnas que sí tenían datos no aparecieran.
+        //
+        // El id de cada tabla no cambia al reordenar, así que es el vínculo
+        // confiable. La posición queda de respaldo para los formularios viejos
+        // que se guardaron sin id.
+        const porId = new Map();
+        bodyDataGuardado.forEach(d => {
+          const id = d?.id != null ? String(d.id) : null;
+          if (id && !porId.has(id)) porId.set(id, d);
+        });
+        const usados = new Set();
+        const datosUsados = new Set();   // por referencia, para detectar huérfanos
+        const idsPlantilla = new Set(
+          (template.bodyElements || []).map(el => el?.id).filter(v => v != null).map(String)
+        );
+
+        const bodyDataCopy = (template.bodyElements || []).map((element, index) => {
+          const id = element?.id != null ? String(element.id) : null;
+
+          if (id && porId.has(id)) {
+            usados.add(id);
+            datosUsados.add(porId.get(id));
+            return porId.get(id);
+          }
+
+          // Sin id coincidente: se cae a la posición, pero solo si ese dato no
+          // fue reclamado ya por otra tabla vía id. Si no, se le estarían
+          // asignando a dos tablas los mismos datos.
+          const porPos = bodyDataGuardado[index];
+          const idPos = porPos?.id != null ? String(porPos.id) : null;
+          // Un dato cuyo id es de OTRA tabla de la plantilla no se toma por posición.
+          if (porPos && !datosUsados.has(porPos) && (!idPos || !idsPlantilla.has(idPos))) {
+            if (idPos) usados.add(idPos);
+            datosUsados.add(porPos);
+            return porPos;
+          }
+
+          return undefined;
+        });
+
         // Si bodyData está vacío pero el template tiene tablas, inicializar
         if (template.bodyElements && template.bodyElements.length > 0) {
           template.bodyElements.forEach((element, index) => {
             if (element.type === 'table') {
-              console.log(`🔧 Procesando tabla ${index}:`, element);
+              console.log(`🔧 Procesando tabla ${index}:`, element?.title, '| id', element?.id,
+                          '→ datos id', bodyDataCopy[index]?.id ?? '(ninguno)');
               
               // Si no existe bodyData para este índice, crear estructura vacía
               if (!bodyDataCopy[index]) {
@@ -286,12 +352,25 @@ function EditFilledForm() {
             }
           });
           
+          // ⚠️ DATOS SIN TABLA EN ESTA VERSIÓN DE LA PLANTILLA
+          // Si la plantilla que llegó (versión vigente por fecha) no tiene una
+          // tabla que el formulario sí tiene —ej. Control de Personal agregado
+          // después—, antes esos datos se descartaban y AL GUARDAR SE BORRABAN
+          // de la base. Se conservan al final: la pantalla no los muestra
+          // (recorre solo la plantilla) pero se guardan intactos.
+          const huerfanos = bodyDataGuardado.filter(d => d != null && !datosUsados.has(d));
+          if (huerfanos.length > 0) {
+            console.warn(`⚠️ ${huerfanos.length} bloque(s) guardados no existen en esta versión de la plantilla; se conservan sin mostrarse:`,
+              huerfanos.map(h => h?.id));
+            bodyDataCopy.push(...huerfanos);
+          }
+
           console.log('🔧 BodyData final inicializado:', bodyDataCopy);
           
           // Actualizar formData con la estructura corregida
           setFormData(prev => ({
             ...prev,
-            bodyData: bodyDataCopy
+            bodyData: sanearBodyData(bodyDataCopy)
           }));
           
           // 🔧 TEMPORAL: Forzar creación de filas por defecto para debugging
@@ -325,11 +404,35 @@ function EditFilledForm() {
         if (saved) {
           try {
             const savedData = JSON.parse(saved);
-            console.log('🔄 Recuperando autoguardado:', savedData);
-            setFormData(prev => ({ ...prev, ...savedData }));
-            setHasUnsavedChanges(true);
+            // ⚠️ Antes el autoguardado del navegador REEMPLAZABA los datos de la
+            // base sin revisar nada. Si se guardó con otra versión de la
+            // plantilla, o quedó corrupto (bodyData null, filas null), la
+            // pantalla reventaba en cada recarga y parecía que el formulario se
+            // había perdido. Ahora solo se usa si su estructura coincide con la
+            // plantilla actual; si no, se descarta y quedan los datos de la base.
+            const elementos = template.bodyElements || [];
+            const bodyOk = Array.isArray(savedData?.bodyData)
+              && savedData.bodyData.length >= elementos.length
+              && elementos.every((el, i) =>
+                   el?.type !== 'table' || Array.isArray(savedData.bodyData[i]?.rows));
+
+            if (esObjetoPlano(savedData) && bodyOk) {
+              console.log('🔄 Recuperando autoguardado:', savedData);
+              setFormData(prev => ({
+                ...prev,
+                ...(esObjetoPlano(savedData.headerData) ? { headerData: savedData.headerData } : {}),
+                bodyData: sanearBodyData(savedData.bodyData),
+                ...(esObjetoPlano(savedData.firmasData) ? { firmasData: savedData.firmasData } : {}),
+                ...(typeof savedData.observaciones === 'string' ? { observaciones: savedData.observaciones } : {}),
+              }));
+              setHasUnsavedChanges(true);
+            } else {
+              console.warn('⚠️ Autoguardado incompatible con la plantilla actual: se descarta', savedData);
+              localStorage.removeItem(key);
+            }
           } catch (e) {
-            console.warn('⚠️ Error al recuperar autoguardado:', e);
+            console.warn('⚠️ Autoguardado ilegible: se descarta', e);
+            localStorage.removeItem(key);
           }
         }
 
@@ -381,8 +484,9 @@ function EditFilledForm() {
   const updateTableCell = (elementIndex, rowIndex, columnLabel, value, columnas = []) => {
     setFormData(prev => {
       const newBodyData = [...prev.bodyData];
-      if (!newBodyData[elementIndex]) newBodyData[elementIndex] = { rows: [] };
-      if (!newBodyData[elementIndex].rows[rowIndex]) newBodyData[elementIndex].rows[rowIndex] = {};
+      if (!esObjetoPlano(newBodyData[elementIndex])) newBodyData[elementIndex] = { rows: [] };
+      if (!Array.isArray(newBodyData[elementIndex].rows)) newBodyData[elementIndex] = { ...newBodyData[elementIndex], rows: [] };
+      if (!esObjetoPlano(newBodyData[elementIndex].rows[rowIndex])) newBodyData[elementIndex].rows[rowIndex] = {};
 
       const fila = newBodyData[elementIndex].rows[rowIndex];
 
@@ -623,6 +727,11 @@ function EditFilledForm() {
     const isTableContext = rowIndex !== null && rowIndex !== undefined;
     const tableInputClass = isTableContext ? "table-input-expandable" : "";
 
+    // Un valor guardado como objeto/arreglo no se puede mostrar en un input.
+    if (value !== null && typeof value === 'object') {
+      value = value.selectedValue ?? value.value ?? value.nombre ?? '';
+    }
+
     // 3a. SELECTOR PRODUCTO (bidireccional por API externa)
     // El sentido lo decide la plantilla; si no se configuró, se deduce del nombre.
     const searchType = modoBusquedaProducto(field, { apiActiva: globalUseProductApi });
@@ -631,11 +740,11 @@ function EditFilledForm() {
       const isCodigo = searchType === 'codigoErp';
       return (
         <ProductoAutocomplete
-          value={value || ''}
+          value={txt(value)}
           onChange={onChange}
           searchType={searchType}
           getToken={ensureApiToken}
-          placeholder={isCodigo ? 'Buscar por código...' : `Buscar ${(field.label || 'producto').toLowerCase()}...`}
+          placeholder={isCodigo ? 'Buscar por código...' : `Buscar ${txt(field.label || 'producto').toLowerCase()}...`}
           onSelect={(product) => {
             if (rowIndex !== null) {
               onChange({
@@ -700,7 +809,9 @@ function EditFilledForm() {
           />
         );
       case "percentage": {
-        const _pctNum = parseFloat((value || '').replace('%', ''));
+        // txt(): si el valor se guardó como número (ej. % GLASEO = 3) el
+        // .replace() no existe y la pantalla entera reventaba.
+        const _pctNum = parseFloat(txt(value).replace('%', ''));
         const _pctBase = field.percentBase ? Number(field.percentBase) : null;
         const _pctResult = _pctBase && !isNaN(_pctNum) ? ((_pctNum / 100) * _pctBase) : null;
         return (
@@ -1048,7 +1159,7 @@ Template: ${template?.nombre}
           })()}
 
           {/* Campos del Encabezado */}
-          {template?.headerFields?.length > 0 && (
+          {Array.isArray(template?.headerFields) && template.headerFields.length > 0 && (
             <div className="form-section">
               <div className="header-fields">
                 {template.headerFields.map((field, index) => (
@@ -1056,7 +1167,7 @@ Template: ${template?.nombre}
                     <label>{field.label}{field.required && " *"}</label>
                     {renderField(
                       field,
-                      formData.headerData[field.label],
+                      formData.headerData?.[field.label],
                       (value) => updateHeaderData(field.label, value)
                     )}
                   </div>
@@ -1066,9 +1177,9 @@ Template: ${template?.nombre}
           )}
 
           {/* Elementos del Cuerpo */}
-          {template?.bodyElements?.map((element, elementIndex) => (
+          {(Array.isArray(template?.bodyElements) ? template.bodyElements : []).map((element, elementIndex) => (
             <div key={element.id} className="form-section">
-              <h3>{element.title}</h3>
+              <h3>{typeof element.title === 'object' ? '' : element.title}</h3>
 
               {element.type === "section" && (
                 <div className="section-fields">
@@ -1195,6 +1306,7 @@ Template: ${template?.nombre}
                     <tbody>
   {/* 1. Primero recorremos cada FILA (row) de la tabla */}
   {formData.bodyData[elementIndex]?.rows?.map((row, rowIndex) => {
+    if (!esObjetoPlano(row)) return null;   // fila null/corrupta: no revienta la tabla
     // Determinar si la fila viene de la API (para el botón de desbloquear)
     const rowCargadaDesdeApiRow = !!(row._apiCabId || row._apiCodigoId);
     return (
@@ -1202,7 +1314,7 @@ Template: ${template?.nombre}
       {/* 2. Luego recorremos cada COLUMNA del template */}
       {element.columns?.map((column, colIndex) => {
         const rowKeys = Object.keys(row);
-        const colLabel = (column.label || column.header || "").trim();
+        const colLabel = txt(column.label || column.header).trim();
         
         // 🎯 LÓGICA DE RESCATE: ¿Cómo se llama esta celda en la base de datos?
         let cellName = column.label; // Por defecto el nombre normal
@@ -1223,7 +1335,7 @@ Template: ${template?.nombre}
 
         // Determinar si es columna de solo lectura (totales calculados)
         const colLabelUpper = colLabel.toUpperCase();
-        const tableTienePeso = element.columns?.some(c => (c.id || c.label || '').toUpperCase().includes('PESO'));
+        const tableTienePeso = element.columns?.some(c => txt(c?.id || c?.label).toUpperCase().includes('PESO'));
         const isTotalColumn = tableTienePeso && colLabelUpper.includes('TOTAL') && !colLabelUpper.includes('PESO');
 
         // 🔒 FOR-PD-04 (Fileteo V2): los datos de las tablas CONTROL / MATERIALES DE
@@ -1232,8 +1344,8 @@ Template: ${template?.nombre}
         // Se bloquea la tabla completa (sin depender de apiCodigo/apiMap por columna, ya
         // que muchas veces esos campos son de texto libre). El código/insumo de búsqueda
         // queda siempre editable, y Admin/Supervisor pueden seguir corrigiendo si hace falta.
-        const esFileteoV2 = (template?.codigo || '').toUpperCase().includes('PD-04');
-        const tableTitleUpper = (element.title || '').trim().toUpperCase();
+        const esFileteoV2 = txt(template?.codigo).toUpperCase().includes('PD-04');
+        const tableTitleUpper = txt(element.title).trim().toUpperCase();
         const esTablaBloqueablePorApi = esFileteoV2
           || element.usaApiPorCodigo
           || !!element.apiPorIdEndpoint
@@ -1250,7 +1362,7 @@ Template: ${template?.nombre}
           || tableTitleUpper.includes('CÓDIGO')
           || tableTitleUpper.includes('PRODUCTO');
         const esColumnaCodigoOBusqueda = colLabelUpper.includes('CODIGO') || colLabelUpper.includes('CÓDIGO') || colLabelUpper.includes('INSUMO') || (colLabelUpper.includes('PRODUCTO') && !esFileteoV2 && tableTitleUpper.includes('EMPAQUE'));
-        const isApiCodigoTrigger = element.usaApiPorCodigo && colLabelUpper === (element.apiCodigoTriggerCol || '').trim().toUpperCase();
+        const isApiCodigoTrigger = element.usaApiPorCodigo && colLabelUpper === txt(element.apiCodigoTriggerCol).trim().toUpperCase();
         // 🔒 Bloquear SOLO filas que realmente vienen de la API de recepción (marcador
         // _apiCabId/_apiCodigoId). No cambia mientras se escribe, así que las filas manuales
         // quedan siempre editables y no se pierde el foco al escribir.
@@ -1341,21 +1453,26 @@ Template: ${template?.nombre}
           ))}
 
           {/* Firmas - Misma interfaz que FillForm */}
-          {template?.firmas?.length > 0 && (
+          {Array.isArray(template?.firmas) && template.firmas.length > 0 && (
             <div className="form-section">
               <h3>✍️ Firmas y Aprobaciones</h3>
               <div className="signatures-grid">
                 {template.firmas.map((firma, index) => {
                   // Asegurar que firmasData[puesto] sea un objeto
-                  const firmaObj = typeof formData.firmasData[firma.puesto] === 'object' 
-                    ? formData.firmasData[firma.puesto] 
+                  // typeof null === 'object': una firma guardada como null
+                  // dejaba firmaObj en null.
+                  const firmaGuardada = formData.firmasData?.[firma.puesto];
+                  const firmaObj = esObjetoPlano(firmaGuardada)
+                    ? firmaGuardada
                     : { nombre: '', fecha: '' };
                   
                   // 📋 Combinar usuarios API + Catálogo de firmas
                   const filteredUsers = filterUsersByPuesto(allUsers, firma.puesto);
                   const firmasCatalogo = catalogoFirmas
-                    .filter(f => f.puesto.toLowerCase().includes(firma.puesto.toLowerCase()) || 
-                                 firma.puesto.toLowerCase().includes(f.puesto.toLowerCase()))
+                    // Una firma del catálogo sin puesto reventaba la pantalla.
+                    .filter(f => f?.puesto && firma?.puesto && (
+                                 txt(f.puesto).toLowerCase().includes(txt(firma.puesto).toLowerCase()) ||
+                                 txt(firma.puesto).toLowerCase().includes(txt(f.puesto).toLowerCase())))
                     .map(f => ({
                       id: `catalogo-${f.catalogoFirmaID}`,
                       nombreCompleto: f.nombreCompleto || f.puesto,
@@ -1390,7 +1507,7 @@ Template: ${template?.nombre}
                           </label>
                           <UserSelector
                             users={uniqueUsers}
-                            value={firmaObj?.nombre || ""}
+                            value={typeof firmaObj?.nombre === 'string' ? firmaObj.nombre : ''}
                             onChange={(nombreCompleto, email) => {
                               setFormData(prev => ({
                                 ...prev,
@@ -1463,8 +1580,8 @@ Template: ${template?.nombre}
                         )}
                         {!isAdmin && (firmaObj?.fecha || firmaObj?.hora) && (
                           <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '0.85em', color: '#4b5563' }}>
-                            {firmaObj?.fecha && firmaObj.fecha !== '-' && <span>📅 {new Date(firmaObj.fecha + 'T00:00:00').toLocaleDateString('es-EC')}</span>}
-                            {firmaObj?.hora && firmaObj.hora !== '-' && <span>🕐 {firmaObj.hora}</span>}
+                            {firmaObj?.fecha && firmaObj.fecha !== '-' && <span>📅 {new Date(txt(firmaObj.fecha).slice(0, 10) + 'T00:00:00').toLocaleDateString('es-EC')}</span>}
+                            {firmaObj?.hora && firmaObj.hora !== '-' && <span>🕐 {txt(firmaObj.hora)}</span>}
                           </div>
                         )}
                       </div>

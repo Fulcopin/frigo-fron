@@ -4,6 +4,7 @@ import { fetchUsers, findUserByName } from '../services/userService';
 import { Link } from 'react-router-dom';
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from '../apiConfig';
 import './AlertManagement.css';
+import AlertasPorPlantilla from '../components/AlertasPorPlantilla';
 
 // 🔧 Configuración por defecto guardada en localStorage hasta que el backend esté listo
 const ALERT_CONFIG_KEY = 'frigolab_alert_config';
@@ -469,6 +470,13 @@ export default function AlertManagement() {
         </button>
        
         <button
+          onClick={() => setActiveTab('porPlantilla')}
+          className={`tab-btn ${activeTab === 'porPlantilla' ? 'active' : ''}`}
+        >
+          🎯 Por formulario
+        </button>
+
+        <button
           onClick={() => setActiveTab('history')}
           className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
         >
@@ -478,6 +486,10 @@ export default function AlertManagement() {
 
       {/* Contenido según tab activo */}
       <div className="tab-content">
+        {activeTab === 'porPlantilla' && (
+          <AlertasPorPlantilla usuario={currentUser} />
+        )}
+
         {activeTab === 'active' && (
           <div className="active-alerts-section">
             {activeAlerts.length === 0 ? (

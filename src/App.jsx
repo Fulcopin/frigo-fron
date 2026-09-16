@@ -40,7 +40,9 @@ import ProductionPlanForm from "./pages/ProductionPlanForm"
 import RegistroPersonal from "./pages/RegistroPersonal"
 import PersonalDashboard from "./pages/PersonalDashboard"
 import FrigoVoice from "./components/FrigoVoice"
+import DiagnosticoPlantillas from "./pages/DiagnosticoPlantillas"
 import "./App.css"
+import ReportarCambio from './pages/ReportarCambio';
 
 function Navigation() {
   const location = useLocation()
@@ -221,6 +223,7 @@ function getPageName(pathname) {
     '/my-signature': 'Mi Firma Personal',
     '/alerts': 'Gestión de Alertas',
     '/tickets': 'Tickets / Mesa de Ayuda',
+    
     '/dashboard-erp': 'Dashboard ERP',
     '/resumen-lotes': 'Resumen de Lotes',
     '/consumption-dashboard': 'Dashboard de Consumos',
@@ -244,7 +247,7 @@ function getPageName(pathname) {
   if (pathname.includes('/edit-template')) return 'Editar Plantilla'
   if (pathname.includes('/edit-filled-form')) return 'Editar Formulario'
   if (pathname.includes('/view-form')) return 'Ver Formulario'
-  
+  if (pathname.includes('/diagnostico-plantillas')) return 'Diagnóstico de Inventario'
   return routes[pathname] || 'Sistema de Formularios'
 }
 
@@ -280,7 +283,22 @@ function App() {
                   <EditTemplate />
                 </RoleBasedRoute>
               } />
-              
+              {/* Diagnóstico de configuración de inventario - Solo Admin y Supervisor */}
+              {/* 📝 Reportar un cambio: cualquiera del equipo puede pedir un
+                  ajuste. No lleva restricción de rol a propósito — el operario
+                  que encuentra el problema suele ser el que menos permisos
+                  tiene. */}
+              <Route path="/reportar-cambio" element={
+                <ProtectedRoute>
+                  <ReportarCambio />
+                </ProtectedRoute>
+              } />
+
+              <Route path="/diagnostico-plantillas" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <DiagnosticoPlantillas />
+                </RoleBasedRoute>
+              } />
               {/* Llenar Formulario - Acceso para todos los roles */}
               <Route path="/fill-form" element={
                 <ProtectedRoute>

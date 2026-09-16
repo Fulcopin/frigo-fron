@@ -15,6 +15,7 @@ import {
 import { compararCodigos } from '../utils/ordenFormularios';
 import { saldoDe } from '../services/inventarioCeldaService';
 import { API_BASE_URL } from '../apiConfig';
+import ComposicionLote from '../components/ComposicionLote';
 import './LotesInventario.css';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -227,6 +228,8 @@ export default function LotesInventario() {
   const [buscar, setBuscar]    = useState('');
   const [showNuevo, setShowNuevo] = useState(false);
   const [nuevo, setNuevo]      = useState({ ...EMPTY_NUEVO });
+  // Lote que se está viendo en la pestaña de composición (aristas + %).
+  const [composicionLote, setComposicionLote] = useState(null);
   const [arbolLote, setArbolLote] = useState(null);
   const [arbolData, setArbolData] = useState(null);
   // Lotes "raíz" (materia prima, sin LotePadre) para elegir sin escribir a mano
@@ -269,12 +272,6 @@ export default function LotesInventario() {
   useEffect(() => {
     cargarLotes();
   }, [cargarLotes]);
-
-  // Materia prima raíz para el selector rápido: se pide solo la primera vez
-  // que se entra a la pestaña del árbol.
-  useEffect(() => {
-    if (tab === 'arbol') cargarRaices();
-  }, [tab, cargarRaices]);
 
   // Las plantillas dan el código legible (FOR-PD-04) del templateId del lote.
   // Si falla, el filtro cae al templateId crudo y la página sigue andando.
@@ -409,6 +406,13 @@ export default function LotesInventario() {
     }
   }, [raicesCargadas]);
 
+  // Se pide solo la primera vez que se entra a la pestaña del árbol.
+  // Debe ir DESPUÉS de cargarRaices: el array de dependencias se evalúa
+  // durante el render, y un const no es accesible antes de su declaración.
+  useEffect(() => {
+    if (tab === 'arbol') cargarRaices();
+  }, [tab, cargarRaices]);
+
   // ── Sincronizar desde formularios ──
   const handleSincronizar = async () => {
     setSyncing(true);
@@ -518,6 +522,7 @@ export default function LotesInventario() {
           { key: 'consumidos',  label: `Consumidos (${lotes.filter(l => l.estado === 'consumido').length})` },
           { key: 'todos',       label: `Todos (${lotes.length})` },
           { key: 'arbol',       label: '🌳 Árbol de trazabilidad' },
+          { key: 'composicion', label: '🔗 Composición y %' },
         ].map(t => (
           <button
             key={t.key}
@@ -528,6 +533,57 @@ export default function LotesInventario() {
           </button>
         ))}
       </div>
+
+      {/* ── COMPOSICIÓN (aristas con cantidad y %) ── */}
+      {tab === 'composicion' && (
+        <div className="li-comp-panel">
+          <div className="li-arbol-search">
+            <label>Lote a analizar:</label>
+            <select
+              className="li-input"
+              value={composicionLote || ''}
+              onChange={e => setComposicionLote(e.target.value || null)}
+            >
+              <option value="">Elegir un lote… ({lotes.length})</option>
+              {[...lotes]
+                .filter(l => l.lote)
+                .sort((a, b) => compararCodigos(b.lote, a.lote))
+                .map(l => (
+                  <option key={l.id ?? l.lote} value={l.lote}>
+                    {l.lote} — {l.producto || l.proceso || 'Sin producto'} ({n(l.saldo ?? l.pesoNeto).toFixed(0)} lbs)
+                  </option>
+                ))}
+            </select>
+            {/* Con cientos de lotes el desplegable es incómodo: escribir el
+                número directo es más rápido cuando ya se sabe cuál es. */}
+            <input
+              className="li-input"
+              style={{ maxWidth: 220 }}
+              placeholder="…o escribir el lote"
+              defaultValue={composicionLote || ''}
+              onKeyDown={e => {
+                if (e.key !== 'Enter') return;
+                const v = e.target.value.trim();
+                if (v) setComposicionLote(v);
+              }}
+              onBlur={e => {
+                const v = e.target.value.trim();
+                if (v && v !== composicionLote) setComposicionLote(v);
+              }}
+            />
+          </div>
+
+          {composicionLote ? (
+            <ComposicionLote numeroLote={composicionLote} onVerLote={setComposicionLote} />
+          ) : (
+            <div className="li-comp-vacio">
+              Elegí un lote para ver de qué lotes está hecho, con qué porcentaje aporta cada uno,
+              y a dónde fue lo que salió. Hacé clic en cualquier lote del resultado para seguir la
+              cadena hacia arriba o hacia abajo.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── ÁRBOL ── */}
       {tab === 'arbol' && (
@@ -561,10 +617,23 @@ export default function LotesInventario() {
               Ver árbol
             </button>
           </div>
-          {arbolData ? (
-            <div className="li-arbol-tree">
-              <ArbolNodo nodo={arbolData} />
-            </div>
+          {arbolLote ? (
+            <>
+              {/* ⬆️ HACIA ARRIBA — de qué lotes viene, con porcentajes.
+                  Sale de las aristas (MovimientosInventario.LoteDestino), que es
+                  donde vive la paternidad real: un lote puede tener N padres.
+                  El árbol de abajo lee LotePadre, que solo admite uno, así que
+                  por sí solo no puede mostrar esta parte. */}
+              <ComposicionLote numeroLote={arbolLote} onVerLote={handleVerArbol} />
+
+              {/* ⬇️ HACIA ABAJO — en qué se convirtió este lote. */}
+              {arbolData && (
+                <div className="li-arbol-tree" style={{ marginTop: 16 }}>
+                  <div className="li-arbol-titulo">En qué se convirtió este lote</div>
+                  <ArbolNodo nodo={arbolData} />
+                </div>
+              )}
+            </>
           ) : (
             <div className="li-empty">Ingresa un número de lote y presiona &quot;Ver árbol&quot;</div>
           )}
@@ -572,7 +641,10 @@ export default function LotesInventario() {
       )}
 
       {/* ── LISTADO ── */}
-      {tab !== 'arbol' && (
+      {/* El listado con sus filtros es solo para las pestañas de lotes.
+          En árbol y composición estorba: su buscador se confunde con el
+          selector de lote del panel. */}
+      {tab !== 'arbol' && tab !== 'composicion' && (
         <>
           {/* Filtros */}
           <div className="li-filtros">
@@ -720,6 +792,7 @@ export default function LotesInventario() {
                             <button className="li-btn-sm li-btn-lib" onClick={() => handleLiberar(l)} title="Liberar">↩</button>
                           )}
                           <button className="li-btn-sm li-btn-arbol" onClick={() => { setTab('arbol'); handleVerArbol(l.lote); }} title="Ver árbol">🌳</button>
+                          <button className="li-btn-sm li-btn-comp" onClick={() => { setTab('composicion'); setComposicionLote(l.lote); }} title="Ver composición y porcentajes">🔗</button>
                           <button className="li-btn-sm li-btn-del" onClick={() => handleEliminar(l)} title="Eliminar">✕</button>
                         </td>
                       </tr>

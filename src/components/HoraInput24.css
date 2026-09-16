@@ -1,0 +1,95 @@
+/* ── Hora en 24 horas ─────────────────────────────────────────────────────
+   Dos desplegables en vez de un input de hora del navegador, que según el
+   dispositivo muestra AM/PM y permite guardar las 20:00 creyendo poner las
+   08:00.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.h24 {
+  display: inline-block;
+  width: 100%;
+}
+
+.h24-campos {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.h24-sel {
+  /* 44px de alto: el mínimo para tocar con el dedo sin errar. En tablet un
+     campo más chico obliga a apuntar y se toca la fila de al lado. */
+  min-height: 44px;
+  padding: 6px 4px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+  flex: 1;
+  min-width: 56px;
+  /* La flecha nativa ocupa lugar y con dos selects juntos aprieta demasiado. */
+  appearance: none;
+  -webkit-appearance: none;
+  text-align-last: center;
+}
+
+.h24-sel:focus {
+  outline: none;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, .15);
+}
+
+.h24-sel:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.h24-sep {
+  font-weight: 800;
+  color: #64748b;
+  font-size: 16px;
+}
+
+/* Recordatorio permanente del formato. Ocupa poco y evita la duda de si las
+   8 de la noche se escriben 8 o 20. */
+.h24-nota {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  background: #f1f5f9;
+  border-radius: 4px;
+  padding: 2px 5px;
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* ── Aviso ───────────────────────────────────────────────────────────────
+   Avisa, no bloquea: hay turnos que cruzan medianoche y jornadas raras que
+   igual hay que poder registrar. Lo que se busca es que el operario lo mire.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.h24--aviso .h24-sel {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.h24-mensaje {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 5px;
+  padding: 5px 7px;
+}
+
+@media (max-width: 767px) {
+  .h24-sel { min-width: 50px; font-size: 14px; }
+  .h24-nota { display: none; }
+}

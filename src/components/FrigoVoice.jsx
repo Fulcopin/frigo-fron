@@ -19,6 +19,8 @@ import authService from '../services/authService';
 import {
   enviarMensajeAdmin, listarMensajes, responderMensaje, cambiarEstado,
   contarPendientes, esAdminDeMensajes, ESTADOS_MENSAJE,
+  contarRespuestasNuevas,
+  remitenteActual,
 } from '../services/mensajesAdminService';
 import './FrigoVoice.css';
 
@@ -72,7 +74,36 @@ export default function FrigoVoice() {
   const [mensajes, setMensajes] = useState([]);
   const [msgCargando, setMsgCargando] = useState(false);
   const [respuestas, setRespuestas] = useState({}); // { [ticketId]: texto }
-  const pendientes = esAdmin ? contarPendientes(mensajes) : 0;
+
+  // Ids ya vistos, para no volver a contar la misma respuesta. Se guarda por
+  // usuario: en un equipo compartido cada uno tiene sus propios avisos.
+  const claveLeidos = `frigovoice.leidos.${remitenteActual()?.email || 'anon'}`;
+  const [leidos, setLeidos] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(claveLeidos) || '[]')); }
+    catch { return new Set(); }
+  });
+
+  const marcarLeidos = useCallback((lista) => {
+    const ids = (lista || [])
+      .filter(t => String(t.respuestaAdmin || '').trim())
+      .map(t => t.ticketId ?? t.id)
+      .filter(v => v != null);
+    if (ids.length === 0) return;
+    setLeidos(prev => {
+      const s = new Set(prev);
+      ids.forEach(id => s.add(id));
+      try { localStorage.setItem(claveLeidos, JSON.stringify([...s])); } catch { /* modo privado */ }
+      return s;
+    });
+  }, [claveLeidos]);
+  // Cuántos avisos nuevos hay que mostrar en la burbuja.
+  //  · Admin  → mensajes de usuarios sin responder.
+  //  · Usuario→ respuestas del admin que todavía no leyó.
+  // Antes solo contaba para el admin, así que un usuario nunca se enteraba de
+  // que le habían contestado.
+  const pendientes = esAdmin
+    ? contarPendientes(mensajes)
+    : contarRespuestasNuevas(mensajes, leidos);
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -120,13 +151,20 @@ export default function FrigoVoice() {
     if (isOpen) cargarMensajes();
   }, [isOpen, cargarMensajes]);
 
-  // Mientras la ventana está abierta se refresca solo, para que un mensaje
-  // nuevo aparezca sin recargar la página.
+  // Se refresca solo, ABIERTA O CERRADA. Antes solo consultaba con el panel
+  // abierto, así que la burbuja no podía avisar de nada: había que entrar para
+  // enterarse de que había algo. Cerrada consulta más espaciado para no
+  // castigar al servidor.
   useEffect(() => {
-    if (!isOpen) return;
-    const id = setInterval(cargarMensajes, 60000);
+    cargarMensajes();
+    const id = setInterval(cargarMensajes, isOpen ? 60000 : 120000);
     return () => clearInterval(id);
   }, [isOpen, cargarMensajes]);
+
+  // Al entrar a la pestaña de mensajes se dan por vistos: el contador se apaga.
+  useEffect(() => {
+    if (isOpen && tab === TABS.ADMIN && !esAdmin) marcarLeidos(mensajes);
+  }, [isOpen, tab, mensajes, esAdmin, marcarLeidos]);
 
   const enviarAlAdmin = async (e) => {
     e.preventDefault();
@@ -365,11 +403,17 @@ export default function FrigoVoice() {
     <>
       {/* Boton flotante */}
       <button
-        className={`frigovoice-fab ${isOpen ? 'frigovoice-fab--open' : ''}`}
+        className={`frigovoice-fab ${isOpen ? 'frigovoice-fab--open' : ''} ${!isOpen && pendientes > 0 ? 'frigovoice-fab--aviso' : ''}`}
         onClick={() => setIsOpen(!isOpen)}
-        title="FrigoVoice AI"
+        title={pendientes > 0
+          ? `FrigoVoice AI — ${pendientes} ${esAdmin ? 'mensaje(s) sin responder' : 'respuesta(s) nueva(s)'}`
+          : 'FrigoVoice AI'}
       >
         {isOpen ? '\u2715' : '\uD83E\uDD16'}
+        {/* Contador. Solo con la ventana cerrada: abierta ya se ven adentro. */}
+        {!isOpen && pendientes > 0 && (
+          <span className="frigovoice-fab-badge">{pendientes > 9 ? '9+' : pendientes}</span>
+        )}
       </button>
 
       {/* Panel del chat */}

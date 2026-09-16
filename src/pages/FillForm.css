@@ -709,10 +709,11 @@ body {
 
 /* 2. La tabla se ajusta a su contenido — columnas basadas en su contenido */
 .data-table {
+  /* Ojo: hay otra declaración de .data-table más abajo en este archivo que
+     pisa a esta. Los ajustes de layout van allá. */
   width: auto;
-  min-width: 100%;
   border-collapse: collapse;
-  table-layout: auto;
+  table-layout: fixed;
 }
 
 /* 3. Estilo específico para la columna de Acciones */
@@ -748,10 +749,31 @@ body {
   background: #64748b;
 }
 .data-table {
+  /* ⚠️ Esta es la SEGUNDA declaración de .data-table en el archivo y pisa a la
+     de más arriba: cualquier ajuste de layout tiene que hacerse acá. */
   width: auto;
+
+  /* Llena el ancho disponible: sin esto quedaba media pantalla en blanco a la
+     derecha y la tabla se veía suelta. Con table-layout: fixed el sobrante NO
+     se reparte a ciegas — cada columna respeta su width y solo las que se
+     dejan en auto absorben lo que queda. */
   min-width: 100%;
+
+  /* Tope en monitores anchos: estirar la tabla a 1900px no ayuda —las celdas
+     quedan enormes y medio vacías— pero dejarla en 600px con media pantalla en
+     blanco tampoco. 1100px deja las celdas cómodas sin que el número de fila y
+     los botones se inflen al doble de lo que necesitan.
+
+     Las tablas con muchas columnas superan este tope por su min-width y
+     activan el scroll horizontal, que es lo correcto para ellas. */
+  max-width: 1100px;
+
   border-collapse: collapse;
-  table-layout: auto;
+
+  /* fixed manda el ancho declarado por columna. El sobrante se reparte EN
+     PROPORCIÓN a esos anchos, así que el equilibrio se mantiene: el código
+     sigue siendo más ancho que la clasificación, pase lo que pase. */
+  table-layout: fixed;
   font-size: 0.78rem;
 }
 
@@ -2525,3 +2547,176 @@ body {
   }
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ANCHO USABLE DE LAS CELDAS
+
+   El min-width de 85px alcanza para un encabezado corto, pero no para una
+   celda con un input adentro: en una tabla de 6 columnas todo se aprieta y la
+   última queda cortada contra el borde de la pantalla. En tablet, que es donde
+   se llena, el operario no llegaba a ver la columna de PESO.
+
+   La tabla ya tiene overflow-x en .table-wrapper; lo que faltaba era que las
+   celdas se negaran a encogerse, para que ese scroll se active de verdad en
+   vez de comprimir la tabla hasta que entre.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.data-table th,
+.data-table td {
+  min-width: 130px;
+}
+
+/* Los inputs llenan la celda: sin esto quedan angostos con espacio en blanco
+   alrededor, que es lo peor de los dos mundos. */
+.data-table td input[type="text"],
+.data-table td input[type="number"],
+.data-table td input[type="date"],
+.data-table td input[type="time"],
+.data-table td select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Columnas que no necesitan ancho: el número de fila y los botones. Dejarlas
+   en 130px robaría espacio a las que sí tienen datos. */
+.data-table th:first-child,
+.data-table td:first-child {
+  min-width: 44px;
+  width: 44px;
+}
+
+.data-table th:last-child,
+.data-table td:last-child {
+  min-width: 76px;
+  width: 76px;
+}
+
+/* Las columnas sin regla propia (observación, producto, notas) se quedan sin
+   `width` a propósito: son las que absorben el espacio sobrante y estiran la
+   tabla hasta llenar la pantalla. Solo se les fija un piso. */
+.data-table th,
+.data-table td {
+  min-width: 130px;
+}
+
+/* ── Anchos por tipo de dato ──────────────────────────────────────────────
+   Se usa `width` y NO `max-width`.
+
+   En una tabla con table-layout: auto el navegador IGNORA max-width en las
+   celdas: reparte el espacio sobrante entre las columnas sin restricción, y
+   una columna vacía como CLASIFICACIÓN terminaba ocupando 1200px mientras el
+   código quedaba apretado.
+
+   `width` sí lo toma como el ancho preferido y solo lo excede si el contenido
+   no entra. Con min-width abajo queda acotado por los dos lados.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Códigos: se ven enteros o no sirven — un código cortado no se puede
+   verificar contra la etiqueta física. */
+.data-table th[data-col*="CÓDIGO"],
+.data-table td[data-col*="CÓDIGO"],
+.data-table th[data-col*="CODIGO"],
+.data-table td[data-col*="CODIGO"],
+.data-table th[data-col*="LOTE"],
+.data-table td[data-col*="LOTE"] {
+  width: 210px;
+  min-width: 190px;
+}
+
+.data-table td[data-col*="CÓDIGO"] input,
+.data-table td[data-col*="CODIGO"] input,
+.data-table td[data-col*="LOTE"] input {
+  text-overflow: clip;            /* el código va completo, sin puntos suspensivos */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .2px;
+}
+
+/* Clasificación: valores cortos como "3up" o "12up". Ancho fijo: no tiene
+   sentido que absorba espacio libre. */
+.data-table th[data-col*="CLASIFICAC"],
+.data-table td[data-col*="CLASIFICAC"] {
+  width: 140px;
+  min-width: 110px;
+}
+
+/* Pesos y cantidades: números, no necesitan más. */
+.data-table th[data-col*="PESO"],
+.data-table td[data-col*="PESO"],
+.data-table th[data-col*="CANTIDAD"],
+.data-table td[data-col*="CANTIDAD"] {
+  width: 140px;
+  min-width: 125px;
+}
+
+/* ── Quién absorbe el espacio sobrante ────────────────────────────────────
+   Con table-layout: fixed, las columnas con `width` lo respetan y el resto se
+   reparte entre las que NO lo declaran. Así el ancho extra va a las columnas
+   de texto, que es donde sirve, en vez de inflar la de peso o la de acciones.
+
+   Si la tabla no tiene ninguna columna de texto, el sobrante se reparte entre
+   las que quedan: sigue llenando la pantalla, sin huecos.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Estas mantienen su ancho pase lo que pase. */
+.data-table th:first-child,
+.data-table td:first-child { width: 44px; }
+
+.data-table th:last-child,
+.data-table td:last-child  { width: 76px; }
+
+/* Con table-layout: fixed el contenido que no entra se desborda en vez de
+   ensanchar la celda: hay que dejarlo envolver. */
+.data-table td,
+.data-table th {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* Producto y descripciones: nombres largos como "Swordfish Filete MP Fres." */
+.data-table th[data-col*="PRODUCTO"],
+.data-table td[data-col*="PRODUCTO"],
+.data-table th[data-col*="MATERIAL"],
+.data-table td[data-col*="MATERIAL"] {
+  width: 240px;
+  min-width: 190px;
+}
+
+/* Observación es la única que necesita más: son frases completas. */
+.data-table td.col-observacion,
+.data-table td[data-largo="1"] {
+  min-width: 220px;
+  max-width: 380px;
+}
+
+/* Encabezados: los controles van en fila, así que ya no hace falta la altura
+   de tres botones apilados. */
+.data-table thead th {
+  padding: 8px 8px;
+}
+
+/* Aviso de que hay más tabla a la derecha: sin él, en tablet no se nota que
+   se puede deslizar y el operario cree que faltan columnas. */
+.table-wrapper {
+  background-image:
+    linear-gradient(to right, #fff 30%, rgba(255,255,255,0)),
+    linear-gradient(to left,  #fff 30%, rgba(255,255,255,0)),
+    linear-gradient(to right, rgba(0,0,0,.14), rgba(0,0,0,0)),
+    linear-gradient(to left,  rgba(0,0,0,.14), rgba(0,0,0,0));
+  background-position: left center, right center, left center, right center;
+  background-repeat: no-repeat;
+  background-size: 36px 100%, 36px 100%, 14px 100%, 14px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* En pantallas chicas se achica un poco, pero nunca por debajo de lo legible. */
+@media (max-width: 767px) {
+  .data-table th,
+  .data-table td { min-width: 110px; }
+}
+
+/* Tablet en horizontal (la franja que quedaba sin regla propia). */
+@media (min-width: 1025px) and (max-width: 1400px) {
+  .data-table th,
+  .data-table td { min-width: 125px; }
+}

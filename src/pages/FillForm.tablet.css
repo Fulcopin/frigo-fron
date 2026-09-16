@@ -6,8 +6,18 @@
 
 /* ============================================
    🎯 CONFIGURACIÓN BASE PARA TABLETS
+   ============================================
+
+   El tope era 1024px, pero una tablet moderna en horizontal mide entre 1180 y
+   1366: caía fuera de estas reglas y se quedaba con el CSS de escritorio, que
+   aprieta las celdas a 85px. En pantalla eso se veía como columnas cortadas
+   contra el borde derecho —el operario no llegaba a ver la de PESO— aunque el
+   scroll horizontal existiera.
+
+   Se subió a 1400px. Un monitor de escritorio arranca en 1440 o más, así que
+   no se ve afectado.
    ============================================ */
-@media (min-width: 768px) and (max-width: 1024px) {
+@media (min-width: 768px) and (max-width: 1400px) {
   
   /* Contenedor principal con padding adaptativo */
   .fill-form {
@@ -453,7 +463,7 @@
 /* ============================================
    🎯 TABLET PORTRAIT ESPECÍFICO (768px-1024px)
    ============================================ */
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+@media (min-width: 768px) and (max-width: 1400px) and (orientation: portrait) {
   
   /* Layout de una columna para mejor legibilidad en campos */
   .header-grid,
@@ -491,7 +501,7 @@
 /* ============================================
    🎯 TABLET LANDSCAPE ESPECÍFICO
    ============================================ */
-@media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+@media (min-width: 768px) and (max-width: 1400px) and (orientation: landscape) {
   
   /* Aprovechar ancho horizontal */
   .templates-grid {
@@ -511,7 +521,7 @@
    ============================================ */
 
 /* Reducir animaciones en tablets para mejor performance */
-@media (min-width: 768px) and (max-width: 1024px) {
+@media (min-width: 768px) and (max-width: 1400px) {
   @media (prefers-reduced-motion: no-preference) {
     * {
       transition-duration: 150ms !important;
@@ -522,7 +532,7 @@
 /* ============================================
    🎨 MEJORAS VISUALES FINALES
    ============================================ */
-@media (min-width: 768px) and (max-width: 1024px) {
+@media (min-width: 768px) and (max-width: 1400px) {
   
   /* Sombras más sutiles */
   .form-document,

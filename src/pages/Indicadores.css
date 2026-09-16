@@ -155,3 +155,10 @@
   line-height: 1.5;
   word-break: break-word;
 }
+
+/* Botón de refresco manual, junto al interruptor de tiempo real. */
+.ind-refrescar {
+  padding: 5px 12px;
+  font-size: .78rem;
+  white-space: nowrap;
+}

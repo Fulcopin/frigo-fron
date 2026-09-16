@@ -66,6 +66,14 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
     return null;
   };
 
+  // Declarada FUERA del try: el catch de abajo la usa para reportar qué
+  // expresión falló, y con `let` adentro no existe en ese alcance. Cuando una
+  // fórmula fallaba, el console.warn tiraba "expression is not defined" y ese
+  // error sí se propagaba: tumbaba la pantalla entera del formulario en vez de
+  // devolver "ERR" en una celda.
+  let expression = '';
+
+
   try {
     if (formula.trim().toLowerCase().startsWith('sum(')) {
       const variables = formula.replace(/sum\(/i, '').replace(')', '').split(',').map(v => v.trim());
@@ -77,7 +85,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
     }
 
     const allColNames = rowKeys.sort((a, b) => b.length - a.length);
-    let expression = formula;
+    expression = formula;
 
     // --- PROCESAR _ROW_ ---
     expression = expression.replace(/_ROW_/gi, String(currentRowIndex));

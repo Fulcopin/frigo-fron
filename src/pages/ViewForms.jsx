@@ -27,6 +27,24 @@ import {
 } from "../utils/bloqueoFirma";
 import { ordenarFormularios, etiquetaFormulario } from "../utils/ordenFormularios";
 import { entraEnRango, fechaDeBusqueda, fechaDifiereDeGuardado } from "../utils/fechaFormulario";
+import VisorImagen from '../components/VisorImagen';
+
+// ── Caché del listado ────────────────────────────────────────────────────────
+// La pantalla recargaba TODO cada vez que se navegaba a ella (incluso al volver
+// con el botón atrás), porque el efecto dependía de location.key. Con ~1900
+// formularios eso era una espera de varios segundos por cada visita.
+//
+// Vive fuera del componente para sobrevivir al desmontaje. Se refresca solo si
+// pasó el tiempo de vida o si el usuario aprieta "Actualizar".
+const cacheListado = { forms: null, templates: null, ts: 0 };
+const CACHE_VIDA_MS = 3 * 60 * 1000;   // 3 minutos
+
+export function invalidarCacheFormularios() {
+  cacheListado.forms = null;
+  cacheListado.templates = null;
+  cacheListado.ts = 0;
+}
+
 //const API_URL_TEMPLATES = "http://localhost:5074/api/Templates";
 //const API_URL_FILLED_FORMS = "http://localhost:5074/api/FilledForms";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -51,9 +69,28 @@ const isImageUrl = (val) => {
   );
 };
 
-const renderCellValue = (value, fieldType) => {
+const renderCellValue = (value, fieldType, campos) => {
   if (value === undefined || value === null) return '-';
-  if (typeof value === 'object') return JSON.stringify(value);
+
+  // 📋 DETALLE: la celda guarda varias filas como JSON. Sin esto se veía el
+  // texto crudo —[{"c1":"12x16","c2":"120"}]— que no dice nada a quien revisa.
+  if (fieldType === 'detalle') return <CeldaDetalle valor={value} campos={campos} />;
+
+  // Cualquier otro valor que sea un JSON de filas también se dibuja como tabla:
+  // hay celdas guardadas así antes de que existiera el tipo.
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (t.startsWith('[{') && t.endsWith('}]')) {
+      try {
+        const filas = JSON.parse(t);
+        if (Array.isArray(filas) && filas.length > 0 && typeof filas[0] === 'object') {
+          return <CeldaDetalle valor={filas} campos={campos} />;
+        }
+      } catch { /* no era JSON de filas: sigue como texto */ }
+    }
+  }
+
+  if (typeof value === 'object') return <CeldaDetalle valor={value} campos={campos} />;
   const strVal = String(value);
 
   // ── CHECKBOX: manejar ANTES del check genérico de vacío/guión ──
@@ -181,6 +218,52 @@ const processColumnGroups = (columns = []) => {
   return result;
 };
 
+/**
+ * Una celda de tipo DETALLE guarda varias filas como JSON.
+ *
+ * Mostrada en crudo se ve así: [{"c1":"12x16","c2":"120"},...] — ilegible para
+ * quien revisa el registro. Acá se dibuja como una lista con los nombres de
+ * campo que definió la plantilla.
+ */
+function CeldaDetalle({ valor, campos }) {
+  let filas = valor;
+  if (typeof filas === 'string') {
+    try { filas = JSON.parse(filas); } catch { return <span>{String(valor)}</span>; }
+  }
+  if (!Array.isArray(filas) || filas.length === 0) return <span style={{ color: '#94a3b8' }}>—</span>;
+
+  const cols = (campos && campos.length > 0)
+    ? campos
+    // Sin configuración a la vista se usan las claves del propio dato: es
+    // preferible mostrar algo a dejar el JSON crudo.
+    : Object.keys(filas[0] || {}).map(k => ({ key: k, label: k }));
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+      <thead>
+        <tr>
+          {cols.map(c => (
+            <th key={c.key || c.label} style={{ textAlign: 'left', padding: '2px 5px', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: '10.5px', textTransform: 'uppercase' }}>
+              {c.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {filas.map((f, i) => (
+          <tr key={i}>
+            {cols.map(c => (
+              <td key={c.key || c.label} style={{ padding: '2px 5px', borderBottom: '1px solid #f1f5f9' }}>
+                {f?.[c.key || c.label] ?? ''}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function ViewForms() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -227,6 +310,13 @@ function ViewForms() {
   // ⚡ NUEVO: Estado para vista previa rápida
   const [previewForm, setPreviewForm] = useState(null)
 
+  // 🖼️ Imagen abierta a pantalla completa. Para revisar un registro de verdad
+  // hay que poder ver la foto grande; en miniatura no se distingue nada.
+  const [imagenAmpliada, setImagenAmpliada] = useState(null)
+  // Vista rápida editable: se trabaja sobre una copia y solo se manda al guardar.
+  const [previewEdits, setPreviewEdits] = useState({})
+  const [previewGuardando, setPreviewGuardando] = useState(false)
+
   // 🔐 Estado para firmas interactivas en vista
   const [viewFirmasData, setViewFirmasData] = useState({})
   const [savingSignature, setSavingSignature] = useState(false)
@@ -237,12 +327,84 @@ function ViewForms() {
     cargarUmbralBloqueo(API_BASE_URL).then(setLockThreshold);
   }, []);
 
-  const loadData = async () => {
+  /**
+   * Guarda los cambios del encabezado hechos en la Vista Rápida.
+   *
+   * Va por /autosave, que ya deja registro de auditoría de quién cambió qué:
+   * cambiar la fecha de un registro firmado tiene que quedar asentado.
+   */
+  const guardarVistaRapida = async () => {
+    if (!previewForm) return;
+
+    const cambios = Object.entries(previewEdits).filter(
+      ([k, v]) => String(previewForm.headerData?.[k] ?? '') !== String(v ?? '')
+    );
+    if (cambios.length === 0) {
+      setPreviewForm(null);
+      return;
+    }
+
+    const detalle = cambios
+      .map(([k, v]) => `  · ${k}: "${previewForm.headerData?.[k] ?? '(vacío)'}" → "${v || '(vacío)'}"`)
+      .join('\n');
+    if (!window.confirm(`Se van a guardar ${cambios.length} cambio(s) en el formulario #${previewForm.formID}:\n\n${detalle}\n\n¿Confirmás?`)) return;
+
+    try {
+      setPreviewGuardando(true);
+      const nuevoHeader = { ...(previewForm.headerData || {}), ...previewEdits };
+
+      const resp = await fetch(`${API_URL_FILLED_FORMS}/${previewForm.formID}/autosave`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          headerData: JSON.stringify(nuevoHeader),
+          filledBy: currentUser?.nombre || currentUser?.nombreCompleto || '',
+          filledByEmail: currentUser?.email || '',
+          filledByRole: currentUser?.rol || '',
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => null);
+        throw new Error(err?.message || 'No se pudo guardar');
+      }
+
+      // La lista y la caché se actualizan en el momento: sin esto habría que
+      // apretar Actualizar para ver el cambio.
+      setForms(prev => {
+        const siguiente = prev.map(f =>
+          f.formID === previewForm.formID ? { ...f, headerData: nuevoHeader } : f
+        );
+        cacheListado.forms = siguiente;
+        return siguiente;
+      });
+
+      setPreviewForm(null);
+      setPreviewEdits({});
+    } catch (e) {
+      alert(`No se pudo guardar: ${e.message}`);
+    } finally {
+      setPreviewGuardando(false);
+    }
+  };
+
+  const loadData = async ({ forzar = false } = {}) => {
+    // Caché vigente: se pinta al instante y no se pide nada. Es lo que evita
+    // la espera al volver de ver un formulario.
+    const fresco = cacheListado.forms && (Date.now() - cacheListado.ts) < CACHE_VIDA_MS;
+    if (!forzar && fresco) {
+      setForms(cacheListado.forms);
+      setTemplates(cacheListado.templates);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       const [formsResponse, templatesResponse] = await Promise.all([
-        fetch(API_URL_FILLED_FORMS),
+        // Listado liviano: sin BodyData. Al abrir un formulario igual se pide
+        // el completo a /{id}, así que traerlo acá era descargarlo para nada.
+        fetch(`${API_URL_FILLED_FORMS}/lista?tamano=0`),
         fetch(API_URL_TEMPLATES)
       ]);
       if (!formsResponse.ok || !templatesResponse.ok) throw new Error('No se pudieron cargar los datos.');
@@ -250,7 +412,10 @@ function ViewForms() {
       let formsDataResponse = await formsResponse.json();
       let templatesDataResponse = await templatesResponse.json();
 
-      const formsArray = Array.isArray(formsDataResponse) ? formsDataResponse : formsDataResponse.$values || [];
+      // El endpoint nuevo devuelve { total, items }; el viejo, un array pelado.
+      // Se aceptan las dos formas para poder volver atrás sin tocar nada.
+      const crudo = formsDataResponse?.items ?? formsDataResponse;
+      const formsArray = Array.isArray(crudo) ? crudo : crudo?.$values || [];
       const templatesArray = Array.isArray(templatesDataResponse) ? templatesDataResponse : templatesDataResponse.$values || [];
 
       // CORREGIDO: Parsear bodyElements, headerFields y firmas en las plantillas
@@ -264,13 +429,15 @@ function ViewForms() {
       // CORREGIDO: Parsear bodyData en los formularios llenados
       const parsedForms = formsArray.map(form => {
         const tpl = parsedTemplates.find(t => t.templateID === form.templateID);
-        const isObsolete = tpl?.isObsolete;
-        const baseNombre = tpl?.nombre || 'Plantilla Desconocida';
+        const isObsolete = tpl?.isObsolete ?? form.templateObsoleta;
+        const baseNombre = tpl?.nombre || form.templateNombre || 'Plantilla Desconocida';
         return {
           ...form,
           templateNombre: isObsolete ? `${baseNombre} (OBSOLETA)` : baseNombre,
-          templateCodigo: tpl?.codigo || 'N/A',
+          templateCodigo: tpl?.codigo || form.templateCodigo || 'N/A',
           headerData: safeParse(form.headerData, {}),
+          // El listado liviano no manda bodyData: queda vacío y se llena al
+          // abrir el formulario, que es el único momento en que se usa.
           bodyData: safeParse(form.bodyData, []),
           firmasData: safeParse(form.firmasData, {}),
         };
@@ -283,7 +450,12 @@ function ViewForms() {
         return codA.localeCompare(codB, undefined, { numeric: true, sensitivity: 'base' });
       });
 
-      setForms(parsedForms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      const ordenados = parsedForms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      cacheListado.forms = ordenados;
+      cacheListado.templates = sortedTemplates;
+      cacheListado.ts = Date.now();
+
+      setForms(ordenados);
       setTemplates(sortedTemplates); 
     } catch (err) {
       setError(err.message);
@@ -292,11 +464,13 @@ function ViewForms() {
     }
   };
 
-  // Recargar datos cada vez que el usuario navega a esta página
+  // Se carga una sola vez. Antes dependía de location.key, así que volver
+  // atrás desde un formulario disparaba una recarga completa.
+  // Para traer datos nuevos está el botón Actualizar.
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.key]);
+  }, []);
 
   // 🎯 NUEVO: Auto-abrir formulario si viene desde Home
   useEffect(() => {
@@ -321,7 +495,11 @@ function ViewForms() {
       try {
         const response = await fetch(`${API_URL_FILLED_FORMS}/${formId}`, { method: 'DELETE' });
         if (!response.ok) throw new Error('No se pudo eliminar el formulario.');
-        setForms(prev => prev.filter(f => f.formID !== formId));
+        setForms(prev => {
+          const siguiente = prev.filter(f => f.formID !== formId);
+          cacheListado.forms = siguiente;   // la caché tiene que reflejar el borrado
+          return siguiente;
+        });
         setSelectedForm(null);
       } catch (err) {
         alert(err.message);
@@ -857,10 +1035,33 @@ function ViewForms() {
       const rawCurrentHf = Array.isArray(currentTemplate?.headerFields) ? currentTemplate.headerFields : (typeof currentTemplate?.headerFields === 'string' ? safeParse(currentTemplate.headerFields, []) : []);
       const rawSnapshotHf = Array.isArray(snapshot?.headerFields) ? snapshot.headerFields : (typeof snapshot?.headerFields === 'string' ? safeParse(snapshot.headerFields, []) : []);
 
+      // Las firmas del snapshot pueden venir como TEXTO JSON en vez de array,
+      // según cómo se haya guardado ese formulario. Sin normalizarlas, el
+      // .map() de la sección de firmas rompía la pantalla entera con
+      // "templateFirmas.map is not a function".
+      const normalizarFirmas = (v) => {
+        if (Array.isArray(v)) return v;
+        if (typeof v === 'string') {
+          const parsed = safeParse(v, []);
+          return Array.isArray(parsed) ? parsed : [];
+        }
+        return [];
+      };
+      const firmasSnapshot = normalizarFirmas(snapshot?.firmas);
+      const firmasActuales = normalizarFirmas(currentTemplate?.firmas);
+
       correspondingTemplate = {
         ...snapshot,
-        // Usar bodyElements fusionados para mostrar campos nota añadidos después
-        bodyElements: mergedBodyElements,
+        // Las del snapshot son las que valían cuando se llenó el formulario;
+        // si ese no las trae, se usan las de la plantilla actual.
+        firmas: firmasSnapshot.length > 0 ? firmasSnapshot : firmasActuales,
+
+        // Si el snapshot quedó SIN bodyElements —pasa con formularios guardados
+        // antes de que se empezara a versionar la estructura— se usan los de la
+        // plantilla actual. Sin este respaldo el formulario se abría mostrando
+        // solo el encabezado y las firmas: las tablas de MATERIA PRIMA y
+        // Producción simplemente no se dibujaban, y parecía un registro vacío.
+        bodyElements: mergedBodyElements.length > 0 ? mergedBodyElements : rawCurrentBe,
         // Usar headerFields del template actual si tiene más campos (p.ej. campos con defaultValue añadidos después)
         headerFields: rawCurrentHf.length >= rawSnapshotHf.length ? rawCurrentHf : rawSnapshotHf,
         // Siempre usar fechaVersion del template actual (es la fecha de versión registrada en la plantilla)
@@ -869,7 +1070,13 @@ function ViewForms() {
     } else {
       // Buscar el template actual en la lista (comparar como string para evitar Number vs String mismatch)
       console.log('📋 Usando template actual de la lista');
-      correspondingTemplate = currentTemplate;
+      correspondingTemplate = {
+        ...currentTemplate,
+        // Idem: puede venir como texto JSON según cómo se cargó la plantilla.
+        firmas: Array.isArray(currentTemplate?.firmas)
+          ? currentTemplate.firmas
+          : (typeof currentTemplate?.firmas === 'string' ? safeParse(currentTemplate.firmas, []) : []),
+      };
     }
 
     return (
@@ -1125,7 +1332,28 @@ function ViewForms() {
           {(() => {
             const rawBodyElements = Array.isArray(correspondingTemplate?.bodyElements) ? correspondingTemplate.bodyElements : (typeof correspondingTemplate?.bodyElements === 'string' ? safeParse(correspondingTemplate.bodyElements, []) : []);
             const savedBodyData = Array.isArray(selectedForm?.bodyData) ? selectedForm.bodyData : (typeof selectedForm?.bodyData === 'string' ? safeParse(selectedForm.bodyData, []) : []);
-            if (!rawBodyElements.length) return null;
+
+            // Sin estructura no se puede dibujar nada, pero devolver null a secas
+            // hacía que el formulario se viera "completo" con solo encabezado y
+            // firmas: nadie podía saber que faltaban las tablas.
+            if (!rawBodyElements.length) {
+              const tieneDatos = savedBodyData.some(bd => {
+                const filas = bd?.data ?? bd?.rows;
+                return Array.isArray(filas) ? filas.length > 0 : !!filas;
+              });
+              return (
+                <div className="data-section" style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '14px 16px' }}>
+                  <div style={{ fontWeight: 700, color: '#92400e', marginBottom: '4px' }}>
+                    ⚠️ No se pudo cargar la estructura del formulario
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#78350f', lineHeight: 1.6 }}>
+                    {tieneDatos
+                      ? 'El formulario TIENE datos guardados, pero falta la definición de sus tablas, así que no se pueden mostrar. Los datos no se perdieron.'
+                      : 'Esta plantilla no tiene tablas ni secciones definidas.'}
+                  </div>
+                </div>
+              );
+            }
 
             return rawBodyElements.map((templateElement, elementIndex) => {
               if (!templateElement) return null;
@@ -1178,7 +1406,14 @@ function ViewForms() {
                         return (
                           <div key={fieldDef.label} style={{ gridColumn: '1 / -1' }}>
                             <span className="data-label">{fieldDef.label}:</span>
-                            <img src={fieldDef.staticImage} alt={fieldDef.label} style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px' }} />
+                            <img
+                              src={fieldDef.staticImage}
+                              alt={fieldDef.label}
+                              className="vi-miniatura"
+                              onClick={() => setImagenAmpliada({ src: fieldDef.staticImage, titulo: fieldDef.label })}
+                              title="Clic para verla en grande"
+                              style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px' }}
+                            />
                           </div>
                         );
                       }
@@ -1190,7 +1425,14 @@ function ViewForms() {
                         return (
                           <div key={key} style={{ gridColumn: '1 / -1' }}>
                             <span className="data-label">{key}:</span>
-                            <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px', border: '1px solid #e5e7eb' }} />
+                            <img
+                              src={value}
+                              alt={key}
+                              className="vi-miniatura"
+                              onClick={() => setImagenAmpliada({ src: value, titulo: key })}
+                              title="Clic para verla en grande"
+                              style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px', border: '1px solid #e5e7eb' }}
+                            />
                           </div>
                         );
                       }
@@ -1426,7 +1668,10 @@ function ViewForms() {
                                   className={cambioCelda ? 'celda-modificada' : undefined}
                                   style={{ textAlign: 'center', verticalAlign: 'middle', minWidth: rawCols.length > 12 ? '60px' : rawCols.length > 8 ? '75px' : '100px' }}
                                 >
-                                  {marcarSiCambio(renderCellValue(cellValue, col.type), cambioCelda)}
+                                  {/* Se pasan los campos configurados para que el
+                                      detalle muestre los nombres reales y no las
+                                      claves internas. */}
+                                  {marcarSiCambio(renderCellValue(cellValue, col.type, col.detalleCampos), cambioCelda)}
                                   {col.unit && cellValue !== undefined && cellValue !== null && cellValue !== '' && cellValue !== '-' ? <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '2px' }}>{col.unit}</span> : null}
                                 </td>
                               );
@@ -1732,8 +1977,14 @@ function ViewForms() {
               <div className="signatures-grid">
                 {(() => {
                   // 🔧 FILTRAR: Solo mostrar firmas que existen en la plantilla actual
-                  const templateFirmas = correspondingTemplate?.firmas || [];
-                  const puestosValidos = templateFirmas.map(f => f.puesto);
+                  // Red de seguridad: aunque arriba ya se normaliza, este .map()
+                  // rompía la pantalla completa si llegaba cualquier otra cosa.
+                  // Vale más mostrar la sección vacía que perder el formulario.
+                  const firmasCrudas = correspondingTemplate?.firmas;
+                  const templateFirmas = Array.isArray(firmasCrudas)
+                    ? firmasCrudas
+                    : (typeof firmasCrudas === 'string' ? (safeParse(firmasCrudas, []) || []) : []);
+                  const puestosValidos = templateFirmas.map(f => f?.puesto).filter(Boolean);
 
                   // Comparación tolerante de nombres: unifica tildes (ñ/Ñ pueden venir compuestas o
                   // precompuestas según el teclado), mayúsculas y espacios repetidos. Con la comparación
@@ -1848,6 +2099,12 @@ function ViewForms() {
                               <img 
                                 src={data.firma.url || data.firma.base64} 
                                 alt={`Firma ${puesto}`} 
+                                className="vi-miniatura"
+                                onClick={() => setImagenAmpliada({
+                                  src: data.firma.url || data.firma.base64,
+                                  titulo: `Firma · ${puesto}`,
+                                })}
+                                title="Clic para verla en grande"
                                 style={{ 
                                   maxHeight: '150px', 
                                   maxWidth: '100%', 
@@ -2008,7 +2265,7 @@ function ViewForms() {
             </button>
             <button
               className="btn-secondary"
-              onClick={() => loadData()}
+              onClick={() => loadData({ forzar: true })}
               title="Recargar formularios desde el servidor"
               style={{ marginLeft: '8px' }}
             >
@@ -2278,11 +2535,11 @@ function ViewForms() {
 
       {/* ⚡ MODAL: Vista rápida de cabecera */}
       {previewForm && (
-        <div className="email-modal-overlay" onClick={() => setPreviewForm(null)}>
-          <div className="email-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', width: '90%' }}>
+        <div className="email-modal-overlay" onClick={() => { setPreviewForm(null); setPreviewEdits({}); }}>
+          <div className="email-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '760px', width: '92%' }}>
             <div className="email-modal-header" style={{ background: '#f59e0b' }}>
               <h3>⚡ Vista Rápida - {previewForm.templateCodigo} · # Form {previewForm.formID}</h3>
-              <button className="email-modal-close" onClick={() => setPreviewForm(null)}>✕</button>
+              <button className="email-modal-close" onClick={() => { setPreviewForm(null); setPreviewEdits({}); }}>✕</button>
             </div>
             <div className="email-modal-body" style={{ maxHeight: '65vh', overflowY: 'auto', padding: '20px' }}>
               <h4 style={{ marginBottom: '15px', color: '#1e293b', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px', fontSize: '1.1rem' }}>
@@ -2301,27 +2558,160 @@ function ViewForms() {
                   <strong style={{ display: 'block', fontSize: '11px', color: '#475569', textTransform: 'uppercase', marginBottom: '4px' }}>📅 Fecha de Creación</strong>
                   <span style={{ color: '#0f172a', fontWeight: '600', fontSize: '14px' }}>{new Date(previewForm.createdAt).toLocaleString('es-EC')}</span>
                 </div>
-                {previewForm.headerData && Object.entries(previewForm.headerData).map(([key, value]) => {
+                {previewForm.headerData && Object.entries(previewForm.headerData)
+                  // La FECHA primero: es el dato que más se revisa y el único
+                  // que suele corregirse. Enterrada entre lote, especie y tipo
+                  // hay que buscarla con la vista.
+                  .sort(([a], [b]) => {
+                    const esF = (k) => /fecha/i.test(k) && !/vencim|caduc|version|expir/i.test(k);
+                    return (esF(b) ? 1 : 0) - (esF(a) ? 1 : 0);
+                  })
+                  .map(([key, value]) => {
                   if (typeof value === 'object') return null; // Saltar objetos complejos
                   if (key.includes('_')) return null; // Omitir IDs internos
                   if (String(key).toLowerCase().startsWith('unlock')) return null; // Ocultar campos técnicos de desbloqueo
+
+                  // Los campos de fecha van con selector de calendario. Se detectan
+                  // por el nombre y por la forma del valor: así funciona igual
+                  // aunque el campo se llame FECHA, Fecha de proceso, etc.
+                  const esFecha = /fecha/i.test(key) || /^\d{4}-\d{2}-\d{2}/.test(String(value || ''));
+                  // Se resalta la fecha del REGISTRO, no las de vencimiento o
+                  // versión, que también dicen "fecha" pero no se tocan.
+                  const esFechaPrincipal = esFecha && !/vencim|caduc|version|expir/i.test(key);
+                  const valorEditado = previewEdits[key] !== undefined ? previewEdits[key] : (value ?? '');
+                  const cambiado = previewEdits[key] !== undefined
+                    && String(previewEdits[key]) !== String(value ?? '');
+
+                  const setVal = (v) => setPreviewEdits(prev => ({ ...prev, [key]: v }));
+
                   return (
-                    <div key={key} style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <strong style={{ display: 'block', fontSize: '11px', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>{key.replace(/([A-Z])/g, ' $1').trim()}</strong>
-                      <span style={{ color: '#1e40af', fontWeight: '600', fontSize: '14px' }}>{value || '-'}</span>
+                    <div
+                      key={key}
+                      style={{
+                        background: cambiado ? '#fffbeb' : (esFechaPrincipal ? '#eff6ff' : '#f8fafc'),
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: `1px solid ${cambiado ? '#fcd34d' : (esFechaPrincipal ? '#93c5fd' : '#e2e8f0')}`,
+                        // La fecha ocupa la fila entera: destaca sola y el
+                        // calendario queda cómodo de usar.
+                        gridColumn: esFechaPrincipal ? '1 / -1' : undefined,
+                        boxShadow: esFechaPrincipal && !cambiado ? '0 0 0 3px rgba(59,130,246,.08)' : undefined,
+                      }}
+                    >
+                      <strong style={{ display: 'block', fontSize: '11px', color: esFechaPrincipal ? '#1e40af' : '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        {esFechaPrincipal && '📅 '}
+                        {key.replace(/([A-Z])/g, ' $1').trim()}
+                        {esFechaPrincipal && (
+                          <span style={{ fontWeight: 400, textTransform: 'none', color: '#3b82f6', marginLeft: 6 }}>
+                            fecha del registro
+                          </span>
+                        )}
+                        {cambiado && <span style={{ color: '#b45309', marginLeft: 6 }}>• editado</span>}
+                      </strong>
+
+                      {canEdit ? (
+                        <input
+                          type={esFecha ? 'date' : 'text'}
+                          value={esFecha ? String(valorEditado).split('T')[0] : valorEditado}
+                          onChange={(e) => setVal(e.target.value)}
+                          style={{
+                            width: esFechaPrincipal ? 'auto' : '100%',
+                            minWidth: esFechaPrincipal ? '190px' : undefined,
+                            padding: esFechaPrincipal ? '9px 12px' : '6px 8px',
+                            fontSize: esFechaPrincipal ? '16px' : '14px',
+                            fontWeight: esFechaPrincipal ? 700 : 600,
+                            color: '#1e40af', background: '#fff',
+                            border: `${esFechaPrincipal ? 2 : 1}px solid ${cambiado ? '#f59e0b' : (esFechaPrincipal ? '#93c5fd' : '#cbd5e1')}`,
+                            borderRadius: esFechaPrincipal ? '7px' : '5px',
+                          }}
+                        />
+                      ) : (
+                        <span style={{ color: '#1e40af', fontWeight: '600', fontSize: '14px' }}>{value || '-'}</span>
+                      )}
                     </div>
                   );
                 })}
               </div>
+
+              {/* ✍️ Quién firmó. Solo lectura: una firma no se cambia desde acá. */}
+              {(() => {
+                const firmas = previewForm.firmasData && typeof previewForm.firmasData === 'object'
+                  ? Object.entries(previewForm.firmasData)
+                  : [];
+                if (firmas.length === 0) {
+                  return (
+                    <div style={{ marginTop: '16px', fontSize: '13px', color: '#64748b' }}>
+                      ✍️ Sin firmas registradas.
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ marginTop: '18px' }}>
+                    <strong style={{ display: 'block', fontSize: '12px', color: '#475569', textTransform: 'uppercase', marginBottom: '8px' }}>
+                      ✍️ Firmas ({firmas.length})
+                    </strong>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                      {firmas.map(([puesto, datos]) => {
+                        const d = datos && typeof datos === 'object' ? datos : {};
+                        const nombre = d.nombre || d.nombreCompleto || d.firmante || (typeof datos === 'string' ? datos : '');
+                        const cuando = d.fecha || d.fechaFirma || '';
+                        return (
+                          <div key={puesto} style={{ background: nombre ? '#f0fdf4' : '#f8fafc', border: `1px solid ${nombre ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: '8px', padding: '10px 12px' }}>
+                            <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>{puesto}</div>
+                            <div style={{ fontSize: '13.5px', color: nombre ? '#15803d' : '#94a3b8', fontWeight: 600 }}>
+                              {nombre || 'Pendiente'}
+                            </div>
+                            {cuando && (
+                              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                {String(cuando).split('T')[0]}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             <div className="email-modal-footer">
-              <button className="btn-secondary" onClick={() => setPreviewForm(null)}>Cancelar</button>
-              <button className="btn-primary" onClick={() => { viewFormWithVersion(previewForm); setPreviewForm(null); }}>
+              <button className="btn-secondary" onClick={() => { setPreviewForm(null); setPreviewEdits({}); }}>
+                Cancelar
+              </button>
+
+              {canEdit && (() => {
+                const pendientes = Object.entries(previewEdits).filter(
+                  ([k, v]) => String(previewForm.headerData?.[k] ?? '') !== String(v ?? '')
+                ).length;
+                return (
+                  <button
+                    className="btn-primary"
+                    onClick={guardarVistaRapida}
+                    disabled={previewGuardando || pendientes === 0}
+                    style={{ background: pendientes > 0 ? '#16a34a' : undefined, opacity: pendientes === 0 ? 0.5 : 1 }}
+                    title={pendientes === 0 ? 'No hay cambios para guardar' : `Guardar ${pendientes} cambio(s)`}
+                  >
+                    {previewGuardando ? 'Guardando…' : `💾 Guardar${pendientes > 0 ? ` (${pendientes})` : ''}`}
+                  </button>
+                );
+              })()}
+
+              <button className="btn-primary" onClick={() => { viewFormWithVersion(previewForm); setPreviewForm(null); setPreviewEdits({}); }}>
                 👁️ Ver Formulario Completo
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* 🖼️ Visor de imágenes a pantalla completa. Va acá, al final, para que
+          quede por encima de todo lo demás. */}
+      {imagenAmpliada && (
+        <VisorImagen
+          src={imagenAmpliada.src}
+          titulo={imagenAmpliada.titulo}
+          onClose={() => setImagenAmpliada(null)}
+        />
       )}
 
       {/* 🔼🔽 Botones de scroll */}

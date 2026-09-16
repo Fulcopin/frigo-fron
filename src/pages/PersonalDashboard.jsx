@@ -1,7 +1,22 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import personalService from '../services/personalService';
+import { exportarPersonalExcel } from '../services/personalExcelService';
 import { ordenarFormularios, etiquetaFormulario } from '../utils/ordenFormularios';
+import {
+  COLUMNAS_PERSONAL,
+  definicionColumna,
+  valorTexto,
+  leerConfigGuardada,
+  guardarConfig,
+  configPorDefecto,
+} from '../utils/personalColumnas';
+import {
+  analizarAgrupacion,
+  aHoraTexto,
+  duracionTexto,
+  recomendacionGrupo,
+} from '../utils/agrupacionPersonal';
 import './PersonalDashboard.css';
 
 const hoy = () => new Date().toISOString().split('T')[0];
@@ -15,9 +30,6 @@ const ESTANDAR_VACIO = {
   activo: true,
 };
 
-// TimeSpan del backend llega como "HH:MM:SS" -> input[type=time] necesita "HH:MM"
-const aInputHora = (ts) => (ts ? String(ts).substring(0, 5) : '');
-
 export default function PersonalDashboard() {
   const [filters, setFilters] = useState({ desde: haceDias(30), hasta: hoy(), templateId: '', proceso: '' });
   const [registros, setRegistros] = useState([]);
@@ -30,6 +42,17 @@ export default function PersonalDashboard() {
   const [formEstandar, setFormEstandar] = useState(ESTANDAR_VACIO);
   const [guardandoEstandar, setGuardandoEstandar] = useState(false);
   const [errorEstandar, setErrorEstandar] = useState('');
+
+  // Columnas: qué se ve y en qué orden. Manda igual en la tabla y en el Excel.
+  const [columnas, setColumnas] = useState(() => leerConfigGuardada());
+  const [panelColumnas, setPanelColumnas] = useState(false);
+  const [exportando, setExportando] = useState(false);
+
+  // Agrupación: "misma naturaleza" puede significar mismo formulario (fileteo
+  // vs productividad) o mismo proceso, según cómo esté cargado el dato.
+  const [agruparPor, setAgruparPor] = useState('formulario');
+
+  useEffect(() => { guardarConfig(columnas); }, [columnas]);
 
   const cargarRegistros = useCallback(async () => {
     try {
@@ -74,12 +97,69 @@ export default function PersonalDashboard() {
     setFilters(prev => ({ ...prev, [campo]: valor }));
   };
 
+  // ── Columnas ───────────────────────────────────────────────────────────────
+  const columnasVisibles = useMemo(
+    () => columnas.filter(c => c.visible).map(c => c.id),
+    [columnas],
+  );
+
+  const alternarColumna = (id) => {
+    setColumnas(prev => {
+      const siguiente = prev.map(c => (c.id === id ? { ...c, visible: !c.visible } : c));
+      // Dejar cero columnas rompería la tabla; se ignora el último apagado.
+      return siguiente.some(c => c.visible) ? siguiente : prev;
+    });
+  };
+
+  const moverColumna = (id, delta) => {
+    setColumnas(prev => {
+      const i = prev.findIndex(c => c.id === id);
+      const j = i + delta;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const siguiente = [...prev];
+      [siguiente[i], siguiente[j]] = [siguiente[j], siguiente[i]];
+      return siguiente;
+    });
+  };
+
+  // ── Agrupación por día ─────────────────────────────────────────────────────
+  const agrupacion = useMemo(
+    () => analizarAgrupacion(registros, agruparPor),
+    [registros, agruparPor],
+  );
+
+  // ── Exportar a Excel ───────────────────────────────────────────────────────
+  // (definido más abajo, después de buscarFormulario)
+
   // Mismo orden por código (FOR-PD-04 antes que FOR-PD-14) que el resto del
   // sistema, para que un formulario como Fileteo sea fácil de encontrar en
   // una lista con decenas de plantillas en vez de quedar perdido por fecha.
   const formulariosOrdenados = useMemo(() => ordenarFormularios(formularios), [formularios]);
 
   const buscarFormulario = (id) => formularios.find(f => (f.templateID ?? f.TemplateID) === Number(id));
+
+  // ── Exportar a Excel ───────────────────────────────────────────────────────
+  // Va después de buscarFormulario a propósito: mantener las declaraciones en
+  // orden de uso evita sorpresas cuando algo pase a un array de dependencias.
+  const exportarExcel = async () => {
+    try {
+      setExportando(true);
+      setError('');
+      const tpl = buscarFormulario(filters.templateId);
+      await exportarPersonalExcel({
+        registros,
+        columnas: columnasVisibles,
+        filtros: filters,
+        totales,
+        agrupacion,
+        nombreFormulario: tpl ? etiquetaFormulario(tpl) : '',
+      });
+    } catch (err) {
+      setError(err.message || 'Error al generar el archivo Excel.');
+    } finally {
+      setExportando(false);
+    }
+  };
 
   const handleSeleccionarFormulario = (templateId) => {
     const tpl = buscarFormulario(templateId);
@@ -233,12 +313,113 @@ export default function PersonalDashboard() {
           Registros por formulario
         </button>
         <button
+          className={`pd-tab ${vista === 'agrupacion' ? 'active' : ''}`}
+          onClick={() => setVista('agrupacion')}
+        >
+          📅 Agrupación por día
+        </button>
+        <button
           className={`pd-tab ${vista === 'estandares' ? 'active' : ''}`}
           onClick={() => setVista('estandares')}
         >
           ⚙️ Configurar tiempo estimado por formulario
         </button>
       </div>
+
+      {(vista === 'registros' || vista === 'agrupacion') && (
+        <div className="pd-toolbar">
+          <span className="pd-toolbar-info">
+            {registros.length} registro{registros.length === 1 ? '' : 's'} en el período
+          </span>
+
+          <div className="pd-toolbar-acciones">
+            {vista === 'agrupacion' && (
+              <div className="pd-agrupar-por">
+                <span>Agrupar por</span>
+                <button
+                  className={`pd-chip ${agruparPor === 'formulario' ? 'active' : ''}`}
+                  onClick={() => setAgruparPor('formulario')}
+                >
+                  Formulario
+                </button>
+                <button
+                  className={`pd-chip ${agruparPor === 'proceso' ? 'active' : ''}`}
+                  onClick={() => setAgruparPor('proceso')}
+                >
+                  Proceso
+                </button>
+              </div>
+            )}
+
+            {vista === 'registros' && (
+              <div className="pd-columnas-wrap">
+                <button
+                  className="pd-btn pd-btn-secundario"
+                  onClick={() => setPanelColumnas(v => !v)}
+                >
+                  ⚙ Columnas ({columnasVisibles.length}/{COLUMNAS_PERSONAL.length})
+                </button>
+
+                {panelColumnas && (
+                  <div className="pd-columnas-panel">
+                    <div className="pd-columnas-titulo">
+                      <span>Columnas de la tabla y del Excel</span>
+                      <button className="pd-btn-mini" onClick={() => setColumnas(configPorDefecto())}>
+                        Restablecer
+                      </button>
+                    </div>
+                    <p className="pd-columnas-ayuda">
+                      Desmarca para quitarla. Las flechas cambian el orden.
+                    </p>
+                    <ul className="pd-columnas-lista">
+                      {columnas.map((c, i) => (
+                        <li key={c.id}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={c.visible}
+                              onChange={() => alternarColumna(c.id)}
+                            />
+                            {definicionColumna(c.id).label}
+                          </label>
+                          <span className="pd-columnas-orden">
+                            <button
+                              className="pd-btn-mini"
+                              disabled={i === 0}
+                              onClick={() => moverColumna(c.id, -1)}
+                              title="Subir"
+                            >↑</button>
+                            <button
+                              className="pd-btn-mini"
+                              disabled={i === columnas.length - 1}
+                              onClick={() => moverColumna(c.id, 1)}
+                              title="Bajar"
+                            >↓</button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      className="pd-btn pd-btn-secundario pd-columnas-cerrar"
+                      onClick={() => setPanelColumnas(false)}
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              className="pd-btn"
+              onClick={exportarExcel}
+              disabled={exportando || registros.length === 0}
+            >
+              {exportando ? 'Generando…' : '📥 Descargar Excel'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {vista === 'registros' ? (
         loading ? (
@@ -248,38 +429,182 @@ export default function PersonalDashboard() {
             <table>
               <thead>
                 <tr>
-                  <th>Formulario</th>
-                  <th>Proceso</th>
-                  <th>Fecha</th>
-                  <th>Planta</th>
-                  <th>Externo</th>
-                  <th>Hora inicio</th>
-                  <th>Hora fin</th>
-                  <th>Horas</th>
-                  <th>Observación</th>
+                  {columnasVisibles.map(id => (
+                    <th key={id}>{definicionColumna(id).label}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {registros.length === 0 && (
-                  <tr><td colSpan={9} className="pd-vacio">Sin registros de Control de Personal en el período seleccionado.</td></tr>
+                  <tr><td colSpan={columnasVisibles.length} className="pd-vacio">Sin registros de Control de Personal en el período seleccionado.</td></tr>
                 )}
-                {registros.map((r) => (
-                  <tr key={r.formID}>
-                    <td>{r.formulario}</td>
-                    <td>{r.proceso}</td>
-                    <td>{new Date(r.fecha).toLocaleDateString('es-EC')}</td>
-                    <td>{r.personalPlanta}</td>
-                    <td>{r.personalExterno}</td>
-                    <td>{aInputHora(r.horaInicio) || '—'}</td>
-                    <td>{aInputHora(r.horaFin) || '—'}</td>
-                    <td>{r.horasTrabajadas != null ? r.horasTrabajadas.toFixed(2) : '—'}</td>
-                    <td className={!r.cumpleEstandar ? 'pd-celda-alerta pd-obs' : 'pd-obs'}>
-                      {r.observaciones || ''}
-                    </td>
+                {registros.map((r, i) => {
+                  // ── Encadenado del FLUJO ────────────────────────────────
+                  // Cada formulario es UN PASO del proceso: recepción de 07 a
+                  // 08, fileteo de 08 a 10, empaque de 10 a 16. Son formularios
+                  // distintos que juntos forman la jornada.
+                  //
+                  // Dos pasos son del mismo flujo cuando comparten día y destino
+                  // Y la hora de fin de uno es la de inicio del otro. Esa
+                  // continuidad horaria es la señal: si terminó a las 10 y el
+                  // siguiente arranca a las 10, es la misma cadena.
+                  //
+                  // Vistos sueltos, cada paso parecía un turno incompleto de dos
+                  // o tres horas. Encadenados se ve la jornada entera.
+                  const mismaCadena = (a, b) => {
+                    if (!a || !b) return false;
+                    if (String(a.fecha).split('T')[0] !== String(b.fecha).split('T')[0]) return false;
+
+                    // El LOTE manda. Dos formularios del mismo lote son pasos del
+                    // mismo flujo aunque se hayan cargado desordenados, aunque
+                    // corran en paralelo o aunque haya una pausa entre ellos.
+                    const loteA = String(a.lote || '').trim();
+                    const loteB = String(b.lote || '').trim();
+                    if (loteA && loteB) return loteA === loteB;
+
+                    // Sin lote no hay forma de saber que son el mismo recorrido:
+                    // se cae al destino y a la continuidad horaria, que es una
+                    // aproximación y solo funciona si son estrictamente seguidos.
+                    if ((a.destino || '') !== (b.destino || '')) return false;
+                    const fin = (a.horaFin || '').substring(0, 5);
+                    const ini = (b.horaInicio || '').substring(0, 5);
+                    return !!fin && !!ini && fin === ini;
+                  };
+
+                  const anterior = registros[i - 1];
+                  const siguiente = registros[i + 1];
+                  const mismoQueAnterior  = mismaCadena(anterior, r);
+                  const mismoQueSiguiente = mismaCadena(r, siguiente);
+                  // Cambio de día o de destino: línea marcada arriba. Sin ella
+                  // el listado se lee como un bloque corrido y no se distingue
+                  // dónde termina una jornada y empieza otra.
+                  const cambiaGrupo = anterior && (
+                    String(anterior.fecha).split('T')[0] !== String(r.fecha).split('T')[0]
+                    || (anterior.destino || '') !== (r.destino || '')
+                  );
+
+                  const clases = [
+                    mismoQueAnterior  ? 'pd-flujo-cont'  : '',
+                    mismoQueSiguiente ? 'pd-flujo-sigue' : '',
+                    (mismoQueAnterior || mismoQueSiguiente) ? 'pd-flujo' : '',
+                    cambiaGrupo ? 'pd-corte' : '',
+                  ].filter(Boolean).join(' ');
+
+                  return (
+                  <tr key={`${r.formID}-${i}`} className={clases}>
+                    {columnasVisibles.map(id => (
+                      <td
+                        key={id}
+                        className={
+                          id === 'observacion'
+                            ? (!r.cumpleEstandar ? 'pd-celda-alerta pd-obs' : 'pd-obs')
+                            : undefined
+                        }
+                      >
+                        {/* En una continuación no se repiten el código, el
+                            número ni la fecha: son los mismos y repetirlos hace
+                            leer cuatro registros donde hay uno. */}
+                        {/* En un paso encadenado solo se omiten fecha y destino,
+                            que son los del flujo. El código, el número y el
+                            proceso SÍ se muestran: cada paso es un formulario
+                            distinto y hay que poder identificarlo. */}
+                        {mismoQueAnterior && ['fecha', 'destino', 'lote'].includes(id)
+                          ? <span className="pd-idem">↳</span>
+                          : valorTexto(r, id)}
+                      </td>
+                    ))}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
+          </div>
+        )
+      ) : vista === 'agrupacion' ? (
+        loading ? (
+          <div className="pd-loading">Cargando…</div>
+        ) : (
+          <div className="pd-agrupacion">
+            <p className="pd-sub">
+              Cada barra es la franja del día en que se trabajó ese proceso. Las barras
+              cortadas en varios pedazos son tareas de la misma naturaleza repartidas a
+              lo largo de la jornada: juntarlas evita arranques y paradas.
+            </p>
+
+            {agrupacion.length === 0 && (
+              <div className="pd-vacio">Sin registros con horario en el período seleccionado.</div>
+            )}
+
+            {agrupacion.map(dia => {
+              const span = dia.rango ? Math.max(dia.rango.fin - dia.rango.inicio, 1) : 1;
+              const pct = (min) => ((min - dia.rango.inicio) / span) * 100;
+
+              return (
+                <div key={dia.clave} className="pd-dia">
+                  <div className="pd-dia-cabecera">
+                    <h3>{dia.fecha.toLocaleDateString('es-EC', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
+                    <div className="pd-dia-badges">
+                      {dia.rango && (
+                        <span className="pd-badge">
+                          {aHoraTexto(dia.rango.inicio)}–{aHoraTexto(dia.rango.fin)}
+                        </span>
+                      )}
+                      {dia.gruposFragmentados > 0 && (
+                        <span className="pd-badge pd-badge-alerta">
+                          {dia.gruposFragmentados} sin agrupar · {duracionTexto(dia.minutosDispersos)} muertos
+                        </span>
+                      )}
+                      {dia.solapes.length > 0 && (
+                        <span className="pd-badge pd-badge-aviso">
+                          {dia.solapes.length} en paralelo
+                        </span>
+                      )}
+                      {dia.sinHorario > 0 && (
+                        <span className="pd-badge">{dia.sinHorario} sin horario</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {dia.grupos.map(g => (
+                    <div key={g.clave} className={`pd-grupo ${g.fragmentado ? 'fragmentado' : ''}`}>
+                      <div className="pd-grupo-nombre" title={g.clave}>{g.clave}</div>
+                      <div className="pd-grupo-barra">
+                        {g.tramos.map((t, i) => (
+                          <div
+                            key={i}
+                            className="pd-tramo"
+                            style={{ left: `${pct(t.inicio)}%`, width: `${Math.max(((t.fin - t.inicio) / span) * 100, 1.2)}%` }}
+                            title={`${aHoraTexto(t.inicio)}–${aHoraTexto(t.fin)}`}
+                          />
+                        ))}
+                      </div>
+                      <div className="pd-grupo-datos">
+                        <strong>{duracionTexto(g.minutosTrabajados)}</strong>
+                        <span>{g.cantidadBloques} reg.</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  <ul className="pd-recomendaciones">
+                    {dia.grupos.filter(g => g.fragmentado).map(g => (
+                      <li key={g.clave}>
+                        <strong>{g.clave}:</strong> {recomendacionGrupo(g)}
+                      </li>
+                    ))}
+                    {dia.solapes.map(s => (
+                      <li key={s.id}>
+                        <strong>{s.a}</strong> y <strong>{s.b}</strong> corrieron en paralelo{' '}
+                        {duracionTexto(s.minutos)} ({aHoraTexto(s.desde)}–{aHoraTexto(s.hasta)});
+                        conviene secuenciarlas.
+                      </li>
+                    ))}
+                    {dia.gruposFragmentados === 0 && dia.solapes.length === 0 && dia.grupos.length > 0 && (
+                      <li className="pd-ok">Jornada agrupada y en secuencia: nada que corregir.</li>
+                    )}
+                  </ul>
+                </div>
+              );
+            })}
           </div>
         )
       ) : (

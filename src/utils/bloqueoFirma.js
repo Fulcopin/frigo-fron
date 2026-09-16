@@ -17,10 +17,31 @@ import { businessHoursBetween } from './dateUtils';
 /** Umbral por defecto si el admin todavía no configuró uno (Gestión de Alertas). */
 export const UMBRAL_BLOQUEO_POR_DEFECTO = 36;
 
-/** La fecha de creación viene con distinto nombre según el endpoint que la trajo. */
-export function fechaDeCreacion(form) {
-  return form?.createdAt || form?.createdDate || form?.CreatedAt || null;
+/**
+ * Fecha de GUARDADO del registro, para el reloj del bloqueo.
+ *
+ * ⚠️ Tiene que ser cuándo entró al sistema, NO la fecha del encabezado.
+ *
+ * Son distintas: un formulario del 20 de agosto puede guardarse hoy. Si el
+ * bloqueo se contara desde la del papel, ese registro nacería bloqueado —con
+ * "23 días de antigüedad"— y el firmante nunca tendría oportunidad de firmarlo.
+ * Es exactamente lo que se reportó: registros que aparecen ya bloqueados sin
+ * que nadie los haya dejado vencer.
+ *
+ * `fechaGuardado` viene de /Signatures/pending y es el CreatedAt real.
+ * `createdDate` quedó de último a propósito: en ese endpoint ahora trae la
+ * fecha del encabezado, que sirve para mostrar pero no para contar el plazo.
+ */
+export function fechaDeGuardado(form) {
+  return form?.fechaGuardado
+      || form?.createdAt
+      || form?.CreatedAt
+      || form?.createdDate
+      || null;
 }
+
+/** @deprecated Usar fechaDeGuardado: el nombre viejo confundía las dos fechas. */
+export const fechaDeCreacion = fechaDeGuardado;
 
 /**
  * ¿Un Administrador lo habilitó desde Supervisión General?
@@ -47,7 +68,10 @@ export function estaHabilitadoPorAdmin(form) {
  * @returns {{bloqueado: boolean, horas: number, habilitado: boolean, sinFecha: boolean}}
  */
 export function estadoBloqueoFirma(form, umbral = UMBRAL_BLOQUEO_POR_DEFECTO) {
-  const creado = fechaDeCreacion(form);
+  // El plazo corre desde que el registro ENTRÓ al sistema, no desde la fecha
+  // que dice el papel: si no, un registro cargado con fecha vieja nacería
+  // bloqueado y nadie podría firmarlo nunca.
+  const creado = fechaDeGuardado(form);
   const habilitado = estaHabilitadoPorAdmin(form);
 
   // Sin fecha de creación no se puede calcular nada. No se bloquea acá: el

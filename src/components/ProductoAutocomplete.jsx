@@ -19,7 +19,8 @@ const ProductoAutocomplete = ({
   placeholder = 'Buscar producto...',
   disabled = false
 }) => {
-  const [searchTerm, setSearchTerm] = useState(value || '');
+  // String(): una celda guardada como número (ej. un lote 260914) no tiene .trim().
+  const [searchTerm, setSearchTerm] = useState(value == null ? '' : String(value));
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -28,7 +29,7 @@ const ProductoAutocomplete = ({
   // Sincronizar el valor externo SOLO si no estamos escribiendo
   useEffect(() => {
     if (value !== searchTerm && !showDropdown) {
-      setSearchTerm(value || '');
+      setSearchTerm(value == null ? '' : String(value));
     }
   }, [value]);
 
@@ -44,7 +45,8 @@ const ProductoAutocomplete = ({
   }, []);
 
   const searchProducts = async (term) => {
-    if (!term || term.trim().length < 2) {
+    term = term == null ? '' : String(term);
+    if (term.trim().length < 2) {
       setResults([]);
       return;
     }
@@ -95,7 +97,7 @@ const ProductoAutocomplete = ({
   useEffect(() => {
     
     const timer = setTimeout(() => {
-      if (searchTerm.trim() !== '') {
+      if (String(searchTerm ?? '').trim() !== '') {
         searchProducts(searchTerm);
       } else {
         setResults([]);

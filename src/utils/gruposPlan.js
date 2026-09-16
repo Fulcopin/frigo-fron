@@ -14,13 +14,93 @@ import { ACTIVIDADES_PESCADO, ACTIVIDADES_CAMARON } from './actividadesProceso';
 export const GRUPO_PESCADO = 'PESCADO';
 export const GRUPO_CAMARON = 'CAMARON';
 
-/** Estilo de cada bloque: banda de la grilla y franja del PDF. */
-export const GRUPOS = {
-  [GRUPO_PESCADO]: { label: 'PESCADO', icono: '🐟', color: '#1e40af', fondo: '#dbeafe', borde: '#93c5fd', rgb: [30, 64, 175], rgbFondo: [219, 234, 254] },
-  [GRUPO_CAMARON]: { label: 'CAMARÓN', icono: '🦐', color: '#9a3412', fondo: '#ffedd5', borde: '#fdba74', rgb: [154, 52, 18], rgbFondo: [255, 237, 213] },
-};
+// ── Grupos configurables ────────────────────────────────────────────────────
+//
+// Antes eran dos fijos escritos acá: PESCADO y CAMARÓN. Cada vez que hacía
+// falta separar por otra cosa —las empresas de destino, por ejemplo— había que
+// tocar código.
+//
+// Ahora la lista se edita desde la pantalla y se guarda. PESCADO y CAMARÓN
+// quedan de arranque para que ningún plan existente cambie de aspecto; se
+// pueden renombrar, borrar o reemplazar por Frigolab, San Mateo y Expotuna.
 
-export const ORDEN_GRUPOS = [GRUPO_PESCADO, GRUPO_CAMARON];
+const CLAVE_GRUPOS = 'frigolab.plan.grupos.v1';
+
+/** Paleta para los grupos que se creen. Se reparte en orden. */
+const PALETA = [
+  { color: '#1e40af', fondo: '#dbeafe', borde: '#93c5fd', rgb: [30, 64, 175],  rgbFondo: [219, 234, 254] },
+  { color: '#9a3412', fondo: '#ffedd5', borde: '#fdba74', rgb: [154, 52, 18],  rgbFondo: [255, 237, 213] },
+  { color: '#166534', fondo: '#dcfce7', borde: '#86efac', rgb: [22, 101, 52],  rgbFondo: [220, 252, 231] },
+  { color: '#6b21a8', fondo: '#f3e8ff', borde: '#d8b4fe', rgb: [107, 33, 168], rgbFondo: [243, 232, 255] },
+  { color: '#9f1239', fondo: '#ffe4e6', borde: '#fda4af', rgb: [159, 18, 57],  rgbFondo: [255, 228, 230] },
+  { color: '#115e59', fondo: '#ccfbf1', borde: '#5eead4', rgb: [17, 94, 89],   rgbFondo: [204, 251, 241] },
+];
+
+const GRUPOS_POR_DEFECTO = [
+  { clave: GRUPO_PESCADO, label: 'PESCADO', icono: '🐟' },
+  { clave: GRUPO_CAMARON, label: 'CAMARÓN', icono: '🦐' },
+];
+
+/** Normaliza a clave: sin tildes, en mayúsculas y sin espacios. */
+export const claveGrupo = (texto) => String(texto ?? '')
+  .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  .trim().toUpperCase().replace(/\s+/g, '_').slice(0, 40);
+
+function leerGrupos() {
+  try {
+    const guardados = JSON.parse(localStorage.getItem(CLAVE_GRUPOS) || 'null');
+    if (Array.isArray(guardados) && guardados.length > 0) return guardados;
+  } catch { /* sin guardar o ilegible */ }
+  return GRUPOS_POR_DEFECTO;
+}
+
+export function guardarGrupos(lista) {
+  const limpia = (Array.isArray(lista) ? lista : [])
+    .map(g => ({
+      clave: g.clave || claveGrupo(g.label),
+      label: String(g.label ?? '').trim(),
+      icono: g.icono || '📦',
+    }))
+    .filter(g => g.clave && g.label);
+
+  // Nunca se guarda una lista vacía: el plan quedaría sin dónde poner las filas.
+  if (limpia.length === 0) return false;
+
+  try { localStorage.setItem(CLAVE_GRUPOS, JSON.stringify(limpia)); } catch { return false; }
+  return true;
+}
+
+/** Estilo de cada bloque: banda de la grilla y franja del PDF. */
+export const GRUPOS = new Proxy({}, {
+  get(_, clave) {
+    if (typeof clave !== 'string') return undefined;
+    const lista = leerGrupos();
+    const i = lista.findIndex(g => g.clave === clave);
+    if (i < 0) {
+      // Grupo que ya no está en la lista pero quedó en un plan viejo: se pinta
+      // igual, con un estilo neutro. Perder el color sería preferible a que la
+      // fila desaparezca.
+      return { label: clave, icono: '📦', ...PALETA[0] };
+    }
+    return { ...lista[i], ...PALETA[i % PALETA.length] };
+  },
+  ownKeys() { return leerGrupos().map(g => g.clave); },
+  getOwnPropertyDescriptor() { return { enumerable: true, configurable: true }; },
+});
+
+export const listaGrupos = () => leerGrupos().map((g, i) => ({ ...g, ...PALETA[i % PALETA.length] }));
+
+/**
+ * El orden en que se apilan los bloques: el de la lista configurada.
+ *
+ * Es una FUNCIÓN y no un array, porque la lista puede cambiar en cualquier
+ * momento desde la pantalla. Un array congelaría el orden al cargar el módulo
+ * y los grupos nuevos quedarían siempre al final.
+ */
+export const ordenGrupos = () => leerGrupos().map(g => g.clave);
+
+/** @deprecated Se mantiene para el código que todavía lo importa como array. */
+export const ORDEN_GRUPOS = ordenGrupos();
 
 const norm = (s) => String(s ?? '')
   .normalize('NFD').replace(/\p{Diacritic}/gu, '')
@@ -58,7 +138,12 @@ const filaMadre = (cat, proc) => (proc?.sub
 /** Grupo declarado en la fila (o en su madre). null si la fila no lo trae. */
 export function grupoExplicito(cat, proc) {
   const g = String(filaMadre(cat, proc)?.grupo || '').toUpperCase();
-  return g === GRUPO_CAMARON || g === GRUPO_PESCADO ? g : null;
+  if (!g) return null;
+  // Se acepta cualquier clave configurada, no solo las dos originales: si no,
+  // un grupo nuevo como FRIGOLAB se descartaría y la fila caería al de por
+  // defecto.
+  const existe = leerGrupos().some(x => x.clave === g);
+  return existe || g === GRUPO_CAMARON || g === GRUPO_PESCADO ? g : null;
 }
 
 /**
@@ -78,7 +163,12 @@ export function grupoEfectivo(cat, proc) {
   const enPescado = ACTIVIDADES_PESCADO.some(a => norm(a) === act);
   const enCamaron = ACTIVIDADES_CAMARON.some(a => norm(a) === act);
   if (enCamaron && !enPescado) return GRUPO_CAMARON;
-  return GRUPO_PESCADO;
+
+  // Último recurso: el PRIMER grupo de la lista. Devolver PESCADO fijo dejaba
+  // la fila huérfana si alguien reemplazó los grupos por las empresas.
+  const lista = leerGrupos();
+  const hayPescado = lista.some(g => g.clave === GRUPO_PESCADO);
+  return hayPescado ? GRUPO_PESCADO : (lista[0]?.clave || GRUPO_PESCADO);
 }
 
 /**
@@ -106,7 +196,14 @@ export function ordenarPorGrupo(cat, procesos) {
     else bloques.push({ madre: p, subs: [] });
   }
   return bloques
-    .map((b, i) => ({ ...b, i, orden: ORDEN_GRUPOS.indexOf(grupoEfectivo(cat, b.madre)) }))
+    .map((b, i) => {
+      // Se lee el orden en cada llamada: la lista puede haber cambiado.
+      const orden = ordenGrupos();
+      const pos = orden.indexOf(grupoEfectivo(cat, b.madre));
+      // Un grupo que ya no está en la lista va al final, no al principio:
+      // indexOf devuelve -1 y ordenaría antes que todos.
+      return { ...b, i, orden: pos < 0 ? orden.length : pos };
+    })
     .sort((a, b) => (a.orden - b.orden) || (a.i - b.i))   // estable: no revuelve dentro del bloque
     .flatMap(b => [b.madre, ...b.subs]);
 }

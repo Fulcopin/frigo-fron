@@ -68,6 +68,26 @@ export function aHoraDecimal(bruto) {
 /** Desenvuelve el ReferenceHandler.Preserve de .NET ($values). */
 export const lista = (x) => (Array.isArray(x) ? x : (x?.$values ?? []));
 
+/**
+ * El encabezado del formulario como objeto plano.
+ *
+ * Se parsea una sola vez por formulario y se guarda en el propio objeto: sin
+ * caché, los filtros lo parsearían de nuevo por cada fila de cada tabla, y hay
+ * formularios con cientos de filas.
+ */
+export function headerDe(form) {
+  if (!form) return null;
+  if (form.__hdr !== undefined) return form.__hdr;
+  let hdr = null;
+  try {
+    hdr = typeof form.headerData === 'string'
+      ? JSON.parse(form.headerData || '{}')
+      : (form.headerData || null);
+  } catch { hdr = null; }
+  try { Object.defineProperty(form, '__hdr', { value: hdr, enumerable: false }); } catch { /* objeto congelado */ }
+  return hdr;
+}
+
 /** "Actividad de Proceso" guardada en el encabezado del formulario ('' si no tiene). */
 export function actividadDe(form) {
   try {
@@ -233,19 +253,49 @@ function tablasDe(form, cache) {
  *    mismo filtro sirve aunque la columna se llame "Producto", "Especie" o
  *    "Presentación". Si la tabla no tiene esa columna, la fila pasa (tolerante).
  */
-export function filaPasaFiltros(fila, filtros) {
+/**
+ * ¿Esta fila de tabla pasa los filtros?
+ *
+ * Busca en la FILA y, si ahí no está la columna, en el ENCABEZADO del
+ * formulario.
+ *
+ * Los formatos guardan lo mismo en lugares distintos: el PD-04 tiene la especie
+ * como columna de la tabla, el PD-10 la tiene en el encabezado. Mirando solo la
+ * fila, el filtro de especie no encontraba nada en el segundo y —como la regla
+ * era "si no existe la columna, pasa"— dejaba entrar TODO, incluidas las
+ * especies que no correspondían.
+ *
+ * @param {object} fila      la fila de la tabla
+ * @param {Array}  filtros   { patron | col, texto }
+ * @param {object} [header]  el encabezado del formulario
+ */
+export function filaPasaFiltros(fila, filtros, header = null) {
   return (filtros || []).every(fl => {
     if (!fl.texto) return true;
-    let clave;
-    if (fl.patron) {
-      let re; try { re = new RegExp(fl.patron, 'i'); } catch { return true; }
-      clave = Object.keys(fila).find(k => re.test(k));
-      if (!clave) return true;
-    } else {
-      if (!fl.col) return true;
-      clave = Object.keys(fila).find(k => norm(k) === norm(fl.col)) ?? fl.col;
-    }
-    return norm(fila[clave]).includes(norm(fl.texto));
+
+    const buscarEn = (obj) => {
+      if (!obj) return null;
+      if (fl.patron) {
+        let re; try { re = new RegExp(fl.patron, 'i'); } catch { return null; }
+        return Object.keys(obj).find(k => re.test(k)) ?? null;
+      }
+      if (!fl.col) return null;
+      return Object.keys(obj).find(k => norm(k) === norm(fl.col)) ?? null;
+    };
+
+    // 1º la fila: es el dato más específico. Si la tabla tiene la columna,
+    // manda lo que diga esa fila aunque el encabezado diga otra cosa.
+    const enFila = buscarEn(fila);
+    if (enFila) return norm(fila[enFila]).includes(norm(fl.texto));
+
+    // 2º el encabezado: vale para todo el formulario.
+    const enHeader = buscarEn(header);
+    if (enHeader) return norm(header[enHeader]).includes(norm(fl.texto));
+
+    // Sin la columna en ningún lado, el filtro no aplica y la fila pasa. Es lo
+    // que ya hacía: descartar por un dato que el formato no registra dejaría
+    // los totales en cero sin explicación.
+    return true;
   });
 }
 
@@ -307,7 +357,9 @@ export function evaluarTermino(t, forms, cache) {
 
       for (const fila of filasFuente) {
         // Filtros de fila: todas las condiciones tienen que cumplirse.
-        if (!filaPasaFiltros(fila, t.filtros)) continue;
+        // Se pasa el encabezado: la especie y la clasificación viven ahí en
+        // varios formatos.
+        if (!filaPasaFiltros(fila, t.filtros, headerDe(f))) continue;
 
         if (t.agregacion === 'cuenta') {
           valores.push(1);
@@ -432,6 +484,11 @@ export default function CalculadoraFormularios({ open, onClose, onApply, destino
   const [soloFecha, setSoloFecha] = useState(false);
   const [soloActividad, setSoloActividad] = useState(false);
 
+  // Filtra las FILAS de la tabla por su columna de proceso, no los formularios.
+  // Arranca prendido: traer filas de otros procesos es el error más caro y se
+  // nota tarde, cuando el total del plan ya no cuadra.
+  const [filtrarProceso, setFiltrarProceso] = useState(true);
+
   // El parse de BodyData es caro: una sola vez por formulario y por apertura.
   const cache = useMemo(() => new Map(), [forms]);
 
@@ -488,6 +545,16 @@ export default function CalculadoraFormularios({ open, onClose, onApply, destino
     const autoF = [];
     if (producto) autoF.push({ patron: '(producto|especie|presentaci)', texto: producto });
     if (clasif) autoF.push({ patron: 'clasif', texto: clasif });
+
+    // ⚙️ Filtro por la columna de PROCESO dentro de la tabla.
+    //
+    // Formatos como el PD-15 registran varios procesos en el MISMO formulario:
+    // lavado de carros, lavado de mallas, revisión, empaque. Sin este filtro la
+    // fila «Lavar Mallas» del plan sumaba las cuatro y traía un peso que no le
+    // corresponde.
+    if (filtrarProceso && actividad) {
+      autoF.push({ patron: '(proceso|actividad)', texto: actividad });
+    }
     const conAuto = (t) => ({ ...t, filtros: [...(t.filtros || []).filter(f => !f.patron), ...autoF] });
     if (recetaInicial?.terminos?.length) {
       // desde/hasta se anulan: el rango manual se reemplazó por el filtro base
@@ -499,7 +566,7 @@ export default function CalculadoraFormularios({ open, onClose, onApply, destino
       setTerminos([conAuto(terminoNuevo())]);
       setDesdeReceta(false);
     }
-  }, [open, recetaInicial, producto, clasif]);
+  }, [open, recetaInicial, producto, clasif, filtrarProceso, actividad]);
 
   useEffect(() => {
     if (!open) return;
@@ -664,7 +731,7 @@ export default function CalculadoraFormularios({ open, onClose, onApply, destino
         if (!k.startsWith('_') && !columnas.includes(k)) columnas.push(k);
       }
     }
-    const pasaFiltros = (fila) => filaPasaFiltros(fila, t.filtros);
+    const pasaFiltros = (fila) => filaPasaFiltros(fila, t.filtros, headerDe(f));
     return {
       formId: String(f.formID ?? f.id),
       fecha: fechaDeBusqueda(f),
@@ -746,6 +813,18 @@ export default function CalculadoraFormularios({ open, onClose, onApply, destino
                 <input type="checkbox" checked={soloActividad} onChange={e => setSoloActividad(e.target.checked)} />
                 🏭 Solo actividad «{actividad}»
                 <span style={{ fontWeight: 400, color: '#6366f1' }}>({conActividad} form con esa actividad)</span>
+              </label>
+            )}
+
+            {/* Este filtro trabaja DENTRO de la tabla, sobre las filas, no sobre
+                los formularios. Van juntos porque es fácil confundirlos. */}
+            {actividad && (
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 600, color: '#5b21b6' }}
+                title={`Se queda solo con las filas cuya columna PROCESO diga «${actividad}». Útil en formatos que registran varios procesos en el mismo formulario.`}
+              >
+                <input type="checkbox" checked={filtrarProceso} onChange={e => setFiltrarProceso(e.target.checked)} />
+                ⚙️ Solo filas con proceso «{actividad}»
               </label>
             )}
             <span style={{ marginLeft: 'auto', fontWeight: 700, color: '#4338ca' }}>

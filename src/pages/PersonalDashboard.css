@@ -160,3 +160,180 @@
   cursor: pointer;
 }
 .pd-btn-mini-danger { color: #b91c1c; border-color: #fca5a5; background: #fef2f2; }
+
+/* ── Barra de herramientas: exportar + columnas ───────────────────────────── */
+.pd-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0 4px;
+}
+.pd-toolbar-info { font-size: .8rem; color: #64748b; }
+.pd-toolbar-acciones { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.pd-agrupar-por { display: flex; align-items: center; gap: 6px; }
+.pd-agrupar-por > span { font-size: .72rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.pd-chip {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: .8rem;
+  cursor: pointer;
+}
+.pd-chip.active { background: #0ea5e9; border-color: #0ea5e9; color: #fff; font-weight: 600; }
+
+/* ── Panel de columnas ───────────────────────────────────────────────────── */
+.pd-columnas-wrap { position: relative; }
+.pd-columnas-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: 300px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .14);
+  padding: 12px;
+}
+.pd-columnas-titulo {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: .82rem; font-weight: 700; color: #1e293b;
+}
+.pd-columnas-ayuda { margin: 6px 0 10px; font-size: .74rem; color: #64748b; }
+.pd-columnas-lista { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
+.pd-columnas-lista li {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 5px 4px; border-radius: 6px;
+}
+.pd-columnas-lista li:hover { background: #f8fafc; }
+.pd-columnas-lista label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .84rem; color: #334155; cursor: pointer; flex: 1; min-width: 0;
+}
+.pd-columnas-orden { display: flex; gap: 4px; }
+.pd-columnas-orden .pd-btn-mini { padding: 2px 7px; line-height: 1; }
+.pd-columnas-orden .pd-btn-mini:disabled { opacity: .35; cursor: not-allowed; }
+.pd-columnas-cerrar { width: 100%; margin-top: 10px; }
+
+/* ── Agrupación por día ──────────────────────────────────────────────────── */
+.pd-agrupacion { padding-top: 8px; }
+
+.pd-dia {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.pd-dia-cabecera {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.pd-dia-cabecera h3 {
+  margin: 0; font-size: 1rem; color: #1e293b; text-transform: capitalize;
+}
+.pd-dia-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.pd-badge {
+  font-size: .72rem; font-weight: 600;
+  background: #f1f5f9; color: #475569;
+  border-radius: 999px; padding: 3px 10px;
+}
+.pd-badge-alerta { background: #fef3c7; color: #92400e; }
+.pd-badge-aviso { background: #e0f2fe; color: #075985; }
+
+.pd-grupo {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) 1fr 92px;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+.pd-grupo-nombre {
+  font-size: .8rem; color: #334155;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pd-grupo.fragmentado .pd-grupo-nombre { color: #92400e; font-weight: 600; }
+
+.pd-grupo-barra {
+  position: relative;
+  height: 18px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.pd-tramo {
+  position: absolute; top: 0; bottom: 0;
+  background: #0ea5e9;
+  border-radius: 3px;
+}
+.pd-grupo.fragmentado .pd-tramo { background: #f59e0b; }
+
+.pd-grupo-datos {
+  display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2;
+}
+.pd-grupo-datos strong { font-size: .8rem; color: #0f172a; }
+.pd-grupo-datos span { font-size: .68rem; color: #94a3b8; }
+
+.pd-recomendaciones {
+  margin: 12px 0 0; padding: 10px 0 0 18px;
+  border-top: 1px dashed #e2e8f0;
+  font-size: .8rem; color: #475569;
+}
+.pd-recomendaciones li { margin-bottom: 4px; }
+.pd-recomendaciones .pd-ok { color: #15803d; list-style: none; margin-left: -18px; }
+
+@media (max-width: 720px) {
+  .pd-grupo { grid-template-columns: 1fr; gap: 3px; }
+  .pd-grupo-datos { flex-direction: row; gap: 8px; align-items: baseline; }
+  .pd-columnas-panel { width: min(300px, calc(100vw - 40px)); }
+}
+
+/* ── Flujo continuo: actividades del mismo registro ───────────────────────
+   Un formulario puede tener varias franjas horarias (07:00-08:00 recepción,
+   08:00-16:00 fileteo). Mostradas como filas sueltas parecía que ninguna
+   completaba la jornada. Agrupadas se lee que son el mismo flujo.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.pd-flujo td {
+  background: #f8fafc;
+}
+
+/* Sin línea divisoria entre filas del mismo registro: es lo que las une
+   visualmente. */
+.pd-flujo-sigue td {
+  border-bottom: none;
+}
+
+/* Barra al costado que marca dónde empieza y termina el flujo. */
+.pd-flujo td:first-child {
+  border-left: 3px solid #0ea5e9;
+}
+
+.pd-flujo-cont td:first-child {
+  border-left: 3px solid #7dd3fc;
+}
+
+/* La flecha que indica "sigue el registro de arriba". */
+.pd-idem {
+  color: #94a3b8;
+  font-size: 1rem;
+  padding-left: 6px;
+}
+
+/* Corte entre grupos: cambio de día o de destino.
+   Sin esta línea el listado se lee como un bloque corrido y cuesta ver dónde
+   termina una jornada y empieza otra. */
+.pd-corte td {
+  border-top: 2px solid #cbd5e1;
+}
+
+/* El guion de las celdas sin dato: gris claro, para que no compita con los
+   valores reales. */
+.pd-tabla-wrap td {
+  color: #334155;
+}

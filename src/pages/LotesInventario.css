@@ -572,3 +572,20 @@
   opacity: 0.75;
   font-style: italic;
 }
+
+/* ── Panel de composición (aristas con cantidad y %) ─────────────────────── */
+.li-comp-panel { padding: 4px 0 16px; }
+.li-comp-vacio {
+  padding: 28px 22px;
+  text-align: center;
+  color: #64748b;
+  font-size: .85rem;
+  line-height: 1.7;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  max-width: 620px;
+  margin: 12px auto 0;
+}
+.li-btn-comp { background: #ede9fe; color: #5b21b6; }
+.li-btn-comp:hover { background: #ddd6fe; }

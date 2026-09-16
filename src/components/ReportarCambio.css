@@ -1,0 +1,281 @@
+/* ── Reportar un cambio ───────────────────────────────────────────────────
+   Pantalla donde el equipo pide ajustes y sigue su estado.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.rc-wrap {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 22px 18px 60px;
+}
+
+/* ── Encabezado ─────────────────────────────────────────────────────────── */
+.rc-cab h1 {
+  font-size: 24px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 6px;
+}
+
+.rc-cab p {
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 22px;
+  max-width: 640px;
+}
+
+/* ── Formulario ─────────────────────────────────────────────────────────── */
+.rc-form {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
+  margin-bottom: 34px;
+}
+
+.rc-fila {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.rc-campo {
+  flex: 1;
+  min-width: 220px;
+  margin-bottom: 15px;
+}
+
+.rc-campo label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 5px;
+}
+
+.rc-campo input,
+.rc-campo select,
+.rc-campo textarea {
+  width: 100%;
+  /* 44px: se toca con el dedo. Esta pantalla también se usa desde tablet. */
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #0f172a;
+  font-family: inherit;
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.rc-campo textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.rc-campo input:focus,
+.rc-campo select:focus,
+.rc-campo textarea:focus {
+  outline: none;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, .13);
+}
+
+.rc-campo small {
+  display: block;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+
+.rc-enviar {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 9px;
+  padding: 12px 26px;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rc-enviar:hover:not(:disabled) { background: #1d4ed8; }
+.rc-enviar:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ── Listado ────────────────────────────────────────────────────────────── */
+.rc-lista-cab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 13px;
+}
+
+.rc-lista-cab h2 {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.rc-filtros {
+  display: flex;
+  gap: 6px;
+}
+
+.rc-filtros button {
+  background: #fff;
+  border: 1.5px solid #cbd5e1;
+  color: #475569;
+  border-radius: 7px;
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rc-filtros button.activo {
+  background: #eff6ff;
+  border-color: #60a5fa;
+  color: #1d4ed8;
+}
+
+.rc-vacio {
+  text-align: center;
+  color: #94a3b8;
+  padding: 36px 20px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+/* ── Cada reporte ───────────────────────────────────────────────────────── */
+.rc-item {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  /* Barra de color al costado según el estado: se distingue de un vistazo
+     cuáles siguen abiertos sin leer cada etiqueta. */
+  border-left: 4px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 15px 17px;
+  margin-bottom: 11px;
+}
+
+.rc-abierto     { border-left-color: #f59e0b; }
+.rc-en_progreso { border-left-color: #3b82f6; }
+.rc-cerrado     { border-left-color: #16a34a; opacity: .82; }
+
+.rc-item-cab {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 5px;
+}
+
+.rc-titulo {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 14.5px;
+  line-height: 1.4;
+}
+
+.rc-estado {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.rc-e-abierto     { background: #fef3c7; color: #92400e; }
+.rc-e-en_progreso { background: #dbeafe; color: #1e40af; }
+.rc-e-cerrado     { background: #dcfce7; color: #166534; }
+
+.rc-meta {
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin-bottom: 9px;
+}
+
+.rc-detalle {
+  font-size: 13.5px;
+  color: #334155;
+  line-height: 1.65;
+  /* Se respetan los saltos de línea: el operario separa en párrafos y sin esto
+     todo quedaría en un bloque corrido. */
+  white-space: pre-wrap;
+}
+
+.rc-respuesta {
+  margin-top: 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 11px 13px;
+  font-size: 13.5px;
+  color: #14532d;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.rc-respuesta-cab {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #16a34a;
+  margin-bottom: 5px;
+}
+
+/* ── Panel del admin ────────────────────────────────────────────────────── */
+.rc-responder {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.rc-responder textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 7px;
+  font-size: 13.5px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.rc-acciones {
+  display: flex;
+  gap: 7px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.rc-acciones button {
+  background: #f1f5f9;
+  border: 1.5px solid #cbd5e1;
+  color: #334155;
+  border-radius: 7px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rc-acciones .rc-cerrar {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+
+@media (max-width: 640px) {
+  .rc-wrap { padding: 16px 12px 50px; }
+  .rc-cab h1 { font-size: 20px; }
+  .rc-fila { flex-direction: column; gap: 0; }
+}

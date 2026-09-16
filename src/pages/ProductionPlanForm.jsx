@@ -32,6 +32,7 @@ import {
   GRUPOS, GRUPO_PESCADO, GRUPO_CAMARON, ORDEN_GRUPOS, catalogoCompleto,
   claveActividad, ambitoDeCategoria, ambitoDeFila, grupoEfectivo,
   unificarMatriz, esFormatoViejo, ordenarPorGrupo,
+  ordenGrupos, listaGrupos, guardarGrupos, claveGrupo,
 } from '../utils/gruposPlan';
 import {
   exportarPlanificacionPDF, exportarAvancePDF, exportarComparativoPDF,
@@ -894,6 +895,19 @@ export default function ProductionPlanForm() {
     if (usar('clasif') && p.sub && p.clasif) {
       filtrosAuto.push({ patron: 'clasif', texto: p.clasif });
     }
+
+    // 🎯 FILTRO POR PROCESO DENTRO DE LA TABLA
+    //
+    // Varios formatos PD tienen una columna PROCESO o ACTIVIDAD y registran
+    // varios procesos en el mismo formulario: fileteo en unas filas, corte en
+    // otras. Sin este filtro, la fila «Fileteo» del plan sumaba TODAS las filas
+    // de ese formulario y traía también el corte.
+    //
+    // Acá cada fila del plan se queda solo con las filas de tabla cuyo proceso
+    // coincide con su propio nombre.
+    if (usar('procesoEnTabla') && actividad) {
+      filtrosAuto.push({ patron: '(proceso|actividad)', texto: actividad });
+    }
     // La receta se generaliza: sin rango manual de fechas, el registro puntual
     // solo vale si ese formulario es del día, y los filtros auto se reemplazan
     // por los de ESTA fila.
@@ -966,6 +980,10 @@ export default function ProductionPlanForm() {
   const setFormulasCol = (formulas) => {
     setCategories(cats => cats.map(c => c.id !== activeTabId ? c : { ...c, formulasCol: formulas }));
   };
+
+  // 🏭 Editor de grupos. Los bloques de la matriz salían fijos en PESCADO y
+  // CAMARÓN; ahora se pueden renombrar o reemplazar por las empresas de destino.
+  const [editandoGrupos, setEditandoGrupos] = useState(null);
 
   /** Interruptores de los filtros automáticos de las consultas (por pestaña). */
   const cfgConsulta = (k) => (activeCategory?.cfgConsultas?.[k]) !== false; // default: prendidos
@@ -1501,7 +1519,9 @@ export default function ProductionPlanForm() {
         <div className="pl-active-tab-toolbar no-print">
           {/* Con pescado y camarón en la misma pestaña, la fila nueva tiene
               que saber a qué bloque entra: un botón por bloque. */}
-          {pestaniaUnificada ? ORDEN_GRUPOS.map(g => (
+          {/* ordenGrupos() y no ORDEN_GRUPOS: la lista se lee en cada render,
+              así un grupo recién creado aparece sin recargar la página. */}
+          {pestaniaUnificada ? ordenGrupos().map(g => (
             <button
               key={g}
               className="pl-add-row-btn-top"
@@ -1511,7 +1531,17 @@ export default function ProductionPlanForm() {
             >
               + Fila {GRUPOS[g].icono} {GRUPOS[g].label}
             </button>
-          )) : (
+          )).concat(
+            <button
+              key="__cfg__"
+              className="pl-add-row-btn-top"
+              style={{ background: '#f1f5f9', color: '#475569', border: '1.5px dashed #cbd5e1' }}
+              onClick={() => setEditandoGrupos(listaGrupos().map(g => ({ ...g })))}
+              title="Renombrar los bloques o reemplazarlos por las empresas de destino"
+            >
+              ⚙️ Grupos
+            </button>
+          ) : (
             <button className="pl-add-row-btn-top" onClick={() => addProcess(activeCategory.id)}>
               + Añadir Fila a {activeCategory.name}
             </button>
@@ -1889,6 +1919,10 @@ export default function ProductionPlanForm() {
                 ['actividad', '🏭 Actividad de la fila'],
                 ['especie', '🐟 Producto / especie (sub-filas)'],
                 ['clasif', '🏷️ Clasificación (sub-filas)'],
+                // Filtra las FILAS de la tabla por su columna de proceso. Los
+                // formatos que registran varios procesos en un mismo formulario
+                // traían todo junto: la fila «Fileteo» sumaba también el corte.
+                ['procesoEnTabla', '⚙️ Proceso dentro de la tabla'],
               ].map(([k, lbl]) => (
                 <label key={k} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 600, color: '#115e59', cursor: 'pointer' }}>
                   <input type="checkbox" checked={cfgConsulta(k)} onChange={e => setCfgConsulta(k, e.target.checked)} />
@@ -1896,7 +1930,9 @@ export default function ProductionPlanForm() {
                 </label>
               ))}
               <span style={{ fontSize: '11px', color: '#0d9488' }}>
-                — se aplican solos al Ejecutar y al abrir la calculadora desde una celda
+                — se aplican solos al Ejecutar y al abrir la calculadora desde una celda.
+                «Proceso dentro de la tabla» se queda solo con las filas cuya columna
+                PROCESO coincide con el nombre de la fila del plan.
               </span>
             </div>
 
@@ -2319,6 +2355,86 @@ export default function ProductionPlanForm() {
           <button className="pl-sel-chip pl-sel-salir" onClick={salirSeleccion}>✕ Salir</button>
         </div>
       )}
+
+      {/* ⚙️ EDITOR DE GRUPOS
+          Los bloques de la matriz eran dos fijos en el código: PESCADO y
+          CAMARÓN. Acá se renombran, se agregan o se reemplazan por las empresas
+          de destino, sin tocar código. */}
+      {editandoGrupos && (
+        <div
+          className="no-print"
+          onClick={() => setEditandoGrupos(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 560, maxHeight: '86vh', display: 'flex', flexDirection: 'column', boxShadow: '0 18px 46px rgba(0,0,0,.28)' }}>
+            <div style={{ background: 'linear-gradient(135deg,#0ea5e9,#2563eb)', color: '#fff', padding: '14px 18px', borderRadius: '12px 12px 0 0' }}>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>⚙️ Grupos de la matriz</div>
+              <div style={{ fontSize: 12.5, opacity: .9, marginTop: 2 }}>
+                Los bloques en los que se agrupan las filas del plan.
+              </div>
+            </div>
+
+            <div style={{ padding: '16px 18px', overflowY: 'auto', flex: 1 }}>
+              {editandoGrupos.map((g, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 9 }}>
+                  <input
+                    value={g.icono || ''}
+                    onChange={(e) => setEditandoGrupos(l => l.map((x, j) => j === i ? { ...x, icono: e.target.value } : x))}
+                    placeholder="🏭"
+                    style={{ width: 52, textAlign: 'center', padding: '8px 4px', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: 17 }}
+                  />
+                  <input
+                    value={g.label || ''}
+                    onChange={(e) => setEditandoGrupos(l => l.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                    placeholder="Nombre del grupo"
+                    style={{ flex: 1, padding: '9px 11px', border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: 14, color: '#0f172a' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setEditandoGrupos(l => l.length <= 1 ? l : l.filter((_, j) => j !== i))}
+                    disabled={editandoGrupos.length <= 1}
+                    title={editandoGrupos.length <= 1 ? 'Tiene que quedar al menos uno' : 'Quitar este grupo'}
+                    style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', borderRadius: 6, padding: '8px 11px', cursor: editandoGrupos.length <= 1 ? 'not-allowed' : 'pointer', opacity: editandoGrupos.length <= 1 ? .4 : 1 }}
+                  >🗑️</button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setEditandoGrupos(l => [...l, { clave: '', label: '', icono: '📦' }])}
+                style={{ background: '#f0f9ff', border: '1.5px dashed #7dd3fc', color: '#0369a1', borderRadius: 8, padding: '9px 16px', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', marginTop: 4 }}
+              >➕ Agregar grupo</button>
+
+              <div style={{ marginTop: 14, fontSize: 12, color: '#78350f', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 7, padding: '9px 11px', lineHeight: 1.55 }}>
+                Las filas que estén en un grupo borrado no se pierden: siguen
+                apareciendo al final de la matriz. Para moverlas, cambiales el
+                grupo desde la fila.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end', padding: '13px 18px', borderTop: '1px solid #f1f5f9' }}>
+              <button
+                type="button"
+                onClick={() => setEditandoGrupos(null)}
+                style={{ padding: '9px 18px', border: '1.5px solid #cbd5e1', background: '#fff', color: '#475569', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+              >Cancelar</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const lista = editandoGrupos
+                    .map(g => ({ ...g, clave: g.clave || claveGrupo(g.label) }))
+                    .filter(g => String(g.label).trim());
+                  if (lista.length === 0) { alert('Tiene que quedar al menos un grupo.'); return; }
+                  if (!guardarGrupos(lista)) { alert('No se pudieron guardar los grupos.'); return; }
+                  setEditandoGrupos(null);
+                }}
+                style={{ padding: '9px 20px', border: 'none', background: '#16a34a', color: '#fff', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
+              >✅ Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+
   );
 }

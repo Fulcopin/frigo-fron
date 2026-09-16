@@ -10,6 +10,7 @@ import { fetchUsers } from "../services/userService";
 import { InventarioColumnaConfig, InventarioAutoCompletar, InventarioTablaConfig, CampoLoteEncabezadoConfig, ColumnaLotePadreConfig } from "../components/InventarioConfig";
 import BusquedaProductoSelect from "../components/BusquedaProductoSelect";
 import SelectorActividadesProceso from "../components/SelectorActividadesProceso";
+import EditorOpciones from "../components/EditorOpciones";
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
@@ -68,6 +69,15 @@ function CreateTemplate() {
     { value: "inventario", label: "📦 Inventario (Lista desplegable de lotes)" },
     { value: "lotePadre", label: "🔗 Código padre (lote del encabezado)" },
     { value: "lotePadreTabla", label: "📥 Código padre (desde Materia Prima)" },
+    // Guarda VARIAS filas en una sola celda, en una ventana aparte. Reemplaza a
+    // tener columnas fijas como TAMAÑO y CANTIDAD, que solo admiten un valor
+    // por renglón: si se usaron fundas de tres tamaños había que repetir toda
+    // la fila de producción.
+    { value: "detalle", label: "📋 Detalle en ventana (varias filas por celda)" },
+    // Dos casillas en una sola celda: marcan dónde ARRANCA y dónde CIERRA un
+    // flujo de trabajo. Reemplaza a la tercera columna de horas, que obligaba a
+    // deducir el cierre de la jornada cuando no hay turnos fijos de 8 horas.
+    { value: "inicioCierre", label: "✅ Check de Entrada / Salida" },
   ];
 
   // Campos por defecto de Lote Entrante (5 campos)
@@ -218,7 +228,34 @@ function CreateTemplate() {
   };
   
   const updateFieldInSection = (elementIndex, fieldIndex, property, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.map((field, j) => (j === fieldIndex ? { ...field, [property]: value } : field)) } : el)) }));
-  const updateColumnInTable = (elementIndex, colIndex, property, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, columns: el.columns.map((col, j) => (j === colIndex ? { ...col, [property]: value } : col)) } : el)) }));
+  const updateColumnInTable = (elementIndex, colIndex, property, value) => setTemplate(prev => ({
+    ...prev,
+    bodyElements: prev.bodyElements.map((el, i) => {
+      if (i !== elementIndex) return el;
+      return {
+        ...el,
+        columns: el.columns.map((col, j) => {
+          if (j !== colIndex) return col;
+
+          // 📝 Al renombrar una columna se guarda el nombre viejo.
+          //
+          // Los formularios ya llenados tienen el nombre anterior adentro, así
+          // que al Descargar Datos aparecían como una columna aparte y el
+          // histórico quedaba partido en dos.
+          if (property !== 'label') return { ...col, [property]: value };
+
+          const anterior = String(col.label || '').trim();
+          const nombre = String(value || '').trim();
+          if (!anterior || anterior === nombre) return { ...col, label: value };
+
+          const previos = Array.isArray(col.nombresAnteriores) ? col.nombresAnteriores : [];
+          const historial = [...new Set([...previos, anterior])].filter(n => n !== nombre);
+
+          return { ...col, label: value, nombresAnteriores: historial };
+        }),
+      };
+    }),
+  }));
   const removeFieldFromSection = (elementIndex, fieldIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: el.fields.filter((_, j) => j !== fieldIndex) } : el)) }));
   const removeColumnFromTable = (elementIndex, colIndex) => setTemplate(prev => ({
     ...prev,
@@ -444,6 +481,187 @@ function CreateTemplate() {
               <option value="Anual">📕 Anual</option>
               <option value="Ocasional">🔀 Ocasional</option>
             </select>
+          </div>
+
+          {/* 🎛️ Ayudas del encabezado de columna — configuración GENERAL.
+              Es una decisión de cómo se usa el formulario, no de cada tabla, así
+              que el control es uno solo y se escribe en todas las tablas de la
+              plantilla. Se guarda dentro de bodyElements para no tener que
+              agregar columnas nuevas a la tabla Templates. */}
+          <div className="form-group full-width" style={{ padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+            <div style={{ fontWeight: 700, fontSize: '14px', color: '#334155', marginBottom: '4px' }}>
+              🎛️ Ayudas en el encabezado de las columnas
+            </div>
+            <div style={{ fontSize: '12.5px', color: '#64748b', marginBottom: '12px', lineHeight: 1.5 }}>
+              Atajos que ve el operario arriba de cada columna al llenar el formulario.
+              Aplica a todas las tablas de esta plantilla.
+            </div>
+
+            {[
+              { campo: 'ayudaOcultarCol',   etiqueta: '🚫 Ocultar columna',  detalle: 'Deja la columna fuera del Ver / PDF / Excel de ese registro.' },
+              { campo: 'ayudaAplicarTodas', etiqueta: '⬇ Aplicar a todas',   detalle: 'Copia un valor a todas las filas de la columna.' },
+              { campo: 'ayudaImportarCol',  etiqueta: '📥 Importar columna',  detalle: 'Trae los datos de esa columna desde otro formulario.' },
+            ].map(({ campo, etiqueta, detalle }) => {
+              const tablas = (template.bodyElements || []).filter(el => el?.type === 'table');
+              // Activa mientras ninguna tabla la tenga apagada. Sin valor guardado
+              // cuenta como activa, así las plantillas viejas no cambian.
+              const activa = !tablas.some(el => el[campo] === false);
+              return (
+                <div key={campo} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '10px' }}>
+                  <input
+                    type="checkbox"
+                    id={`gen-${campo}`}
+                    checked={activa}
+                    onChange={(e) => {
+                      const valor = e.target.checked;
+                      setTemplate(prev => ({
+                        ...prev,
+                        bodyElements: (prev.bodyElements || []).map(el =>
+                          el?.type === 'table' ? { ...el, [campo]: valor } : el
+                        ),
+                      }));
+                    }}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0ea5e9', marginTop: '1px' }}
+                  />
+                  <label htmlFor={`gen-${campo}`} style={{ cursor: 'pointer', margin: 0, lineHeight: 1.4 }}>
+                    <span style={{ fontWeight: 600, color: activa ? '#0369a1' : '#94a3b8', fontSize: '13.5px' }}>{etiqueta}</span>
+                    <br />
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>{detalle}</span>
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 🧰 Botones de la barra de cada tabla al llenar el formulario.
+              Son atajos útiles, pero varios modifican la estructura o borran
+              filas: en manos de un operario nuevo hacen daño. Se apagan acá,
+              para todas las tablas de la plantilla a la vez.
+              "Agregar Fila" no está en la lista a propósito: sin él no hay
+              forma de cargar datos en una tabla vacía. */}
+          <div className="form-group full-width" style={{ padding: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+            <div style={{ fontWeight: 700, fontSize: '14px', color: '#334155', marginBottom: '4px' }}>
+              🧰 Botones de la barra de las tablas
+            </div>
+            <div style={{ fontSize: '12.5px', color: '#64748b', marginBottom: '12px', lineHeight: 1.5 }}>
+              Los que ve el operario arriba de cada tabla al llenar el formulario.
+              Aplica a todas las tablas de esta plantilla.
+            </div>
+
+            {[
+              { campo: 'barraAgregarVarias',  etiqueta: '++ Agregar Varias',  detalle: 'Agrega varias filas de una vez.' },
+              { campo: 'barraLimpiarVacias',  etiqueta: '🧹 Limpiar Vacías',  detalle: 'Borra las filas que quedaron sin llenar.' },
+              { campo: 'barraRestaurarFilas', etiqueta: '🔄 Restaurar Filas', detalle: 'Vuelve a las filas predefinidas. Descarta lo cargado.' },
+              { campo: 'barraAgruparFilas',   etiqueta: '📦 Agrupar Filas',   detalle: 'Agrupa filas visualmente.' },
+              { campo: 'barraCopiarDato',     etiqueta: '📋 Copiar dato guardado',  detalle: 'Botón morado junto a cada campo del encabezado: trae un valor de otro formulario ya guardado.' },
+              { campo: 'soloDesplegable',     etiqueta: '🔒 Solo permitir valores de la lista', detalle: 'Bloquea la escritura manual en las columnas de inventario. En tablet el operario podía tipear un lote que no existe.' },
+            ].map(({ campo, etiqueta, detalle }) => {
+              const tablas = (template.bodyElements || []).filter(el => el?.type === 'table');
+              // Activo mientras ninguna tabla lo tenga apagado. Sin valor
+              // guardado cuenta como activo: las plantillas viejas no cambian.
+              const activa = !tablas.some(el => el[campo] === false);
+              return (
+                <div key={campo} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '10px' }}>
+                  <input
+                    type="checkbox"
+                    id={`gen-${campo}`}
+                    checked={activa}
+                    onChange={(e) => {
+                      const valor = e.target.checked;
+                      setTemplate(prev => ({
+                        ...prev,
+                        bodyElements: (prev.bodyElements || []).map(el =>
+                          el?.type === 'table' ? { ...el, [campo]: valor } : el
+                        ),
+                      }));
+                    }}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0ea5e9', marginTop: '1px' }}
+                  />
+                  <label htmlFor={`gen-${campo}`} style={{ cursor: 'pointer', margin: 0, lineHeight: 1.4 }}>
+                    <span style={{ fontWeight: 600, color: activa ? '#0369a1' : '#94a3b8', fontSize: '13.5px' }}>{etiqueta}</span>
+                    <br />
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>{detalle}</span>
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 📎 Enlace de ayuda: el instructivo de esta plantilla.
+              Se guarda la URL y no el archivo, así el documento se actualiza
+              donde ya vive (Drive, SharePoint, la red) sin volver a cargarlo. */}
+          <div className="form-group full-width" style={{ padding: '14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px' }}>
+            <div style={{ fontWeight: 700, fontSize: '14px', color: '#1e40af', marginBottom: '4px' }}>
+              📎 Documento de ayuda
+            </div>
+            <div style={{ fontSize: '12.5px', color: '#475569', marginBottom: '12px', lineHeight: 1.5 }}>
+              Enlace al instructivo, a un ejemplo del formulario lleno o a una tabla de referencia.
+              El operario lo abre desde el formulario, en otra pestaña.
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '260px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#1e40af', marginBottom: '4px' }}>
+                  🔗 Enlace (PDF, imagen o página)
+                </label>
+                <input
+                  type="url"
+                  value={template.ayudaUrl || ''}
+                  onChange={(e) => handleInputChange('ayudaUrl', e.target.value)}
+                  placeholder="https://drive.google.com/... o https://intranet/instructivos/PD-04.pdf"
+                  style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #93c5fd', borderRadius: '6px', fontSize: '13px', color: '#0f172a', background: '#fff' }}
+                />
+              </div>
+
+              {/* Probar antes de guardar: un enlace mal copiado no se descubre
+                  hasta que un operario lo necesita en planta. */}
+              <button
+                type="button"
+                onClick={() => {
+                  const u = String(template.ayudaUrl || '').trim();
+                  if (!u) return;
+                  window.open(u, '_blank', 'noopener,noreferrer');
+                }}
+                disabled={!String(template.ayudaUrl || '').trim()}
+                style={{
+                  marginTop: '22px', padding: '8px 16px', border: 'none', borderRadius: '6px',
+                  background: String(template.ayudaUrl || '').trim() ? '#2563eb' : '#cbd5e1',
+                  color: '#fff', fontWeight: 600, fontSize: '13px',
+                  cursor: String(template.ayudaUrl || '').trim() ? 'pointer' : 'not-allowed',
+                }}
+                title="Abrir el enlace para comprobar que funciona"
+              >
+                🔍 Probar
+              </button>
+            </div>
+
+            {/* Aviso de enlaces que no van a abrir. No se bloquea el guardado:
+                puede ser una ruta interna válida que este navegador no resuelve. */}
+            {(() => {
+              const u = String(template.ayudaUrl || '').trim();
+              if (!u) return null;
+              if (/^https?:\/\//i.test(u)) return null;
+              return (
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#b45309', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '7px 10px' }}>
+                  ⚠️ El enlace debería empezar con <strong>http://</strong> o <strong>https://</strong>.
+                  Una ruta como <code>C:\\carpeta\\archivo.pdf</code> no se abre desde el navegador.
+                </div>
+              );
+            })()}
+
+            <div style={{ marginTop: '10px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#1e40af', marginBottom: '4px' }}>
+                📝 Nota (opcional)
+              </label>
+              <input
+                type="text"
+                value={template.ayudaNota || ''}
+                onChange={(e) => handleInputChange('ayudaNota', e.target.value)}
+                placeholder="Ej: Instructivo de fileteo — ver el paso 3 antes de llenar la tabla"
+                maxLength={500}
+                style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #93c5fd', borderRadius: '6px', fontSize: '13px', color: '#0f172a', background: '#fff' }}
+              />
+            </div>
           </div>
 
           {/* ✅ Auto-suma de FILAS (PESO → TOTAL por fila) */}
@@ -1771,6 +1989,7 @@ function CreateTemplate() {
                     </label>
                   </div>
 
+
                   {element.usaApiPorCodigo && (
                     <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ background: '#fdf4ff', border: '1px solid #d8b4fe', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: '#6b21a8' }}>
@@ -2031,6 +2250,161 @@ function CreateTemplate() {
                           {tableFieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                         </select>
                       </div>
+                      {/* 🏷️ QUÉ REPRESENTA ESTA COLUMNA
+                          Marca explícita para los reportes. Sin ella el sistema
+                          adivina por el nombre, y cada vez que alguien inventa
+                          uno nuevo —"N° Personas Frigolab", "Cuadrilla"— esa
+                          columna deja de contarse sin que nadie se entere.
+                          Marcada, el nombre puede ser cualquiera. */}
+                      <div className="form-group">
+                        <label>🏷️ Qué representa (para reportes)</label>
+                        <select
+                          value={column.rol || ''}
+                          onChange={(e) => updateColumnInTable(elementIndex, colIndex, 'rol', e.target.value)}
+                        >
+                          <option value="">— Detectar por el nombre —</option>
+                          <option value="personalPropio">👷 Personal propio (planta)</option>
+                          <option value="personalContratado">🤝 Personal contratado (eventual)</option>
+                          <option value="pesoProducido">⚖️ Peso producido</option>
+                          <option value="pesoMateriaPrima">📥 Peso de materia prima</option>
+                          <option value="horaInicio">🕐 Hora de inicio</option>
+                          <option value="horaFin">🕐 Hora de fin</option>
+                          <option value="procesoProductivo">⚙️ Proceso productivo</option>
+                          <option value="producto">🐟 Producto</option>
+                          <option value="observacion">📝 Observación</option>
+                          <option value="ignorar">🚫 No usar en reportes</option>
+                        </select>
+                        <small style={{ fontSize: '11px', color: '#6b7280', display: 'block', marginTop: '3px' }}>
+                          {column.rol
+                            ? 'El reporte usa esta marca, sin importar cómo se llame la columna.'
+                            : 'Sin marcar, el reporte intenta reconocerla por el nombre.'}
+                        </small>
+                      </div>
+
+                      {/* 📋 Campos de la ventana de detalle.
+                          Son las columnas que va a tener la tabla emergente:
+                          por ejemplo Tamaño y Cantidad, o Código, Material,
+                          Cantidad y Unidad. Se configuran una vez y valen para
+                          todas las filas de la tabla. */}
+                      {column.type === 'detalle' && (
+                        <div className="form-group full-width" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '12px', marginTop: '8px' }}>
+                          <div style={{ fontWeight: 700, fontSize: '13px', color: '#1e40af', marginBottom: '3px' }}>
+                            📋 Campos de la ventana
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#475569', marginBottom: '10px', lineHeight: 1.5 }}>
+                            El operario va a poder agregar y quitar filas con estos campos. Siempre queda una fila cargada.
+                          </div>
+
+                          {(column.detalleCampos || []).map((campo, ci) => (
+                            <div key={ci} style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginBottom: '7px' }}>
+                              <div style={{ flex: 2 }}>
+                                <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>Nombre</label>
+                                <input
+                                  type="text"
+                                  value={campo.label || ''}
+                                  onChange={(e) => {
+                                    const campos = [...(column.detalleCampos || [])];
+                                    // Solo el NOMBRE. La clave se asigna al crear el campo y
+                                    // no se toca nunca más.
+                                    //
+                                    // Antes se hacía `key: campos[ci].key || e.target.value` y
+                                    // se congelaba con la PRIMERA LETRA tecleada: se escribía
+                                    // "Tamaño" y la clave quedaba "T". Los datos se guardaban
+                                    // como {"T":"12x16"} y no había forma de volver a leerlos.
+                                    campos[ci] = { ...campos[ci], label: e.target.value };
+                                    updateColumnInTable(elementIndex, colIndex, 'detalleCampos', campos);
+                                  }}
+                                  placeholder="Ej: Tamaño"
+                                  style={{ width: '100%', padding: '6px 8px', border: '1px solid #93c5fd', borderRadius: '5px', fontSize: '13px' }}
+                                />
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>Tipo</label>
+                                <select
+                                  value={campo.type || 'text'}
+                                  onChange={(e) => {
+                                    const campos = [...(column.detalleCampos || [])];
+                                    campos[ci] = { ...campos[ci], type: e.target.value };
+                                    updateColumnInTable(elementIndex, colIndex, 'detalleCampos', campos);
+                                  }}
+                                  style={{ width: '100%', padding: '6px 8px', border: '1px solid #93c5fd', borderRadius: '5px', fontSize: '13px' }}
+                                >
+                                  <option value="text">Texto</option>
+                                  <option value="number">Número</option>
+                                  <option value="select">Lista</option>
+                                </select>
+                              </div>
+                              {campo.type === 'select' && (
+                                <div style={{ flex: 2 }}>
+                                  <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>Opciones</label>
+                                  <EditorOpciones
+                                    opciones={(campo.options || [])}
+                                    titulo={campo.label}
+                                    onChange={(nuevas) => {
+                                      const campos = [...(column.detalleCampos || [])];
+                                      campos[ci] = { ...campos[ci], options: nuevas };
+                                      updateColumnInTable(elementIndex, colIndex, 'detalleCampos', campos);
+                                    }}
+                                  />
+                                </div>
+                              )}
+                              {/* Búsqueda contra la API externa, la misma que usan
+                                  las columnas «Buscar por código…» de la tabla.
+                                  Con un campo en Código y otro en Nombre, elegir
+                                  un artículo completa los dos de una vez. */}
+                              <div style={{ flex: 1.3 }}>
+                                <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>🔍 Búsqueda API</label>
+                                <select
+                                  value={campo.type === 'select' ? '' : (campo.busqueda || '')}
+                                  // Una Lista usa sus opciones; la búsqueda no aplica.
+                                  disabled={campo.type === 'select'}
+                                  title={campo.type === 'select' ? 'No aplica a una Lista: se usan las opciones escritas' : undefined}
+                                  onChange={(e) => {
+                                    const campos = [...(column.detalleCampos || [])];
+                                    campos[ci] = { ...campos[ci], busqueda: e.target.value };
+                                    updateColumnInTable(elementIndex, colIndex, 'detalleCampos', campos);
+                                  }}
+                                  style={{ width: '100%', padding: '6px 8px', border: '1px solid #93c5fd', borderRadius: '5px', fontSize: '13px' }}
+                                >
+                                  <option value="">— Sin búsqueda —</option>
+                                  <option value="codigoErp">🔢 Buscar por código</option>
+                                  <option value="nombreProducto">🏷️ Buscar por nombre</option>
+                                </select>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => updateColumnInTable(elementIndex, colIndex, 'detalleCampos',
+                                  (column.detalleCampos || []).filter((_, i) => i !== ci))}
+                                style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '5px', padding: '6px 9px', cursor: 'pointer', color: '#dc2626' }}
+                                title="Quitar este campo"
+                              >🗑️</button>
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            onClick={() => updateColumnInTable(elementIndex, colIndex, 'detalleCampos',
+                              [...(column.detalleCampos || []), {
+                                label: '',
+                                // Clave estable, fijada al crear el campo. No depende del
+                                // nombre, así que renombrarlo no deja huérfanos los datos
+                                // ya cargados.
+                                key: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+                                type: 'text',
+                              }])}
+                            style={{ background: '#dbeafe', border: '1px dashed #60a5fa', borderRadius: '6px', padding: '7px 14px', cursor: 'pointer', fontSize: '13px', color: '#1e40af', fontWeight: 600 }}
+                          >
+                            ➕ Agregar campo
+                          </button>
+
+                          {(column.detalleCampos || []).length === 0 && (
+                            <div style={{ fontSize: '12px', color: '#b45309', marginTop: '8px' }}>
+                              ⚠️ Sin campos, la ventana se abre vacía. Agregá al menos uno.
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* 📦 GRUPO DE COLUMNA */}
                       <div className="form-group">
@@ -2700,7 +3074,13 @@ function CreateTemplate() {
                     👥 Reemplazos (personas que pueden firmar en su ausencia)
                   </label>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {[0, 1, 2, 3, 4].map((rIdx) => {
+                    {/* Tantos casilleros como reemplazos haya, mínimo 3.
+                        Para agregar más está el botón de abajo: antes la lista
+                        era [0,1,2,3,4] fija y no se podía pasar de cinco. */}
+                    {Array.from(
+                      { length: Math.max((firma.reemplazos || []).length, 3) },
+                      (_, k) => k
+                    ).map((rIdx) => {
                       const reemplazos = firma.reemplazos || [];
                       return (
                         <div key={`reemplazo-${index}-${rIdx}`} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
@@ -2760,13 +3140,14 @@ function CreateTemplate() {
                             <button
                               type="button"
                               onClick={() => {
-                                const newReemplazos = [...reemplazos];
-                                newReemplazos[rIdx] = '';
-                                updateFirma(index, 'reemplazos', newReemplazos);
-                                // También limpiar el cargo
+                                // Se saca del array, no se deja en '': con la
+                                // lista de largo dinámico un hueco en el medio
+                                // correría los índices de los que siguen.
                                 const newCargos = { ...(firma.cargoReemplazos || {}) };
                                 delete newCargos[reemplazos[rIdx]?.toLowerCase().trim()];
                                 updateFirma(index, 'cargoReemplazos', newCargos);
+                                const newReemplazos = reemplazos.filter((_, k) => k !== rIdx);
+                                updateFirma(index, 'reemplazos', newReemplazos);
                               }}
                               style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '12px', color: '#dc2626', marginTop: '2px' }}
                               title="Quitar reemplazo"
@@ -2776,8 +3157,15 @@ function CreateTemplate() {
                       );
                     })}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => updateFirma(index, 'reemplazos', [...(firma.reemplazos || []), ''])}
+                    style={{ marginTop: '8px', background: '#f5f3ff', border: '1px dashed #a78bfa', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer', fontSize: '13px', color: '#6d28d9', fontWeight: 600 }}
+                  >
+                    ➕ Agregar otro reemplazo
+                  </button>
                   <small style={{ color: '#6b7280', marginTop: '6px', display: 'block', fontSize: '0.75rem' }}>
-                    Estas personas podrán firmar cuando el titular no esté disponible.
+                    Estas personas podrán firmar cuando el titular no esté disponible. No hay límite.
                   </small>
                 </div>
               )}
@@ -2788,7 +3176,13 @@ function CreateTemplate() {
                   🔔 Jefes/Superiores (Alertas de escalamiento)
                 </label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {[0, 1, 2].map((jIdx) => {
+                  {Array.from(
+                    { length: Math.max(
+                      (Array.isArray(firma.jefeAlerta) ? firma.jefeAlerta : [firma.jefeAlerta].filter(Boolean)).length,
+                      2
+                    ) },
+                    (_, k) => k
+                  ).map((jIdx) => {
                     const jefes = Array.isArray(firma.jefeAlerta) ? firma.jefeAlerta : (firma.jefeAlerta ? [firma.jefeAlerta] : []);
                     return (
                       <div key={`jefe-${index}-${jIdx}`} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -2842,6 +3236,18 @@ function CreateTemplate() {
                     );
                   })}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const actuales = Array.isArray(firma.jefeAlerta)
+                      ? firma.jefeAlerta
+                      : (firma.jefeAlerta ? [firma.jefeAlerta] : []);
+                    updateFirma(index, 'jefeAlerta', [...actuales, '']);
+                  }}
+                  style={{ marginTop: '8px', background: '#fef2f2', border: '1px dashed #fca5a5', borderRadius: '6px', padding: '6px 14px', cursor: 'pointer', fontSize: '13px', color: '#b91c1c', fontWeight: 600 }}
+                >
+                  ➕ Agregar otro jefe
+                </button>
                 {(() => {
                   const jefes = Array.isArray(firma.jefeAlerta) ? firma.jefeAlerta : (firma.jefeAlerta ? [firma.jefeAlerta] : []);
                   const jefesActivos = jefes.filter(j => j && j.trim());

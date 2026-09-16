@@ -7,6 +7,7 @@ import { toLocalISOString, businessHoursBetween } from '../utils/dateUtils';
 import {
   cargarUmbralBloqueo,
   estaBloqueadoParaFirma,
+  fechaDeGuardado,
   mensajeBloqueoFirma,
   UMBRAL_BLOQUEO_POR_DEFECTO,
 } from '../utils/bloqueoFirma';
@@ -146,7 +147,16 @@ export default function SignatureManagement() {
           createdBy: form.filledBy || form.createdBy || 'No registrado',
           createdByEmail: form.filledByEmail || form.createdByEmail || '',
           createdByRole: form.filledByRole || form.createdByRole || '',
+          // La fecha que se MUESTRA: la del encabezado, o sea la del papel.
           createdDate: form.createdDate || form.createdAt,
+
+          // La de GUARDADO, con hora. Es la que usa el reloj del bloqueo.
+          //
+          // Sin esta línea el cálculo caía a createdDate, que ahora trae solo la
+          // fecha del papel sin hora. JavaScript la interpreta a las 00:00, así
+          // que un formulario guardado a las 11:36 aparecía con "14 horas
+          // pendiente" a mediodía: contaba desde la medianoche.
+          fechaGuardado: form.fechaGuardado || form.createdAt || form.createdDate,
           isSigned: form.isSigned || false,
           isRejected: form.isRejected || false,
           hasSignatureImages, // Si el formulario YA tiene firmas PNG dentro
@@ -640,12 +650,64 @@ export default function SignatureManagement() {
     }
   };
 
+  /**
+   * Compara nombres tolerando tildes, mayúsculas y espacios de más.
+   *
+   * En las plantillas están escritos "Geoconda Penafiel" y en el perfil del
+   * usuario "Geoconda Peñafiel". Con comparación exacta nunca coincidían y el
+   * formulario no le aparecía a quien sí tenía que firmarlo — un fallo
+   * silencioso, porque nadie reclama por algo que no ve.
+   */
+  const mismoNombre = (a, b) => {
+    const limpiar = (v) => String(v ?? '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim().toLowerCase();
+    const x = limpiar(a);
+    return !!x && x === limpiar(b);
+  };
+
+  /**
+   * ¿El usuario YA firmó algún puesto de este formulario?
+   *
+   * Una misma persona puede figurar como reemplazo en varios puestos del mismo
+   * formato. Firmaba uno, el otro quedaba sin firmar, y el formulario le volvía
+   * a aparecer como pendiente: para él era "ya lo firmé y me reapareció".
+   *
+   * Además, que la misma persona firme como analista y como jefe del mismo
+   * registro anula el control cruzado que justifica tener dos firmas.
+   */
+  const usuarioYaFirmoEsteForm = (form) => {
+    if (!currentUser || !form?.firmasData) return false;
+    const userEmail = currentUser.email?.toLowerCase();
+    const userNombre = currentUser.nombre;
+
+    for (const firmaInfo of Object.values(form.firmasData)) {
+      if (!firmaInfo || typeof firmaInfo !== 'object') continue;
+      const yaFirmo = firmaInfo.firma?.url || firmaInfo.firma?.base64;
+      if (!yaFirmo) continue;
+
+      // Quién firmó ese puesto: puede haber quedado en varios campos según por
+      // dónde entró la firma.
+      const quien = firmaInfo.firmadoPor || firmaInfo.firmantePorNombre
+                 || firmaInfo.firmante || firmaInfo.nombre;
+      const correo = (firmaInfo.firmadoPorEmail || firmaInfo.email || '').toLowerCase();
+
+      if (mismoNombre(quien, userNombre)) return true;
+      if (userEmail && correo && correo === userEmail) return true;
+    }
+    return false;
+  };
+
   // ✅ Función para verificar si el usuario está asignado para firmar este formulario
   const isUserAssignedToSign = (form) => {
     // Si no hay usuario logueado o no hay firmas, no mostrar
     if (!currentUser || !form.firmasData) {
       return false;
     }
+
+    // 🛑 Si ya firmó un puesto de este formulario, no vuelve a aparecerle.
+    if (usuarioYaFirmoEsteForm(form)) return false;
 
     const userEmail = currentUser.email?.toLowerCase();
     const userNombre = currentUser.nombre?.toLowerCase().trim();
@@ -660,8 +722,8 @@ export default function SignatureManagement() {
       const yaFirmo = firmaInfo.firma?.url || firmaInfo.firma?.base64;
       if (yaFirmo) continue; // Ya firmó este puesto, saltar
 
-      // ✅ Coincidir por nombre completo (igual que FillForm.jsx "Tu firma")
-      if (userNombre && nombreAsignado && nombreAsignado === userNombre) {
+      // ✅ Coincidir por nombre completo, sin distinguir tildes ni mayúsculas
+      if (mismoNombre(nombreAsignado, currentUser.nombre)) {
         return true;
       }
 
@@ -682,8 +744,7 @@ export default function SignatureManagement() {
         );
         if (templateFirma?.reemplazos && Array.isArray(templateFirma.reemplazos)) {
           for (const reemplazo of templateFirma.reemplazos) {
-            const reemplazoNombre = reemplazo?.toLowerCase().trim();
-            if (reemplazoNombre && userNombre && reemplazoNombre === userNombre) {
+            if (mismoNombre(reemplazo, currentUser.nombre)) {
               return true;
             }
           }
@@ -709,9 +770,18 @@ export default function SignatureManagement() {
     for (const [puesto, firmaInfo] of Object.entries(form.firmasData)) {
       if (!firmaInfo || typeof firmaInfo !== 'object' || !slotSinFirmar(firmaInfo)) continue;
       const emailAsignado = firmaInfo.email?.toLowerCase();
+      // Se declara acá: al pasar a mismoNombre() se había quitado la
+      // declaración pero la línea del respaldo por correo seguía usándola, y
+      // eso reventaba el firmado masivo con "nombreAsignado is not defined".
       const nombreAsignado = firmaInfo.nombre?.toLowerCase().trim();
-      if (userNombre && nombreAsignado && nombreAsignado === userNombre) return puesto;
+
+      // Sin distinguir tildes: en las plantillas está "Penafiel" y en el perfil
+      // "Peñafiel". Con comparación exacta no se resolvía el puesto y la firma
+      // quedaba rechazada aunque la persona sí fuera la titular.
+      if (mismoNombre(firmaInfo.nombre, currentUser.nombre)) return puesto;
       if (userEmail && emailAsignado && emailAsignado === userEmail) return puesto;
+      // Respaldo: en algunos registros el correo quedó guardado en el campo
+      // del nombre.
       if (userEmail && nombreAsignado && nombreAsignado.includes('@') && nombreAsignado === userEmail) return puesto;
     }
 
@@ -724,8 +794,7 @@ export default function SignatureManagement() {
         );
         if (templateFirma?.reemplazos && Array.isArray(templateFirma.reemplazos)) {
           for (const reemplazo of templateFirma.reemplazos) {
-            const reemplazoNombre = reemplazo?.toLowerCase().trim();
-            if (reemplazoNombre && userNombre && reemplazoNombre === userNombre) return puesto;
+            if (mismoNombre(reemplazo, currentUser.nombre)) return puesto;
           }
         }
       }
@@ -1121,7 +1190,7 @@ export default function SignatureManagement() {
                               <div className="form-detail">
                                 <span className="detail-label">⏰ Pendiente:</span>
                                 <span className="detail-value pending-time">
-                                  {calculatePendingTime(form.createdDate)}
+                                  {calculatePendingTime(form)}
                                 </span>
                               </div>
                             </div>
@@ -1462,7 +1531,7 @@ export default function SignatureManagement() {
                               </span>
                             </td>
                             <td style={{ padding: '10px 12px', fontWeight: 600, color: item.hoursToSign != null ? (Math.abs(item.hoursToSign) < 24 ? '#059669' : Math.abs(item.hoursToSign) < 72 ? '#d97706' : '#dc2626') : '#6b7280' }}>
-                              {item.timingLabel || (item.status === 'pending' ? calculatePendingTime(item.createdDate) : '—')}
+                              {item.timingLabel || (item.status === 'pending' ? calculatePendingTime(item) : '—')}
                             </td>
                             <td style={{ padding: '10px 12px' }}>
                               {item.status === 'signed' && (
@@ -2321,8 +2390,29 @@ export default function SignatureManagement() {
 
 // Función auxiliar para calcular tiempo pendiente
 // Usa horas HÁBILES (excluye sábados y domingos) para ser consistente con el bloqueo.
-function calculatePendingTime(createdDate) {
-  const bizHours = businessHoursBetween(createdDate, new Date());
+/**
+ * Cuánto lleva pendiente un formulario.
+ *
+ * Recibe el FORMULARIO, no una fecha suelta. Antes se le pasaba createdDate,
+ * que es la fecha del PAPEL y viene a las 00:00:00 — así un registro guardado a
+ * las 11:36 aparecía con "15 horas pendiente" a media tarde, porque contaba
+ * desde la medianoche.
+ *
+ * El reloj tiene que correr desde que el registro ENTRÓ al sistema. Se usa la
+ * misma función que el bloqueo para que el texto y el candado nunca se
+ * contradigan: decir "3 horas" al lado de un botón bloqueado por antigüedad
+ * sería peor que cualquiera de los dos errores por separado.
+ */
+function calculatePendingTime(form) {
+  // Se aceptan las dos formas por compatibilidad: si llega una fecha suelta se
+  // usa tal cual, aunque lo correcto es pasar el formulario entero.
+  const desde = (form && typeof form === 'object')
+    ? fechaDeGuardado(form)
+    : form;
+
+  if (!desde) return '—';
+
+  const bizHours = businessHoursBetween(desde, new Date());
 
   // Guard against server clock skew / negative values
   if (bizHours <= 0) return '< 1 minuto';

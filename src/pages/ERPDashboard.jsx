@@ -10,15 +10,37 @@ const PAGE_SIZE = 50; // Filas por página para no colapsar el DOM
 // ─── ¿Es la tabla de registros del formulario? ──────────────────────────────
 // Las tablas "principales" generan una fila por registro en el reporte; el
 // resto (listas de personal, materiales, etc.) se aplanan al encabezado.
-const KEYWORDS_TABLA_PRINCIPAL = ['HORA', 'TINA', 'PESO', 'LOTE', 'FECHA Y HORA', 'TEMPERATURA', 'LIBRAS'];
+// Palabras que delatan una tabla de registros (una fila = un dato del proceso),
+// a diferencia de una tabla auxiliar de dos o tres líneas.
+//
+// Faltaban las de producción y empaque: la tabla PRODUCCIÓN - PROCESO del
+// PRUEBA-02 tiene N° TANQUE, CÓDIGO PRODUCTO, TOTAL Lbs NETAS… y ninguna decía
+// PESO ni LOTE, así que se tomaba como auxiliar y cada fila se convertía en su
+// propio juego de columnas (SECCIÓN 1 F1 - …, F2 - …). De ahí las 337 columnas.
+const KEYWORDS_TABLA_PRINCIPAL = [
+    'HORA', 'TINA', 'PESO', 'LOTE', 'FECHA Y HORA', 'TEMPERATURA', 'LIBRAS',
+    'LBS', 'CANTIDAD', 'PRODUCTO', 'CLASIFICACI', 'TANQUE', 'CAJAS',
+    'C[OÓ]DIGO', 'TALLA', 'CLIENTE', 'MATERIA PRIMA', 'SUBPRODUCTO',
+];
+
+// Una tabla auxiliar de verdad tiene pocas filas. Por encima de este número,
+// aplanarla genera cientos de columnas y el Excel se vuelve inservible.
+const MAX_FILAS_AUXILIAR = 3;
 
 const esTablaPrincipal = (rowsData) => {
     if (!rowsData || rowsData.length === 0) return false;
+
+    // Red de seguridad: aunque no reconozca ninguna palabra, una tabla con
+    // varias filas es de registros. Sin esto, una tabla con encabezados que
+    // nadie previó vuelve a explotar en columnas.
+    if (rowsData.length > MAX_FILAS_AUXILIAR) return true;
+
     const sampleKeys = [
         ...Object.keys(rowsData[0]),
         ...(rowsData[0].cells?.map(c => c.name || c.columnId) ?? [])
     ].join(' ').toUpperCase();
-    return KEYWORDS_TABLA_PRINCIPAL.some(k => sampleKeys.includes(k));
+
+    return KEYWORDS_TABLA_PRINCIPAL.some(k => new RegExp(k).test(sampleKeys));
 };
 
 // Pasa una fila cruda ({ cells: [...] } o plana) a un objeto { clave: valor }
@@ -27,10 +49,39 @@ const aplanarFila = (row, ri = 0) => row.cells
     : row;
 
 // ─── Números: parseo tolerante (rechaza horas, códigos y textos) ────────────
+// Unidades que acompañan a un número sin invalidarlo.
+//
+// El operario escribe "5 Lbs" y eso ES 5. Antes cualquier valor con letras se
+// descartaba, así que la columna no se detectaba como numérica, se exportaba
+// como texto y en Excel no se podía sumar: daba cero en cualquier fórmula.
+const UNIDADES = /^(lbs?|libras?|kgs?|kilos?|gr?|gramos?|oz|onzas?|un|und|unidades?|cajas?|tinas?|m3|m³)$/i;
+
+/** Quita la unidad si está al principio o al final. Devuelve el texto tal cual
+ *  si no reconoce ninguna, para no romper códigos tipo EM-PLT-014. */
+const quitarUnidad = (txt) => {
+    const t = String(txt).trim();
+    const partes = t.split(/\s+/);
+    if (partes.length === 2 && UNIDADES.test(partes[1])) return partes[0];
+    if (partes.length === 2 && UNIDADES.test(partes[0])) return partes[1];
+    const pegada = t.match(/^(-?[\d.,]+)\s*([a-zA-Z³]+)$/);   // "5Lbs", "12kg"
+    if (pegada && UNIDADES.test(pegada[2])) return pegada[1];
+    return t;
+};
+
+/** La unidad de un valor, si la trae. Sirve para ponerla en el encabezado. */
+const unidadDe = (txt) => {
+    const t = String(txt ?? '').trim();
+    const partes = t.split(/\s+/);
+    if (partes.length === 2 && UNIDADES.test(partes[1])) return partes[1];
+    const pegada = t.match(/^-?[\d.,]+\s*([a-zA-Z³]+)$/);
+    if (pegada && UNIDADES.test(pegada[1])) return pegada[1];
+    return '';
+};
+
 const parseNum = (v) => {
     if (v === null || v === undefined || v === '') return null;
     if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-    let s = String(v).trim();
+    let s = quitarUnidad(String(v).trim());
     if (!s) return null;
     if (/[a-zA-Z:/%]/.test(s)) return null;          // 16:00, EM-PLT-014, 12%
     s = s.replace(/\s/g, '');
@@ -1154,14 +1205,35 @@ const ERPDashboard = () => {
             // Las columnas numéricas se exportan como número real para que
             // Excel pueda sumarlas en una tabla dinámica
             const esNum = new Set(numericCols);
+
+            // La unidad va al ENCABEZADO, no en cada celda.
+            //
+            // Con "5 Lbs" en la celda, Excel la trata como texto y cualquier
+            // SUMA da cero. Con el número solo y "PESO (Lbs)" arriba, la
+            // información de la unidad no se pierde y la columna se puede
+            // sumar, promediar y usar en una tabla dinámica.
+            const unidadPorCol = {};
+            for (const c of activeCols) {
+                if (!esNum.has(c)) continue;
+                for (const { r } of origen) {
+                    const u = unidadDe(r?.[c]);
+                    if (u) { unidadPorCol[c] = u; break; }
+                }
+            }
+            const encabezadoDe = (c) => unidadPorCol[c] ? `${c} (${unidadPorCol[c]})` : c;
+
             const celdasDe = (r) => Object.fromEntries(activeCols.map(c => {
                 const v = r[c];
-                if (v === undefined || v === null || v === '') return [c, ''];
-                if (esNum.has(c)) {
-                    const n = parseNum(v);
-                    if (n !== null) return [c, n];
-                }
-                return [c, v];
+                const clave = encabezadoDe(c);
+                if (v === undefined || v === null || v === '') return [clave, ''];
+
+                // Se intenta convertir SIEMPRE, no solo en las columnas
+                // marcadas como numéricas: una columna donde todos los valores
+                // traen "Lbs" no se detectaba como numérica y salía como texto.
+                const n = parseNum(v);
+                if (n !== null && (esNum.has(c) || unidadPorCol[c])) return [clave, n];
+
+                return [clave, v];
             }));
 
             // Fila de subtotal/total: el rótulo va en la primera columna y los
@@ -1169,9 +1241,14 @@ const ERPDashboard = () => {
             const filaDeTotal = (g, rotulo) => {
                 const fila = {};
                 activeCols.forEach((c, i) => {
-                    if (i === 0) { fila[c] = rotulo; return; }
+                    // Mismo nombre de columna que las filas de datos: si el
+                    // total usara "PESO" y los datos "PESO (Lbs)", Excel los
+                    // trataría como dos columnas distintas y el total quedaría
+                    // colgando en una columna vacía.
+                    const clave = encabezadoDe(c);
+                    if (i === 0) { fila[clave] = rotulo; return; }
                     const v = sumCols.includes(c) ? valorResumen(g, c) : null;
-                    fila[c] = v === null ? '' : Number(v.toFixed(2));
+                    fila[clave] = v === null ? '' : Number(v.toFixed(2));
                 });
                 return fila;
             };

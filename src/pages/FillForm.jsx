@@ -40,6 +40,9 @@ import { modoBusquedaProducto, destinoColumnaProducto } from '../utils/busquedaP
 import { buscarCodigosEnUso, detalleDeUso } from '../services/codigosEnUsoService';
 import { validaEspecie, especieDelEncabezado, validarEspecieDeCodigo } from '../utils/validacionEspecie';
 import { DIGITOS_LOTE } from '../utils/validacionLote';
+import HoraInput24 from '../components/HoraInput24';
+import DetalleFilas, { resumenDetalle } from '../components/DetalleFilas';
+import { camposDetalleActuales } from '../utils/detalleCamposActuales';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -215,7 +218,32 @@ function FillForm() {
   const [autoSaveStatus, setAutoSaveStatus] = useState('')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [draftSaving, setDraftSaving] = useState(false) // 📝 Estado de guardado de borrador
-  const [formSaving, setFormSaving] = useState(false) // 💾 Estado de guardado de formulario
+  const [formSaving, setFormSaving] = useState(false)
+
+  // 👁️ Vista previa antes de guardar. Muestra fecha, quién llena y quién firma,
+  // con la fecha editable: es el último momento para corregirla, porque después
+  // hay que entrar a Ver Formularios a cambiarla.
+  const [previaGuardado, setPreviaGuardado] = useState(null)
+
+  // 📋 Celda de detalle abierta: { elementIndex, rowIndex, cellName, col }
+  const [detalleAbierto, setDetalleAbierto] = useState(null)
+  // 📋 La ventana de detalle usa los campos de la plantilla ACTUAL. Un borrador
+  // o una pestaña abierta traen la plantilla vieja y no mostraban los campos u
+  // opciones agregados después. Se abre al instante y se actualiza al llegar.
+  const abrirDetalleActual = (info) => {
+    setDetalleAbierto(info);
+    camposDetalleActuales(selectedTemplate, info)
+      .then(campos => setDetalleAbierto(prev =>
+        (prev && prev.elementIndex === info.elementIndex && prev.rowIndex === info.rowIndex
+          && prev.cellName === info.cellName)
+          ? Object.assign({}, prev, { campos })
+          : prev))
+      .catch(() => { /* sin conexión: quedan los campos que ya había */ });
+  };
+  // Bandera para guardar DESPUÉS de que la fecha nueva esté en el estado.
+  // Llamar a handleSaveForm justo después de setHeaderData no sirve: la función
+  // leería el valor viejo por el closure, y se guardaría la fecha sin cambiar.
+  const [guardarTrasFecha, setGuardarTrasFecha] = useState(false) // 💾 Estado de guardado de formulario
   const [currentDraftId, setCurrentDraftId] = useState(null) // ID del borrador actual
   const [showDraftSuccess, setShowDraftSuccess] = useState(false) // 🔔 Overlay de borrador guardado
   const [globalUseProductApi, setGlobalUseProductApi] = useState(true); // 🌐 Toggle para activar/desactivar la API de productos
@@ -3447,6 +3475,32 @@ useEffect(() => {
     }
   };
 
+  /**
+   * Fecha del formulario para los registros que se derivan de él (lotes,
+   * movimientos de inventario): la que está en el encabezado, no la de hoy.
+   *
+   * Un formulario del día 9 guardado el 10 tiene que generar lotes con fecha
+   * del 9. Si no, el inventario y la trazabilidad quedan fechados el día que
+   * alguien apretó Guardar, que no es cuando pasaron las cosas.
+   */
+  const fechaDelRegistro = () => {
+    const norm = (t) => String(t ?? '')
+      .normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase();
+
+    for (const [clave, valor] of Object.entries(headerData || {})) {
+      const k = norm(clave);
+      if (!/fecha|date/.test(k)) continue;
+      if (/vencim|caduc|version|expir|nacim/.test(k)) continue;
+      const v = String(valor ?? '').trim();
+      if (v) return v.split('T')[0];
+    }
+
+    // Sin fecha en el encabezado: hoy en hora LOCAL. toISOString convierte a
+    // UTC y en Ecuador adelanta el día después de las 19:00.
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const guardarLoteEnInventario = async (lotEntries, campos, blockLabel) => {
     const toSave = (lotEntries || []).filter(e =>
       Object.values(e).some(v => v !== null && v !== undefined && String(v).trim() !== '')
@@ -3455,7 +3509,7 @@ useEffect(() => {
       alert('No hay datos de lote para guardar. Completa al menos un campo.');
       return;
     }
-    const fecha = new Date().toISOString().split('T')[0];
+    const fecha = fechaDelRegistro();   // la del encabezado, no la de hoy
     const templateProceso = selectedTemplate?.proceso || selectedTemplate?.nombre || 'Sin proceso';
     const lotes = toSave.map((e, i) => {
       const loteKey    = (campos || []).find(c => /lote/i.test(c.label))?.key    || 'lote';
@@ -3488,31 +3542,58 @@ useEffect(() => {
   }
 
   // �🗑️ Eliminar filas vacías de una tabla
+  /**
+   * Quita las filas que el operario dejó sin llenar.
+   *
+   * Antes usaba Object.values(row), que incluye las claves internas
+   * (_predefinedIndex, _rowSpan, _hidden). Una fila predefinida siempre tenía
+   * alguna de esas con valor, así que NUNCA se consideraba vacía y el botón no
+   * hacía nada. Ahora se miran solo las columnas de datos.
+   */
   const removeEmptyRows = (elementIndex, fieldLabel) => {
     const tableElement = selectedTemplate?.bodyElements?.[elementIndex];
     if (!tableElement) return;
-    
+
+    // Solo las columnas reales: las que empiezan con "_" son de control interno.
+    const tieneDatos = (row) => Object.entries(row || {})
+      .filter(([k]) => !k.startsWith('_'))
+      .some(([, v]) => v !== null && v !== undefined && String(v).trim() !== '');
+
+    let quitadas = 0;
+
     if (fieldLabel) {
       // Tabla dentro de sección
       setBodyData(prev => prev.map((element, index) => {
         if (index !== elementIndex) return element;
         const updatedData = { ...element.data };
-        const nonEmptyRows = (updatedData[fieldLabel] || []).filter(row => {
-          return Object.values(row).some(val => val && String(val).trim() !== '');
-        });
-        updatedData[fieldLabel] = nonEmptyRows.length > 0 ? nonEmptyRows : updatedData[fieldLabel];
+        const todas = updatedData[fieldLabel] || [];
+        const conDatos = todas.filter(tieneDatos);
+        quitadas = todas.length - conDatos.length;
+        // Nunca se deja la tabla sin filas: sin ninguna no hay dónde escribir.
+        updatedData[fieldLabel] = conDatos.length > 0 ? conDatos : todas.slice(0, 1);
         return { ...element, data: updatedData };
       }));
     } else {
       // Tabla como elemento directo
       setBodyData(prev => prev.map((element, index) => {
         if (index !== elementIndex) return element;
-        const nonEmptyRows = element.data.filter(row => {
-          return Object.values(row).some(val => val && String(val).trim() !== '');
-        });
-        return { ...element, data: nonEmptyRows.length > 0 ? nonEmptyRows : [element.data[0]] };
+        const todas = element.data || [];
+        const conDatos = todas.filter(tieneDatos);
+        quitadas = todas.length - conDatos.length;
+        return { ...element, data: conDatos.length > 0 ? conDatos : todas.slice(0, 1) };
       }));
     }
+
+    // Avisar qué pasó: sin esto, un botón que no hace nada visible parece roto
+    // y el operario lo aprieta varias veces.
+    setTimeout(() => {
+      if (quitadas > 0) {
+        console.log(`🧹 [LIMPIAR] ${quitadas} fila(s) vacía(s) quitada(s)`);
+      } else {
+        alert('No hay filas vacías para quitar.');
+      }
+    }, 0);
+
     setHasUnsavedChanges(true);
   };
 
@@ -5192,21 +5273,51 @@ useEffect(() => {
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      // Soporta tanto array como objeto único
-      const item = Array.isArray(data) ? data[0] : data;
-      if (!item) { console.warn('🔍 API por Código: sin resultados para', code); return; }
 
-      // 🚫 2. VALIDACIÓN DE STOCK Y CÓDIGO YA USADO: verificar en la respuesta de la API
-      const stockVal = item.detTieneStock !== undefined ? item.detTieneStock : (item.DetTieneStock !== undefined ? item.DetTieneStock : (item.dettieneStock !== undefined ? item.dettieneStock : (item.tieneStock !== undefined ? item.tieneStock : item.TieneStock)));
-      const isNoStock = stockVal !== undefined && (stockVal === false || stockVal === 0 || String(stockVal).trim().toLowerCase() === 'false' || String(stockVal).trim() === '0');
-      const isUsado = (item.detUsado === true || item.detUsado === 1 || String(item.detUsado).trim().toLowerCase() === 'true' || String(item.detUsado).trim() === '1') ||
-                      (item.usado === true || item.usado === 1 || String(item.usado).trim().toLowerCase() === 'true' || String(item.usado).trim() === '1') ||
-                      (item.detEstaUsado === true || item.detEstaUsado === 1 || String(item.detEstaUsado).trim().toLowerCase() === 'true' || String(item.detEstaUsado).trim() === '1') ||
-                      (item.estaUsado === true || item.estaUsado === 1 || String(item.estaUsado).trim().toLowerCase() === 'true' || String(item.estaUsado).trim() === '1') ||
-                      (item.isUsed === true || item.isUsed === 1 || String(item.isUsed).trim().toLowerCase() === 'true' || String(item.isUsed).trim() === '1');
+      // ── Elegir la línea correcta ────────────────────────────────────────
+      // Un código puede traer VARIAS líneas de la API: distintas piezas o
+      // partidas del mismo código. Antes se tomaba data[0] a ciegas, así que si
+      // la primera estaba consumida se rechazaba el código entero aunque
+      // hubiera otras disponibles. En planta eso se veía como "me dice que está
+      // usado y no lo está".
+      const sinStock = (it) => {
+        const v = it?.detTieneStock ?? it?.DetTieneStock ?? it?.dettieneStock ?? it?.tieneStock ?? it?.TieneStock;
+        if (v === undefined || v === null) return false;   // la API no informa: no se bloquea
+        const t = String(v).trim().toLowerCase();
+        return v === false || v === 0 || t === 'false' || t === '0';
+      };
+      const yaUsado = (it) => ['detUsado', 'usado', 'detEstaUsado', 'estaUsado', 'isUsed']
+        .some(k => {
+          const v = it?.[k];
+          if (v === undefined || v === null) return false;
+          const t = String(v).trim().toLowerCase();
+          return v === true || v === 1 || t === 'true' || t === '1';
+        });
+
+      const lista = Array.isArray(data) ? data.filter(Boolean) : (data ? [data] : []);
+      if (lista.length === 0) { console.warn('🔍 API por Código: sin resultados para', code); return; }
+
+      // La primera línea DISPONIBLE; si no hay ninguna, la primera para poder
+      // avisar con datos concretos.
+      const disponible = lista.find(it => !sinStock(it) && !yaUsado(it));
+      const item = disponible || lista[0];
+
+      if (lista.length > 1) {
+        console.log(`🔍 [CÓDIGO ${code}] ${lista.length} línea(s); disponibles: ${lista.filter(it => !sinStock(it) && !yaUsado(it)).length}`);
+      }
+
+      const isNoStock = !disponible && sinStock(item);
+      const isUsado   = !disponible && yaUsado(item);
 
       if (isNoStock || isUsado) {
-        alert(`⚠️ Alerta: El código "${code}" ya se encuentra UTILIZADO / USADO ("detTieneStock": false). No se permite seleccionar un código que ya se consumió y no está disponible.`);
+        alert(
+          `⚠️ El código "${code}" no está disponible.\n\n` +
+          (lista.length > 1
+            ? `La API devolvió ${lista.length} línea(s) para este código y ninguna tiene stock libre.\n\n`
+            : '') +
+          `Motivo: ${isNoStock ? 'sin stock (detTieneStock: false)' : 'marcado como ya usado'}.\n\n` +
+          `Si en el sistema externo figura disponible, avisá para revisarlo.`
+        );
         // Se borra el código y TODO lo que la API hubiera llenado por él (incluida
         // una respuesta anterior de la misma celda que llegara antes del aviso).
         limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplate, { codigoABorrar: code });
@@ -5549,6 +5660,34 @@ useEffect(() => {
       const startRowRaw = startRowOverride ?? startRowByTable[elementIndex];
       const startRowIdx = startRowRaw ? Math.max(0, parseInt(startRowRaw, 10) - 1) : 0;
 
+      // 🛑 CONFIRMACIÓN ANTES DE LLENAR EN MASA.
+      //
+      // Se reportó un caso en planta: el operario cargaba códigos uno por uno,
+      // le saltó el aviso de código repetido, apretó Aceptar y se le llenaron
+      // 120 filas de golpe. El alert() bloquea el hilo, y al cerrarlo se
+      // ejecutan los eventos que quedaron encolados: un toque en el botón de
+      // carga por lote entra así, sin que el operario lo note.
+      //
+      // Deshacerlo es reescribir 120 filas a mano. Con la confirmación, un
+      // disparo accidental cuesta un clic en Cancelar.
+      //
+      // Solo pregunta a partir de 5 filas: cargas chicas son deliberadas y
+      // preguntar en cada una sería ruido.
+      if (data.length >= 5) {
+        const desde = startRowIdx + 1;
+        const hasta = startRowIdx + data.length;
+        const ok = window.confirm(
+          `Se van a llenar ${data.length} filas (de la ${desde} a la ${hasta}) ` +
+          `con los códigos del lote.\n\n` +
+          `Si no pediste esta carga, apretá Cancelar: los datos que ya cargaste no se tocan.\n\n` +
+          `¿Continuar?`
+        );
+        if (!ok) {
+          console.log('🛑 [LOTE] Carga masiva cancelada por el usuario');
+          return;
+        }
+      }
+
       // Insertar filas desde la fila de inicio
       setBodyData(prev => prev.map((element, index) => {
         if (index !== elementIndex) return element;
@@ -5584,7 +5723,19 @@ useEffect(() => {
 
   // --- RENDER FIELD CORREGIDO (COMBO BOX FIX) ---
  // --- RENDER FIELD CORREGIDO (COMPLETO Y DEFINITIVO) ---
-  const renderField = useCallback((field, value, onChange, rowIndex = null) => {
+  const renderField = useCallback((field, value, onChange, rowIndex = null, filaActual = null) => {
+    // Hora de inicio de ESTA fila, para avisar si la de fin es anterior. Se
+    // busca por nombre de columna: es el único vínculo entre las dos celdas,
+    // que se dibujan por separado.
+    const horaInicioDeLaFila = (() => {
+      const etiqueta = String(field?.label || field?.name || '').toLowerCase();
+      if (!/fin|final|t[ée]rmino|salida/.test(etiqueta)) return undefined;
+      if (!filaActual) return undefined;
+      const clave = Object.keys(filaActual)
+        .find(k => /hora/i.test(k) && /inicio|inicial|desde|entrada/i.test(k));
+      return clave ? filaActual[clave] : undefined;
+    })();
+
     // 1. CONSTANTES BÁSICAS
     const isManualMode = selectedLotes.includes('MANUAL');
     const fieldType = field.type || 'text';
@@ -6177,7 +6328,36 @@ useEffect(() => {
         
         case "textarea": return <textarea {...commonProps} rows="3" />;
         case "date": return <input type="date" {...commonProps} />;
-        case "time": return <input type="time" {...commonProps} />;
+        case "time":
+          // Dos desplegables 00-23 y minutos, en vez del input de hora del
+          // navegador. Ese se dibuja según la configuración del DISPOSITIVO: en
+          // una tablet en inglés muestra AM/PM y el operario puede guardar las
+          // 20:00 creyendo que puso las 08:00. El error no se ve al llenar y
+          // aparece semanas después como un turno imposible en el reporte.
+          return (
+            <HoraInput24
+              value={commonProps.value}
+              onChange={(v) => commonProps.onChange({ target: { value: v } })}
+              disabled={commonProps.disabled}
+              // El turno del encabezado sirve para avisar si la hora no encaja:
+              // turno día con 20:00 casi siempre es un AM/PM mal elegido.
+              turno={(() => {
+                const t = Object.entries(headerData || {})
+                  .find(([k]) => /turno/i.test(k))?.[1];
+                const v = String(t || '').toLowerCase();
+                if (/noche|nocturno/.test(v)) return 'noche';
+                if (/d[ií]a|diurno/.test(v)) return 'dia';
+                return undefined;
+              })()}
+              // Si esta columna es la hora FIN, se le pasa la de inicio de la
+              // misma fila para avisar cuando termina antes de empezar. Es el
+              // síntoma clásico del AM/PM mal elegido.
+              desde={horaInicioDeLaFila}
+              // Avisos apagados: en planta no hay jornadas fijas de 8 horas y
+              // el aviso saltaba en turnos perfectamente normales.
+              sinAvisos
+            />
+          );
         case "datetime": return <input type="datetime-local" {...commonProps} />;
         
         case "calculated":
@@ -6562,6 +6742,87 @@ useEffect(() => {
   }, [selectedTemplate?.templateID, id]);
 
   // --- GUARDADO FINAL (POST / PUT) ---
+  /**
+   * Campo de fecha del encabezado, si la plantilla tiene uno.
+   * Se busca por nombre y se descartan los de vencimiento y versión, que
+   * también dicen "fecha" pero no son la del registro.
+   */
+  const campoFechaDelFormulario = () => {
+    const campos = selectedTemplate?.headerFields || [];
+    const f = campos.find(c => {
+      const l = String(c?.label || '').toUpperCase();
+      if (!l.includes('FECHA')) return false;
+      return !/VENCIM|CADUC|VERSION|EXPIR|NACIM/.test(l);
+    });
+    return f?.label || null;
+  };
+
+  /** Abre la vista previa. El guardado real corre al confirmar. */
+  const abrirPreviaGuardado = () => {
+    if (isSavingRef.current || formSaving) return;
+    if (!selectedTemplate) {
+      alert('⚠️ No hay plantilla seleccionada. Selecciona una plantilla primero.');
+      return;
+    }
+
+    const campoFecha = campoFechaDelFormulario();
+    const filas = bodyData.reduce((n, el) =>
+      n + (Array.isArray(el?.data) ? el.data.filter(r => r && !r._deleted).length : 0), 0);
+
+    // El usuario se lee acá y no en el JSX: currentUser está declarado dentro
+    // de otras funciones, no en el cuerpo del componente.
+    const u = authService.getCurrentUser();
+
+    // Copia editable de TODO el encabezado: tipo de proceso, turno, destino,
+    // lote… Se trabaja sobre la copia y recién al confirmar se vuelca al
+    // formulario, así "Seguir editando" no deja cambios a medias.
+    const campos = (selectedTemplate?.headerFields || [])
+      .filter(c => c?.label && !String(c.label).toLowerCase().startsWith('unlock'));
+
+    const valores = {};
+    for (const c of campos) valores[c.label] = headerData?.[c.label] ?? '';
+
+    setPreviaGuardado({
+      campoFecha,
+      campos,
+      valores,
+      filas,
+      usuario: u?.nombreCompleto || u?.nombre || u?.username || '—',
+    });
+  };
+
+  /** Confirma la previa: aplica la fecha si se cambió y guarda. */
+  const confirmarPreviaGuardado = () => {
+    const previa = previaGuardado;
+    setPreviaGuardado(null);
+    if (!previa) return;
+
+    // Qué cambió respecto de lo que había en el formulario.
+    const cambios = {};
+    for (const [clave, valor] of Object.entries(previa.valores || {})) {
+      if (String(headerData?.[clave] ?? '') !== String(valor ?? '')) cambios[clave] = valor;
+    }
+
+    if (Object.keys(cambios).length > 0) {
+      // Se escriben los cambios y el guardado queda pendiente: lo dispara el
+      // efecto de abajo, ya con el estado actualizado. Llamar a handleSaveForm
+      // acá mismo leería los valores viejos por el closure.
+      setHeaderData(prev => ({ ...prev, ...cambios }));
+      setGuardarTrasFecha(true);
+      return;
+    }
+
+    handleSaveForm();
+  };
+
+  // Guarda recién cuando la fecha nueva ya está en headerData.
+  useEffect(() => {
+    if (!guardarTrasFecha) return;
+    setGuardarTrasFecha(false);
+    handleSaveForm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guardarTrasFecha, headerData]);
+
  const handleSaveForm = async () => {
     // 🛡️ Guard contra doble ejecución
     if (isSavingRef.current) {
@@ -6659,17 +6920,52 @@ useEffect(() => {
     }
 
     const finalHeaderData = { ...headerData };
-    const fechaCampos = ['fecha', 'Fecha', 'date', 'Date'];
-    const tieneFecha = fechaCampos.some(campo => finalHeaderData[campo]);
-    
-    if (!tieneFecha && !id) {
-      const today = new Date().toISOString().split('T')[0];
-      const fechaField = selectedTemplate.headerFields?.find(f => 
-        f.name === 'fecha' || f.label === 'Fecha' || f.type === 'date'
-      );
-      if (fechaField) {
-        finalHeaderData[fechaField.label || fechaField.name || 'Fecha'] = today;
-        console.log('💾 [SAVE] Fecha auto-asignada:', today);
+
+    // ⚠️ AUTO-ASIGNACIÓN DE FECHA — solo si está REALMENTE vacía.
+    //
+    // Acá había un bug que corrompía datos: la comprobación buscaba las claves
+    // 'fecha', 'Fecha', 'date', 'Date' EXACTAS. El campo de las plantillas se
+    // llama "FECHA" en mayúsculas, así que nunca coincidía: el sistema daba por
+    // hecho que faltaba la fecha y la pisaba con la de hoy.
+    //
+    // En la práctica: se llenaban formularios el día 9, quedaban en borrador, y
+    // al guardarlos el 10 la fecha pasaba a ser el 10. Lo que parecía "el
+    // operario puso mal la fecha" era el sistema cambiándosela.
+    //
+    // Ahora se busca CUALQUIER campo de fecha del encabezado, sin distinguir
+    // mayúsculas ni tildes, y solo se completa el que esté vacío.
+    if (!id) {
+      const normalizar = (t) => String(t ?? '')
+        .normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase();
+
+      // Campos de fecha del REGISTRO. Se excluyen vencimiento y versión: dicen
+      // "fecha" pero no son la del formulario.
+      const camposFecha = (selectedTemplate.headerFields || []).filter(f => {
+        const l = normalizar(f?.label || f?.name);
+        if (!l) return false;
+        if (/vencim|caduc|version|expir|nacim/.test(l)) return false;
+        return f?.type === 'date' || /fecha|date/.test(l);
+      });
+
+      for (const campo of camposFecha) {
+        const clave = campo.label || campo.name;
+        // Se busca la clave real en headerData, que puede diferir en
+        // mayúsculas o tildes de la etiqueta de la plantilla.
+        const claveReal = Object.keys(finalHeaderData)
+          .find(k => normalizar(k) === normalizar(clave)) || clave;
+
+        const actual = String(finalHeaderData[claveReal] ?? '').trim();
+        if (actual) {
+          console.log('💾 [SAVE] Fecha del encabezado respetada:', claveReal, '=', actual);
+          continue;   // ya tiene valor: NO se toca
+        }
+
+        // Hora local, no toISOString: en Ecuador (UTC-5) ese método adelanta el
+        // día a partir de las 19:00 y estamparía la fecha de mañana.
+        const d = new Date();
+        const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        finalHeaderData[claveReal] = hoy;
+        console.log('💾 [SAVE] Fecha vacía, se completó con hoy:', claveReal, '=', hoy);
       }
     }
 
@@ -6762,7 +7058,7 @@ useEffect(() => {
       // 📦 Guardar lotes de trazabilidad en inventario
       if (isTrazaEnabled(selectedTemplate?.templateID) && loteTraza.lotesGenerados?.some(l => l.lote)) {
         const formId = responseData?.formID || responseData?.id || String(Date.now());
-        const fecha = new Date().toISOString().split('T')[0];
+        const fecha = fechaDelRegistro();   // la del encabezado, no la de hoy
         const lotesAGuardar = loteTraza.lotesGenerados
           .filter(lg => lg.lote)
           .map(lg => ({
@@ -6780,7 +7076,7 @@ useEffect(() => {
 
       // 📦 AUTO-GUARDAR lotes desde TODAS las tablas y bloques lote_entrante del formulario
       {
-        const autoFecha     = new Date().toISOString().split('T')[0];
+        const autoFecha     = fechaDelRegistro();   // la del encabezado, no la de hoy
         const templateProc  = selectedTemplate?.proceso || selectedTemplate?.nombre || 'Sin proceso';
         const autoFormId    = responseData?.formID || responseData?.id || null;
         const autoTplId     = String(selectedTemplate?.templateID || '');
@@ -6852,7 +7148,18 @@ useEffect(() => {
           const cfgTabla = selectedTemplate?.bodyElements?.[elIdx];
           const consumeInventario = cfgTabla?.descuentaInventario
             || (cfgTabla?.columns || []).some(c => c?.type === 'inventario');
-          if (consumeInventario) continue;
+
+          // 📥 Las tablas con "Guardar en el Inventario de Lotes" ya crean sus
+          //    lotes más abajo, con la columna de peso que eligió el usuario en
+          //    la plantilla. Este bloque automático adivina el peso buscando una
+          //    columna que diga "peso"; en tablas como la Producción del PD-06
+          //    (TOTAL CAJAS / CAPACIDAD CAJAS / TOTAL Lbs NETAS) no encuentra
+          //    ninguna y crea el lote con 0 Lbs. Como llega primero, el lote
+          //    correcto se descarta después por duplicado y sin ningún aviso.
+          //    Si la tabla está configurada, manda la configuración.
+          const creaConConfig = !!cfgTabla?.guardaInventario;
+
+          if (consumeInventario || creaConConfig) continue;
 
           for (const row of element.data) {
             // Encontrar clave que represente el número de lote
@@ -6904,6 +7211,9 @@ useEffect(() => {
           const resEnt = await aplicarEntradasInventario({
             template: selectedTemplate,
             bodyData: cleanedBodyData,
+            // El encabezado puede traer el número de lote del formulario, para
+            // las tablas configuradas con "el lote viene del encabezado".
+            headerData,
             formId: entFormId,
             procesoDefault: selectedTemplate?.proceso || selectedTemplate?.nombre || '',
             fecha: (headerData?.[Object.keys(headerData || {}).find(k => /fecha/i.test(k))] || '')
@@ -7658,7 +7968,7 @@ useEffect(() => {
               {draftSaving ? '⏳ Guardando...' : '📋 Guardar Borrador'}
             </button>
           )}
-          <button onClick={handleSaveForm} className="btn-primary" disabled={formSaving || draftSaving}
+          <button onClick={abrirPreviaGuardado} className="btn-primary" disabled={formSaving || draftSaving}
             style={{ opacity: (formSaving || draftSaving) ? 0.7 : 1, cursor: (formSaving || draftSaving) ? 'wait' : 'pointer' }}>
               {formSaving ? '⏳ Guardando...' : (id ? 'Actualizar' : 'Guardar Formulario')}
           </button>
@@ -9500,6 +9810,38 @@ useEffect(() => {
           </AccordionSection>
         )}
 
+        {/* 📎 Documento de ayuda de la plantilla.
+            Va arriba de todo y siempre visible, no dentro de un acordeón: si
+            hay que abrirlo para encontrarlo, nadie lo mira. Se abre en otra
+            pestaña para no perder lo que ya se llenó. */}
+        {String(selectedTemplate?.ayudaUrl || '').trim() && (
+          <a
+            href={String(selectedTemplate.ayudaUrl).trim()}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '10px',
+              background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px',
+              padding: '12px 16px', marginBottom: '14px', textDecoration: 'none',
+            }}
+          >
+            <span style={{ fontSize: '22px' }}>📎</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 700, fontSize: '14px', color: '#1e40af' }}>
+                Ver el instructivo de este formulario
+              </span>
+              {selectedTemplate.ayudaNota && (
+                <span style={{ display: 'block', fontSize: '12.5px', color: '#475569', marginTop: '2px' }}>
+                  {selectedTemplate.ayudaNota}
+                </span>
+              )}
+            </span>
+            <span style={{ fontSize: '13px', color: '#2563eb', fontWeight: 600, whiteSpace: 'nowrap' }}>
+              Abrir ↗
+            </span>
+          </a>
+        )}
+
         {/* HEADER FIELDS CON ACORDEÓN */}
         {selectedTemplate.headerFields?.length > 0 && (
             <AccordionSection
@@ -9610,7 +9952,14 @@ useEffect(() => {
                           (value) => handleHeaderChangeWithAutoSave(field.label, value)
                         );
                       })()}
-                      {/* 🆕 Botón para abrir selector de datos */}
+                      {/* 📋 Copiar un dato ya escrito en otro formulario.
+                          Configurable desde Editar Plantilla: en formularios
+                          donde cada registro es independiente, copiar del
+                          anterior arrastra errores en vez de ahorrar tiempo.
+                          El ajuste vive en la primera tabla porque es un
+                          criterio de toda la plantilla, no de un campo. */}
+                      {(selectedTemplate?.bodyElements || [])
+                        .find(el => el?.type === 'table')?.barraCopiarDato !== false && (
                       <button
                         onClick={() => {
                           openDataPicker(
@@ -9646,6 +9995,7 @@ useEffect(() => {
                       >
                         📋
                       </button>
+                      )}
                     </div>
                   </div>
                   );
@@ -10327,18 +10677,29 @@ useEffect(() => {
                 )}
                 <div className="table-header">
                   <div className="table-controls-left">
+                    {/* 🎛️ Botones de la barra, configurables desde Editar
+                        Plantilla. Van visibles salvo que la plantilla los
+                        apague, así que lo ya guardado no cambia.
+                        "Agregar Fila" no se puede apagar: sin él no hay forma
+                        de cargar datos en una tabla vacía. */}
                     <button onClick={() => addTableRow(elementIndex)} className="btn-add-row">
                       + Agregar Fila
                     </button>
+                    {element?.barraAgregarVarias !== false && (
                     <button onClick={() => addMultipleRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #667eea, #764ba2)' }} title="Agregar varias filas a la vez">
                       ++ Agregar Varias
                     </button>
+                    )}
+                    {element?.barraLimpiarVacias !== false && (
                     <button onClick={() => removeEmptyRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }} title="Eliminar filas que están completamente vacías">
                       🧹 Limpiar Vacías
                     </button>
+                    )}
+                    {element?.barraRestaurarFilas !== false && (
                     <button onClick={() => restoreTableRows(elementIndex)} className="btn-add-row" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }} title="Restaurar las filas predefinidas de la plantilla">
                       🔄 Restaurar Filas
                     </button>
+                    )}
                     {/* 📦 Carga multi-recepción por IDs + toggle auto-lookup */}
                     {(() => {
                       const tableTempl = selectedTemplate?.bodyElements?.[elementIndex];
@@ -10510,8 +10871,8 @@ useEffect(() => {
                         </span>
                       );
                     })()}
-                    {/* �📦 Botón de Agrupar / Crear Grupo */}
-                    {!groupingMode[elementIndex] ? (
+                    {/* 📦 Botón de Agrupar / Crear Grupo */}
+                    {element?.barraAgruparFilas === false ? null : !groupingMode[elementIndex] ? (
                       <button
                         onClick={() => toggleGroupingMode(elementIndex)}
                         className="btn-add-row"
@@ -10582,6 +10943,9 @@ useEffect(() => {
     >
       💾 Guardar Estructura
     </button>
+    {/* Guardar Estructura cambia la PLANTILLA desde el llenado. Conviene
+        poder apagarlo: un operario no debería modificar la estructura sin
+        querer mientras carga datos. */}
   </div>
 )}
                 </div>
@@ -10702,13 +11066,46 @@ useEffect(() => {
                           const cellName = (element._columnNameMap instanceof Map ? element._columnNameMap.get(colIndex) : null) || col.label || col.header || col.id;
                           const rangePanelKey = `${elementIndex}-${colIndex}`;
                           const totalRowsCount = (element.data || []).filter(r => !r?._deleted).length;
+
+                          // 🎛️ Ayudas del encabezado de columna, configurables por
+                          // tabla desde Administrar Plantilla. Van visibles salvo
+                          // que la plantilla las apague: así las tablas ya
+                          // guardadas siguen igual que hasta ahora.
+                          const verOcultar  = element?.ayudaOcultarCol   !== false;
+                          const verTodas    = element?.ayudaAplicarTodas !== false;
+                          const verImportar = element?.ayudaImportarCol  !== false;
+                          // "Completar rango" se activa por apiEndpoint, y en el
+                          // PD-04 la columna MATERIAL EMPAQUE / INSUMO usa el
+                          // mismo endpoint que las de pescado, así que aparecía
+                          // ahí aunque no tenga sentido para plásticos.
+                          const verRango    = element?.ayudaCompletarRango !== false;
                           return (
-                            <th key={colIndex} style={{ whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'break-word', position: 'relative', minWidth: '85px', maxWidth: '200px', verticalAlign: 'middle', textAlign: 'center', lineHeight: '1.3' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
-                                <span style={{ fontSize: '0.68rem', wordBreak: 'break-word' }}>{headerText}</span>
+                            <th
+                              key={colIndex}
+                              // Identifica la columna para que el CSS pueda darle
+                              // el ancho que su contenido necesita: un código no
+                              // se puede cortar, una clasificación sí.
+                              data-col={String(headerText || '').toUpperCase()}
+                              style={{
+                                whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'break-word',
+                                position: 'relative', verticalAlign: 'middle', textAlign: 'center', lineHeight: '1.3',
+                                // El ancho lo decide el CSS, no un valor fijo acá.
+                                // Con minWidth 85 / maxWidth 200 en línea, las
+                                // columnas de texto se llevaban 340px y PESO
+                                // quedaba en 90: ilegible y contra el borde.
+                                padding: '6px 8px',
+                              }}
+                            >
+                              {/* Los controles van en FILA, no apilados. Con
+                                  flexDirection column el encabezado medía tres
+                                  veces la altura de una fila de datos y se
+                                  comía la pantalla en tablet. */}
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 700, wordBreak: 'break-word', lineHeight: 1.25 }}>{headerText}</span>
+                                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: '5px', flexWrap: 'wrap' }}>
 
                                 {/* 🚫 Ocultar esta columna en Ver/PDF/Excel (por registro) */}
-                                {(() => {
+                                {verOcultar && (() => {
                                   const hcKey = col.label || col.name || col.header;
                                   const hidden = !!(currentElementData?.hiddenColumns?.[hcKey]);
                                   return (
@@ -10721,7 +11118,7 @@ useEffect(() => {
                                 })()}
 
                                 {/* 🐟📦 Botón de rango para columnas PRODUCTOS_POR_ESPECIE (solo si es editable) */}
-                                {isEspecieProductoCol && isColEditable && (
+                                {verRango && isEspecieProductoCol && isColEditable && (
                                   <div style={{ position: 'relative', width: '100%' }}>
                                     <button
                                       type="button"
@@ -10751,8 +11148,8 @@ useEffect(() => {
                                         padding: '2px 5px',
                                         fontSize: '0.6rem',
                                         cursor: 'pointer',
-                                        width: '100%',
                                         fontWeight: 700,
+                                        whiteSpace: 'nowrap',
                                       }}
                                     >
                                       🐟 Completar rango
@@ -10761,7 +11158,7 @@ useEffect(() => {
                                 )}
 
                                 {/* 🎯 Aplicar valor a todas las filas */}
-                                {!isFormulaCol && !isEspecieProductoCol && (
+                                {verTodas && !isFormulaCol && !isEspecieProductoCol && (
                                   isSelectCol ? (
                                     <select
                                       onChange={(e) => {
@@ -10822,6 +11219,7 @@ useEffect(() => {
                                   )
                                 )}
                                 {/* 📥 Botón para importar columna de otro formulario */}
+                                {verImportar && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -10845,6 +11243,8 @@ useEffect(() => {
                                 >
                                   📥
                                 </button>
+                                )}
+                                </div>
                               </div>
                             </th>
                           );
@@ -10996,6 +11396,7 @@ useEffect(() => {
               if (isPredefinedCell) {
                 return (
                   <td key={`${elementIndex}-${rowIndex}-${colIndex}`} rowSpan={cellRowSpan || undefined}
+                    data-col={String(col?.label || col?.header || '').toUpperCase()}
                     style={{
                       fontWeight: 600, color: '#1f2937', background: '#f0f9ff',
                       verticalAlign: 'middle', textAlign: 'center', padding: '8px',
@@ -11095,6 +11496,7 @@ useEffect(() => {
             const valorCalculado = calcularFormulaDinamica(col.formula, rowAlias, allTableRows, rowIndex);
             return (
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border"
+                  data-col={String(col?.label || col?.header || '').toUpperCase()}
                   style={{backgroundColor: '#e6fffa', textAlign: 'right', fontWeight: 'bold', color: '#1f5c1f'}}>
                 {valorCalculado || row[cellName] || '0.00'}{col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '3px' }}>{col.unit}</span>}
               </td>
@@ -11109,6 +11511,7 @@ useEffect(() => {
             const valorCalculado = evaluarFormula(col.formula, rowAlias, allTableRows, rowIndex);
             return (
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border"
+                  data-col={String(col?.label || col?.header || '').toUpperCase()}
                   style={{backgroundColor: '#f0fdf4', textAlign: 'right', fontWeight: 'bold', color: '#166534'}}>
                 {valorCalculado === "" ? "" : (valorCalculado || row[cellName] || '')}{col.unit && <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '3px' }}>{col.unit}</span>}
               </td>
@@ -11128,6 +11531,7 @@ useEffect(() => {
             }
             return (
               <td key={`${elementIndex}-${rowIndex}-${colIndex}-${cellName}`} rowSpan={cellRowSpan || undefined} className="p-2 border"
+                  data-col={String(col?.label || col?.header || '').toUpperCase()}
                   style={{backgroundColor: '#fef3c7', textAlign: 'right', fontWeight: 'bold', color: '#92400e'}}>
                 {displayVal}%{col.unit && col.unit !== '%' && <span style={{ fontSize: '0.72rem', color: '#6b7280', marginLeft: '3px' }}>{col.unit}</span>}
               </td>
@@ -11256,6 +11660,85 @@ useEffect(() => {
             );
           }
 
+          // ✅ CHECK DE ENTRADA / SALIDA
+          //
+          // Dos casillas en una celda. Marcan dónde arranca y dónde termina un
+          // flujo de trabajo, en vez de deducirlo de las horas: en planta no hay
+          // turnos fijos de 8 horas, así que el sistema no puede adivinar si un
+          // tramo cerró la jornada o sigue.
+          //
+          // El valor se guarda como texto ('inicio', 'cierre', 'inicio+cierre'
+          // o vacío) para no tener que agregar columnas a la base.
+          if (col.type === 'inicioCierre') {
+            const val = String(row[resolvedCellName] || '');
+            const tieneInicio = val.includes('inicio');
+            const tieneCierre = val.includes('cierre');
+
+            const alternar = (cual) => {
+              const ini = cual === 'inicio' ? !tieneInicio : tieneInicio;
+              const cie = cual === 'cierre' ? !tieneCierre : tieneCierre;
+              const nuevo = [ini && 'inicio', cie && 'cierre'].filter(Boolean).join('+');
+              handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, nuevo);
+            };
+
+            const casilla = (activo, texto, cual, color) => (
+              <label
+                onClick={(e) => { e.preventDefault(); alternar(cual); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  cursor: 'pointer', userSelect: 'none',
+                  // 40px de alto para tocar con el dedo: esta tabla se llena en tablet.
+                  minHeight: '40px', padding: '2px 6px', borderRadius: '6px',
+                  background: activo ? `${color}18` : 'transparent',
+                  border: `1.5px solid ${activo ? color : '#e2e8f0'}`,
+                }}
+              >
+                <input type="checkbox" checked={activo} readOnly
+                       style={{ width: '17px', height: '17px', accentColor: color, cursor: 'pointer', margin: 0 }} />
+                <span style={{ fontSize: '11.5px', fontWeight: 700, color: activo ? color : '#94a3b8' }}>
+                  {texto}
+                </span>
+              </label>
+            );
+
+            return (
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}`} rowSpan={cellRowSpan || undefined}
+                  style={{ padding: '4px 6px', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  {casilla(tieneInicio, 'Entrada', 'inicio', '#16a34a')}
+                  {casilla(tieneCierre, 'Salida', 'cierre', '#dc2626')}
+                </div>
+              </td>
+            );
+          }
+
+          // 📋 Columna de DETALLE: la celda guarda una lista y se edita en una
+          // ventana. Reemplaza a tener columnas fijas como TAMAÑO y CANTIDAD,
+          // que solo admiten un valor por renglón.
+          if (col.type === 'detalle') {
+            const campos = col.detalleCampos || [];
+            const resumen = resumenDetalle(row[resolvedCellName], campos);
+            return (
+              <td key={`${elementIndex}-${rowIndex}-${colIndex}`} rowSpan={cellRowSpan || undefined}
+                  data-col={String(col?.label || '').toUpperCase()}
+                  style={{ padding: '4px 6px', verticalAlign: 'middle' }}>
+                <button
+                  type="button"
+                  className={`df-celda ${resumen ? 'df-celda--con' : 'df-celda--vacia'}`}
+                  onClick={() => abrirDetalleActual({
+                    elementIndex, rowIndex, cellName: resolvedCellName, col,
+                    valor: row[resolvedCellName],
+                  })}
+                  title={campos.length === 0
+                    ? 'Esta columna no tiene campos configurados en la plantilla'
+                    : 'Abrir para cargar las filas'}
+                >
+                  {resumen || '➕ Agregar detalle'}
+                </button>
+              </td>
+            );
+          }
+
           if (col.type === 'inventario' && !col.campoLibre) {
             const cfgTabla  = selectedTemplate?.bodyElements?.[elementIndex] || element;
             const colsTpl   = cfgTabla?.columns || element.columns || [];
@@ -11297,6 +11780,23 @@ useEffect(() => {
                     {opciones.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 ) : (
+                  // Sin opciones cargadas queda este campo de respaldo.
+                  //
+                  // Con `soloDesplegable` la plantilla lo bloquea: en tablet el
+                  // operario podía tipear cualquier cosa y quedaba un valor que
+                  // no existe en el inventario. En la computadora el desplegable
+                  // suele resolverse solo, por eso el problema se veía únicamente
+                  // en tablet.
+                  col.soloDesplegable ? (
+                    <input
+                      type="text"
+                      value={valorAct}
+                      readOnly
+                      placeholder={esProd ? 'Sin producción registrada' : 'Sin lotes disponibles'}
+                      title="Este campo solo admite valores de la lista. Si no aparece ninguno, avisá a supervisión."
+                      style={{ width: '100%', padding: '4px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px', background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }}
+                    />
+                  ) : (
                   <input
                     type="text"
                     value={valorAct}
@@ -11304,6 +11804,7 @@ useEffect(() => {
                     placeholder={esProd ? 'Sin producción registrada — escriba manual' : 'Sin lotes en inventario — escriba manual'}
                     style={{ width: '100%', padding: '4px 8px', border: '1px dashed #60a5fa', borderRadius: '4px', fontSize: '13px', background: '#f8fafc' }}
                   />
+                  )
                 )}
                 {loteSel && (
                   <div style={{ marginTop: '3px', fontSize: '10.5px', color: excedeSaldo ? '#b91c1c' : '#1d4ed8', fontWeight: 600 }}>
@@ -11433,7 +11934,7 @@ useEffect(() => {
                         background: '#f3f4f6', color: '#374151', cursor: 'not-allowed'
                       }}
                     />
-                  ) : renderField(colForRender, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex)}
+                  ) : renderField(colForRender, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex, row)}
                 </div>
                 {isApiCodigoTrigger && (
                   <button
@@ -12888,7 +13389,7 @@ useEffect(() => {
               {draftSaving ? '⏳ Guardando borrador...' : '📋 Guardar Borrador'}
             </button>
           )}
-          <button onClick={handleSaveForm} className="btn-primary btn-large" disabled={formSaving || draftSaving}
+          <button onClick={abrirPreviaGuardado} className="btn-primary btn-large" disabled={formSaving || draftSaving}
             style={{ opacity: (formSaving || draftSaving) ? 0.7 : 1, cursor: (formSaving || draftSaving) ? 'wait' : 'pointer' }}>
             {formSaving ? '⏳ Guardando...' : (id ? '💾 Guardar Cambios' : '💾 Guardar Formulario Completo')}
           </button>
@@ -12957,7 +13458,294 @@ useEffect(() => {
           </div>
         </>
       )}
+
+      {/* 👁️ VISTA PREVIA ANTES DE GUARDAR
+          Último momento para corregir la fecha: después hay que entrar a Ver
+          Formularios a cambiarla. Muestra también quién llena y qué firmas
+          faltan, que es lo que se revisa antes de dar por cerrado un registro. */}
+      {previaGuardado && (
+        <div
+          onClick={() => setPreviaGuardado(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: '14px', width: '100%', maxWidth: '560px', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,.3)' }}
+          >
+            <div style={{ background: 'linear-gradient(135deg,#0ea5e9,#2563eb)', color: '#fff', padding: '16px 20px', borderRadius: '14px 14px 0 0' }}>
+              <div style={{ fontSize: '17px', fontWeight: 700 }}>👁️ Revisá antes de guardar</div>
+              <div style={{ fontSize: '13px', opacity: .9, marginTop: '2px' }}>
+                {selectedTemplate?.codigo} · {selectedTemplate?.nombre}
+              </div>
+            </div>
+
+            <div style={{ padding: '18px 20px' }}>
+              {/* 📅 FECHA DEL REGISTRO — bloque propio, arriba de todo.
+                  Es el dato que más se equivoca: el operario llena el
+                  formulario del turno de ayer y la fecha queda con la de hoy.
+                  Corregirlo después obliga a entrar a Ver Formularios, así que
+                  este es el momento en que hay que verlo sí o sí. */}
+              {(() => {
+                const campoF = previaGuardado.campos.find((c) => (
+                  (c?.type === 'date' || c?.label === previaGuardado.campoFecha)
+                  && !/vencim|caduc|version|expir/i.test(String(c?.label || ''))
+                ));
+                if (!campoF) return null;
+
+                const clave = campoF.label;
+                const valor = String(previaGuardado.valores[clave] ?? '').split('T')[0];
+                const original = String(headerData?.[clave] ?? '').split('T')[0];
+                const cambiado = valor !== original;
+
+                // Hoy en hora local. toISOString convierte a UTC y en Ecuador
+                // (UTC-5) adelanta el día a partir de las 19:00.
+                const d = new Date();
+                const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const esHoy = valor === hoy;
+
+                return (
+                  <div style={{
+                    background: cambiado ? '#fffbeb' : '#eff6ff',
+                    border: `2.5px solid ${cambiado ? '#f59e0b' : '#3b82f6'}`,
+                    borderRadius: '12px',
+                    padding: '16px 18px',
+                    marginBottom: '18px',
+                    boxShadow: `0 0 0 4px ${cambiado ? 'rgba(245,158,11,.12)' : 'rgba(59,130,246,.12)'}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '22px' }}>📅</span>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: cambiado ? '#92400e' : '#1e40af', textTransform: 'uppercase', letterSpacing: '.4px' }}>
+                        {clave}
+                      </span>
+                      {cambiado && (
+                        <span style={{ fontSize: '11px', fontWeight: 700, background: '#f59e0b', color: '#fff', borderRadius: '999px', padding: '2px 9px' }}>
+                          CORREGIDA
+                        </span>
+                      )}
+                    </div>
+
+                    <input
+                      type="date"
+                      value={valor}
+                      onChange={(e) => setPreviaGuardado(p => ({
+                        ...p, valores: { ...p.valores, [clave]: e.target.value },
+                      }))}
+                      style={{
+                        width: '100%', maxWidth: '260px',
+                        padding: '13px 15px',
+                        fontSize: '22px', fontWeight: 800,
+                        color: '#1e3a8a', background: '#fff',
+                        border: `2.5px solid ${cambiado ? '#f59e0b' : '#60a5fa'}`,
+                        borderRadius: '9px',
+                        letterSpacing: '.5px',
+                      }}
+                    />
+
+                    <div style={{ fontSize: '12.5px', color: cambiado ? '#92400e' : '#1e40af', marginTop: '9px', lineHeight: 1.5 }}>
+                      {!valor
+                        ? '⚠️ Falta la fecha. El registro se va a guardar sin ella.'
+                        : cambiado
+                          ? `Se va a guardar con esta fecha, no con la que tenía (${original || 'vacía'}).`
+                          : esHoy
+                            ? '👉 Es la fecha de HOY. Si el formulario es de otro día, corregila acá.'
+                            : 'Confirmá que sea la fecha del registro.'}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Todos los campos del encabezado, editables: fecha, tipo de
+                  proceso, turno, destino, lote. Es el último momento para
+                  corregirlos sin entrar después a Ver Formularios.
+                  Se respeta el tipo de cada uno: date con calendario, select
+                  con sus opciones, el resto texto. */}
+              {previaGuardado.campos.length === 0 ? (
+                <div style={{ marginBottom: '16px', fontSize: '12.5px', color: '#64748b' }}>
+                  Esta plantilla no tiene campos en el encabezado.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: '10px', marginBottom: '16px' }}>
+                  {previaGuardado.campos
+                    // La fecha del registro no va acá: se dibuja arriba, en su
+                    // propio bloque destacado. Mezclada con lote, especie y
+                    // turno pasaba desapercibida, que es justo lo que no se
+                    // quiere del dato que más se equivoca.
+                    .filter((c) => !(
+                      (c?.type === 'date' || c?.label === previaGuardado.campoFecha)
+                      && !/vencim|caduc|version|expir/i.test(String(c?.label || ''))
+                    ))
+                    .map((campo) => {
+                    const clave = campo.label;
+                    const valor = previaGuardado.valores[clave] ?? '';
+                    const cambiado = String(headerData?.[clave] ?? '') !== String(valor ?? '');
+                    const esFecha = campo.type === 'date' || clave === previaGuardado.campoFecha;
+                    const opciones = Array.isArray(campo.options) ? campo.options : [];
+
+                    const setVal = (v) => setPreviaGuardado(p => ({
+                      ...p, valores: { ...p.valores, [clave]: v },
+                    }));
+
+                    // Solo la fecha del REGISTRO se resalta, no las de
+                    // vencimiento o versión.
+                    const esPrincipal = esFecha && !/vencim|caduc|version|expir/i.test(clave);
+
+                    const estiloInput = {
+                      width: '100%',
+                      padding: esPrincipal ? '11px 12px' : '8px 10px',
+                      fontSize: esPrincipal ? '17px' : '13.5px',
+                      fontWeight: esPrincipal ? 800 : 600,
+                      color: '#1e40af', background: '#fff',
+                      border: (esPrincipal ? 2.5 : 2) + 'px solid ' + (cambiado ? '#f59e0b' : (esPrincipal ? '#60a5fa' : '#bfdbfe')),
+                      borderRadius: '7px',
+                    };
+
+                    return (
+                      <div
+                        key={clave}
+                        style={{
+                          background: cambiado ? '#fffbeb' : (esPrincipal ? '#eff6ff' : '#f8fafc'),
+                          border: (esPrincipal ? 2 : 1) + 'px solid ' + (cambiado ? '#fcd34d' : (esPrincipal ? '#93c5fd' : '#e2e8f0')),
+                          borderRadius: '8px',
+                          padding: esPrincipal ? '12px 14px' : '9px 11px',
+                          // Fila entera: la fecha destaca sola y el calendario
+                          // queda cómodo.
+                          gridColumn: esPrincipal ? '1 / -1' : undefined,
+                          boxShadow: esPrincipal && !cambiado ? '0 0 0 3px rgba(59,130,246,.10)' : undefined,
+                        }}
+                      >
+                        <label style={{ display: 'block', fontSize: esPrincipal ? '11.5px' : '10.5px', fontWeight: 700, color: esPrincipal ? '#1e40af' : '#64748b', textTransform: 'uppercase', marginBottom: '5px' }}>
+                          {esFecha ? '📅 ' : ''}{clave}
+                          {cambiado && <span style={{ color: '#b45309', marginLeft: '5px' }}>• editado</span>}
+                        </label>
+
+                        {esFecha ? (
+                          <input type="date" value={String(valor).split('T')[0]} onChange={(e) => setVal(e.target.value)} style={estiloInput} />
+                        ) : campo.type === 'select' && opciones.length > 0 ? (
+                          <select value={valor} onChange={(e) => setVal(e.target.value)} style={estiloInput}>
+                            <option value="">— Sin elegir —</option>
+                            {opciones.map((o) => {
+                              const v = typeof o === 'object' ? (o.value ?? o.label) : o;
+                              return <option key={v} value={v}>{typeof o === 'object' ? (o.label ?? v) : o}</option>;
+                            })}
+                          </select>
+                        ) : campo.type === 'time' ? (
+                          <input type="time" value={valor} onChange={(e) => setVal(e.target.value)} style={estiloInput} />
+                        ) : (
+                          <input type="text" value={valor} onChange={(e) => setVal(e.target.value)} style={estiloInput} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: '10px', marginBottom: '16px' }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px' }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Lo llena</div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a', marginTop: '2px' }}>
+                    {previaGuardado.usuario}
+                  </div>
+                </div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px' }}>
+                  <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Filas cargadas</div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a', marginTop: '2px' }}>
+                    {previaGuardado.filas}
+                  </div>
+                </div>
+              </div>
+
+              {(selectedTemplate?.firmas || []).length > 0 && (
+                <div>
+                  <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '7px' }}>
+                    Firmas ({(selectedTemplate.firmas || []).filter(f => firmasData?.[f.puesto]).length} de {(selectedTemplate.firmas || []).length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {(selectedTemplate.firmas || []).map((f) => {
+                      const dato = firmasData?.[f.puesto];
+                      const firmo = !!dato;
+                      const quien = dato && typeof dato === 'object'
+                        ? (dato.nombre || dato.nombreCompleto || dato.firmante || '')
+                        : (typeof dato === 'string' ? dato : '');
+                      return (
+                        <div key={f.puesto} style={{ display: 'flex', alignItems: 'center', gap: '9px', background: firmo ? '#f0fdf4' : '#fffbeb', border: '1px solid ' + (firmo ? '#bbf7d0' : '#fde68a'), borderRadius: '7px', padding: '8px 11px' }}>
+                          <span>{firmo ? '✅' : '⏳'}</span>
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#334155' }}>{f.puesto}</span>
+                            <span style={{ fontSize: '12px', color: firmo ? '#15803d' : '#92400e' }}>
+                              {firmo ? (quien || f.nombreCompleto || 'Firmado') : 'Pendiente' + (f.nombreCompleto ? ' · ' + f.nombreCompleto : '')}
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', padding: '14px 20px', borderTop: '1px solid #f1f5f9' }}>
+              <button
+                type="button"
+                onClick={() => setPreviaGuardado(null)}
+                style={{ padding: '10px 18px', border: '1.5px solid #cbd5e1', background: '#fff', color: '#475569', borderRadius: '8px', fontWeight: 600, fontSize: '14px', cursor: 'pointer' }}
+              >
+                Seguir editando
+              </button>
+              {(() => {
+                // Cuántos campos del encabezado se tocaron acá. Sirve para que
+                // el operario vea que sus correcciones sí se van a guardar.
+                const editados = Object.entries(previaGuardado.valores || {})
+                  .filter(([k, v]) => String(headerData?.[k] ?? '') !== String(v ?? '')).length;
+                return (
+                  <button
+                    type="button"
+                    onClick={confirmarPreviaGuardado}
+                    disabled={formSaving}
+                    style={{ padding: '10px 22px', border: 'none', background: '#16a34a', color: '#fff', borderRadius: '8px', fontWeight: 700, fontSize: '14px', cursor: formSaving ? 'not-allowed' : 'pointer', opacity: formSaving ? .6 : 1 }}
+                  >
+                    {formSaving
+                      ? 'Guardando…'
+                      : `💾 Confirmar y guardar${editados > 0 ? ` (${editados} corregido${editados === 1 ? '' : 's'})` : ''}`}
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📋 Ventana de detalle de una celda */}
+      {detalleAbierto && (
+        <DetalleFilas
+          valor={detalleAbierto.valor}
+          campos={detalleAbierto.campos || detalleAbierto.col?.detalleCampos || []}
+          titulo={detalleAbierto.col?.label || 'Detalle'}
+          // Los catálogos que el formulario ya trajo, por endpoint. Cada campo
+          // de la ventana declara cuál usa y qué parte trae, así escribir el
+          // código completa el material y al revés.
+          catalogos={{
+            INSUMOS: apiCatalogData?.insumos || [],
+            PRODUCTOS: apiCatalogData?.productos || [],
+            ESPECIES: apiCatalogData?.especies || [],
+            BALANZAS: apiCatalogData?.balanzas || [],
+            PROVEEDORES: apiCatalogData?.proveedores || [],
+          }}
+          // El token de la API externa: con él los campos que declaran búsqueda
+          // consultan en vivo, igual que las columnas «Buscar por código…».
+          getToken={ensureApiToken}
+          onGuardar={(filas) => handleTableFieldChangeWithAutoSave(
+            detalleAbierto.elementIndex,
+            detalleAbierto.rowIndex,
+            detalleAbierto.cellName,
+            // Se guarda como JSON: la celda es una sola columna de texto en la
+            // base, así el dato viaja completo sin cambiar el esquema.
+            JSON.stringify(filas)
+          )}
+          onCerrar={() => setDetalleAbierto(null)}
+        />
+      )}
     </div>
+
   );
 }
 

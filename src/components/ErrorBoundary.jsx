@@ -15,8 +15,25 @@ class ErrorBoundary extends React.Component {
 
   static getDerivedStateFromError(error) {
     // Actualizar estado para mostrar UI de fallback
-    return { hasError: true };
+    return { hasError: true, error, errorPath: window.location.pathname };
   }
+
+  componentDidUpdate() {
+    // Si se navega a otra ruta (ej. abrir otro formulario desde el buscador),
+    // el error del anterior no debe seguir tapando la pantalla nueva.
+    if (this.state.hasError && window.location.pathname !== this.state.errorPath) {
+      this.setState({ hasError: false, error: null, errorInfo: null, errorPath: null });
+    }
+  }
+
+  /** Borra el autoguardado del navegador del formulario que se está editando. */
+  descartarAutoguardado = () => {
+    const m = window.location.pathname.match(/\/edit-filled-form\/([^/?#]+)/);
+    if (m) {
+      try { localStorage.removeItem(`autosave_edit_form_${m[1]}`); } catch { /* sin acceso */ }
+    }
+    window.location.reload();
+  };
 
   componentDidCatch(error, errorInfo) {
     // Log del error
@@ -65,8 +82,9 @@ class ErrorBoundary extends React.Component {
             marginBottom: '30px',
             lineHeight: '1.6'
           }}>
-            El formulario encontró un error inesperado.<br/>
-            No te preocupes, tus datos están guardados automáticamente.
+            El formulario encontró un error inesperado al mostrarse.<br/>
+            Lo que ya estaba guardado en el sistema <strong>no se borra</strong> por este error.<br/>
+            Si hiciste cambios sin guardar, puede que se hayan quedado solo en este navegador.
           </p>
 
           <div style={{
@@ -118,10 +136,30 @@ class ErrorBoundary extends React.Component {
             >
               🏠 Volver al Inicio
             </button>
+
+            {/\/edit-filled-form\//.test(window.location.pathname) && (
+              <button
+                onClick={this.descartarAutoguardado}
+                title="Borra los cambios sin guardar de este navegador y vuelve a abrir el formulario con los datos del sistema"
+                style={{
+                  padding: '12px 24px',
+                  backgroundColor: '#e67e22',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                🧹 Descartar cambios locales y recargar
+              </button>
+            )}
           </div>
 
-          {/* Detalles del error (solo en desarrollo) */}
-          {process.env.NODE_ENV === 'development' && this.state.error && (
+          {/* Detalle del error: el mensaje se muestra siempre (para poder
+              reportarlo); el stack completo solo en desarrollo. */}
+          {this.state.error && (
             <details style={{
               marginTop: '30px',
               textAlign: 'left',
@@ -136,7 +174,7 @@ class ErrorBoundary extends React.Component {
                 color: '#5a5c69',
                 marginBottom: '10px'
               }}>
-                🔍 Ver detalles técnicos
+                🔍 Ver detalle técnico (copiar y enviar a soporte)
               </summary>
               
               <div style={{
@@ -161,10 +199,11 @@ class ErrorBoundary extends React.Component {
                   fontSize: '12px',
                   color: '#333'
                 }}>
-                  {this.state.error.toString()}
+                  {String(this.state.error?.message || this.state.error)}
+                  {'\n'}Ruta: {this.state.errorPath}
                 </pre>
 
-                {this.state.errorInfo && (
+                {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
                   <>
                     <p style={{ 
                       color: '#e74a3b',

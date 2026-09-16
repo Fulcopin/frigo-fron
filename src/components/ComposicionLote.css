@@ -1,0 +1,140 @@
+.cl-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.cl-loading, .cl-error {
+  padding: 20px; text-align: center; font-size: .85rem; border-radius: 10px;
+}
+.cl-loading { color: #64748b; }
+.cl-error { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+
+/* ── Cabecera ───────────────────────────────────────────────────────────── */
+.cl-cabecera { border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 14px; }
+.cl-cabecera h3 { margin: 0; font-size: 1.15rem; color: #0f172a; letter-spacing: .3px; }
+
+.cl-meta {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 4px; font-size: .8rem; color: #64748b;
+}
+.cl-estado {
+  font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  border-radius: 999px; padding: 2px 9px; margin-left: 4px;
+}
+.cl-estado-disponible { background: #dcfce7; color: #15803d; }
+.cl-estado-parcial    { background: #fef3c7; color: #92400e; }
+.cl-estado-consumido  { background: #f1f5f9; color: #64748b; }
+
+.cl-pesos { display: flex; gap: 18px; margin-top: 8px; font-size: .82rem; color: #475569; }
+.cl-pesos strong { color: #0f172a; font-size: .95rem; }
+
+.cl-aviso {
+  background: #fffbeb; border: 1px solid #fcd34d; color: #92400e;
+  border-radius: 8px; padding: 10px 12px; font-size: .8rem; line-height: 1.6;
+}
+
+/* ── Secciones ──────────────────────────────────────────────────────────── */
+.cl-seccion { margin-top: 20px; }
+.cl-seccion h4 { margin: 0 0 3px; font-size: .9rem; color: #1e293b; }
+.cl-sub { margin: 0 0 10px; font-size: .76rem; color: #64748b; line-height: 1.6; }
+
+.cl-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+
+.cl-fila {
+  display: grid;
+  grid-template-columns: 108px 1fr 96px 62px;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.cl-fila:hover { background: #f8fafc; }
+
+.cl-lista-raiz .cl-fila { grid-template-columns: 108px 1fr 62px; }
+
+.cl-lote {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: .8rem; font-weight: 600; color: #0284c7;
+  background: none; border: none; padding: 0; text-align: left; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cl-lote:hover:not(:disabled) { text-decoration: underline; }
+.cl-lote:disabled { color: #334155; cursor: default; }
+
+.cl-barra-zona { position: relative; height: 20px; display: flex; align-items: center; }
+.cl-barra {
+  position: absolute; left: 0; top: 3px; bottom: 3px;
+  border-radius: 3px; min-width: 2px;
+}
+.cl-barra-entrada { background: #93c5fd; }
+.cl-barra-salida  { background: #86efac; }
+.cl-barra-raiz    { background: #c4b5fd; }
+
+.cl-detalle {
+  position: relative; z-index: 1; padding-left: 8px;
+  font-size: .72rem; color: #334155;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.cl-lbs { font-size: .78rem; color: #475569; text-align: right; white-space: nowrap; }
+.cl-pct { font-size: .8rem; font-weight: 700; color: #0f172a; text-align: right; }
+
+@media (max-width: 640px) {
+  .cl-fila { grid-template-columns: 92px 1fr 56px; }
+  .cl-lbs { display: none; }
+  .cl-panel { padding: 14px; }
+}
+
+/* ── Mapa de trazabilidad ────────────────────────────────────────────────── */
+.cl-mapa {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fcfcfd;
+  overflow-x: auto;
+}
+
+.cl-nodo { position: relative; }
+.cl-nodo-hijos {
+  border-left: 1px dashed #cbd5e1;
+  margin-left: 9px;
+  padding-left: 6px;
+}
+
+.cl-nodo-fila {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.cl-nodo-fila:hover { background: #f1f5f9; }
+
+.cl-nodo-toggle {
+  border: none; background: none; cursor: pointer;
+  color: #64748b; font-size: .65rem; padding: 0; width: 14px; flex-shrink: 0;
+}
+.cl-nodo-toggle:disabled { color: #cbd5e1; cursor: default; }
+
+.cl-nodo-prod {
+  font-size: .74rem; color: #64748b;
+  max-width: 210px; overflow: hidden; text-overflow: ellipsis;
+}
+.cl-nodo-lbs  { font-size: .76rem; color: #475569; margin-left: auto; }
+.cl-nodo-pct  { font-size: .8rem; font-weight: 700; color: #0f172a; min-width: 58px; text-align: right; }
+.cl-nodo-acum { font-size: .72rem; color: #7c3aed; font-weight: 600; }
+
+.cl-tag {
+  font-size: .64rem; font-weight: 700; text-transform: uppercase;
+  border-radius: 999px; padding: 2px 8px;
+}
+.cl-tag-raiz  { background: #ede9fe; color: #5b21b6; }
+.cl-tag-corte { background: #fef3c7; color: #92400e; }
+
+@media (max-width: 640px) {
+  .cl-nodo-prod { display: none; }
+  .cl-nodo-lbs  { display: none; }
+}

@@ -128,6 +128,38 @@ export function contarPendientes(mensajes) {
   ).length;
 }
 
+/**
+ * Datos del usuario actual, para saber cuáles mensajes son suyos.
+ * @returns {{nombre: string, email: string}|null}
+ */
+export function remitenteActual() {
+  const u = authService.getCurrentUser();
+  if (!u) return null;
+  return {
+    nombre: u.nombreCompleto || u.nombre || u.username || '',
+    email: u.email || u.username || '',
+  };
+}
+
+/**
+ * Respuestas del admin que este usuario todavía no vio.
+ *
+ * Un ticket cuenta si tiene respuesta y su id no está en la lista de leídos.
+ * Sin el set de leídos, el contador quedaría encendido para siempre: la
+ * respuesta sigue estando ahí después de leerla.
+ *
+ * @param {Array} mensajes
+ * @param {Set} leidos ids ya vistos
+ */
+export function contarRespuestasNuevas(mensajes, leidos) {
+  const vistos = leidos instanceof Set ? leidos : new Set(leidos || []);
+  return (mensajes || []).filter(t => {
+    if (!String(t.respuestaAdmin || '').trim()) return false;
+    const id = t.ticketId ?? t.id;
+    return id != null && !vistos.has(id);
+  }).length;
+}
+
 /** Respuestas nuevas para el usuario que escribió (para su propio contador). */
 export function contarRespondidos(mensajes) {
   return (mensajes || []).filter(t => String(t.respuestaAdmin || '').trim()).length;

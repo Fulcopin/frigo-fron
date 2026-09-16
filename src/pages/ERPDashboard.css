@@ -748,11 +748,45 @@
 
 /* Tabla */
 .erp-table {
-  width: 100%;
+  /* min-width en vez de width: con width:100% la tabla se comprime al ancho de
+     la pantalla y las columnas quedan ilegibles — el overflow del wrapper nunca
+     se activa porque nada se desborda. Con min-width la tabla crece según su
+     contenido y aparece el scroll horizontal, que es lo que evita tener que
+     alejar la vista del navegador. */
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.82rem;
   table-layout: auto;
+}
+
+/* Ancho mínimo por celda: sin esto el navegador parte las palabras y una
+   columna de 20 caracteres ocupa cuatro líneas de alto. */
+.erp-table th,
+.erp-table td {
+  min-width: 120px;
+  white-space: nowrap;
+}
+
+/* Las de texto largo sí envuelven, pero con un tope para que no se coman
+   el ancho de las demás. */
+.erp-table td.td-largo,
+.erp-table td[data-largo="1"] {
+  white-space: normal;
+  min-width: 220px;
+  max-width: 420px;
+}
+
+/* En pantallas chicas el scroll es la única salida: se hace evidente con
+   deslizamiento suave y sombra en los bordes. */
+.erp-grid-wrapper {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 900px) {
+  .erp-table th,
+  .erp-table td { min-width: 100px; font-size: 0.78rem; }
 }
 
 /* Headers */
@@ -1369,3 +1403,23 @@
 .erp-table th[draggable="true"] { cursor: grab; }
 .erp-table th.th-drag { opacity: .5; }
 .erp-table th.th-drop { box-shadow: inset 3px 0 0 #3b82f6; background: #dbeafe; }
+
+/* ── Atajos de rango de fechas ───────────────────────────────────────────── */
+.erp-rangos-btns { display: flex; gap: 5px; flex-wrap: wrap; }
+.erp-rangos-btns button {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  border-radius: 6px;
+  padding: 5px 11px;
+  font-size: .78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.erp-rangos-btns button:hover { background: #f1f5f9; }
+.erp-rangos-btns button.activo {
+  background: #0ea5e9;
+  border-color: #0ea5e9;
+  color: #fff;
+  font-weight: 700;
+}
