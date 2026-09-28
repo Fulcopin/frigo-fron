@@ -10,6 +10,12 @@ import { fetchUsers, filterUsersByPuesto } from "../services/userService"
 import authService from "../services/authService"
 import "./FillForm.css" // Reutilizamos los estilos de FillForm
 import { loadFormForEdit, updateFilledForm, autosaveForm } from "../utils/filledFormsUtils"
+import { validarHorariosFormulario } from "../utils/validarHorarios"
+import { revisarCoherenciaHoraria } from "../utils/coherenciaHoraria"
+import FirmaCelda from "../components/FirmaCelda"
+import UsuarioAutocomplete from "../components/UsuarioAutocomplete"
+import { usaBusquedaUsuario } from "../utils/busquedaUsuario"
+import { recalcularFormulasBodyData, recalcularFilas } from "../utils/recalcularFormulas"
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import ProductoAutocomplete from "../components/ProductoAutocomplete"
 import { modoBusquedaProducto, destinoColumnaProducto } from "../utils/busquedaProducto"
@@ -33,10 +39,25 @@ const sanearFilas = (rows) =>
   Array.isArray(rows) ? rows.filter(esObjetoPlano) : rows;
 const sanearBodyData = (bodyData) =>
   Array.isArray(bodyData)
-    ? bodyData.map(item => (esObjetoPlano(item) && Array.isArray(item.rows))
-        ? { ...item, rows: sanearFilas(item.rows) }
-        : item)
+    ? bodyData.map(item => {
+        if (!(esObjetoPlano(item) && Array.isArray(item.rows))) return item;
+        const filas = sanearFilas(item.rows);
+        // "rows" y "data" tienen que ser la MISMA lista (ver bodyDataParaGuardar).
+        return { ...item, rows: filas, data: filas };
+      })
     : [];
+
+/**
+ * ⚠️ Cuerpo listo para guardar: en cada tabla "data" = "rows".
+ * Esta pantalla edita "rows"; PDF, Excel, reportes y el backend leen "data".
+ * Si quedaban distintos, las filas agregadas aquí no salían en los reportes y
+ * las quitadas seguían apareciendo: parecía que el sistema borraba datos.
+ */
+const bodyDataParaGuardar = (bodyData) =>
+  (Array.isArray(bodyData) ? bodyData : []).map(item =>
+    (esObjetoPlano(item) && Array.isArray(item.rows))
+      ? { ...item, rows: item.rows, data: item.rows }
+      : item);
 /** Texto seguro para .trim()/.toUpperCase(): los ids y etiquetas pueden venir como número. */
 const txt = (v) => (v === null || v === undefined ? '' : String(v));
 
@@ -517,6 +538,14 @@ function EditFilledForm() {
         fila[columnLabel] = value;
       }
 
+      // 🧮 Las columnas de fórmula (ej. TOTAL Lbs NETAS) se actualizan al
+      // cambiar sus datos; antes quedaban con el valor viejo.
+      const columnasTabla = template?.bodyElements?.[elementIndex]?.columns;
+      const { filas, cambios } = recalcularFilas(newBodyData[elementIndex].rows, columnasTabla);
+      if (cambios > 0) {
+        newBodyData[elementIndex] = { ...newBodyData[elementIndex], rows: filas, data: filas };
+      }
+
       return { ...prev, bodyData: newBodyData };
     });
     setHasUnsavedChanges(true);
@@ -605,6 +634,37 @@ function EditFilledForm() {
     setHasUnsavedChanges(true);
   };
 
+  /**
+   * 📝 Bloque "Observaciones" de la plantilla (tipo "observaciones").
+   * Llenar formulario y Ver Formularios guardan y leen el texto en
+   * bodyData[i].data.texto; esta pantalla no dibujaba ese bloque y el texto no
+   * se podía corregir.
+   */
+  const textoObservacionBloque = (elementIndex) => {
+    const d = formData.bodyData?.[elementIndex];
+    if (!esObjetoPlano(d)) return '';
+    const t = d.data?.texto ?? d.texto ?? d.value ?? '';
+    return typeof t === 'string' ? t : txt(t);
+  };
+
+  const updateObservacionBloque = (elementIndex, texto) => {
+    setFormData(prev => {
+      const bodyData = Array.isArray(prev.bodyData) ? [...prev.bodyData] : [];
+      const actual = esObjetoPlano(bodyData[elementIndex]) ? bodyData[elementIndex] : {};
+      const elemento = template?.bodyElements?.[elementIndex];
+      bodyData[elementIndex] = {
+        ...actual,
+        id: actual.id ?? elemento?.id,
+        type: 'observaciones',
+        data: { ...(esObjetoPlano(actual.data) ? actual.data : {}), texto },
+      };
+      return { ...prev, bodyData };
+    });
+    setHasUnsavedChanges(true);
+  };
+
+  const tieneBloqueObservaciones = (template?.bodyElements || []).some(el => el?.type === 'observaciones');
+
   // Funciones de autoguardado
   const saveToLocalStorage = () => {
     if (!filledForm) return;
@@ -640,10 +700,28 @@ function EditFilledForm() {
     console.log('💾 Guardando formulario con datos:', formData);
     console.log('💾 TemplateID:', filledForm.templateID);
 
+    // 🧮 Fórmulas al día y ⏱️ horarios válidos antes de enviar.
+    const { bodyData: bodyCalculado } = recalcularFormulasBodyData(
+      bodyDataParaGuardar(formData.bodyData), template?.bodyElements);
+    const horarios = validarHorariosFormulario(bodyCalculado, template?.bodyElements);
+    if (!horarios.esValido) {
+      setError(horarios.mensaje);
+      alert(horarios.mensaje);
+      return;
+    }
+
+    // ⏰ Mismo aviso que al llenar: horas que todavía no ocurrieron.
+    const coherencia = revisarCoherenciaHoraria({
+      headerData: formData.headerData,
+      bodyData: bodyCalculado,
+      bodyElements: template?.bodyElements,
+    });
+    if (coherencia.hayAvisos && !window.confirm(coherencia.mensaje)) return;
+
     const updateData = {
       templateID: filledForm.templateID,
       headerData: formData.headerData,
-      bodyData: formData.bodyData,
+      bodyData: bodyDataParaGuardar(bodyCalculado),
       firmasData: formData.firmasData,
       observaciones: formData.observaciones
     };
@@ -724,6 +802,35 @@ function EditFilledForm() {
 
   // Renderizar campo según su tipo
   const renderField = (field, value, onChange, disabled = false, rowIndex = null) => {
+    // 👤 Búsqueda de personas (misma regla que al llenar).
+    if (usaBusquedaUsuario(field)) {
+      return (
+        <UsuarioAutocomplete
+          value={value || ''}
+          onChange={onChange}
+          origen={field.busquedaUsuario}
+          disabled={disabled || !!field.readonly}
+          placeholder="Buscar persona…"
+          className={rowIndex !== null && rowIndex !== undefined ? 'table-input-expandable' : ''}
+        />
+      );
+    }
+
+    // ✍️ Firma con PIN: va primero, ninguna otra regla aplica a esta celda.
+    if (field?.type === 'firmaPin') {
+      return (
+        <FirmaCelda
+          value={value}
+          onChange={onChange}
+          disabled={disabled || !!field.readonly}
+          campo={field.label || field.header}
+          fila={rowIndex}
+          formId={id}
+          templateId={template?.templateID}
+        />
+      );
+    }
+
     const isTableContext = rowIndex !== null && rowIndex !== undefined;
     const tableInputClass = isTableContext ? "table-input-expandable" : "";
 
@@ -871,6 +978,20 @@ function EditFilledForm() {
               <option key={index} value={option}>{option}</option>
             ))}
           </select>
+        );
+      case "formula":
+      case "calculated":
+        // Se calcula sola al cambiar los datos de la fila: escribir aquí se
+        // perdería en el próximo recálculo.
+        return (
+          <input
+            type="text"
+            value={value ?? ""}
+            readOnly
+            title="Valor calculado automáticamente"
+            className={tableInputClass}
+            style={{ backgroundColor: '#f0fdf4', fontWeight: 'bold', cursor: 'not-allowed' }}
+          />
         );
       case "textarea":
         return (
@@ -1180,6 +1301,25 @@ Template: ${template?.nombre}
           {(Array.isArray(template?.bodyElements) ? template.bodyElements : []).map((element, elementIndex) => (
             <div key={element.id} className="form-section">
               <h3>{typeof element.title === 'object' ? '' : element.title}</h3>
+
+              {element.type === "observaciones" && (
+                <textarea
+                  value={textoObservacionBloque(elementIndex)}
+                  onChange={(e) => updateObservacionBloque(elementIndex, e.target.value)}
+                  placeholder={`Escriba las ${typeof element.title === 'string' && element.title ? element.title.toLowerCase() : 'observaciones'} aquí...`}
+                  rows={4}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    padding: '12px',
+                    fontSize: '0.95rem',
+                    border: '2px solid #c4b5fd',
+                    borderRadius: '8px',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                  }}
+                />
+              )}
 
               {element.type === "section" && (
                 <div className="section-fields">
@@ -1623,16 +1763,20 @@ Template: ${template?.nombre}
             </div>
           )}
 
-          {/* Observaciones */}
-          <div className="form-section">
-            <h3>Observaciones</h3>
-            <textarea
-              value={formData.observaciones}
-              onChange={(e) => updateObservaciones(e.target.value)}
-              placeholder="Escriba aquí cualquier observación adicional..."
-              rows="4"
-            />
-          </div>
+          {/* Observaciones generales del registro (columna Observaciones).
+              Si la plantilla tiene su propio bloque de observaciones, se usa
+              ese (arriba) y este cuadro solo aparece si ya tenía algo escrito. */}
+          {(!tieneBloqueObservaciones || formData.observaciones) && (
+            <div className="form-section">
+              <h3>{tieneBloqueObservaciones ? 'Observaciones generales' : 'Observaciones'}</h3>
+              <textarea
+                value={formData.observaciones || ''}
+                onChange={(e) => updateObservaciones(e.target.value)}
+                placeholder="Escriba aquí cualquier observación adicional..."
+                rows="4"
+              />
+            </div>
+          )}
         </div>
 
         {/* Botones de acción al final */}

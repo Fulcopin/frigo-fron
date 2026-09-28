@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import signatureService from '../services/signatureService';
+
+import { firmasFaltantes, resumenFirmas } from '../utils/firmasFaltantes';
+import { abrirImagen } from '../utils/abrirImagen';
+import VisorImagen from '../components/VisorImagen';
 import authService from '../services/authService';
 import { Link, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../apiConfig';
@@ -40,6 +44,13 @@ export default function SignatureManagement() {
 
   // Estado para vista previa del formulario como contrato
   const [showContractPreview, setShowContractPreview] = useState(false);
+  // 🖼️ Imagen ampliada en la revisión: las etiquetas y fotos se ven a 80 px y
+  //    no se puede leer un lote ni una fecha de empaque.
+  const [imagenAmpliada, setImagenAmpliada] = useState(null);
+
+  // Al cerrar la ventana de revisión se cierra también la imagen ampliada: si
+  // no, quedaba tapando la pantalla de atrás.
+  useEffect(() => { if (!showContractPreview) setImagenAmpliada(null); }, [showContractPreview]);
   const [contractFormData, setContractFormData] = useState(null);
   const [contractTemplate, setContractTemplate] = useState(null);
   const [contractLoading, setContractLoading] = useState(false);
@@ -1140,7 +1151,8 @@ export default function SignatureManagement() {
                         {paginatedForms.map(form => (
                           <div
                             key={form.id}
-                            className={`form-card ${selectedForms.includes(form.id) ? 'selected' : ''}`}
+                            // Amarillo: a este formulario le faltan firmas
+                            className={`form-card ${selectedForms.includes(form.id) ? 'selected' : ''} ${firmasFaltantes(form).length > 0 ? 'falta-firma' : ''}`}
                           >
                             <div className="form-card-header">
                               <input
@@ -1194,6 +1206,32 @@ export default function SignatureManagement() {
                                 </span>
                               </div>
                             </div>
+
+                            {/* ✍️ Quién falta firmar, sin abrir el formulario */}
+                            {(() => {
+                              const firmas = resumenFirmas(form);
+                              if (firmas.total === 0) return null;
+                              return (
+                                <div className={`firmas-estado ${firmas.completo ? 'firmas-ok' : 'firmas-faltan'}`}>
+                                  <div className="firmas-titulo">
+                                    {firmas.completo
+                                      ? `✅ Firmado por todos (${firmas.total})`
+                                      : `⚠️ Faltan ${firmas.faltan.length} de ${firmas.total} firmas`}
+                                  </div>
+                                  {firmas.faltan.map((f, i) => (
+                                    <div key={`falta-${form.id}-${i}`} className="firma-pendiente">
+                                      <strong>{f.nombre || 'Sin asignar'}</strong>
+                                      <span className="firma-puesto">{f.puesto}</span>
+                                      {f.reemplazos.length > 0 && (
+                                        <span className="firma-reemplazo" title={f.reemplazos.join(', ')}>
+                                          reemplazo: {f.reemplazos[0]}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })()}
 
                             <div className="form-card-actions">
                               {(() => {
@@ -1581,6 +1619,15 @@ export default function SignatureManagement() {
       )}
 
       {/* Modal de Vista Previa del Contrato */}
+      {/* 🖼️ Visor a pantalla completa (se cierra con Escape, la ✕ o el botón Atrás) */}
+      {imagenAmpliada && (
+        <VisorImagen
+          src={imagenAmpliada.src}
+          titulo={imagenAmpliada.titulo}
+          onClose={() => setImagenAmpliada(null)}
+        />
+      )}
+
       {showContractPreview && (
         <div className="modal-overlay" onClick={() => setShowContractPreview(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{
@@ -1699,7 +1746,7 @@ export default function SignatureManagement() {
                           <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
                             <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
                             {value && typeof value === 'string' && (value.startsWith('https://res.cloudinary.com') || value.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(value))
-                              ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} />
+                              ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} onClick={(e) => { e.stopPropagation(); abrirImagen(value, key); }} title="Clic para ampliar" />
                               : <span style={{ color: '#111827' }}>{value || '-'}</span>
                             }
                           </div>
@@ -1734,7 +1781,7 @@ export default function SignatureManagement() {
                                 <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
                                   <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
                                   {isImage
-                                    ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} />
+                                    ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} onClick={(e) => { e.stopPropagation(); abrirImagen(value, key); }} title="Clic para ampliar" />
                                     : <span style={{ color: '#111827' }}>{displayValue || '-'}</span>
                                   }
                                 </div>
@@ -1909,7 +1956,7 @@ export default function SignatureManagement() {
                                       return (
                                         <td key={colIndex} style={{ padding: '8px', border: '1px solid #e5e7eb', textAlign: 'center' }}>
                                           {isImageValue
-                                            ? <img src={displayValue} alt="img" style={{ maxWidth: '80px', maxHeight: '80px', objectFit: 'contain', borderRadius: '4px' }} />
+                                            ? <img src={displayValue} alt="img" style={{ maxWidth: '80px', maxHeight: '80px', objectFit: 'contain', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); abrirImagen(displayValue, "Imagen del registro"); }} title="Clic para ampliar" />
                                             : (displayValue !== undefined && displayValue !== null && displayValue !== '' ? String(displayValue) : '-')
                                           }
                                         </td>
@@ -1955,6 +2002,83 @@ export default function SignatureManagement() {
                       <p style={{ margin: 0, color: '#4b5563', whiteSpace: 'pre-wrap' }}>{contractFormData.observaciones}</p>
                     </div>
                   )}
+
+                  {/* ✍️ FIRMAS: quién ya firmó (con su imagen) y quién falta */}
+                  {(() => {
+                    const puestos = Array.isArray(contractTemplate?.firmas) ? contractTemplate.firmas : [];
+                    if (puestos.length === 0) return null;
+                    const puestas = contractFormData?.firmasData || {};
+                    const norm = (t) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                      .toLowerCase().replace(/\s+/g, ' ').trim();
+                    const datoDe = (puesto) => {
+                      const clave = Object.keys(puestas).find(k => norm(k) === norm(puesto));
+                      return clave ? puestas[clave] : null;
+                    };
+                    const conImagen = (d) => !!(d?.firma?.url || d?.firma?.base64);
+                    const faltan = puestos.filter(p => !conImagen(datoDe(p?.puesto)));
+
+                    return (
+                      <div style={{
+                        background: 'white', borderRadius: '12px', padding: '1.2rem',
+                        marginBottom: '1rem', border: `2px solid ${faltan.length > 0 ? '#fcd34d' : '#bbf7d0'}`,
+                      }}>
+                        <h3 style={{ margin: '0 0 4px 0', color: faltan.length > 0 ? '#92400e' : '#166534', fontSize: '1.15rem' }}>
+                          ✍️ Firmas
+                        </h3>
+                        <p style={{ margin: '0 0 12px 0', fontSize: '0.9rem', color: '#6b7280' }}>
+                          {faltan.length === 0
+                            ? `Firmado por todos (${puestos.length}).`
+                            : `Faltan ${faltan.length} de ${puestos.length}. Los que faltan van en amarillo.`}
+                        </p>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
+                          {puestos.map((p, i) => {
+                            const dato = datoDe(p?.puesto);
+                            const firmado = conImagen(dato);
+                            const reemplazos = Array.isArray(p?.reemplazos) ? p.reemplazos.filter(Boolean) : [];
+                            return (
+                              <div key={`firma-rev-${i}`} style={{
+                                border: `1px solid ${firmado ? '#bbf7d0' : '#fcd34d'}`,
+                                background: firmado ? '#f0fdf4' : '#fffbeb',
+                                borderRadius: '10px', padding: '10px',
+                              }}>
+                                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: firmado ? '#166534' : '#92400e' }}>
+                                  {firmado ? '✅ FIRMADO' : '⚠️ FALTA FIRMAR'}
+                                </div>
+                                <div style={{ fontWeight: 600, marginTop: '2px' }}>
+                                  {dato?.nombre || p?.nombreCompleto || 'Sin asignar'}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>{p?.puesto}</div>
+
+                                {firmado ? (
+                                  <>
+                                    <img
+                                      src={dato.firma.url || dato.firma.base64}
+                                      alt={`Firma de ${dato?.nombre || p?.puesto}`}
+                                      style={{ maxHeight: '58px', maxWidth: '100%', objectFit: 'contain',
+                                               background: 'white', borderRadius: '6px', marginTop: '6px', display: 'block' }}
+                                    />
+                                    {(dato?.fecha || dato?.hora) && (
+                                      <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '4px' }}>
+                                        {dato.fecha || ''} {dato.hora || ''}
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  reemplazos.length > 0 && (
+                                    <div style={{ fontSize: '0.75rem', color: '#92400e', marginTop: '6px', fontStyle: 'italic' }}
+                                         title={reemplazos.join(', ')}>
+                                      puede firmar su reemplazo: {reemplazos[0]}
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Indicador de fin de documento */}
                   <div style={{

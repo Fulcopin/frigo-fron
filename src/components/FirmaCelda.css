@@ -1,0 +1,98 @@
+/* ✍️ Celda "Firma con PIN" */
+.fc-vacia { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.fc-otro { font-size: 12px; color: #475569; }
+.fc-sin-firmar { font-size: 12px; color: #94a3b8; font-style: italic; }
+
+.fc-boton-firmar {
+  border: 1px solid #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fc-firmada {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 26px 4px 6px;
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  border-radius: 6px;
+  min-width: 170px;
+}
+
+.fc-anulada { border-color: #fecaca; background: #fef2f2; }
+.fc-imagen { max-height: 42px; max-width: 110px; object-fit: contain; background: #fff; border-radius: 4px; }
+.fc-texto { display: flex; flex-direction: column; line-height: 1.25; font-size: 12px; color: #14532d; }
+.fc-etiqueta { font-size: 10.5px; color: #15803d; }
+.fc-texto strong { font-size: 13px; }
+.fc-detalle { font-size: 10.5px; color: #4b5563; }
+.fc-aviso { font-size: 11px; color: #b91c1c; font-weight: 600; }
+
+.fc-quitar {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  border: none;
+  background: transparent;
+  color: #b91c1c;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+/* Ventana */
+.fc-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.fc-ventana {
+  width: min(380px, 100%);
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+.fc-ventana-titulo { font-weight: 700; font-size: 16px; color: #1e3a8a; margin-bottom: 12px; }
+.fc-campo { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: 13px; }
+.fc-campo span { font-weight: 600; color: #334155; }
+.fc-campo input, .fc-campo select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 15px; }
+.fc-check { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 4px 0 10px; }
+.fc-error { background: #fee2e2; color: #991b1b; border-radius: 6px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+.fc-botones { display: flex; justify-content: flex-end; gap: 8px; }
+.fc-botones button { padding: 8px 14px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; font-size: 14px; }
+.fc-botones .fc-principal { background: #1d4ed8; color: #fff; border: none; font-weight: 600; }
+.fc-nota { margin: 10px 0 0; font-size: 11px; color: #64748b; }
+
+/* 🪪 Firma con cédula (persona sin usuario) */
+.fc-documento { font-size: 11px; color: #334155; font-weight: 600; }
+.fc-pestanas { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid #e2e8f0; }
+.fc-pestanas button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+.fc-pestanas button.activa { color: #1d4ed8; border-bottom-color: #1d4ed8; }
+.fc-fila { display: flex; gap: 8px; }
+.fc-ok { font-size: 12px; color: #15803d; margin: -4px 0 8px; }
+.fc-nota-doc { margin: 0 0 10px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 8px; color: #92400e; }

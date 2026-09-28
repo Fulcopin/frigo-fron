@@ -251,6 +251,18 @@
   justify-content: space-between;
   margin-bottom: 20px;
   padding: 0 4px;
+  /* Que bajen de línea: sin esto los botones nuevos quedaban fuera de la
+     pantalla, a la derecha, y no se veían. */
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* El grupo de botones de la izquierda también baja de línea */
+.pl-active-tab-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 .pl-add-row-btn-top {
   background: white;

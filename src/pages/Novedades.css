@@ -1,0 +1,385 @@
+/* ═══════════════════════════════════════════════════════════════════
+   📢 NOVEDADES
+   ═══════════════════════════════════════════════════════════════════ */
+
+.nov-pagina {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+}
+
+.nov-encabezado h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  color: #0f3d5e;
+}
+
+.nov-encabezado p {
+  margin: 0 0 16px;
+  color: #64748b;
+}
+
+/* ── Pestañas ── */
+.nov-pestanas {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.nov-pestanas button {
+  border: none;
+  background: transparent;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.nov-pestanas button.activa {
+  color: #1d4ed8;
+  border-bottom-color: #1d4ed8;
+}
+
+/* ── Mensajes ── */
+.nov-error,
+.nov-ok {
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  white-space: pre-line;
+}
+
+.nov-error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+.nov-ok    { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+
+.nov-cargando,
+.nov-vacio {
+  padding: 32px 16px;
+  text-align: center;
+  color: #64748b;
+  font-size: 15px;
+}
+
+/* ── Tarjeta ── */
+.nov-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nov-tarjeta {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-left: 6px solid #3b82f6;
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.nov-importante { border-left-color: #f59e0b; background: #fffdf5; }
+.nov-urgente    { border-left-color: #dc2626; background: #fff7f7; }
+
+.nov-tarjeta-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nov-icono { font-size: 20px; }
+
+.nov-titulo {
+  margin: 0;
+  font-size: 17px;
+  color: #0f172a;
+  flex: 1;
+  min-width: 180px;
+}
+
+.nov-marca-nueva {
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
+
+.nov-estado {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.nov-estado-vigente    { background: #dcfce7; color: #166534; }
+.nov-estado-programada { background: #e0e7ff; color: #3730a3; }
+.nov-estado-vencida    { background: #fef3c7; color: #92400e; }
+.nov-estado-archivada  { background: #e5e7eb; color: #4b5563; }
+
+.nov-mensaje {
+  margin: 10px 0 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+  color: #1e293b;
+  font-size: 15px;
+}
+
+.nov-pie {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.nov-acciones {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.nov-acciones button {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.nov-acciones button:hover { background: #f1f5f9; }
+.nov-acciones .nov-peligro { color: #b91c1c; border-color: #fecaca; }
+
+/* ── Quién la leyó ── */
+.nov-lecturas {
+  margin: -4px 0 4px 6px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  font-size: 13px;
+  overflow-x: auto;
+}
+
+.nov-lecturas table { width: 100%; border-collapse: collapse; }
+.nov-lecturas th,
+.nov-lecturas td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e2e8f0; }
+
+/* ── Formulario ── */
+.nov-formulario {
+  background: #fff;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.nov-formulario h2 { margin: 0 0 12px; font-size: 18px; color: #1e3a8a; }
+
+.nov-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  flex: 1;
+  min-width: 160px;
+}
+
+.nov-campo span { font-size: 13px; font-weight: 600; color: #334155; }
+
+.nov-campo input,
+.nov-campo select,
+.nov-campo textarea {
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.nov-campo textarea { resize: vertical; }
+
+.nov-fila { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.nov-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.nov-vista-previa {
+  margin: 12px 0;
+  padding: 10px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+}
+
+.nov-vista-previa-etiqueta {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.nov-botones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+.nov-boton-principal,
+.nov-boton-secundario {
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nov-boton-principal { background: #1d4ed8; color: #fff; border: none; }
+.nov-boton-principal:disabled { opacity: 0.6; cursor: wait; }
+.nov-boton-secundario { background: #fff; color: #334155; border: 1px solid #cbd5e1; }
+
+.nov-subtitulo { font-size: 17px; color: #0f3d5e; margin: 8px 0 12px; }
+
+/* ── Pantalla previa (antes de entrar) ── */
+.nov-previa {
+  min-height: calc(100vh - 80px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 12px;
+  background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%);
+}
+
+.nov-previa-caja {
+  width: min(760px, 100%);
+  background: #fff;
+  border-radius: 14px;
+  padding: 22px 20px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+.nov-previa-titulo { margin: 0 0 4px; font-size: 26px; color: #0f3d5e; }
+.nov-previa-sub { margin: 0 0 16px; color: #475569; font-size: 15px; }
+
+.nov-boton-continuar {
+  display: block;
+  width: 100%;
+  margin-top: 18px;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nov-boton-continuar:disabled { opacity: 0.7; cursor: wait; }
+
+/* ── Botón de la barra superior ── */
+.nov-boton-barra {
+  position: relative;
+  background: #f59e0b;
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 13px;
+  margin-right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.nov-contador {
+  background: #dc2626;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 11px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .nov-boton-barra { padding: 6px 8px; }
+  .nov-titulo { font-size: 16px; }
+}
+
+/* ── Novedad grande ── */
+.nov-check-grande {
+  align-items: flex-start;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.nov-check-grande input { margin-top: 3px; }
+.nov-check-grande span { display: flex; flex-direction: column; gap: 2px; }
+.nov-check-grande small { color: #475569; font-size: 12.5px; }
+
+.nov-estado-pantalla { background: #dbeafe; color: #1e40af; }
+
+/* ── Recuadro en el Inicio ── */
+.nov-inicio {
+  max-width: 1100px;
+  margin: 0 auto 24px;
+  padding: 16px 18px;
+  background: #fff;
+  border: 1px solid #fde68a;
+  border-left: 6px solid #f59e0b;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  text-align: left;
+}
+
+.nov-inicio-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.nov-inicio-cabecera h2 { margin: 0; font-size: 20px; color: #0f3d5e; }
+
+.nov-inicio-botones { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.nov-inicio-botones button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.nov-inicio-botones .nov-inicio-admin { background: #f59e0b; }

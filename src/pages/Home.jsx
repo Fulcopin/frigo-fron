@@ -2,6 +2,7 @@
 
 import { useNavigate } from "react-router-dom"
 import ScrollButton from "../components/ScrollButton"
+import NovedadesInicio from "../components/NovedadesInicio"
 import "./Home.css"
 
 // La pantalla quedó solo con los accesos principales. Con las tarjetas de
@@ -18,6 +19,9 @@ function Home() {
         <h1>🏠 Panel de Control - Frigolab</h1>
         <p>Elegí a dónde querés ir</p>
       </div>
+
+      {/* 📢 Novedades de la administración (el admin publica desde aquí) */}
+      <NovedadesInicio />
 
       {/* 🎯 ACCIONES PRINCIPALES */}
       <div className="main-actions">
@@ -52,6 +56,11 @@ function Home() {
           {/* 📝 Va en el Inicio y sin restricción de rol a propósito: el que
               encuentra el problema suele ser el operario, y si tiene que
               buscarlo en un menú no lo reporta. */}
+          <div className="action-card" onClick={() => navigate('/novedades')}>
+            <div className="action-icon">📢</div>
+            <h3>Novedades</h3>
+            <p>Avisos importantes de la administración para todo el personal</p>
+          </div>
           <div className="action-card" onClick={() => navigate('/reportar-cambio')}>
             <div className="action-icon">📝</div>
             <h3>Reportar un Cambio</h3>

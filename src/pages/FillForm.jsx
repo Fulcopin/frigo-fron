@@ -42,6 +42,12 @@ import { validaEspecie, especieDelEncabezado, validarEspecieDeCodigo } from '../
 import { DIGITOS_LOTE } from '../utils/validacionLote';
 import HoraInput24 from '../components/HoraInput24';
 import DetalleFilas, { resumenDetalle } from '../components/DetalleFilas';
+import FirmaCelda from '../components/FirmaCelda';
+import UsuarioAutocomplete from '../components/UsuarioAutocomplete';
+import { usaBusquedaUsuario } from '../utils/busquedaUsuario';
+import { validarHorariosFormulario, mensajeDeErrorServidor } from '../utils/validarHorarios';
+import { revisarCoherenciaHoraria } from '../utils/coherenciaHoraria';
+import { recalcularFormulasBodyData } from '../utils/recalcularFormulas';
 import { camposDetalleActuales } from '../utils/detalleCamposActuales';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 // --- CONSTANTES ---
@@ -5271,6 +5277,24 @@ useEffect(() => {
       const response = await fetch(url, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
+      // 🔍 Respuestas de error con un mensaje claro para el operario. Antes
+      // solo quedaba "HTTP 404" en la consola: la fila no se llenaba, el código
+      // quedaba escrito sin datos y nadie sabía por qué.
+      if (response.status === 404) {
+        alert(
+          `🔍 El código "${code}" no existe en el sistema externo (ERP).\n\n` +
+          `Revisa que esté bien escrito. Si es el código sugerido en azul, ` +
+          `puede que todavía no se haya registrado en el ERP.`
+        );
+        limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplate, { codigoABorrar: code });
+        return false;
+      }
+      if (response.status === 401 || response.status === 403) {
+        // Token vencido: se olvida para que el próximo intento inicie sesión otra vez.
+        setApiToken(null);
+        alert('🔐 La conexión con el sistema externo (ERP) venció. Presiona 🔍 otra vez para reintentar.');
+        return false;
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
 
@@ -5295,7 +5319,12 @@ useEffect(() => {
         });
 
       const lista = Array.isArray(data) ? data.filter(Boolean) : (data ? [data] : []);
-      if (lista.length === 0) { console.warn('🔍 API por Código: sin resultados para', code); return; }
+      if (lista.length === 0) {
+        console.warn('🔍 API por Código: sin resultados para', code);
+        alert(`🔍 El código "${code}" no tiene datos en el sistema externo (ERP). Revisa que esté bien escrito.`);
+        limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplate, { codigoABorrar: code });
+        return false;
+      }
 
       // La primera línea DISPONIBLE; si no hay ninguna, la primera para poder
       // avisar con datos concretos.
@@ -5421,8 +5450,14 @@ useEffect(() => {
         }));
         setHasUnsavedChanges(true);
       }
+      return true;
     } catch (err) {
       console.warn('❌ API por Código error:', err);
+      alert(
+        `⚠️ No se pudo consultar el código "${code}" en el sistema externo (ERP).\n\n` +
+        `Detalle: ${err?.message || err}\n\nRevisa la conexión y presiona 🔍 para reintentar.`
+      );
+      return false;
     } finally {
       lookupsEnCursoRef.current.delete(enCursoKey);
       setApiCodigoLoadingRows(prev => ({ ...prev, [loadKey]: false }));
@@ -5724,6 +5759,35 @@ useEffect(() => {
   // --- RENDER FIELD CORREGIDO (COMBO BOX FIX) ---
  // --- RENDER FIELD CORREGIDO (COMPLETO Y DEFINITIVO) ---
   const renderField = useCallback((field, value, onChange, rowIndex = null, filaActual = null) => {
+    // 👤 Búsqueda de personas: la celda ofrece los nombres del catálogo de
+    // firmas y de los usuarios del sistema, sin dejar de permitir escribir.
+    if (usaBusquedaUsuario(field)) {
+      return (
+        <UsuarioAutocomplete
+          value={value || ''}
+          onChange={onChange}
+          origen={field.busquedaUsuario}
+          disabled={!!field.readonly}
+          placeholder={field.placeholder || 'Buscar persona…'}
+          className={rowIndex !== null && rowIndex !== undefined ? 'table-input-expandable' : ''}
+        />
+      );
+    }
+
+    // ✍️ Firma con PIN: va primero, ninguna otra regla (listas, lotes,
+    // buscador de productos) aplica a esta celda.
+    if (field?.type === 'firmaPin') {
+      return (
+        <FirmaCelda
+          value={value}
+          onChange={onChange}
+          disabled={!!field.readonly}
+          campo={field.label || field.header}
+          fila={rowIndex}
+        />
+      );
+    }
+
     // Hora de inicio de ESTA fila, para avisar si la de fin es anterior. Se
     // busca por nombre de columna: es el único vínculo entre las dos celdas,
     // que se dibujan por separado.
@@ -6356,6 +6420,9 @@ useEffect(() => {
               // Avisos apagados: en planta no hay jornadas fijas de 8 horas y
               // el aviso saltaba en turnos perfectamente normales.
               sinAvisos
+              // ⏱️ Pero el fin antes que el inicio SÍ se marca en rojo, con la
+              // misma regla que impide guardar (validarHorarios.js).
+              validarOrden
             />
           );
         case "datetime": return <input type="datetime-local" {...commonProps} />;
@@ -7011,10 +7078,47 @@ useEffect(() => {
       return element;
     });
     
+    // 🧮 Fórmulas recalculadas justo antes de guardar. La pantalla las calcula
+    //    al dibujar, pero en los datos solo quedaban si se tecleaba en la fila:
+    //    las filas cargadas por API / importadas / de borrador se guardaban con
+    //    "0.00" en TOTAL Lbs NETAS y los reportes mostraban 0.
+    const { bodyData: bodyDataParaGuardar, cambios: formulasCorregidas } =
+      recalcularFormulasBodyData(cleanedBodyData, selectedTemplate.bodyElements);
+    if (formulasCorregidas > 0) {
+      console.log(`💾 [SAVE] 🧮 ${formulasCorregidas} celda(s) de fórmula recalculadas antes de guardar`);
+    }
+
+    // ⏱️ Hora de fin antes que la de inicio: no se guarda. El backend aplica
+    //    la misma regla; esto avisa sin esperar al servidor.
+    const horarios = validarHorariosFormulario(bodyDataParaGuardar, selectedTemplate.bodyElements);
+    if (!horarios.esValido) {
+      console.warn('💾 [SAVE] ❌ Horarios inválidos, abortando', horarios.errores);
+      alert(horarios.mensaje);
+      setError(horarios.mensaje);
+      isSavingRef.current = false;
+      setFormSaving(false);
+      return;
+    }
+
+    // ⏰ Horas que no cuadran con el momento en que se guarda (ej. el reporte
+    //    del turno de anoche cargado hoy, con fecha de hoy). Avisa y deja
+    //    seguir: hay turnos que cruzan la medianoche y son válidos.
+    const coherencia = revisarCoherenciaHoraria({
+      headerData: finalHeaderData,
+      bodyData: bodyDataParaGuardar,
+      bodyElements: selectedTemplate.bodyElements,
+    });
+    if (coherencia.hayAvisos && !window.confirm(coherencia.mensaje)) {
+      console.warn('💾 [SAVE] ⏰ El usuario eligió revisar las horas', coherencia.avisos);
+      isSavingRef.current = false;
+      setFormSaving(false);
+      return;
+    }
+
     const payload = {
       templateID: selectedTemplate.templateID,
       headerData: JSON.stringify(finalHeaderData),
-      bodyData: JSON.stringify(cleanedBodyData),
+      bodyData: JSON.stringify(bodyDataParaGuardar),
       firmasData: JSON.stringify(firmasData),
       // 🆕 NUEVOS CAMPOS: Guardar quién creó, el proceso y el área
       filledBy: currentUser?.nombre || currentUser?.username || 'Usuario desconocido',
@@ -7043,7 +7147,8 @@ useEffect(() => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('💾 [SAVE] ❌ Error response body:', errorText);
-        throw new Error(`Error al guardar (${response.status}): ${errorText}`);
+        // El backend explica el motivo en { message } (ej. horario inválido).
+        throw new Error(mensajeDeErrorServidor(response.status, errorText));
       }
       
       const responseData = await response.json().catch(() => null);
@@ -12090,9 +12195,11 @@ useEffect(() => {
                         key={lid}
                         type="button"
                         title={`Usar ${candidate} (recepción ID ${lid})`}
-                        onClick={() => {
+                        onClick={async () => {
                           handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, candidate);
-                          handleApiPorCodigoLookup(elementIndex, rowIndex, candidate, tableTemplateForApiCodigo);
+                          // Solo se avanza la sugerencia si el código existía en el ERP.
+                          const ok = await handleApiPorCodigoLookup(elementIndex, rowIndex, candidate, tableTemplateForApiCodigo);
+                          if (!ok) return;
                           const afterNext = getNextSequenceCode([candidate]);
                           if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
                         }}
@@ -12112,9 +12219,12 @@ useEffect(() => {
                     <button
                       type="button"
                       title={`Usar siguiente código en secuencia: ${nextSuggestedCode}`}
-                      onClick={() => {
+                      onClick={async () => {
                         handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, nextSuggestedCode);
-                        handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
+                        // La sugerencia es el último código + 1: puede no existir
+                        // todavía en el ERP. Solo se avanza si la consulta lo encontró.
+                        const ok = await handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
+                        if (!ok) return;
                         const afterNext = getNextSequenceCode([nextSuggestedCode]);
                         if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
                       }}
@@ -12135,9 +12245,11 @@ useEffect(() => {
                   <button
                     type="button"
                     title={`Usar siguiente código en secuencia: ${nextSuggestedCode}`}
-                    onClick={() => {
+                    onClick={async () => {
                       handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, nextSuggestedCode);
-                      handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
+                      // Sugerencia = último código + 1; solo se avanza si existía en el ERP.
+                      const ok = await handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
+                      if (!ok) return;
                       const afterNext = getNextSequenceCode([nextSuggestedCode]);
                       if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
                     }}

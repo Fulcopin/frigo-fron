@@ -11,6 +11,7 @@ import { InventarioColumnaConfig, InventarioAutoCompletar, InventarioTablaConfig
 import BusquedaProductoSelect from "../components/BusquedaProductoSelect";
 import SelectorActividadesProceso from "../components/SelectorActividadesProceso";
 import EditorOpciones from "../components/EditorOpciones";
+import { TIPOS_CAMPO_DETALLE, TIPOS_CON_OPCIONES } from "../utils/tiposCampoDetalle";
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
@@ -78,6 +79,9 @@ function CreateTemplate() {
     // flujo de trabajo. Reemplaza a la tercera columna de horas, que obligaba a
     // deducir el cierre de la jornada cuando no hay turnos fijos de 8 horas.
     { value: "inicioCierre", label: "✅ Check de Entrada / Salida" },
+    // Firma con PIN: la celda queda "Firmado digitalmente por: …" con código
+    // de verificación y, si se elige, la imagen de la firma (FirmaCelda.jsx).
+    { value: "firmaPin", label: "✍️ Firma con PIN (firmado digitalmente)" },
   ];
 
   // Campos por defecto de Lote Entrante (5 campos)
@@ -2329,12 +2333,11 @@ function CreateTemplate() {
                                   }}
                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #93c5fd', borderRadius: '5px', fontSize: '13px' }}
                                 >
-                                  <option value="text">Texto</option>
-                                  <option value="number">Número</option>
-                                  <option value="select">Lista</option>
+                                  {/* Los mismos tipos que una columna normal (Selección, Casillas, Fecha…). */}
+                                  {TIPOS_CAMPO_DETALLE.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                                 </select>
                               </div>
-                              {campo.type === 'select' && (
+                              {TIPOS_CON_OPCIONES.has(campo.type) && (
                                 <div style={{ flex: 2 }}>
                                   <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>Opciones</label>
                                   <EditorOpciones
@@ -2355,10 +2358,10 @@ function CreateTemplate() {
                               <div style={{ flex: 1.3 }}>
                                 <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>🔍 Búsqueda API</label>
                                 <select
-                                  value={campo.type === 'select' ? '' : (campo.busqueda || '')}
-                                  // Una Lista usa sus opciones; la búsqueda no aplica.
-                                  disabled={campo.type === 'select'}
-                                  title={campo.type === 'select' ? 'No aplica a una Lista: se usan las opciones escritas' : undefined}
+                                  value={TIPOS_CON_OPCIONES.has(campo.type) ? '' : (campo.busqueda || '')}
+                                  // Selección y casillas usan sus opciones; la búsqueda no aplica.
+                                  disabled={TIPOS_CON_OPCIONES.has(campo.type)}
+                                  title={TIPOS_CON_OPCIONES.has(campo.type) ? 'No aplica: este campo usa las opciones escritas' : undefined}
                                   onChange={(e) => {
                                     const campos = [...(column.detalleCampos || [])];
                                     campos[ci] = { ...campos[ci], busqueda: e.target.value };

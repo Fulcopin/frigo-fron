@@ -10,6 +10,7 @@
 // o tocando afuera. No se pierde el lugar en el formulario.
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import './VisorImagen.css';
 
 const ZOOMS = [1, 1.5, 2, 3, 4];
@@ -27,7 +28,11 @@ export default function VisorImagen({ src, titulo, onClose }) {
   const cerrar = useCallback(() => {
     setZoom(1);
     setPos({ x: 0, y: 0 });
-    onClose?.();
+    // Si el paso del historial que se agregó al abrir sigue ahí, se vuelve
+    // atrás: eso dispara el popstate y ese cierra la imagen. Así queda UN solo
+    // camino de salida y el historial nunca queda desacomodado.
+    if (window.history.state?.visorImagen) window.history.back();
+    else onClose?.();
   }, [onClose]);
 
   // Escape para cerrar y +/- para el zoom: quien revisa muchos registros
@@ -40,6 +45,17 @@ export default function VisorImagen({ src, titulo, onClose }) {
     };
     document.addEventListener('keydown', tecla);
 
+    // ⬅️ El botón ATRÁS del navegador (y el gesto de atrás en tablet) cierra la
+    // imagen en vez de salir de la pantalla. Antes el operario ampliaba una
+    // etiqueta, tocaba atrás por reflejo y se iba del formulario.
+    //
+    // Se agrega un paso al historial al abrir; ese paso es el que consume el
+    // botón atrás. Si se cierra con Escape o con la ✕ se quita el paso para no
+    // dejar historial de más.
+    window.history.pushState({ visorImagen: true }, '');
+    const alVolver = () => onClose?.();   // el navegador ya consumió el paso
+    window.addEventListener('popstate', alVolver);
+
     // Sin esto la página de atrás se desplaza mientras se mira la imagen y al
     // cerrar el usuario aparece en otro lugar del formulario.
     const overflowPrevio = document.body.style.overflow;
@@ -47,9 +63,13 @@ export default function VisorImagen({ src, titulo, onClose }) {
 
     return () => {
       document.removeEventListener('keydown', tecla);
+      window.removeEventListener('popstate', alVolver);
       document.body.style.overflow = overflowPrevio;
+      // Acá NO se toca el historial: al salir de la pantalla (por ejemplo con
+      // «Volver a la lista») un "atrás" extra deshacía la navegación y dejaba
+      // la imagen tapando todo.
     };
-  }, [cerrar]);
+  }, [cerrar, onClose]);
 
   if (!src) return null;
 
@@ -74,7 +94,10 @@ export default function VisorImagen({ src, titulo, onClose }) {
   };
   const alSoltar = () => setArrastrando(null);
 
-  return (
+      // 🪟 Se dibuja directo en la página (portal). Sin esto, abierto desde
+    //    dentro de una ventana (como la Revisión del Formulario) quedaba
+    //    atrapado en esa capa y no se veía.
+  return createPortal(
     <div className="vi-fondo" onClick={cerrar}>
       <div className="vi-barra" onClick={(e) => e.stopPropagation()}>
         <span className="vi-titulo">{titulo || 'Imagen del registro'}</span>
@@ -118,6 +141,7 @@ export default function VisorImagen({ src, titulo, onClose }) {
       <div className="vi-pie" onClick={(e) => e.stopPropagation()}>
         Doble clic para acercar · arrastrá para moverla · Escape para cerrar
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

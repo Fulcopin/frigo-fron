@@ -30,7 +30,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { API_BASE_URL } from '../apiConfig';
 import { cargarFormularios, esBorrador } from '../services/formulariosService';
 import { CAMPO_ACTIVIDAD, parseActividades, origenActividad,
-  esTemplateCamaron, normActividad } from '../utils/actividadesProceso';
+  esActividadConocida, esTemplateCamaron, normActividad } from '../utils/actividadesProceso';
 import { fechaDeBusqueda } from '../utils/fechaFormulario';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -98,6 +98,36 @@ export function actividadDe(form) {
   } catch { return ''; }
 }
 
+/**
+ * Actividad que trae el ENCABEZADO del formulario, solo si es una actividad
+ * del catálogo (Descongelar, Empaque, Pelado de Camarón…).
+ *
+ * Hay registros que cubren varias actividades con UNA sola plantilla: el
+ * FOR-PD-18C de camarón anota en su encabezado «Tipo de proceso: Descongelar»
+ * y al día siguiente «Empaque». Por plantilla no hay forma de separarlos, y
+ * todas esas filas del plan quedaban en cero.
+ *
+ * Se exige que el valor esté en el catálogo justamente para no repetir el
+ * problema anterior: campos con texto libre como «Calidad - Control» o
+ * «Jefe de área» se ignoran y el plan sigue cruzando por la plantilla.
+ */
+const CLAVES_ACTIVIDAD = /(actividad|tipo\s*de\s*proceso|proceso)/;
+
+export function actividadDelEncabezado(form) {
+  const hdr = headerDe(form);
+  if (!hdr || typeof hdr !== 'object') return '';
+
+  const estandar = String(hdr[CAMPO_ACTIVIDAD] ?? '').trim();
+  if (esActividadConocida(estandar)) return estandar;
+
+  for (const [clave, valor] of Object.entries(hdr)) {
+    if (!CLAVES_ACTIVIDAD.test(norm(clave))) continue;
+    const texto = String(valor ?? '').trim();
+    if (esActividadConocida(texto)) return texto;
+  }
+  return '';
+}
+
 // ── Actividades que aporta la PLANTILLA ───────────────────────────────────────
 // El encabezado del formulario trae UNA actividad, y solo si quien lo llenó la
 // eligió en el combo. El campo «Proceso - Productivo» de la plantilla declara
@@ -130,6 +160,20 @@ export function actividadesDePlantilla(form, idx) {
 
 /** ¿La plantilla del formulario es de camarón? (PD-20/PD-21 o el nombre lo dice) */
 export function esFormDeCamaron(form, idx) {
+  // 1º la ESPECIE del encabezado: es el dato de ESE formulario. Una plantilla
+  //    puede servir para las dos especies, y ahí el nombre no alcanza.
+  const hdr = headerDe(form);
+  if (hdr && typeof hdr === 'object') {
+    for (const [clave, valor] of Object.entries(hdr)) {
+      if (!/(especie|producto)/.test(norm(clave))) continue;
+      const texto = norm(valor);
+      if (!texto) continue;
+      if (texto.includes('camar')) return true;
+      // Una especie de pescado escrita ahí descarta camarón.
+      if (/(tuna|atun|mahi|picudo|robalo|dorado|pesca|merluza|corvina)/.test(texto)) return false;
+    }
+  }
+  // 2º si el encabezado no lo dice, lo declarado por la plantilla.
   const id = String(form?.templateID ?? form?.TemplateID ?? '');
   return !!(id && idx?.get(id)?.esCamaron);
 }
@@ -171,9 +215,18 @@ export function formCorrespondeAFila(form, delPlan, idx, ambitoCamaron = null) {
   const delPlanNorm = normActividad(delPlan);
   if (!delPlanNorm) return false;
 
-  const coincideActividad = actividadesDePlantilla(form, idx)
-    .some(a => normActividad(a) === delPlanNorm);
-  if (!coincideActividad) return false;
+  // 1º el encabezado, SOLO si trae una actividad del catálogo: es el dato del
+  //    día y manda sobre lo declarado en la plantilla (un mismo registro sirve
+  //    para Descongelar, Empaque, Tumbado…).
+  // 2º si no, el «Proceso - Productivo» de la plantilla, como hasta ahora.
+  const delEncabezado = actividadDelEncabezado(form);
+  if (delEncabezado) {
+    if (normActividad(delEncabezado) !== delPlanNorm) return false;
+  } else {
+    const coincideActividad = actividadesDePlantilla(form, idx)
+      .some(a => normActividad(a) === delPlanNorm);
+    if (!coincideActividad) return false;
+  }
 
   // Desempate por especie solo en las actividades que están en los dos
   // catálogos (Empaque, Descarga, Clasificacion…): ahí el nombre no alcanza

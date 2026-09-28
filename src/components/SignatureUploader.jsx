@@ -151,26 +151,54 @@ const SignatureUploader = ({
       setUploading(true);
       setError(null);
 
-      // Obtener identificador del usuario
-      const userId = currentUser?.username || currentUser?.email || currentUser?.nombre || '';
-      
-      if (!userId) {
-        setError('⚠️ No hay usuario logueado');
+      // 🖊️ La firma es la de QUIEN VA A FIRMAR (el elegido en la lista), no la
+      // del usuario que tiene la sesión abierta. Con un reemplazo eran personas
+      // distintas y se cargaba la firma del titular: Jenny firmaba y aparecía
+      // la firma de Ricardo.
+      const norm = (t) => String(t ?? '').trim().toLowerCase();
+      const nombreFirmante = String(firmaData?.nombre || '').trim();
+      const nombreSesion = String(currentUser?.nombre || currentUser?.username || '').trim();
+      const firmaElDeLaSesion = !nombreFirmante || norm(nombreFirmante) === norm(nombreSesion)
+        || norm(nombreFirmante) === norm(currentUser?.username);
+
+      const identidad = nombreFirmante || currentUser?.username || currentUser?.email || currentUser?.nombre || '';
+
+      if (!identidad) {
+        setError('⚠️ Elige primero quién va a firmar');
         setUploading(false);
         return;
       }
 
-      console.log('🔍 Buscando firma guardada para:', userId);
+      console.log('🔍 Buscando firma guardada de:', identidad);
 
-      const signatureKey = `signature_${userId.toLowerCase()}`;
-      let savedSignature = localStorage.getItem(signatureKey);
-      let savedDate = localStorage.getItem(`${signatureKey}_date`);
+      // Caché del navegador: la del propio usuario puede estar guardada con su
+      // usuario de sesión (claves viejas). La de otra persona NO se toma de ahí.
+      const claves = [`signature_${norm(identidad)}`];
+      if (firmaElDeLaSesion) {
+        for (const alias of [currentUser?.username, currentUser?.email, currentUser?.nombre]) {
+          if (alias) claves.push(`signature_${norm(alias)}`);
+        }
+      }
+
+      let signatureKey = claves[0];
+      let savedSignature = null;
+      let savedDate = null;
+      for (const clave of claves) {
+        const valor = localStorage.getItem(clave);
+        if (valor) {
+          signatureKey = clave;
+          savedSignature = valor;
+          savedDate = localStorage.getItem(`${clave}_date`);
+          break;
+        }
+      }
 
       // Si no hay en localStorage, buscar en el backend
       if (!savedSignature) {
         console.log('🔍 No hay firma en localStorage, buscando en servidor...');
         try {
-          const nombre = currentUser?.nombre || currentUser?.username || '';
+          // Siempre por el nombre de quien firma.
+          const nombre = nombreFirmante || nombreSesion;
           if (nombre) {
             const response = await fetch(`${API_BASE_URL}/CatalogoFirmas/by-nombre/${encodeURIComponent(nombre)}`);
             if (response.ok) {
@@ -193,12 +221,14 @@ const SignatureUploader = ({
       }
 
       if (!savedSignature) {
-        setError('⚠️ No tienes una firma guardada. Ve a "Mi Firma" para guardar una.');
+        setError(firmaElDeLaSesion
+          ? '⚠️ No tienes una firma guardada. Ve a "Mi Firma" para guardar una.'
+          : `⚠️ ${nombreFirmante} no tiene una firma guardada en el catálogo. Esa persona debe subirla en "Mi Firma", o puede firmar con su PIN.`);
         setUploading(false);
         return;
       }
 
-      console.log(`✅ Cargando firma guardada para: ${userId} (tipo: ${savedSignature.startsWith('http') ? 'URL' : 'base64'})`);
+      console.log(`✅ Cargando firma guardada de: ${identidad} (tipo: ${savedSignature.startsWith('http') ? 'URL' : 'base64'})`);
 
       let firmaInfo;
 

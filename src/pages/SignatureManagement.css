@@ -551,3 +551,39 @@
     flex-direction: column;
   }
 }
+
+/* ✍️ Quién falta firmar (bandeja de pendientes) */
+.form-card.falta-firma {
+  border-left: 5px solid #f59e0b;
+  background: #fffdf5;
+}
+
+.firmas-estado {
+  margin: 10px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.firmas-estado.firmas-faltan { background: #fef3c7; border: 1px solid #fcd34d; }
+.firmas-estado.firmas-ok     { background: #dcfce7; border: 1px solid #bbf7d0; }
+
+.firmas-titulo { font-weight: 700; color: #92400e; margin-bottom: 4px; }
+.firmas-ok .firmas-titulo { color: #166534; margin-bottom: 0; }
+
+.firma-pendiente {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 2px 0;
+  color: #78350f;
+}
+
+.firma-pendiente strong { font-size: 13px; }
+.firma-puesto { color: #a16207; font-size: 11.5px; }
+.firma-reemplazo { color: #92400e; font-size: 11px; font-style: italic; cursor: help; }
+
+/* 🖼️ Imágenes del formulario en la revisión: se pueden ampliar */
+.img-ampliable, [title="Clic para ampliar"] { cursor: zoom-in; transition: outline .15s; }
+[title="Clic para ampliar"]:hover { outline: 2px solid #3b82f6; outline-offset: 2px; }

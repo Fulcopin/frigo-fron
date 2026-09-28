@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import FormHeader from "../components/FormHeader"
+
+import { abrirImagen } from '../utils/abrirImagen';
 import VersionIndicator from "../components/VersionIndicator"
 import ScrollButton from "../components/ScrollButton"
 import SignatureUploader from "../components/SignatureUploader"
@@ -313,6 +315,16 @@ function ViewForms() {
   // 🖼️ Imagen abierta a pantalla completa. Para revisar un registro de verdad
   // hay que poder ver la foto grande; en miniatura no se distingue nada.
   const [imagenAmpliada, setImagenAmpliada] = useState(null)
+
+  // 🖼️ Al cambiar de formulario o volver a la lista se cierra la imagen
+  //    ampliada: si quedaba abierta, tapaba la lista entera y parecía que el
+  //    botón «← Volver a la lista» no funcionaba.
+  //
+  //    Se mira el NÚMERO del formulario, no el objeto: al recargar sus datos se
+  //    crea un objeto nuevo con el mismo registro, y eso cerraba la imagen
+  //    apenas se abría.
+  const numeroFormularioAbierto = selectedForm?.formID ?? selectedForm?.id ?? null
+  useEffect(() => { setImagenAmpliada(null) }, [numeroFormularioAbierto])
   // Vista rápida editable: se trabaja sobre una copia y solo se manda al guardar.
   const [previewEdits, setPreviewEdits] = useState({})
   const [previewGuardando, setPreviewGuardando] = useState(false)
@@ -1410,7 +1422,7 @@ function ViewForms() {
                               src={fieldDef.staticImage}
                               alt={fieldDef.label}
                               className="vi-miniatura"
-                              onClick={() => setImagenAmpliada({ src: fieldDef.staticImage, titulo: fieldDef.label })}
+                              onClick={() => abrirImagen(fieldDef.staticImage, fieldDef.label)}
                               title="Clic para verla en grande"
                               style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px' }}
                             />
@@ -1429,7 +1441,7 @@ function ViewForms() {
                               src={value}
                               alt={key}
                               className="vi-miniatura"
-                              onClick={() => setImagenAmpliada({ src: value, titulo: key })}
+                              onClick={() => abrirImagen(value, key)}
                               title="Clic para verla en grande"
                               style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px', border: '1px solid #e5e7eb' }}
                             />
@@ -2100,10 +2112,7 @@ function ViewForms() {
                                 src={data.firma.url || data.firma.base64} 
                                 alt={`Firma ${puesto}`} 
                                 className="vi-miniatura"
-                                onClick={() => setImagenAmpliada({
-                                  src: data.firma.url || data.firma.base64,
-                                  titulo: `Firma · ${puesto}`,
-                                })}
+                                onClick={() => abrirImagen(data.firma.url || data.firma.base64, `Firma · ${puesto}`)}
                                 title="Clic para verla en grande"
                                 style={{ 
                                   maxHeight: '150px', 

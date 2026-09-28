@@ -33,7 +33,9 @@ export const BUSQUEDA_PRODUCTO_OPCIONES = [
  * hora. Es la red de seguridad que hace que un error de criterio por el nombre
  * —o un clic equivocado en Editar Plantilla— no llegue a pisar un dato.
  */
-const COLUMNA_NO_TEXTUAL = new Set(['number', 'date', 'time', 'datetime']);
+// Las columnas calculadas tampoco: su valor lo pone la fórmula, y un buscador
+// encima (ej. "LIBRAS PRODUCTO TERMINADO") escribiría un nombre sobre el peso.
+const COLUMNA_NO_TEXTUAL = new Set(['number', 'date', 'time', 'datetime', 'formula', 'calculated', 'percentage', 'firmaPin']);
 const aceptaTexto = (col) => !COLUMNA_NO_TEXTUAL.has(col?.type);
 
 /** Sin tildes, en MAYÚSCULAS y sin espacios de más. */

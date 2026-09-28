@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from "react-router-dom"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
 import Login from "./pages/Login"
@@ -43,6 +43,12 @@ import FrigoVoice from "./components/FrigoVoice"
 import DiagnosticoPlantillas from "./pages/DiagnosticoPlantillas"
 import "./App.css"
 import ReportarCambio from './pages/ReportarCambio';
+import Novedades from './pages/Novedades';
+import Cumplimiento from './pages/Cumplimiento';
+import ActividadesProceso from './pages/ActividadesProceso';
+import { sincronizarActividades } from './utils/actividadesProceso';
+import { API_BASE_URL } from './apiConfig';
+import NovedadesBoton from './components/NovedadesBoton';
 
 function Navigation() {
   const location = useLocation()
@@ -73,6 +79,9 @@ function Navigation() {
 
   const navLinks = [
     { to: "/", icon: "🏠", label: "Inicio", show: true },
+    { to: "/novedades", icon: "📢", label: "Novedades", show: true },
+    { to: "/cumplimiento", icon: "📋", label: "Control de cumplimiento", show: isAdminOrSupervisor },
+    { to: "/actividades", icon: "🏭", label: "Actividades de proceso", show: isAdminOrSupervisor },
     { to: "/fill-form", icon: "📝", label: "Llenar Formulario", show: true },
     { to: "/tickets", icon: "🎫", label: "Tickets", show: true },
     { to: "/my-drafts", icon: "📋", label: "Mis Borradores", show: true },
@@ -152,6 +161,7 @@ function Navigation() {
           >
             🔍 Trazabilidad
           </button>
+          <NovedadesBoton />
           <SessionTimer />
           <UserInfo />
           <button onClick={handleLogout} className="topbar-logout" title="Cerrar sesión">
@@ -212,6 +222,9 @@ function Navigation() {
 function getPageName(pathname) {
   const routes = {
     '/': 'Inicio',
+    '/novedades': 'Novedades',
+    '/cumplimiento': 'Control de cumplimiento',
+    '/actividades': 'Actividades de proceso',
     '/create-template': 'Crear Plantilla',
     '/fill-form': 'Llenar Formulario',
     '/manage-templates': 'Administrar Plantillas',
@@ -252,6 +265,11 @@ function getPageName(pathname) {
 }
 
 function App() {
+  // 🏭 Catálogo de actividades desde la base (tabla ActividadesProceso).
+  //    Si la base no responde, se sigue con el catálogo de respaldo que
+  //    trae el propio archivo, para no dejar los combos vacíos en planta.
+  useEffect(() => { sincronizarActividades(API_BASE_URL); }, []);
+
   return (
     <AuthProvider>
       <Router>
@@ -261,6 +279,33 @@ function App() {
           <main className="main-content">
             <Routes>
               <Route path="/login" element={<Login />} />
+              {/* 📢 Novedades: todos leen; el administrador publica. Las
+                  pendientes también aparecen solas antes de cualquier pantalla
+                  (NovedadesGate, dentro de ProtectedRoute y RoleBasedRoute). */}
+              {/* 📋 Cuadro de control: qué registros se llenaron y cuáles
+                  están firmados por todos. Reemplaza el Excel de Calidad. */}
+              {/* 🏭 Catálogo de actividades: antes estaba dentro del código. */}
+              <Route path="/actividades" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <ErrorBoundary>
+                    <ActividadesProceso />
+                  </ErrorBoundary>
+                </RoleBasedRoute>
+              } />
+              <Route path="/cumplimiento" element={
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                  <ErrorBoundary>
+                    <Cumplimiento />
+                  </ErrorBoundary>
+                </RoleBasedRoute>
+              } />
+              <Route path="/novedades" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <Novedades />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } />
               
               {/* Rutas protegidas */}
               {/* Inicio - Acceso para todos los roles autenticados */}

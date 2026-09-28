@@ -11,6 +11,8 @@ import { isResumenAutoEnabled, setResumenAutoEnabled } from "../hooks/useLoteSto
 import { InventarioColumnaConfig, InventarioAutoCompletar, InventarioTablaConfig, CampoLoteEncabezadoConfig, ColumnaLotePadreConfig } from "../components/InventarioConfig";
 import BusquedaProductoSelect from "../components/BusquedaProductoSelect";
 import SelectorActividadesProceso from "../components/SelectorActividadesProceso";
+import EditorOpciones from "../components/EditorOpciones";
+import { TIPOS_CAMPO_DETALLE, TIPOS_CON_OPCIONES } from "../utils/tiposCampoDetalle";
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
@@ -85,6 +87,9 @@ function EditTemplate() {
     // flujo de trabajo. Reemplaza a la tercera columna de horas, que obligaba a
     // deducir el cierre de la jornada cuando no hay turnos fijos de 8 horas.
     { value: "inicioCierre", label: "✅ Check de Entrada / Salida" },
+    // Firma con PIN: la celda queda "Firmado digitalmente por: …" con código
+    // de verificación y, si se elige, la imagen de la firma (FirmaCelda.jsx).
+    { value: "firmaPin", label: "✍️ Firma con PIN (firmado digitalmente)" },
   ];
 
   // Campos por defecto de Lote Entrante (5 campos)
@@ -2305,24 +2310,21 @@ function EditTemplate() {
                                   }}
                                   style={{ width: '100%', padding: '6px 8px', border: '1px solid #93c5fd', borderRadius: '5px', fontSize: '13px' }}
                                 >
-                                  <option value="text">Texto</option>
-                                  <option value="number">Número</option>
-                                  <option value="select">Lista</option>
+                                  {/* Los mismos tipos que una columna normal (Selección, Casillas, Fecha…). */}
+                                  {TIPOS_CAMPO_DETALLE.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                                 </select>
                               </div>
-                              {campo.type === 'select' && (
+                              {TIPOS_CON_OPCIONES.has(campo.type) && (
                                 <div style={{ flex: 2 }}>
-                                  <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>Opciones (coma)</label>
-                                  <input
-                                    type="text"
-                                    value={campo.optionsTexto ?? (campo.options || []).join(', ')}
-                                    onChange={(e) => {
+                                  <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>Opciones</label>
+                                  <EditorOpciones
+                                    opciones={(campo.options || [])}
+                                    titulo={campo.label}
+                                    onChange={(nuevas) => {
                                       const campos = [...(column.detalleCampos || [])];
-                                      campos[ci] = { ...campos[ci], optionsTexto: e.target.value, options: e.target.value.split(',').map(x => x.trim()).filter(Boolean) };
+                                      campos[ci] = { ...campos[ci], options: nuevas };
                                       updateColumnInTable(elementIndex, colIndex, 'detalleCampos', campos);
                                     }}
-                                    placeholder="Kg, Lbs, Unidad"
-                                    style={{ width: '100%', padding: '6px 8px', border: '1px solid #93c5fd', borderRadius: '5px', fontSize: '13px' }}
                                   />
                                 </div>
                               )}
@@ -2333,7 +2335,10 @@ function EditTemplate() {
                               <div style={{ flex: 1.3 }}>
                                 <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>🔍 Búsqueda API</label>
                                 <select
-                                  value={campo.busqueda || ''}
+                                  value={TIPOS_CON_OPCIONES.has(campo.type) ? '' : (campo.busqueda || '')}
+                                  // Selección y casillas usan sus opciones; la búsqueda no aplica.
+                                  disabled={TIPOS_CON_OPCIONES.has(campo.type)}
+                                  title={TIPOS_CON_OPCIONES.has(campo.type) ? 'No aplica: este campo usa las opciones escritas' : undefined}
                                   onChange={(e) => {
                                     const campos = [...(column.detalleCampos || [])];
                                     campos[ci] = { ...campos[ci], busqueda: e.target.value };

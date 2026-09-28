@@ -24,7 +24,8 @@ const normTxt = (s) => String(s ?? '')
 // usan el mismo catálogo: así el dato queda escrito igual en los dos lados.
 // El input las ofrece como sugerencias (datalist): se puede elegir de la lista
 // o escribir una nueva — lo tipeado vale igual, así "agregar más" es escribirla.
-import { ACTIVIDADES_PESCADO as ACTIVIDADES_GENERAL, ACTIVIDADES_CAMARON } from '../utils/actividadesProceso';
+import { ACTIVIDADES_PESCADO as ACTIVIDADES_GENERAL, ACTIVIDADES_CAMARON,
+  sincronizarActividades } from '../utils/actividadesProceso';
 // Planta pidió UNA sola pestaña con pescado y camarón juntos, separados a la
 // vista: el desempate de especie pasó del nombre de la pestaña al grupo de
 // cada fila (utils/gruposPlan.js mantiene compatible lo viejo).
@@ -117,6 +118,18 @@ export default function ProductionPlanForm() {
   // hoy pero se va a trabajar otro día.
   const [verTodasMatriz, setVerTodasMatriz] = useState(false);
   const [ejecutando, setEjecutando] = useState(false);
+  // 🏭 Catálogo de actividades traído de la base (tabla ActividadesProceso).
+  //    Se pide al abrir el plan por si se entró directo a esta pantalla, y el
+  //    contador fuerza a redibujar cuando llega: las listas se llenan en el
+  //    mismo objeto y React no se entera solo.
+  const [catalogoListo, setCatalogoListo] = useState(0);
+  useEffect(() => {
+    let vivo = true;
+    sincronizarActividades(API_BASE_URL)
+      .then(() => { if (vivo) setCatalogoListo(n => n + 1); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, []);
   // 🎯 Panel "Actividades de hoy": elegir rápido qué filas del catálogo van
   // en la pestaña activa, en vez de armarlas o borrarlas una por una.
   const [verSelector, setVerSelector] = useState(false);
@@ -800,6 +813,11 @@ export default function ProductionPlanForm() {
    *  tienen formularios guardados HOY, para sugerir con un clic. */
   const abrirSelectorActividades = async () => {
     if (!activeCategory) return;
+    // Trae el catálogo de la base por si agregaron actividades desde
+    // «🏭 Actividades de proceso» mientras esta pantalla estaba abierta.
+    sincronizarActividades(API_BASE_URL)
+      .then(() => setCatalogoListo(n => n + 1))
+      .catch(() => {});
     // Las claves llevan el grupo adelante: «Empaque» está en los dos
     // catálogos y, con pescado y camarón en la misma pestaña, el nombre solo
     // ya no alcanza para distinguirlas.
@@ -822,6 +840,14 @@ export default function ProductionPlanForm() {
         if (n > 0) conteo[claveActividad(act.grupo, act.nombre)] = n;
       }
       setFormsHoyPorActividad(conteo);
+
+      // Pestaña vacía: se marcan solas las actividades que SÍ tienen
+      // formularios ese día. Así el plan arranca con lo que de verdad se
+      // trabajó, y desde el mismo panel se agregan las que falten.
+      const filasConNombre = activeCategory.processes.filter(p => !p.sub && (p.name || '').trim()).length;
+      if (filasConNombre === 0 && Object.keys(conteo).length > 0) {
+        setSelMarcadas(new Set(Object.keys(conteo)));
+      }
     } catch { /* sin conexión: el panel igual sirve para elegir a mano */ }
   };
 
@@ -833,22 +859,155 @@ export default function ProductionPlanForm() {
   });
 
   /** Marca solo las actividades que YA tienen formularios guardados hoy. */
+  /**
+   * ¿La fila tiene algo que valga la pena conservar?
+   *
+   * Un 0 o un 0.00 NO cuenta: son las actividades que quedaron de otro día y
+   * que las consultas dejaron en cero. Si contaran, el sistema preguntaría
+   * antes de quitarlas y el plan se llenaría de filas vacías.
+   */
+  const filaConDatos = (p) => {
+    const hayValor = (v) => {
+      const t = String(v ?? '').trim();
+      if (!t) return false;
+      const n = Number(t.replace(/[$\s]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+      return Number.isNaN(n) ? true : n !== 0;   // texto = dato; número 0 = vacío
+    };
+    return Object.values(p.plan || {}).some(hayValor)
+      || Object.values(p.prod || {}).some(hayValor)
+      || Object.values(p.customData || {}).some(hayValor);
+  };
+
   const marcarSoloLasDeHoy = () => setSelMarcadas(new Set(Object.keys(formsHoyPorActividad)));
+
+  /**
+   * 🧹 Quita las filas que quedaron en CERO (sin libras, sin horas, sin
+   * personas). Son las que sobran de otro día: el plan se arma con lo que de
+   * verdad se trabajó y se agregan más a mano cuando haga falta.
+   */
+  const quitarFilasEnCero = () => {
+    if (!activeCategory) return;
+    const enCero = activeCategory.processes.filter(p => !p.sub && (p.name || '').trim() && !filaConDatos(p));
+    if (enCero.length === 0) {
+      alert('Todas las actividades de esta pestaña tienen datos.');
+      return;
+    }
+    if (!window.confirm(
+      `Se van a quitar ${enCero.length} actividad(es) sin datos:\n\n` +
+      enCero.slice(0, 12).map(p => `• ${p.name}`).join('\n') +
+      (enCero.length > 12 ? `\n… y ${enCero.length - 12} más` : '') +
+      `\n\nLas que tienen producción no se tocan. ¿Continuar?`
+    )) return;
+
+    const ids = new Set(enCero.map(p => p.id));
+    setCategories(cats => cats.map(c => c.id !== activeCategory.id ? c : {
+      ...c,
+      processes: c.processes.filter(p => !ids.has(p.id) && !ids.has(p.parentId)),
+    }));
+  };
+
+  /**
+   * 📅 Al cambiar la FECHA DE OPERACIÓN se recalculan las actividades del día.
+   *
+   *   - Si la pestaña no tiene datos cargados, se cambian solas: al elegir otra
+   *     fecha uno espera ver lo de ESE día, no lo del anterior.
+   *   - Si ya hay datos escritos, NO se toca nada y aparece un aviso con el
+   *     botón para hacerlo a mano. Cambiar de fecha no puede borrar trabajo.
+   */
+  const [sugerenciaFecha, setSugerenciaFecha] = useState(null);
+
+  useEffect(() => {
+    if (!activeCategory || !fecha) return;
+    let vivo = true;
+
+    (async () => {
+      try {
+        const delDia = await formulariosDelDia(fecha);
+        const conteo = {};
+        for (const act of catalogoActividadesTab(activeCategory)) {
+          const n = delDia.filter(f => correspondeAFila(f, activeCategory, act.nombre, act.grupo === GRUPO_CAMARON)).length;
+          if (n > 0) conteo[claveActividad(act.grupo, act.nombre)] = n;
+        }
+        if (!vivo) return;
+        setFormsHoyPorActividad(conteo);
+
+        const claves = Object.keys(conteo);
+        if (claves.length === 0) { setSugerenciaFecha(null); return; }
+
+        const filas = activeCategory.processes.filter(p => !p.sub && (p.name || '').trim());
+        // Las filas en cero no cuentan: son restos de otra fecha.
+        const hayDatos = filas.some(filaConDatos);
+
+        const yaSonLasMismas = filas.length === claves.length
+          && filas.every(p => conteo[claveActividad(grupoEfectivo(activeCategory, p), p.name)] !== undefined);
+
+        if (yaSonLasMismas) { setSugerenciaFecha(null); return; }
+
+        if (!hayDatos) {
+          const marcadas = new Set(claves);
+          setSelMarcadas(marcadas);
+          aplicarSelectorActividades(marcadas);
+          setSugerenciaFecha(null);
+        } else {
+          setSugerenciaFecha({ claves, cantidad: claves.length });
+        }
+      } catch { /* sin conexión: se deja la pestaña como está */ }
+    })();
+
+    return () => { vivo = false; };
+    // Solo al cambiar la fecha o de pestaña; no en cada tecleo del plan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fecha, activeTabId, catalogoListo]);
+
+  /**
+   * ✨ Deja la pestaña SOLO con las actividades que tienen formularios en la
+   * fecha del plan, en un clic y sin abrir el panel. Las filas que ya estaban
+   * y no se trabajaron ese día se quitan (si tienen datos, pide confirmación).
+   */
+  const dejarSoloLasDeHoy = async () => {
+    if (!activeCategory) return;
+    setEjecutando(true);
+    try {
+      const delDia = await formulariosDelDia(fecha);
+      const conteo = {};
+      for (const act of catalogoActividadesTab(activeCategory)) {
+        const n = delDia.filter(f => correspondeAFila(f, activeCategory, act.nombre, act.grupo === GRUPO_CAMARON)).length;
+        if (n > 0) conteo[claveActividad(act.grupo, act.nombre)] = n;
+      }
+      setFormsHoyPorActividad(conteo);
+
+      const claves = Object.keys(conteo);
+      if (claves.length === 0) {
+        alert(
+          `No hay formularios guardados con fecha ${fecha} para las actividades del catálogo.\n\n` +
+          `Revisa la fecha del plan, o que la actividad esté cargada en la plantilla ` +
+          `o en el encabezado del formulario («Tipo de proceso»).`
+        );
+        return;
+      }
+
+      const marcadas = new Set(claves);
+      setSelMarcadas(marcadas);
+      aplicarSelectorActividades(marcadas);
+    } catch (e) {
+      alert(`No se pudieron traer los formularios del día: ${e.message}`);
+    } finally {
+      setEjecutando(false);
+    }
+  };
 
   /**
    * Aplica el panel: agrega filas nuevas para lo marcado que faltaba, y quita
    * las filas (con sus sub-filas) de lo que se desmarcó. Si alguna fila a
    * quitar ya tiene datos cargados, pide confirmación antes de perderlos.
    */
-  const aplicarSelectorActividades = () => {
+  const aplicarSelectorActividades = (marcadas = selMarcadas) => {
     if (!activeCategory) return;
     const catalogoTab = catalogoActividadesTab(activeCategory);
-    const tieneDatos = (p) => Object.values(p.plan || {}).some(v => String(v ?? '').trim())
-      || Object.values(p.prod || {}).some(v => String(v ?? '').trim())
-      || Object.values(p.customData || {}).some(v => String(v ?? '').trim());
+    const tieneDatos = filaConDatos;
 
     const aQuitar = activeCategory.processes.filter(p => !p.sub && (p.name || '').trim()
-      && !selMarcadas.has(claveActividad(grupoEfectivo(activeCategory, p), p.name)));
+      && !marcadas.has(claveActividad(grupoEfectivo(activeCategory, p), p.name)));
     const conDatos = aQuitar.filter(tieneDatos);
     if (conDatos.length > 0 && !window.confirm(
       `${conDatos.length} actividad(es) que vas a quitar ya tienen datos cargados (ej: «${conDatos[0].name}»).\n¿Igual las quitás de esta pestaña?`
@@ -861,7 +1020,7 @@ export default function ProductionPlanForm() {
       const existentes = new Set(c.processes
         .filter(p => !p.sub && (p.name || '').trim())
         .map(p => claveActividad(grupoEfectivo(c, p), p.name)));
-      const nuevas = [...selMarcadas]
+      const nuevas = [...marcadas]
         .filter(k => !existentes.has(k))
         .map(k => {
           const act = porClave.get(k);
@@ -1570,6 +1729,32 @@ export default function ProductionPlanForm() {
           >
             🎯 Actividades de hoy
           </button>
+          {sugerenciaFecha && (
+            <span
+              style={{ alignSelf: 'center', background: '#fef3c7', border: '1px solid #fcd34d',
+                       borderRadius: '999px', padding: '4px 12px', fontSize: '12px', color: '#92400e' }}
+              title="La pestaña tiene datos cargados, así que no se cambió sola"
+            >
+              📅 Esta fecha tiene {sugerenciaFecha.cantidad} actividad(es) con formularios
+            </span>
+          )}
+          <button
+            className="pl-add-row-btn-top"
+            style={{ background: '#fff7ed', color: '#9a3412' }}
+            onClick={quitarFilasEnCero}
+            title="Quita las actividades que quedaron en cero; las que tienen producción se mantienen"
+          >
+            🧹 Quitar las que están en 0
+          </button>
+          <button
+            className="pl-add-row-btn-top"
+            style={{ background: '#ecfdf5', color: '#065f46' }}
+            onClick={dejarSoloLasDeHoy}
+            disabled={ejecutando}
+            title="Deja en la pestaña solo las actividades con formularios de la fecha del plan"
+          >
+            ✨ Solo las de hoy
+          </button>
           {ultimaAuto && (
             <span
               style={{ fontSize: '11.5px', color: '#0f766e', fontWeight: 600, alignSelf: 'center' }}
@@ -1604,7 +1789,8 @@ export default function ProductionPlanForm() {
           catálogo van en la pestaña activa — en vez de agregar/borrar a mano.
           «✨ Solo las de hoy» marca automáticamente lo que YA tiene
           formularios PD guardados en la fecha del plan. */}
-      {activeCategory && verSelector && (() => {
+      {/* catalogoListo: redibuja el panel cuando llega el catálogo de la base */}
+      {activeCategory && verSelector && catalogoListo >= 0 && (() => {
         const catalogoTab = catalogoActividadesTab(activeCategory);
         const existentes = new Set(activeCategory.processes
           .filter(p => !p.sub && (p.name || '').trim())

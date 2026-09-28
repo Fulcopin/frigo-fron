@@ -6,29 +6,38 @@
 // Siempre se ofrece como datalist: se elige de la lista o se escribe una
 // nueva actividad — "agregar más" es simplemente tipearla.
 
-export const ACTIVIDADES_PESCADO = [
-  'Congelado', 'Cambio de Etiquetas', 'Capacitacion', 'Clasificacion',
-  'Clasificar al Vacio', 'Codificar', 'Colgar', 'Corte', 'Corte y Clasificacion',
-  'Corte y Empaque', 'Descarga', 'Descongelar', 'Embarque', 'Empaque',
-  'Empaque al Vacio', 'Empaque y Decorado', 'Empaque y Sellado',
-  'Enfundado y Sellado', 'Enlatado', 'Fileteo', 'GelPack', 'Imprimir Etiqueta',
+const SEMILLA_PESCADO = [
+  'Cambio de Cajas', 'Cambio de Etiquetas', 'Capacitacion', 'Clasificacion',
+  'Clasificar al Vacio', 'Codificar', 'Colgar', 'Congelado', 'Corte',
+  'Corte y Clasificacion', 'Corte y Empaque', 'Decorar', 'Descabezado',
+  'Descarga', 'Descongelar', 'Embarque', 'Empaque', 'Empaque al Vacio',
+  'Empaque y Decorado', 'Empaque y Sellado', 'Enfundado y Sellado',
+  'Enlatado', 'Fileteo', 'GelPack', 'Hidratar', 'Imprimir Etiqueta',
   'Inyectado', 'Lavando Carros', 'Lavando Tinas', 'Lavar Mallas',
   'Limpieza Tinas', 'Limpieza y Clasificacion', 'Limpieza y Enlatado',
-  'Marcar Funda', 'Medir', 'Muelle', 'Pegar Etiqueta', 'Picar Ceviche',
-  'Recepcion de Pesca', 'Reempaque /Caja Final Alfa',
+  'Marcar Funda', 'Medir', 'Muelle', 'Pegar Etiqueta', 'Pelar',
+  'Picar Ceviche', 'Recepcion de Pesca', 'Reempaque /Caja Final Alfa',
   'Reempaque /Caja Final Kirkland', 'Reempaque/ Caja Final',
   'Reempaque/ Caja Final Ceviche', 'Reempaque/ Caja Final Darden',
   'Reempaque/ Caja Final Publix', 'Reempaque/ Caja Final Sysco',
-  'Reempaque/ Caja Final UsFoods', 'Revision de Producto', 'T/S',
+  'Reempaque/ Caja Final UsFoods', 'Revision de Producto', 'T/S', 'Tumbado',
   'Visita de Planta',
 ];
 
-export const ACTIVIDADES_CAMARON = [
+const SEMILLA_CAMARON = [
   'Cambio de Cajas', 'Cambio de Etiquetas', 'Clasificacion', 'Decorar',
   'Descabezado', 'Descarga', 'Descongelar', 'Empaque', 'Hidratar',
-  'Imprimir Etiqueta', 'Lavar Mallas', 'Pelar', 'Reempaque/ Caja Final',
-  'Revision de Producto', 'Tumbado',
+  'Imprimir Etiqueta', 'Lavar Mallas', 'Pelar', 'Recepcion de Pesca',
+  'Reempaque/ Caja Final', 'Revision de Producto', 'Tumbado',
 ];
+
+// Las listas que usan las pantallas. Son SIEMPRE el mismo objeto: al traer el
+// catálogo de la base se reemplaza su contenido, y quien ya las importó ve los
+// cambios sin tener que recargar la página.
+// La semilla de arriba queda como respaldo: si la base no responde, el sistema
+// sigue funcionando con el catálogo de siempre.
+export const ACTIVIDADES_PESCADO = [...SEMILLA_PESCADO];
+export const ACTIVIDADES_CAMARON = [...SEMILLA_CAMARON];
 
 /** Etiqueta bajo la que se guarda la actividad en el headerData del formulario. */
 export const CAMPO_ACTIVIDAD = 'Actividad de Proceso';
@@ -71,16 +80,57 @@ export const normActividad = (s) =>
     .toLowerCase();
 
 /** Todas las actividades, sin repetidos y en orden alfabético. */
-export const ACTIVIDADES_TODAS = (() => {
+export const ACTIVIDADES_TODAS = [];
+
+let SET_PESCADO = new Set();
+let SET_CAMARON = new Set();
+
+/** Rehace ACTIVIDADES_TODAS y los conjuntos de búsqueda. */
+function recalcular() {
   const vistas = new Map();
   for (const a of [...ACTIVIDADES_PESCADO, ...ACTIVIDADES_CAMARON]) {
     if (!vistas.has(normActividad(a))) vistas.set(normActividad(a), a);
   }
-  return [...vistas.values()].sort((a, b) => a.localeCompare(b, 'es'));
-})();
+  ACTIVIDADES_TODAS.length = 0;
+  ACTIVIDADES_TODAS.push(...[...vistas.values()].sort((a, b) => a.localeCompare(b, 'es')));
+  SET_PESCADO = new Set(ACTIVIDADES_PESCADO.map(normActividad));
+  SET_CAMARON = new Set(ACTIVIDADES_CAMARON.map(normActividad));
+}
+recalcular();
 
-const SET_PESCADO = new Set(ACTIVIDADES_PESCADO.map(normActividad));
-const SET_CAMARON = new Set(ACTIVIDADES_CAMARON.map(normActividad));
+/**
+ * 🏭 Trae el catálogo desde la base (tabla ActividadesProceso) y reemplaza el
+ * contenido de las listas. Se llama una vez al abrir el sistema.
+ *
+ * Si la base no responde se queda con la semilla: es preferible ofrecer el
+ * catálogo de siempre a dejar los combos vacíos en planta.
+ *
+ * @returns {Promise<{ok: boolean, total: number}>}
+ */
+export async function sincronizarActividades(baseUrl) {
+  try {
+    const url = `${baseUrl || ''}/ActividadesProceso`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Error ${r.status}`);
+    const data = await r.json();
+    const lista = Array.isArray(data) ? data : (Array.isArray(data?.$values) ? data.$values : []);
+    if (lista.length === 0) return { ok: false, total: 0 };
+
+    const pescado = lista.filter(a => a.pescado).map(a => String(a.nombre).trim());
+    const camaron = lista.filter(a => a.camaron).map(a => String(a.nombre).trim());
+
+    ACTIVIDADES_PESCADO.length = 0;
+    ACTIVIDADES_PESCADO.push(...pescado);
+    ACTIVIDADES_CAMARON.length = 0;
+    ACTIVIDADES_CAMARON.push(...camaron);
+    recalcular();
+
+    return { ok: true, total: ACTIVIDADES_TODAS.length };
+  } catch (e) {
+    console.warn('🏭 No se pudo traer el catálogo de actividades; se usa el de respaldo:', e);
+    return { ok: false, total: ACTIVIDADES_TODAS.length };
+  }
+}
 
 /** De qué catálogo viene una actividad: 'ambas' | 'pescado' | 'camaron' | null. */
 export function origenActividad(nombre) {

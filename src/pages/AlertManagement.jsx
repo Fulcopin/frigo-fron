@@ -23,6 +23,13 @@ const DEFAULT_CONFIG = {
   senderEmail: '',
   senderPassword: '',
   senderName: 'Frigolab Alertas',
+  // 📧 Resumen de cumplimiento cada X horas
+  enableResumenCumplimiento: false,
+  resumenCadaHoras: 10,
+  resumenDiasAtras: 7,
+  resumenIncluirFinDeSemana: true,
+  resumenAResponsables: true,
+  resumenRecipients: [],
   smtpServer: 'smtp.gmail.com',
   smtpPort: 587,
 };
@@ -36,6 +43,7 @@ export default function AlertManagement() {
   const [activeTab, setActiveTab] = useState('active');
   const [testEmail, setTestEmail] = useState('');
   const [configSaved, setConfigSaved] = useState(false);
+  const [enviandoResumen, setEnviandoResumen] = useState(false);
   const [loadingFirmantes, setLoadingFirmantes] = useState(false);
   const [triggeringSummary, setTriggeringSummary] = useState(false);
 
@@ -153,6 +161,7 @@ export default function AlertManagement() {
           parsed.missingFormRecipients = parseRecipientsToArray(configData.missingFormRecipients);
           parsed.signatureRecipients = parseRecipientsToArray(configData.signatureRecipients);
           parsed.templateChangeRecipients = parseRecipientsToArray(configData.templateChangeRecipients);
+          parsed.resumenRecipients = parseRecipientsToArray(configData.resumenRecipients);
           setAlertConfig(parsed);
         } else {
           const savedConfig = localStorage.getItem(ALERT_CONFIG_KEY);
@@ -285,6 +294,21 @@ export default function AlertManagement() {
     }
   };
 
+  /** Manda el resumen de cumplimiento en el momento, con lo ya guardado. */
+  const handleEnviarResumenAhora = async () => {
+    setEnviandoResumen(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/Cumplimiento/enviar-resumen`, { method: 'POST' });
+      const data = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(data?.message || `Error ${r.status}`);
+      alert(data?.mensaje || 'Resumen enviado.');
+    } catch (e) {
+      alert(`No se pudo enviar el resumen.\n${e.message}`);
+    } finally {
+      setEnviandoResumen(false);
+    }
+  };
+
   const handleSaveConfig = async () => {
     try {
       // 🔧 Convertir arrays de recipients a JSON string para el backend
@@ -315,6 +339,19 @@ export default function AlertManagement() {
         lockThresholdHours: parseInt(alertConfig.lockThresholdHours) || 36,
         senderEmail: alertConfig.senderEmail || '',
         senderName: alertConfig.senderName || 'Frigolab Alertas',
+
+        // 📧 Resumen de cumplimiento (se guarda como texto JSON en el backend)
+        enableResumenCumplimiento: alertConfig.enableResumenCumplimiento ?? false,
+        resumenCadaHoras: Number(alertConfig.resumenCadaHoras) || 10,
+        resumenDiasAtras: Number(alertConfig.resumenDiasAtras) || 7,
+        resumenIncluirFinDeSemana: alertConfig.resumenIncluirFinDeSemana ?? true,
+        resumenAResponsables: alertConfig.resumenAResponsables ?? true,
+        resumenRecipients: JSON.stringify(
+          Array.isArray(alertConfig.resumenRecipients)
+            ? alertConfig.resumenRecipients.filter(e => e && e.trim())
+            : String(alertConfig.resumenRecipients || '')
+                .split(/[,;]/).map(e => e.trim()).filter(e => e.includes('@'))
+        ),
       };
 
       const response = await fetch(`${API_BASE_URL}/Alerts/config`, {
@@ -610,6 +647,94 @@ export default function AlertManagement() {
               {alertConfig && (
                 <div className="config-content">
                   <div className="config-group">
+                    {/* 📧 RESUMEN DE CUMPLIMIENTO CADA X HORAS
+                        Manda el cuadro de "que falta" a los responsables. */}
+                    <h3>📧 Resumen de cumplimiento a los responsables</h3>
+                    <div className="config-item">
+                      <label className="config-label">
+                        <input
+                          type="checkbox"
+                          checked={alertConfig.enableResumenCumplimiento ?? false}
+                          onChange={(e) => setAlertConfig({ ...alertConfig, enableResumenCumplimiento: e.target.checked })}
+                        />
+                        Enviar el resumen automáticamente
+                      </label>
+                      <small style={{ display: 'block', color: '#64748b' }}>
+                        Avisa qué registros faltan y cuáles están sin firmar. Si no hay nada pendiente, no se envía correo.
+                      </small>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="form-label">Cada cuántas horas:</label>
+                      <input
+                        type="number" min="1" max="168"
+                        value={alertConfig.resumenCadaHoras ?? 10}
+                        onChange={(e) => setAlertConfig({ ...alertConfig, resumenCadaHoras: Number(e.target.value) || 10 })}
+                        style={{ width: '90px' }}
+                      />
+                      <small style={{ marginLeft: '8px', color: '#64748b' }}>10 = tres veces al día</small>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="form-label">Días hacia atrás que se revisan:</label>
+                      <input
+                        type="number" min="1" max="62"
+                        value={alertConfig.resumenDiasAtras ?? 7}
+                        onChange={(e) => setAlertConfig({ ...alertConfig, resumenDiasAtras: Number(e.target.value) || 7 })}
+                        style={{ width: '90px' }}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label className="config-label">
+                        <input
+                          type="checkbox"
+                          checked={alertConfig.resumenIncluirFinDeSemana ?? true}
+                          onChange={(e) => setAlertConfig({ ...alertConfig, resumenIncluirFinDeSemana: e.target.checked })}
+                        />
+                        Exigir también sábado y domingo
+                      </label>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="config-label">
+                        <input
+                          type="checkbox"
+                          checked={alertConfig.resumenAResponsables ?? true}
+                          onChange={(e) => setAlertConfig({ ...alertConfig, resumenAResponsables: e.target.checked })}
+                        />
+                        Avisar a cada responsable y a sus reemplazos
+                      </label>
+                      <small style={{ display: 'block', color: '#64748b' }}>
+                        Cada uno recibe solo sus registros. El correo sale del catálogo de firmas.
+                      </small>
+                    </div>
+
+                    <div className="config-item">
+                      <label className="form-label">Destinatarios fijos (Calidad / SGI), separados por coma:</label>
+                      <input
+                        type="text"
+                        value={(alertConfig.resumenRecipients || []).join(', ')}
+                        onChange={(e) => setAlertConfig({
+                          ...alertConfig,
+                          resumenRecipients: e.target.value.split(/[,;]/).map(x => x.trim()).filter(Boolean),
+                        })}
+                        placeholder="calidad@frigolab.com.ec, sgi@frigolab.com.ec"
+                        style={{ width: '100%' }}
+                      />
+                      <small style={{ display: 'block', color: '#64748b' }}>Reciben el cuadro completo.</small>
+                    </div>
+
+                    <div className="config-item">
+                      <button type="button" onClick={handleEnviarResumenAhora} disabled={enviandoResumen}
+                              style={{ background: '#15803d', color: '#fff', border: 'none', borderRadius: '6px', padding: '9px 16px', fontWeight: 600, cursor: 'pointer' }}>
+                        {enviandoResumen ? 'Enviando…' : '📧 Enviar el resumen ahora'}
+                      </button>
+                      <small style={{ display: 'block', color: '#64748b', marginTop: '4px' }}>
+                        Usa lo que esté guardado. Sirve para probar sin esperar las horas.
+                      </small>
+                    </div>
+
                     <h3>📝 Alertas por Falta de Llenado</h3>
                     <div className="config-item">
                       <label className="config-label">
