@@ -14,6 +14,8 @@
  * temporal en memoria.
  */
 
+import { urlImagen } from './urlImagen';
+
 const esDatos = (src) => String(src || '').startsWith('data:');
 
 /** "data:image/png;base64,AAA" → archivo temporal que el navegador sí abre. */
@@ -34,7 +36,7 @@ function comoArchivo(src) {
 export function abrirImagen(src, titulo = 'Imagen') {
   if (!src) return false;
   try {
-    const url = esDatos(src) ? comoArchivo(src) : src;
+    const url = esDatos(src) ? comoArchivo(src) : urlImagen(src);
     const pestana = window.open(url, '_blank', 'noopener,noreferrer');
 
     if (!pestana) {

@@ -17,6 +17,7 @@ import { fetchUsers, filterUsersByPuesto, canUserSignForPuesto } from "../servic
 import "./FillForm.css"
 import "./FillForm.tablet.css"  // 📱 Estilos optimizados para tablets
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
+import { urlImagen } from "../utils/urlImagen"
 import authService from "../services/authService";
 import { evaluarFormula as evaluarFormulaEngine, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from "../utils/formulaEngine";
 import { toLocalISOString } from "../utils/dateUtils";
@@ -42,14 +43,55 @@ import { validaEspecie, especieDelEncabezado, validarEspecieDeCodigo } from '../
 import { DIGITOS_LOTE } from '../utils/validacionLote';
 import HoraInput24 from '../components/HoraInput24';
 import DetalleFilas, { resumenDetalle } from '../components/DetalleFilas';
-import FirmaCelda from '../components/FirmaCelda';
-import UsuarioAutocomplete from '../components/UsuarioAutocomplete';
-import { usaBusquedaUsuario } from '../utils/busquedaUsuario';
 import { validarHorariosFormulario, mensajeDeErrorServidor } from '../utils/validarHorarios';
-import { revisarCoherenciaHoraria } from '../utils/coherenciaHoraria';
+import { revisarHorariosDelFormulario, mensajeDeRevision } from '../utils/reglasTurno';
 import { recalcularFormulasBodyData } from '../utils/recalcularFormulas';
 import { camposDetalleActuales } from '../utils/detalleCamposActuales';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
+
+/** Usuario de la sesión, para no mezclar el trabajo de dos personas. */
+const usuarioDeLaSesion = () => {
+  try {
+    const u = authService.getCurrentUser();
+    return String(u?.username || u?.email || u?.nombre || '').toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * ¿Esta pestaña guardada se puede volver a abrir sin romper la pantalla?
+ *
+ * Si el navegador guardó una pestaña a medias (o de una versión anterior de la
+ * plantilla), al dibujarla aparecía «.map is not a function» y el formulario no
+ * abría. Mejor descartarla: lo guardado en el servidor no se pierde.
+ */
+const pestanaUtilizable = (tab) => {
+  if (!tab || typeof tab !== 'object') return false;
+  const plantilla = tab.template;
+  if (!plantilla || typeof plantilla !== 'object' || !plantilla.templateID) return false;
+
+  // Lo que el formulario recorre con .map tiene que ser una lista de verdad.
+  const esListaOVacio = (v) => v === undefined || v === null || Array.isArray(v);
+  if (!esListaOVacio(plantilla.bodyElements)) return false;
+  if (!esListaOVacio(plantilla.headerFields)) return false;
+  if (!esListaOVacio(plantilla.firmas)) return false;
+  if (!esListaOVacio(tab.bodyData)) return false;
+  if (!esListaOVacio(tab.selectedLotes)) return false;
+  if (!esListaOVacio(tab.apiDetailsData)) return false;
+  if (!esListaOVacio(tab.apiMovimientoData)) return false;
+
+  // Cada bloque del cuerpo: sus filas también tienen que ser listas. Basta que
+  // UNA de las dos (data o rows) venga dañada para descartar la pestaña.
+  const filasDanadas = (v) => v !== undefined && v !== null && !Array.isArray(v);
+  if (Array.isArray(tab.bodyData)) {
+    for (const bloque of tab.bodyData) {
+      if (!bloque || typeof bloque !== 'object') continue;
+      if (filasDanadas(bloque.data) || filasDanadas(bloque.rows)) return false;
+    }
+  }
+  return true;
+};
 // --- CONSTANTES ---
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
@@ -694,6 +736,25 @@ function FillForm() {
     if (savedData && !id) { // No recuperamos si estamos editando un formulario específico por URL
       try {
         const parsed = JSON.parse(savedData);
+
+        // Las pestañas son de QUIEN las abrió. Si entra otra persona en el
+        // mismo equipo, no se le cargan: antes se le abría el trabajo del
+        // anterior y el formulario podía romperse al dibujarlo.
+        const usuario = usuarioDeLaSesion();
+        const deOtraPersona = parsed.usuario && usuario && parsed.usuario !== usuario;
+        if (deOtraPersona) {
+          console.warn('📦 Pestañas de otro usuario; no se recuperan.');
+          return;
+        }
+
+        // Se descartan las pestañas dañadas o de una versión anterior.
+        const utiles = Array.isArray(parsed.tabs) ? parsed.tabs.filter(pestanaUtilizable) : [];
+        const descartadas = (parsed.tabs?.length || 0) - utiles.length;
+        if (descartadas > 0) console.warn(`📦 ${descartadas} pestaña(s) descartada(s) por venir incompletas.`);
+
+        parsed.tabs = utiles;
+        if (parsed.activeIdx >= utiles.length) parsed.activeIdx = 0;
+
         if (parsed.tabs && parsed.tabs.length > 0) {
           console.log('📦 Pestañas recuperadas:', parsed.tabs.length);
           setOpenTabs(parsed.tabs);
@@ -767,7 +828,8 @@ useEffect(() => {
         localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
           tabs: updatedTabs,
           activeIdx: activeTabIndex,
-          nextId: nextTabId
+          usuario: usuarioDeLaSesion(),
+             nextId: nextTabId
         }));
 
         return updatedTabs;
@@ -1626,7 +1688,8 @@ useEffect(() => {
     localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
       tabs: newTabs,
       activeIdx: newActiveIdx,
-      nextId: nextTabId
+      usuario: usuarioDeLaSesion(),
+       nextId: nextTabId
     }));
   };
 
@@ -4436,7 +4499,8 @@ useEffect(() => {
           localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
             tabs: newTabs,
             activeIdx: nextIndex,
-            nextId: nextTabId
+            usuario: usuarioDeLaSesion(),
+                         nextId: nextTabId
           }));
           
           return newTabs;
@@ -5277,24 +5341,6 @@ useEffect(() => {
       const response = await fetch(url, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
-      // 🔍 Respuestas de error con un mensaje claro para el operario. Antes
-      // solo quedaba "HTTP 404" en la consola: la fila no se llenaba, el código
-      // quedaba escrito sin datos y nadie sabía por qué.
-      if (response.status === 404) {
-        alert(
-          `🔍 El código "${code}" no existe en el sistema externo (ERP).\n\n` +
-          `Revisa que esté bien escrito. Si es el código sugerido en azul, ` +
-          `puede que todavía no se haya registrado en el ERP.`
-        );
-        limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplate, { codigoABorrar: code });
-        return false;
-      }
-      if (response.status === 401 || response.status === 403) {
-        // Token vencido: se olvida para que el próximo intento inicie sesión otra vez.
-        setApiToken(null);
-        alert('🔐 La conexión con el sistema externo (ERP) venció. Presiona 🔍 otra vez para reintentar.');
-        return false;
-      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
 
@@ -5319,12 +5365,7 @@ useEffect(() => {
         });
 
       const lista = Array.isArray(data) ? data.filter(Boolean) : (data ? [data] : []);
-      if (lista.length === 0) {
-        console.warn('🔍 API por Código: sin resultados para', code);
-        alert(`🔍 El código "${code}" no tiene datos en el sistema externo (ERP). Revisa que esté bien escrito.`);
-        limpiarDerivadosApiPorCodigo(elementIndex, rowIndex, tableTemplate, { codigoABorrar: code });
-        return false;
-      }
+      if (lista.length === 0) { console.warn('🔍 API por Código: sin resultados para', code); return; }
 
       // La primera línea DISPONIBLE; si no hay ninguna, la primera para poder
       // avisar con datos concretos.
@@ -5450,14 +5491,8 @@ useEffect(() => {
         }));
         setHasUnsavedChanges(true);
       }
-      return true;
     } catch (err) {
       console.warn('❌ API por Código error:', err);
-      alert(
-        `⚠️ No se pudo consultar el código "${code}" en el sistema externo (ERP).\n\n` +
-        `Detalle: ${err?.message || err}\n\nRevisa la conexión y presiona 🔍 para reintentar.`
-      );
-      return false;
     } finally {
       lookupsEnCursoRef.current.delete(enCursoKey);
       setApiCodigoLoadingRows(prev => ({ ...prev, [loadKey]: false }));
@@ -5759,35 +5794,6 @@ useEffect(() => {
   // --- RENDER FIELD CORREGIDO (COMBO BOX FIX) ---
  // --- RENDER FIELD CORREGIDO (COMPLETO Y DEFINITIVO) ---
   const renderField = useCallback((field, value, onChange, rowIndex = null, filaActual = null) => {
-    // 👤 Búsqueda de personas: la celda ofrece los nombres del catálogo de
-    // firmas y de los usuarios del sistema, sin dejar de permitir escribir.
-    if (usaBusquedaUsuario(field)) {
-      return (
-        <UsuarioAutocomplete
-          value={value || ''}
-          onChange={onChange}
-          origen={field.busquedaUsuario}
-          disabled={!!field.readonly}
-          placeholder={field.placeholder || 'Buscar persona…'}
-          className={rowIndex !== null && rowIndex !== undefined ? 'table-input-expandable' : ''}
-        />
-      );
-    }
-
-    // ✍️ Firma con PIN: va primero, ninguna otra regla (listas, lotes,
-    // buscador de productos) aplica a esta celda.
-    if (field?.type === 'firmaPin') {
-      return (
-        <FirmaCelda
-          value={value}
-          onChange={onChange}
-          disabled={!!field.readonly}
-          campo={field.label || field.header}
-          fila={rowIndex}
-        />
-      );
-    }
-
     // Hora de inicio de ESTA fila, para avisar si la de fin es anterior. Se
     // busca por nombre de columna: es el único vínculo entre las dos celdas,
     // que se dibujan por separado.
@@ -6189,7 +6195,7 @@ useEffect(() => {
               {value && value !== '__uploading__' && (
                 <div style={{ position: 'relative' }}>
                   <img 
-                    src={value} 
+                    src={urlImagen(value)} 
                     alt="Preview" 
                     style={{ 
                       maxWidth: '100%', 
@@ -6403,6 +6409,7 @@ useEffect(() => {
               value={commonProps.value}
               onChange={(v) => commonProps.onChange({ target: { value: v } })}
               disabled={commonProps.disabled}
+              marcarVacio={/(inici|entrada|final|salida|termin)/i.test(String(field.label || field.name || ''))}
               // El turno del encabezado sirve para avisar si la hora no encaja:
               // turno día con 20:00 casi siempre es un AM/PM mal elegido.
               turno={(() => {
@@ -6752,7 +6759,8 @@ useEffect(() => {
           localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
             tabs: newTabs,
             activeIdx: nextIndex,
-            nextId: nextTabId
+            usuario: usuarioDeLaSesion(),
+                         nextId: nextTabId
           }));
           
           setActiveTabIndex(nextIndex);
@@ -7077,7 +7085,50 @@ useEffect(() => {
       }
       return element;
     });
-    
+
+    // ⚖️ PESO OBLIGATORIO EN PERSONAL.
+    //    Si la plantilla marca un peso de producción (rol "pesoProducido")
+    //    como "Requerido", no se puede guardar sin él: sin peso, el menú
+    //    Personal muestra esa fila con el total en blanco (era el caso de
+    //    FOR-PD-15). Se exige en cada fila que tenga datos.
+    const pesosFaltantes = [];
+    cleanedBodyData.forEach((element, index) => {
+      if (element.type !== 'table' || !Array.isArray(element.data)) return;
+      const columnas = selectedTemplate.bodyElements?.[index]?.columns;
+      if (!Array.isArray(columnas)) return;
+
+      const filasConDatos = element.data.filter((row) =>
+        Object.entries(row).some(
+          ([k, v]) => !k.startsWith('_') && v != null && String(v).trim() !== ''
+        )
+      );
+      if (filasConDatos.length === 0) return;
+
+      for (const col of columnas) {
+        if (!col?.required || col.rol !== 'pesoProducido') continue;
+        const clave = col.label || col.name;
+        if (!clave) continue;
+        const sinPeso = filasConDatos.filter(
+          (row) => row[clave] == null || String(row[clave]).trim() === ''
+        ).length;
+        if (sinPeso > 0) {
+          pesosFaltantes.push(`• ${clave} — ${sinPeso} fila${sinPeso > 1 ? 's' : ''} sin peso`);
+        }
+      }
+    });
+
+    if (pesosFaltantes.length > 0) {
+      const mensaje =
+        `⚖️ Falta el peso de producción obligatorio:\n\n${pesosFaltantes.join('\n')}\n\n` +
+        `Completá el peso antes de guardar.`;
+      console.warn('💾 [SAVE] ❌ Falta peso obligatorio', pesosFaltantes);
+      alert(mensaje);
+      setError(mensaje);
+      isSavingRef.current = false;
+      setFormSaving(false);
+      return;
+    }
+
     // 🧮 Fórmulas recalculadas justo antes de guardar. La pantalla las calcula
     //    al dibujar, pero en los datos solo quedaban si se tecleaba en la fila:
     //    las filas cargadas por API / importadas / de borrador se guardaban con
@@ -7100,16 +7151,33 @@ useEffect(() => {
       return;
     }
 
-    // ⏰ Horas que no cuadran con el momento en que se guarda (ej. el reporte
-    //    del turno de anoche cargado hoy, con fecha de hoy). Avisa y deja
-    //    seguir: hay turnos que cruzan la medianoche y son válidos.
-    const coherencia = revisarCoherenciaHoraria({
+    // ⏱️ Horas contra el TURNO del encabezado (reglasTurno.js).
+    //
+    //    BLOQUEA lo imposible: una hora fuera del rango del turno (07:00 cuando
+    //    era 19:00, la confusión de AM con PM) o un fin anterior al inicio sin
+    //    cruzar medianoche.
+    //
+    //    AVISA, sin impedir, cuando la jornada pasa de 8 horas: esa jornada
+    //    existe, y bloquearla obligaría a anotar una hora falsa para cerrar el
+    //    registro.
+    const porTurno = revisarHorariosDelFormulario({
       headerData: finalHeaderData,
       bodyData: bodyDataParaGuardar,
       bodyElements: selectedTemplate.bodyElements,
     });
-    if (coherencia.hayAvisos && !window.confirm(coherencia.mensaje)) {
-      console.warn('💾 [SAVE] ⏰ El usuario eligió revisar las horas', coherencia.avisos);
+
+    if (!porTurno.puedeGuardar) {
+      const mensaje = mensajeDeRevision(porTurno);
+      console.warn('💾 [SAVE] ⛔ Horas fuera del rango del turno', porTurno.errores);
+      alert(mensaje);
+      setError(mensaje);
+      isSavingRef.current = false;
+      setFormSaving(false);
+      return;
+    }
+
+    if (porTurno.necesitaConfirmar && !window.confirm(mensajeDeRevision(porTurno))) {
+      console.warn('💾 [SAVE] ⏱️ El usuario eligió revisar las horas', porTurno.avisos);
       isSavingRef.current = false;
       setFormSaving(false);
       return;
@@ -7442,7 +7510,8 @@ useEffect(() => {
             localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
               tabs: newTabs,
               activeIdx: nextIndex,
-              nextId: nextTabId
+              usuario: usuarioDeLaSesion(),
+                 nextId: nextTabId
             }));
 
             setActiveTabIndex(nextIndex);
@@ -12195,11 +12264,9 @@ useEffect(() => {
                         key={lid}
                         type="button"
                         title={`Usar ${candidate} (recepción ID ${lid})`}
-                        onClick={async () => {
+                        onClick={() => {
                           handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, candidate);
-                          // Solo se avanza la sugerencia si el código existía en el ERP.
-                          const ok = await handleApiPorCodigoLookup(elementIndex, rowIndex, candidate, tableTemplateForApiCodigo);
-                          if (!ok) return;
+                          handleApiPorCodigoLookup(elementIndex, rowIndex, candidate, tableTemplateForApiCodigo);
                           const afterNext = getNextSequenceCode([candidate]);
                           if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
                         }}
@@ -12219,12 +12286,9 @@ useEffect(() => {
                     <button
                       type="button"
                       title={`Usar siguiente código en secuencia: ${nextSuggestedCode}`}
-                      onClick={async () => {
+                      onClick={() => {
                         handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, nextSuggestedCode);
-                        // La sugerencia es el último código + 1: puede no existir
-                        // todavía en el ERP. Solo se avanza si la consulta lo encontró.
-                        const ok = await handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
-                        if (!ok) return;
+                        handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
                         const afterNext = getNextSequenceCode([nextSuggestedCode]);
                         if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
                       }}
@@ -12245,11 +12309,9 @@ useEffect(() => {
                   <button
                     type="button"
                     title={`Usar siguiente código en secuencia: ${nextSuggestedCode}`}
-                    onClick={async () => {
+                    onClick={() => {
                       handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, nextSuggestedCode);
-                      // Sugerencia = último código + 1; solo se avanza si existía en el ERP.
-                      const ok = await handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
-                      if (!ok) return;
+                      handleApiPorCodigoLookup(elementIndex, rowIndex, nextSuggestedCode, tableTemplateForApiCodigo);
                       const afterNext = getNextSequenceCode([nextSuggestedCode]);
                       if (afterNext) setNextDetCodigoByTable(prev => ({ ...prev, [elementIndex]: afterNext }));
                     }}

@@ -6,11 +6,19 @@ import {
 } from '../services/novedadesService';
 import './Novedades.css';
 
+const MAX_IMAGEN_BYTES = 3 * 1024 * 1024;
+
 const VACIA = {
   titulo: '', mensaje: '', importancia: 'importante', activa: true, mostrarAlEntrar: true,
-  visibleDesde: '', visibleHasta: '',
+  visibleDesde: '', visibleHasta: '', imagenBase64: '',
 };
 const soloFecha = (f) => (f ? String(f).slice(0, 10) : '');
+const leerImagenComoDataUrl = (archivo) => new Promise((resolve, reject) => {
+  const lector = new FileReader();
+  lector.onload = () => resolve(String(lector.result || ''));
+  lector.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+  lector.readAsDataURL(archivo);
+});
 
 /**
  * 📢 NOVEDADES
@@ -33,6 +41,7 @@ export default function Novedades() {
   const [editandoId, setEditandoId] = useState(null);
   const [volverAMostrar, setVolverAMostrar] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [leyendoImagen, setLeyendoImagen] = useState(false);
 
   const [lecturas, setLecturas] = useState({ id: null, lista: [], cargando: false });
 
@@ -59,6 +68,35 @@ export default function Novedades() {
   const cambiar = (campo) => (e) => {
     const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
     setForm((f) => ({ ...f, [campo]: v }));
+  };
+
+  const cambiarImagen = async (e) => {
+    const archivo = e.target.files?.[0];
+    e.target.value = '';
+    if (!archivo) return;
+    if (!archivo.type?.startsWith('image/')) {
+      setError('Selecciona un archivo de imagen válido.');
+      return;
+    }
+    if (archivo.size > MAX_IMAGEN_BYTES) {
+      setError('La imagen pesa demasiado. Usa una de hasta 3 MB.');
+      return;
+    }
+    setError('');
+    setAviso('');
+    setLeyendoImagen(true);
+    try {
+      const dataUrl = await leerImagenComoDataUrl(archivo);
+      setForm((f) => ({ ...f, imagenBase64: dataUrl }));
+    } catch (err) {
+      setError(err.message || 'No se pudo cargar la imagen.');
+    } finally {
+      setLeyendoImagen(false);
+    }
+  };
+
+  const quitarImagen = () => {
+    setForm((f) => ({ ...f, imagenBase64: '' }));
   };
 
   const limpiar = () => {
@@ -112,6 +150,7 @@ export default function Novedades() {
       mostrarAlEntrar: n.mostrarAlEntrar !== false,
       visibleDesde: soloFecha(n.visibleDesde),
       visibleHasta: soloFecha(n.visibleHasta),
+      imagenBase64: n.imagenBase64 || '',
     });
     setPestana('administrar');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -214,6 +253,24 @@ export default function Novedades() {
               <textarea value={form.mensaje} onChange={cambiar('mensaje')} rows={6} required
                         placeholder="Escribe aquí la novedad. Los saltos de línea se respetan." />
             </label>
+
+            <label className="nov-campo">
+              <span>Imagen opcional</span>
+              <input type="file" accept="image/*" onChange={cambiarImagen} disabled={leyendoImagen} />
+              <small className="nov-ayuda">Sube una imagen de hasta 3 MB para acompañar la novedad.</small>
+            </label>
+
+            {form.imagenBase64 && (
+              <div className="nov-imagen-previa">
+                <img src={form.imagenBase64} alt="Vista previa de la imagen de la novedad" />
+                <div className="nov-imagen-previa-acciones">
+                  <span>{leyendoImagen ? 'Cargando imagen…' : 'Vista previa de la imagen'}</span>
+                  <button type="button" className="nov-boton-secundario" onClick={quitarImagen}>
+                    Quitar imagen
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="nov-fila">
               <label className="nov-campo">

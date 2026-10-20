@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import authService from '../services/authService';
 import { fetchUsers } from '../services/userService';
 import { API_ENDPOINTS } from '../apiConfig';
+import { listarRutas, guardarRuta, destinatarioDe, DESTINATARIO_POR_DEFECTO } from '../services/mensajesAdminService';
 import './Tickets.css';
 
 const ESTADOS = [
@@ -31,9 +32,40 @@ export default function Tickets() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [savingViewers, setSavingViewers] = useState(false);
 
+  // 📬 Reparto: los mensajes de ciertos operarios van a UNA persona.
+  //    Por defecto cada administrador ve los suyos y los no dirigidos.
+  const [verTodosLosMensajes, setVerTodosLosMensajes] = useState(false);
+  const [rutas, setRutas] = useState([]);
+  const [guardandoRuta, setGuardandoRuta] = useState('');
+
   const canViewAll = isAdminOrSupervisor || viewers.some(
     v => (v.userEmail || '').toLowerCase() === (currentUser?.email || '').toLowerCase()
   );
+
+  useEffect(() => { loadTickets(); }, [verTodosLosMensajes]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (canViewAll) listarRutas().then(setRutas).catch(() => {});
+  }, [canViewAll]);
+
+  const cambiarRuta = async (usuario, destinatarioEmail) => {
+    setGuardandoRuta(usuario.email);
+    try {
+      const destino = allUsers.find(u => (u.email || '') === destinatarioEmail);
+      const r = await guardarRuta({
+        usuarioEmail: usuario.email,
+        usuarioNombre: usuario.nombreCompleto || usuario.userName,
+        destinatarioEmail,
+        destinatarioNombre: destino?.nombreCompleto || destino?.userName || '',
+      });
+      alert(r?.message || 'Regla guardada.');
+      setRutas(await listarRutas());
+    } catch (e) {
+      alert(`No se pudo guardar: ${e.message}`);
+    } finally {
+      setGuardandoRuta('');
+    }
+  };
 
   useEffect(() => {
     loadTickets();
@@ -49,7 +81,13 @@ export default function Tickets() {
   const loadTickets = async () => {
     try {
       setLoading(true);
-      const response = await fetch(API_ENDPOINTS.tickets);
+      // Con ?para= llegan solo los dirigidos a esta persona y los que no
+      // tienen destinatario. Con «ver todos», llega todo.
+      const correo = (currentUser?.email || '').trim();
+      const url = !verTodosLosMensajes && correo
+        ? `${API_ENDPOINTS.tickets}?para=${encodeURIComponent(correo)}`
+        : API_ENDPOINTS.tickets;
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Error al cargar tickets');
       const data = await response.json();
       setTickets(Array.isArray(data) ? data : []);
@@ -302,6 +340,91 @@ export default function Tickets() {
         </div>
       )}
 
+      {/* 📬 Interruptor: ver solo lo mío, o todo lo que llega */}
+      {activeTab === 'todos' && canViewAll && (
+        <div className="tickets-reparto">
+          <label>
+            <input
+              type="checkbox"
+              checked={verTodosLosMensajes}
+              onChange={(e) => setVerTodosLosMensajes(e.target.checked)}
+            />
+            Ver también los mensajes dirigidos a otra persona
+          </label>
+          <small>
+            {verTodosLosMensajes
+              ? 'Estás viendo todos los mensajes.'
+              : 'Estás viendo los tuyos y los que no tienen destinatario.'}
+          </small>
+        </div>
+      )}
+
+      {/* 📬 Destinatario por defecto: a quién van los mensajes de quien no
+          tiene una regla propia. Con esto el aviso rojo le aparece a una
+          sola persona y no a todos los administradores. */}
+      {activeTab === 'todos' && canViewAll && allUsers.length > 0 && (
+        <div className="tickets-reparto">
+          <label className="tickets-defecto">
+            <span>📬 Si no hay una regla propia, los mensajes van a:</span>
+            <select
+              value={rutas.find(r => r.usuarioEmail === DESTINATARIO_POR_DEFECTO)?.destinatarioEmail || ''}
+              disabled={guardandoRuta === DESTINATARIO_POR_DEFECTO}
+              onChange={(e) => cambiarRuta(
+                { email: DESTINATARIO_POR_DEFECTO, nombreCompleto: 'Todos los operarios (regla general)' },
+                e.target.value
+              )}
+            >
+              <option value="">— Todos los administradores —</option>
+              {allUsers.filter(u => u.email).map(u => (
+                <option key={u.email} value={u.email}>{u.nombreCompleto || u.userName}</option>
+              ))}
+            </select>
+          </label>
+          <small>
+            Al elegir una persona, el aviso rojo del botón de mensajes le aparece solo a ella.
+          </small>
+        </div>
+      )}
+
+      {/* 📬 A quién le llegan los mensajes de cada operario */}
+      {activeTab === 'todos' && canViewAll && allUsers.length > 0 && (
+        <details className="tickets-reglas">
+          <summary>📬 A quién le llegan los mensajes de cada persona ({rutas.length} con destinatario)</summary>
+          <p>
+            Sin destinatario, el mensaje lo ven todos los administradores, como siempre.
+            Con destinatario, solo esa persona (y quien marque «ver todos»).
+          </p>
+          <table>
+            <thead><tr><th>Persona</th><th>Sus mensajes le llegan a</th></tr></thead>
+            <tbody>
+              {allUsers.filter(u => u.email && u.email !== DESTINATARIO_POR_DEFECTO).map(u => {
+                const ruta = rutas.find(r => (r.usuarioEmail || '').toLowerCase() === u.email.toLowerCase());
+                return (
+                  <tr key={u.email}>
+                    <td>
+                      <strong>{u.nombreCompleto || u.userName}</strong>
+                      <small>{u.email}</small>
+                    </td>
+                    <td>
+                      <select
+                        value={ruta?.destinatarioEmail || ''}
+                        disabled={guardandoRuta === u.email}
+                        onChange={(e) => cambiarRuta(u, e.target.value)}
+                      >
+                        <option value="">— Todos los administradores —</option>
+                        {allUsers.filter(a => a.email).map(a => (
+                          <option key={a.email} value={a.email}>{a.nombreCompleto || a.userName}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </details>
+      )}
+
       {activeTab === 'todos' && canViewAll && (
         <div className="tickets-content">
           <table className="tickets-table">
@@ -309,6 +432,7 @@ export default function Tickets() {
               <tr>
                 <th>Título / Descripción</th>
                 <th>Creado por</th>
+                <th>Dirigido a</th>
                 <th>Fecha</th>
                 <th>Estado</th>
                 <th>Responder</th>
@@ -328,6 +452,11 @@ export default function Tickets() {
                       )}
                     </td>
                     <td>{t.creadoPorNombre}<br /><span className="muted">{t.creadoPorEmail}</span></td>
+                    <td>
+                      {destinatarioDe(t)
+                        ? <span className="ticket-dirigido">{destinatarioDe(t)}</span>
+                        : <span className="muted">Todos</span>}
+                    </td>
                     <td>{new Date(t.creadoEn).toLocaleString('es-ES')}</td>
                     <td>
                       <select value={t.estado} onChange={(e) => handleUpdateEstado(t, e.target.value)} className="form-input">

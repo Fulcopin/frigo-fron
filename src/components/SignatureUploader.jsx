@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { API_BASE_URL } from '../apiConfig';
 import { deleteFromCloudinary } from '../config/cloudinary.config';
+import { urlImagen } from '../utils/urlImagen';
 import './SignatureUploader.css';
 
 /**
@@ -855,7 +856,7 @@ const SignatureUploader = ({
             title="Click para ver en tamaño completo"
           >
             <img 
-              src={firmaData.firma.thumbnail || firmaUrl} 
+              src={urlImagen(firmaData.firma.thumbnail || firmaUrl)} 
               alt={`Firma de ${puesto}`}
               className="signature-image"
             />
@@ -931,7 +932,7 @@ const SignatureUploader = ({
             </button>
             <h3>Firma de {puesto}</h3>
             <img 
-              src={firmaUrl} 
+              src={urlImagen(firmaUrl)} 
               alt={`Firma completa de ${puesto}`}
               className="signature-modal-image"
             />

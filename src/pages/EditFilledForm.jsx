@@ -19,6 +19,8 @@ import { recalcularFormulasBodyData, recalcularFilas } from "../utils/recalcular
 import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import ProductoAutocomplete from "../components/ProductoAutocomplete"
 import { modoBusquedaProducto, destinoColumnaProducto } from "../utils/busquedaProducto"
+import ComparacionCritica from "../components/ComparacionCritica"
+import { advertenciasDe } from "../utils/comparacionCritica"
 import {
   cargarUmbralBloqueo,
   estaBloqueadoParaFirma,
@@ -81,6 +83,10 @@ function EditFilledForm() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  // ⚖️ Revisión de datos críticos antes de guardar (materia prima vs PT, etc.)
+  const [revision, setRevision] = useState(null);
+  // ⚖️ Consulta libre: comparar sin guardar (botón "Comparar datos").
+  const [consultaCritica, setConsultaCritica] = useState(false);
   
   // Estados para autoguardado
   const [autoSaveStatus, setAutoSaveStatus] = useState('') // 'saving', 'saved', 'error'
@@ -726,6 +732,22 @@ function EditFilledForm() {
       observaciones: formData.observaciones
     };
 
+    // ⚖️ Si alguna regla de datos críticos no se cumple, se avisa antes de
+    // guardar (solo advertencia). Si todo cuadra, se guarda directo.
+    const avisos = advertenciasDe(
+      template?.codigo, updateData.bodyData, template?.bodyElements);
+
+    if (avisos.length > 0) {
+      setRevision({ updateData });
+      return;
+    }
+
+    ejecutarGuardado(updateData);
+  };
+
+  // Guardado real, una vez revisada la comparación.
+  const ejecutarGuardado = async (updateData) => {
+    setRevision(null);
     console.log('💾 Datos a enviar:', updateData);
 
     try {
@@ -1088,6 +1110,14 @@ Template: ${template?.nombre}
           >
             {showFormSearch ? '✕ Cerrar búsqueda' : '🔍 Buscar otro formulario'}
           </button>
+          <button
+            type="button"
+            onClick={() => setConsultaCritica(true)}
+            className="btn-secondary"
+            title="Comparar los pesos del formulario sin guardar"
+          >
+            ⚖️ Comparar datos
+          </button>
           <button onClick={handleSubmit} className="btn-primary">
             💾 Actualizar Formulario
           </button>
@@ -1188,6 +1218,30 @@ Template: ${template?.nombre}
           )}
         </div>
       )}
+
+      {/* ⚖️ CONSULTA DE DATOS CRÍTICOS (sin guardar) */}
+      <ComparacionCritica
+        abierto={consultaCritica}
+        modo="consulta"
+        codigo={template?.codigo}
+        nombre={template?.nombre}
+        headerData={formData?.headerData}
+        bodyData={consultaCritica ? bodyDataParaGuardar(formData?.bodyData || []) : []}
+        bodyElements={template?.bodyElements}
+        onCancelar={() => setConsultaCritica(false)}
+      />
+
+      {/* ⚖️ REVISIÓN DE DATOS CRÍTICOS ANTES DE GUARDAR */}
+      <ComparacionCritica
+        abierto={Boolean(revision)}
+        codigo={template?.codigo}
+        nombre={template?.nombre}
+        headerData={revision?.updateData?.headerData}
+        bodyData={revision?.updateData?.bodyData}
+        bodyElements={template?.bodyElements}
+        onCancelar={() => setRevision(null)}
+        onGuardar={() => revision && ejecutarGuardado(revision.updateData)}
+      />
 
       {/* 🔔 NOTIFICACIÓN DE GUARDADO EXITOSO - Overlay fijo visible desde cualquier posición de scroll */}
       {showSuccess && (

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
+import { filasParaExcel } from '../utils/numeroParaExcel';
 import { API_BASE_URL } from '../apiConfig';
 import { buscarCalculo, resumenCalculo } from '../utils/calculoCelda';
 import CuadernoCelda from '../components/CuadernoCelda';
@@ -302,7 +303,7 @@ const ResumenLotes = () => {
     }));
     XLSX.utils.book_append_sheet(
       wb,
-      XLSX.utils.json_to_sheet(resumen, {
+      XLSX.utils.json_to_sheet(filasParaExcel(resumen), {
         header: ['LOTE', 'ESPECIE', 'PROCESO', 'FECHAS', 'FORMULARIOS', 'REGISTROS', 'TOTAL LB'],
       }),
       'Resumen'
@@ -323,7 +324,7 @@ const ResumenLotes = () => {
     }));
     XLSX.utils.book_append_sheet(
       wb,
-      XLSX.utils.json_to_sheet(detalle, {
+      XLSX.utils.json_to_sheet(filasParaExcel(detalle), {
         header: ['LOTE', 'ESPECIE', 'PROCESO', 'FECHA', 'FORMULARIO', 'N° REGISTRO',
                  'TABLA', 'COLUMNA', 'FILA', 'PESO', 'CÓMO SE CALCULÓ'],
       }),

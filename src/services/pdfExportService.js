@@ -14,6 +14,7 @@ import { PDFDocument } from 'pdf-lib';
 import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
 import { alinearBodyData } from '../utils/emparejarBodyData';
+import { urlImagen } from '../utils/urlImagen';
 import { columnasParaDibujar } from '../utils/columnasDelCuadro';
 
 /**
@@ -129,7 +130,7 @@ const getBase64Image = (imgUrl) => {
       resolve(dataURL);
     };
     img.onerror = reject;
-    img.src = imgUrl;
+    img.src = urlImagen(imgUrl);
   });
 };
 
@@ -147,7 +148,7 @@ const getImageDataAndDims = (imgUrl) => {
       resolve({ dataURL, width: img.width || 800, height: img.height || 600 });
     };
     img.onerror = reject;
-    img.src = imgUrl;
+    img.src = urlImagen(imgUrl);
   });
 };
 

@@ -19,6 +19,8 @@ import authService from '../services/authService';
 import {
   enviarMensajeAdmin, listarMensajes, responderMensaje, cambiarEstado,
   contarPendientes, esAdminDeMensajes, ESTADOS_MENSAJE,
+  esParaMi, hayDestinatarioPorDefecto, listarRutas, guardarRuta,
+  DESTINATARIO_POR_DEFECTO,
   contarRespuestasNuevas,
   remitenteActual,
 } from '../services/mensajesAdminService';
@@ -101,8 +103,54 @@ export default function FrigoVoice() {
   //  · Usuario→ respuestas del admin que todavía no leyó.
   // Antes solo contaba para el admin, así que un usuario nunca se enteraba de
   // que le habían contestado.
+  // 📬 El aviso rojo es de QUIEN tiene los mensajes asignados.
+  //
+  //    Con un destinatario por defecto configurado (pantalla de Mensajes),
+  //    todos los mensajes quedan a nombre de una persona y el aviso le aparece
+  //    solo a ella. Sin esa regla, se comporta como antes: lo ven todos los
+  //    administradores.
+  const [hayReglaGeneral, setHayReglaGeneral] = useState(false);
+
+  // 📬 A quién le llegan los mensajes (regla general). Se configura acá mismo
+  //    para no tener que entrar a la pantalla de Tickets.
+  const [destinatario, setDestinatario] = useState('');
+  const [guardandoDestino, setGuardandoDestino] = useState(false);
+
+  const leerDestinatario = useCallback(async () => {
+    try {
+      const rutas = await listarRutas();
+      const general = rutas.find((r) => r.usuarioEmail === DESTINATARIO_POR_DEFECTO);
+      setDestinatario(general?.destinatarioEmail || '');
+      setHayReglaGeneral(!!general?.destinatarioEmail);
+    } catch { /* sin conexión: se deja como estaba */ }
+  }, []);
+
+  const guardarDestinatario = async (correo) => {
+    const limpio = String(correo || '').trim();
+    if (limpio === destinatario) return;
+    setGuardandoDestino(true);
+    try {
+      const r = await guardarRuta({
+        usuarioEmail: DESTINATARIO_POR_DEFECTO,
+        usuarioNombre: 'Todos los operarios (regla general)',
+        destinatarioEmail: limpio,
+        destinatarioNombre: limpio ? (remitenteActual()?.nombre || '') : '',
+      });
+      setDestinatario(limpio);
+      setHayReglaGeneral(!!limpio);
+      alert(r?.message || 'Guardado.');
+      await leerDestinatario();
+    } catch (e) {
+      alert(`No se pudo guardar: ${e.message}`);
+    } finally {
+      setGuardandoDestino(false);
+    }
+  };
+
+  useEffect(() => { if (esAdmin) leerDestinatario(); }, [esAdmin, leerDestinatario]);
+
   const pendientes = esAdmin
-    ? contarPendientes(mensajes)
+    ? contarPendientes(mensajes.filter((m) => esParaMi(m, { hayReglaGeneral })))
     : contarRespuestasNuevas(mensajes, leidos);
   const [messages, setMessages] = useState([
     {
@@ -514,6 +562,35 @@ export default function FrigoVoice() {
                   Se registra como ticket y le llega una notificación por correo al administrador.
                 </small>
               </form>
+
+              {/* 📬 A quién le llegan los mensajes. Solo lo ve el administrador. */}
+              {esAdmin && (
+                <div className="frigovoice-admin__destino">
+                  <label>📬 Los mensajes le llegan a:</label>
+                  <input
+                    type="email"
+                    defaultValue={destinatario}
+                    key={destinatario}
+                    placeholder="correo@frigolab.com  ·  vacío = todos los administradores"
+                    disabled={guardandoDestino}
+                    onKeyDown={(e) => { if (e.key === 'Enter') guardarDestinatario(e.target.value); }}
+                    onBlur={(e) => guardarDestinatario(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={guardandoDestino}
+                    onClick={() => guardarDestinatario(remitenteActual()?.email || '')}
+                    title="Los mensajes nuevos quedan a tu nombre y el aviso rojo lo ves solo vos"
+                  >
+                    Asignármelos a mí
+                  </button>
+                  <small>
+                    {destinatario
+                      ? `Van a ${destinatario}. El aviso rojo le aparece solo a esa persona.`
+                      : 'Sin destinatario: los ven todos los administradores.'}
+                  </small>
+                </div>
+              )}
 
               {/* Bandeja: el admin ve todo; el resto, solo lo suyo con la respuesta */}
               <div className="frigovoice-admin__lista">

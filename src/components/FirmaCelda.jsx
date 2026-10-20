@@ -4,6 +4,7 @@ import {
   leerFirma, verFirma, firmarCelda, anularFirma, personasQueFirman, nombreSesion,
   firmarConDocumento, errorDeDocumento, errorDeNombre, limpiarDocumento,
 } from '../services/firmaCeldaService';
+import { urlImagen } from '../utils/urlImagen';
 import './FirmaCelda.css';
 
 /**
@@ -47,7 +48,7 @@ export default function FirmaCelda({ value, onChange, disabled = false, campo, f
     return (
       <div className={`fc-firmada ${registro?.anulada ? 'fc-anulada' : ''}`}>
         {registro?.conImagen && registro?.firmaImageUrl && (
-          <img className="fc-imagen" src={registro.firmaImageUrl} alt={`Firma de ${firma.nombre}`} />
+          <img className="fc-imagen" src={urlImagen(registro.firmaImageUrl)} alt={`Firma de ${firma.nombre}`} />
         )}
         <div className="fc-texto">
           <span className="fc-etiqueta">

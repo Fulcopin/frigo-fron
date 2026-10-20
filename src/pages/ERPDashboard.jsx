@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '../apiConfig';
 import * as XLSX from 'xlsx';
+import { rangoPorDefecto, diasDelRango, MAX_DIAS_SIN_PAGINAR } from '../utils/rangoFechas';
+import { construirLibroAgrupado, construirLibroPorSecciones } from '../utils/excelAgrupado';
+import { valorCelda, CLAVE_BLOQUE } from '../utils/aplanarRegistros';
+import { celdaExcel } from '../utils/numeroParaExcel';
+import { mapaColumnasCombinadas, rellenarCombinadas } from '../utils/combinarFilas';
 import { ordenarFormularios, etiquetaFormulario } from '../utils/ordenFormularios';
+import { recalcularFormulasBodyData } from '../utils/recalcularFormulas';
 import authService from '../services/authService';
 import './ERPDashboard.css';
 
@@ -97,6 +103,14 @@ const fmtNum = (n) =>
     Number.isInteger(n) ? n.toLocaleString('es-EC')
                         : n.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// ─── Filas combinadas: repetir el valor en cada fila hija ───────────────────
+// Lote, talla, zona… se escriben una sola vez y bajan combinadas; al guardar
+// solo queda el dato en la primera fila del grupo y las hijas en blanco, así
+// que al exportar hay que rellenarlas a mano. `rellenarCombinadas` (utils/
+// combinarFilas) arrastra el valor hacia abajo. Acá se le pasa el MISMO
+// detector de números del reporte: un número repetido infla los subtotales.
+const esNumeroCombinada = (v) => parseNum(v) !== null;
+
 // ─── Configuración del resumen, guardada POR FORMULARIO ─────────────────────
 // Cada plantilla necesita su propio armado: en un PD-04 interesan las libras y
 // el personal, en un control de termómetros interesan otras columnas. Sin esto
@@ -125,6 +139,29 @@ const escribirConfigs = (configs) => {
 // El servidor es la fuente de verdad: la configuración se arma una vez y la usa
 // toda la planta desde cualquier computadora. El localStorage queda solo como
 // respaldo para cuando el backend no responde.
+/**
+ * 🧮 LIBRAS NETAS EN 0
+ * La pantalla de captura calcula las fórmulas al dibujar, pero muchos
+ * registros quedaron guardados con "0.00" (filas cargadas por API, importadas
+ * o de borrador) y el reporte mostraba 0. Aquí se completan con la fórmula de
+ * la plantilla del formulario. Solo se llenan las que están en 0 o vacías: un
+ * valor guardado distinto de 0 no se toca.
+ */
+const completarFormulas = (bloques, form, plantillas) => {
+    const id = String(form?.templateID ?? form?.TemplateID ?? '');
+    const plantilla = (plantillas || []).find(t => String(t?.templateID ?? t?.TemplateID) === id);
+    if (!plantilla) return bloques;
+    try {
+        return recalcularFormulasBodyData(
+            bloques,
+            plantilla.bodyElements ?? plantilla.BodyElements,
+            { soloVacios: true }).bodyData;
+    } catch (e) {
+        console.warn('No se pudieron completar las fórmulas del formulario', id, e);
+        return bloques;
+    }
+};
+
 const parseJson = (txt, fallback) => {
     try { return JSON.parse(txt); } catch { return fallback; }
 };
@@ -242,12 +279,13 @@ const ERPDashboard = () => {
     const [modoResumen, setModoResumen] = useState(false);
     const [agruparPor, setAgruparPor]   = useState('');   // '' = un solo total general
 
-    const [filters, setFilters] = useState({
-        inicio: new Date(new Date().setDate(new Date().getDate() - 30))
-            .toISOString().split('T')[0],
-        fin: new Date().toISOString().split('T')[0],
-        templateId: '',
-        lote: ''
+    // 📅 Arranca con la semana en curso hasta AYER, no con un mes entero: el mes
+    //    completo hace esperar la consulta y el día de hoy casi nunca está
+    //    cerrado (los registros se terminan de llenar y firmar más tarde).
+    //    El rango se sigue cambiando a mano como siempre.
+    const [filters, setFilters] = useState(() => {
+        const rango = rangoPorDefecto();
+        return { inicio: rango.desde, fin: rango.hasta, templateId: '', lote: '' };
     });
 
     // ─── Cargar templates ───────────────────────────────────────────────────
@@ -369,6 +407,16 @@ const ERPDashboard = () => {
         return IGNORED.has(upper) || upper === '' || upper === 'ID';
     };
 
+    // ─── Columnas que la plantilla dibuja combinadas ────────────────────────
+    // El formulario marca con _rowSpan las columnas que se escriben una vez y
+    // bajan combinadas (lote, talla, zona…). Ese dato se pierde al guardar el
+    // registro, así que se recupera de la PLANTILLA para saber qué columnas hay
+    // que repetir en cada fila hija al exportar. Clave: id de plantilla.
+    const columnasCombinadas = useMemo(
+        () => mapaColumnasCombinadas(templates, cleanKey),
+        [templates]
+    );
+
     // ─── Procesar datos → filas + columnas ──────────────────────────────────
     const { rows, columns, formLabels, origenCols } = useMemo(() => {
         const processed  = [];
@@ -453,6 +501,7 @@ const ERPDashboard = () => {
             // formulario, así que al totalizar solo pueden contarse una vez.
             const formId = String(form.formID ?? form.id ?? `s/n-${formIdx}`);
             ctxPorForm.set(formId, ctx);
+            const desdeFila = processed.length;   // primeras filas de ESTE formulario
             const marcarCtx = (fila, clavesDelCuerpo = null) => {
                 const ctxKeys = new Set(Object.keys(ctx));
                 if (clavesDelCuerpo) clavesDelCuerpo.forEach(k => ctxKeys.delete(k));
@@ -467,9 +516,11 @@ const ERPDashboard = () => {
             }
 
             // Normalizar a array de elementos
-            const bodyEls = Array.isArray(bodyRaw)
-                ? bodyRaw
-                : Object.values(bodyRaw).filter(v => v && typeof v === 'object');
+            const bodyEls = completarFormulas(
+                Array.isArray(bodyRaw)
+                    ? bodyRaw
+                    : Object.values(bodyRaw).filter(v => v && typeof v === 'object'),
+                form, templates);
 
             // Normaliza cada elemento del body a { rowsData, sectionData, title }
             const normalized = bodyEls.map((el, idx) => {
@@ -615,6 +666,15 @@ const ERPDashboard = () => {
                 });
             }
 
+            // 🔁 Repetir lote/talla/zona en las filas hijas del grupo combinado:
+            // en el formulario se escriben una vez y bajan combinadas, así que
+            // al exportar las demás filas salían en blanco.
+            rellenarCombinadas(
+                processed, desdeFila, processed.length,
+                columnasCombinadas.get(String(form.templateID ?? form.TemplateID ?? '')),
+                { esNumero: esNumeroCombinada }
+            );
+
             // Sin tabla dinámica → el formulario es una sola fila
             if (!hasDynamic) processed.push(marcarCtx({ ...ctx }));
         });
@@ -649,7 +709,7 @@ const ERPDashboard = () => {
         });
 
         return { rows: processed, columns: sorted, formLabels: etiquetas, origenCols: origen };
-    }, [rawForms, compactarFilas, omitirTotalesDelForm]);
+    }, [rawForms, compactarFilas, omitirTotalesDelForm, templates, columnasCombinadas]);
 
     // Al llegar datos nuevos: si este formulario tiene una configuración
     // guardada, se respetan las columnas que eligió el usuario; si no, todas.
@@ -1141,11 +1201,12 @@ const ERPDashboard = () => {
     // Columnas que finalmente se ven y se exportan
     const activeCols = useMemo(() => {
         if (!ocultarVacias) return marcadasCols;
-        const dataSet = new Set(columns);
-        // Las columnas sin datos reales pero elegidas explícitamente por el usuario
-        // no se ocultan aunque ocultarVacias esté activo: el usuario las eligió a propósito.
-        return marcadasCols.filter(c => colsConDatos.has(c) || !dataSet.has(c));
-    }, [marcadasCols, colsConDatos, ocultarVacias, columns]);
+        // Con el interruptor activo NO sale ninguna columna vacía, ni siquiera
+        // las marcadas a mano. Antes se dejaban pasar las que no existen en los
+        // datos, y el Excel salía con decenas de columnas en blanco.
+        // Para verlas igual, se apaga «ocultar vacías».
+        return marcadasCols.filter(c => colsConDatos.has(c));
+    }, [marcadasCols, colsConDatos, ocultarVacias]);
 
     const colsVacias = marcadasCols.length - colsConDatos.size;
 
@@ -1278,7 +1339,11 @@ const ERPDashboard = () => {
         const conSubtotales = !modoResumen && subtotalPorForm;
         const hayFilaTotal  = !modoResumen && (subtotalPorForm || filasSeleccionadas.length > 0);
 
-        const ws = XLSX.utils.json_to_sheet(data, { header: cabecera });
+        // 🔢 Los valores con unidad («1572 Lbs») se escriben como NÚMERO,
+        //    si no Excel los toma como texto y no se pueden sumar.
+        const dataNumerica = data.map(f => Object.fromEntries(
+            Object.entries(f).map(([k, v]) => [k, celdaExcel(v)])));
+        const ws = XLSX.utils.json_to_sheet(dataNumerica, { header: cabecera });
         const rango = XLSX.utils.decode_range(ws['!ref']);
         styleSheet(ws, rango);
 
@@ -1313,6 +1378,197 @@ const ERPDashboard = () => {
     };
 
     // ─── Descarga Excel multi-pestaña (una pestaña por sección) ─────────────
+
+    /**
+     * 📑 Excel con UNA HOJA y un bloque por tabla.
+     *
+     * El Excel normal pone una línea por fila y empareja las tablas por
+     * posición: si producción tiene 7 filas e insumos 2, de la fila 3 en
+     * adelante las columnas de insumos quedan vacías. De ahí los huecos.
+     *
+     * Acá cada tabla va en su propio bloque, una debajo de la otra, con su
+     * encabezado y con el N° de registro y la fecha en cada línea. Ninguna
+     * queda emparejada con la otra, así que no hay un solo espacio en blanco.
+     */
+
+    /**
+     * 🔗 Adaptador: lo que ya tiene la pantalla (columnas activas, filas y el
+     * origen de cada columna) al formato que esperan los módulos de reporte.
+     *
+     * No cambia los filtros ni el armado de datos: toma el resultado tal como
+     * está y le agrega el bloque al que pertenece cada columna, que es lo único
+     * que falta para poder agrupar los encabezados.
+     *
+     * @param {boolean} marcarBloque  agrega __bloque a cada fila (Excel por secciones)
+     */
+    const tablaParaReporte = (marcarBloque = false) => {
+        const tituloDe = (col) => {
+            const origen = origenCols.get(col) || 'seccion';
+            if (origen !== 'tabla') {
+                return origen === 'firma' ? 'Firmas'
+                    : origen === 'header' ? 'Datos generales'
+                    : 'Datos generales';
+            }
+            const i = col.indexOf(' - ');
+            return i > 0 ? col.slice(0, i) : 'Tabla';
+        };
+
+        const columnas = activeCols.map(col => {
+            const titulo = tituloDe(col);
+            const origen = origenCols.get(col) || 'seccion';
+            const i = col.indexOf(' - ');
+            return {
+                clave: col,
+                etiqueta: origen === 'tabla' && i > 0 ? col.slice(i + 3) : col,
+                bloqueId: titulo,
+                bloqueTitulo: titulo,
+                origen: origen === 'tabla' ? 'tabla' : 'meta',
+            };
+        });
+
+        // Los datos generales primero y después cada tabla: así los grupos del
+        // encabezado salen contiguos y se pueden combinar.
+        columnas.sort((a, b) => {
+            if (a.origen !== b.origen) return a.origen === 'tabla' ? 1 : -1;
+            if (a.bloqueTitulo !== b.bloqueTitulo) return a.bloqueTitulo.localeCompare(b.bloqueTitulo, 'es');
+            return activeCols.indexOf(a.clave) - activeCols.indexOf(b.clave);
+        });
+
+        const deTabla = columnas.filter(c => c.origen === 'tabla');
+        const vacia = (v) => v === null || v === undefined || String(v).trim() === '';
+
+        const filas = [];
+        // filasBase guarda { r: fila, ... }: se usa la misma vista que la tabla,
+        // así el Excel sale con lo que el usuario está viendo (filtros, fusión
+        // de filas y «una línea por formulario» incluidos).
+        for (const { r } of filasBase) {
+            if (!marcarBloque) {
+                const fila = {};
+                for (const c of columnas) fila[c.clave] = celdaExcel(valorCelda(r[c.clave]));
+                filas.push(fila);
+                continue;
+            }
+            // Por secciones: una línea por bloque con datos, sin emparejar.
+            const bloques = [...new Set(deTabla.map(c => c.bloqueId))];
+            for (const bloqueId of bloques) {
+                const propias = deTabla.filter(c => c.bloqueId === bloqueId);
+                if (!propias.some(c => !vacia(r[c.clave]))) continue;
+                const fila = {};
+                for (const c of columnas) {
+                    fila[c.clave] = c.origen !== 'tabla' || c.bloqueId === bloqueId
+                        ? celdaExcel(valorCelda(r[c.clave]))
+                        : null;
+                }
+                fila[CLAVE_BLOQUE] = bloqueId;
+                filas.push(fila);
+            }
+        }
+
+        return { columnas, filas, huerfanos: [], vacias: [] };
+    };
+
+    const subtituloReporte = () => {
+        const plantilla = filters.templateId
+            ? (templates.find(t => String(t.templateID) === String(filters.templateId))?.nombre || '')
+            : 'Todos los formularios';
+        return `${plantilla} · del ${filters.inicio} al ${filters.fin}`;
+    };
+
+    const bajarLibro = async (libro, sufijo) => {
+        const datos = await libro.xlsx.writeBuffer();
+        const blob = new Blob([datos], {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${nombreArchivo()}${sufijo}_${filters.inicio}_${filters.fin}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    };
+
+    /** 📘 Una hoja, encabezados agrupados por bloque (DATOS GENERALES | PRODUCCIÓN | INSUMOS). */
+    const downloadExcelAgrupado = async () => {
+        const tabla = tablaParaReporte(false);
+        if (tabla.filas.length === 0) { alert('No hay datos en el rango elegido.'); return; }
+        await bajarLibro(construirLibroAgrupado(tabla, {
+            titulo: nombreArchivo().replace(/_/g, ' '),
+            subtitulo: subtituloReporte(),
+        }), '_agrupado');
+    };
+
+    /** 📑 Una hoja, cada tabla en su propio bloque: sin celdas en blanco. */
+    const downloadExcelSecciones = async () => {
+        const tabla = tablaParaReporte(true);
+        if (tabla.filas.length === 0) { alert('No hay datos de tablas en el rango elegido.'); return; }
+        await bajarLibro(construirLibroPorSecciones(tabla, {
+            titulo: nombreArchivo().replace(/_/g, ' '),
+            subtitulo: subtituloReporte(),
+        }), '_secciones');
+    };
+
+    const downloadExcelPorTablas = () => {
+        const identidad = ['N° REGISTRO', 'FECHA', 'CODIGO', 'PLANTILLA'].filter(c => columns.includes(c));
+
+        // Las tablas y sus columnas. Con una plantilla elegida se usan sus
+        // bloques; si no, se agrupan por el prefijo «TABLA - COLUMNA».
+        let tablas = (estructuraPlantilla?.bloques || [])
+            .filter(b => b.tipo === 'tabla')
+            .map(b => ({
+                titulo: b.titulo,
+                cols: b.campos.filter(c => c.existe && columns.includes(c.col)).map(c => c.col),
+            }))
+            .filter(t => t.cols.length > 0);
+
+        if (tablas.length === 0) {
+            const porPrefijo = new Map();
+            columns.forEach(c => {
+                if ((origenCols.get(c) || 'seccion') !== 'tabla') return;
+                const i = c.indexOf(' - ');
+                const titulo = i > 0 ? c.slice(0, i) : 'Datos de tablas';
+                if (!porPrefijo.has(titulo)) porPrefijo.set(titulo, []);
+                porPrefijo.get(titulo).push(c);
+            });
+            tablas = [...porPrefijo.entries()].map(([titulo, cols]) => ({ titulo, cols }));
+        }
+
+        if (tablas.length === 0) {
+            alert('No se encontraron tablas para separar. Usa el Excel normal.');
+            return;
+        }
+
+        const vacio = (v) => v === null || v === undefined || String(v).trim() === '';
+        const aoa = [];
+
+        tablas.forEach((tabla, i) => {
+            // Solo las líneas que tienen algo en ESTA tabla.
+            const filas = rows.filter(r => tabla.cols.some(c => !vacio(r[c])));
+            if (filas.length === 0) return;
+
+            if (i > 0) aoa.push([], []);                 // separación entre bloques
+            aoa.push([`${tabla.titulo}  (${filas.length} fila${filas.length === 1 ? '' : 's'})`]);
+            aoa.push([...identidad, ...tabla.cols]);
+            filas.forEach(r => aoa.push([
+                ...identidad.map(c => celdaExcel(r[c])),
+                ...tabla.cols.map(c => celdaExcel(r[c])),
+            ]));
+        });
+
+        if (aoa.length === 0) {
+            alert('No hay datos de tablas en el rango elegido.');
+            return;
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols'] = Array.from(
+            { length: Math.max(...aoa.map(f => f.length)) },
+            (_, i) => ({ wch: i < identidad.length ? 14 : 22 })
+        );
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Por tablas');
+        XLSX.writeFile(wb, `${nombreArchivo()}_por_tablas_${filters.inicio}_${filters.fin}.xlsx`);
+    };
+
     const downloadExcel = () => {
         const wb = XLSX.utils.book_new();
 
@@ -1381,9 +1637,11 @@ const ERPDashboard = () => {
             const bodyRaw = safeParse(form.bodyData);
             if (!bodyRaw) return;
 
-            const bodyEls = Array.isArray(bodyRaw)
-                ? bodyRaw
-                : Object.values(bodyRaw).filter(v => v && typeof v === 'object');
+            const bodyEls = completarFormulas(
+                Array.isArray(bodyRaw)
+                    ? bodyRaw
+                    : Object.values(bodyRaw).filter(v => v && typeof v === 'object'),
+                form, templates);
 
             bodyEls.forEach((el, idx) => {
                 if (!el || typeof el !== 'object') return;
@@ -1422,6 +1680,7 @@ const ERPDashboard = () => {
                     sec.rows.push(rowOut);
                 } else {
                     // Tabla → una fila por registro
+                    const desdeSec = sec.rows.length;
                     rowsData.forEach(row => {
                         const rowOut = { ...base };
                         const flat = row.cells
@@ -1436,6 +1695,14 @@ const ERPDashboard = () => {
                         });
                         sec.rows.push(rowOut);
                     });
+                    // Mismo relleno del lote/talla en las filas hijas del grupo.
+                    // Las claves de `base` (registro, fecha, plantilla) son
+                    // encabezado: no convierten un renglón vacío en fila de datos.
+                    rellenarCombinadas(
+                        sec.rows, desdeSec, sec.rows.length,
+                        columnasCombinadas.get(String(form.templateID ?? form.TemplateID ?? '')),
+                        { esNumero: esNumeroCombinada, clavesContexto: new Set(Object.keys(base)) }
+                    );
                 }
             });
         });
@@ -1475,7 +1742,7 @@ const ERPDashboard = () => {
         // Fallback: si no hay secciones, exportar la vista plana actual
         if (secIdx === 0 && infoRows.length === 0) {
             const exportRows = rows.map(r =>
-                Object.fromEntries(activeCols.map(c => [c, r[c] ?? '-']))
+                Object.fromEntries(activeCols.map(c => [c, r[c] == null ? '-' : celdaExcel(r[c])]))
             );
             XLSX.utils.book_append_sheet(
                 wb,
@@ -1791,13 +2058,30 @@ const ERPDashboard = () => {
         // Un campo del croquis: su etiqueta y a qué columna del reporte apunta.
         // Si no hay columna, el formulario tiene el campo pero nunca se llenó en
         // el rango elegido: se muestra apagado en vez de esconderlo.
-        const campo = (etiqueta, clave) => {
-            const limpia = cleanKey(clave || etiqueta);
-            const col = columns.includes(limpia) ? limpia : porNombre.get(norm(clave || etiqueta));
+        // Busca la columna de datos que corresponde a un campo de la plantilla.
+        //
+        // El prefijo importa: la tabla «Material de empaque e insumos» tiene una
+        // columna CODIGO, y el formulario TAMBIÉN tiene un CODIGO (el del
+        // registro). Sin el prefijo, al marcar el CODIGO del insumo salía el
+        // código del formulario en el Excel.
+        const campo = (etiqueta, prefijo = '', tipo = '') => {
+            const conPrefijo = cleanKey(etiqueta, prefijo);
+            let col = columns.includes(conPrefijo) ? conPrefijo : porNombre.get(norm(conPrefijo));
+
+            if (!col) {
+                const suelta = cleanKey(etiqueta);
+                const candidata = columns.includes(suelta) ? suelta : porNombre.get(norm(suelta));
+                // Una columna de tabla nunca se resuelve con una que venga de
+                // otro lado (encabezado, firmas o datos del formulario).
+                const mismoOrigen = tipo !== 'tabla'
+                    || (candidata && (origenCols.get(candidata) || 'seccion') === 'tabla');
+                if (candidata && mismoOrigen) col = candidata;
+            }
+
             if (col) usadas.add(col);
             return {
-                etiqueta: etiqueta || clave || '(sin nombre)',
-                col: col || limpia,
+                etiqueta: etiqueta || '(sin nombre)',
+                col: col || conPrefijo,
                 existe: !!col,
             };
         };
@@ -1821,7 +2105,8 @@ const ERPDashboard = () => {
                 bloques.push({
                     titulo: el.title || el.name || el.label || `Tabla ${i + 1}`,
                     tipo: 'tabla',
-                    campos: cols.map(c => campo(c.label || c.header || c.name || c.id)),
+                    campos: cols.map(c => campo(c.label || c.header || c.name || c.id,
+                        el.title || el.name || el.label || '', 'tabla')),
                 });
             });
         }
@@ -1853,7 +2138,7 @@ const ERPDashboard = () => {
         }
 
         return { codigo: tpl.codigo, nombre: tpl.nombre, bloques };
-    }, [templates, filters.templateId, columns, cleanKey]);
+    }, [templates, filters.templateId, columns, cleanKey, origenCols]);
 
     // Deja todo listo para el Excel de una línea por formulario: los campos del
     // encabezado (fecha, lote, especie), las firmas, y de las tablas solo las
@@ -1985,6 +2270,36 @@ const ERPDashboard = () => {
                         title="Exporta lo que ves: las columnas seleccionadas, en el orden que armaste (y los totales si el modo resumen está activo)"
                     >
                         📥 {modoResumen ? 'Excel totales' : 'Excel vista'}
+                    </button>
+
+                    <button
+                        onClick={downloadExcelAgrupado}
+                        className="btn-excel-det"
+                        style={{ background: '#1d4ed8' }}
+                        disabled={rows.length === 0}
+                        title="Una hoja con los encabezados agrupados por bloque: DATOS GENERALES | PRODUCCIÓN | INSUMOS"
+                    >
+                        📘 Agrupado
+                    </button>
+
+                    <button
+                        onClick={downloadExcelSecciones}
+                        className="btn-excel-det"
+                        style={{ background: '#0f766e' }}
+                        disabled={rows.length === 0}
+                        title="Una hoja, cada tabla en su propio bloque con encabezados agrupados: sin celdas en blanco"
+                    >
+                        📑 Secciones
+                    </button>
+
+                    <button
+                        onClick={downloadExcelPorTablas}
+                        className="btn-excel-det"
+                        style={{ background: '#0f766e' }}
+                        disabled={rows.length === 0}
+                        title="Una sola hoja, con un bloque por tabla (producción, insumos…). Sin columnas en blanco por el emparejamiento."
+                    >
+                        📑 Por tablas
                     </button>
 
                     <button

@@ -153,6 +153,7 @@ const cuerpo = (datos, extra = {}) => {
     mostrarAlEntrar: datos.mostrarAlEntrar !== false,
     visibleDesde: datos.visibleDesde || null,
     visibleHasta: datos.visibleHasta || null,
+    imagenBase64: datos.imagenBase64 || null,
     usuario, nombre, rol,
     ...extra,
   });

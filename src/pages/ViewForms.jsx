@@ -4,7 +4,8 @@ import React, { useState, useEffect } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import FormHeader from "../components/FormHeader"
 
-import { abrirImagen } from '../utils/abrirImagen';
+import { descargarImagen } from '../utils/descargarImagen';
+import { urlImagen } from '../utils/urlImagen';
 import VersionIndicator from "../components/VersionIndicator"
 import ScrollButton from "../components/ScrollButton"
 import SignatureUploader from "../components/SignatureUploader"
@@ -57,6 +58,29 @@ const safeParse = (val, fallback) => {
   if (val === null || val === undefined) return fallback;
   if (typeof val !== 'string') return val;
   try { return JSON.parse(val); } catch { return fallback; }
+};
+
+const normalizarTextoBusqueda = (valor) =>
+  String(valor ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const textoFormularioBusqueda = (form) => {
+  const valoresHeader = form?.headerData && typeof form.headerData === 'object'
+    ? Object.values(form.headerData)
+    : [];
+
+  return normalizarTextoBusqueda([
+    form?.formID,
+    form?.templateCodigo,
+    form?.templateNombre,
+    form?.filledBy,
+    form?.proceso,
+    form?.tipoProducto,
+    ...valoresHeader,
+  ].join(' '));
 };
 
 // 🖼️ Helper: detectar si un valor es URL de imagen y renderizar apropiadamente
@@ -981,10 +1005,8 @@ function ViewForms() {
     const matchesTemplate = filterTemplate ? form.templateCodigo === filterTemplate : true;
 
     // 🔍 Filtro por búsqueda de texto (código o nombre)
-    const matchesSearch = searchCode
-      ? (form.templateCodigo || '').toLowerCase().includes(searchCode.toLowerCase()) ||
-        (form.templateNombre || '').toLowerCase().includes(searchCode.toLowerCase())
-      : true;
+    const textoBusqueda = normalizarTextoBusqueda(searchCode);
+    const matchesSearch = textoBusqueda ? textoFormularioBusqueda(form).includes(textoBusqueda) : true;
     
     // Filtro por rango de fechas: manda la FECHA ESCRITA DENTRO del formulario.
     // Un registro del día 30 que se guardó al otro día salía como "31" y no lo
@@ -1422,8 +1444,8 @@ function ViewForms() {
                               src={fieldDef.staticImage}
                               alt={fieldDef.label}
                               className="vi-miniatura"
-                              onClick={() => abrirImagen(fieldDef.staticImage, fieldDef.label)}
-                              title="Clic para verla en grande"
+                              onClick={() => descargarImagen(fieldDef.staticImage, fieldDef.label)}
+                              title="Clic para descargarla"
                               style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px' }}
                             />
                           </div>
@@ -1438,11 +1460,11 @@ function ViewForms() {
                           <div key={key} style={{ gridColumn: '1 / -1' }}>
                             <span className="data-label">{key}:</span>
                             <img
-                              src={value}
+                              src={urlImagen(value)}
                               alt={key}
                               className="vi-miniatura"
-                              onClick={() => abrirImagen(value, key)}
-                              title="Clic para verla en grande"
+                              onClick={() => descargarImagen(value, key)}
+                              title="Clic para descargarla"
                               style={{ maxWidth: '100%', maxHeight: '650px', borderRadius: '6px', display: 'block', marginTop: '6px', border: '1px solid #e5e7eb' }}
                             />
                           </div>
@@ -2109,11 +2131,11 @@ function ViewForms() {
                           {yaFirmado ? (
                             <div className="signature-image-container" style={{ textAlign: 'center', marginBottom: '10px' }}>
                               <img 
-                                src={data.firma.url || data.firma.base64} 
+                                src={urlImagen(data.firma.url || data.firma.base64)} 
                                 alt={`Firma ${puesto}`} 
                                 className="vi-miniatura"
-                                onClick={() => abrirImagen(data.firma.url || data.firma.base64, `Firma · ${puesto}`)}
-                                title="Clic para verla en grande"
+                                onClick={() => descargarImagen(data.firma.url || data.firma.base64, `Firma - ${puesto}`)}
+                                title="Clic para descargarla"
                                 style={{ 
                                   maxHeight: '150px', 
                                   maxWidth: '100%', 
@@ -2217,10 +2239,9 @@ function ViewForms() {
         <div className="filters-container-view">
           <div className="filter-row">
             <div className="filter-group">
-              <label>� Buscar:</label>
+              <label>🔍 Buscar:</label>
               <input
-                type="text"
-                placeholder="Código o nombre (ej: PD-04)..."
+                placeholder="Código, nombre, lote, # o usuario (ej: PD-04, 1482)..."
                 value={searchCode}
                 onChange={(e) => { setSearchCode(e.target.value); setCurrentPage(1); }}
                 style={{ minWidth: '200px' }}

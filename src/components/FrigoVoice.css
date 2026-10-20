@@ -593,3 +593,36 @@
    fixed también sirve de ancla para los hijos absolutos. Ponerle `relative`
    acá lo sacaba de la esquina y lo mandaba al flujo de la página: por eso
    aparecía arriba a la izquierda en vez de abajo a la derecha. */
+/* 📬 A quién le llegan los mensajes (solo lo ve el administrador) */
+.frigovoice-admin__destino {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.frigovoice-admin__destino label { font-size: 12.5px; font-weight: 600; color: #1e40af; }
+.frigovoice-admin__destino input {
+  padding: 7px 9px;
+  border: 1px solid #93c5fd;
+  border-radius: 6px;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.frigovoice-admin__destino button {
+  align-self: flex-start;
+  background: #1d4ed8;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.frigovoice-admin__destino button:disabled { opacity: .6; cursor: default; }
+.frigovoice-admin__destino small { color: #64748b; font-size: 11.5px; }

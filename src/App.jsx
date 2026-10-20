@@ -39,6 +39,7 @@ import ResumenLotes from "./pages/ResumenLotes"
 import ProductionPlanForm from "./pages/ProductionPlanForm"
 import RegistroPersonal from "./pages/RegistroPersonal"
 import PersonalDashboard from "./pages/PersonalDashboard"
+import RecorridoProductivo from "./pages/RecorridoProductivo"
 import FrigoVoice from "./components/FrigoVoice"
 import DiagnosticoPlantillas from "./pages/DiagnosticoPlantillas"
 import "./App.css"
@@ -82,6 +83,7 @@ function Navigation() {
     { to: "/novedades", icon: "📢", label: "Novedades", show: true },
     { to: "/cumplimiento", icon: "📋", label: "Control de cumplimiento", show: isAdminOrSupervisor },
     { to: "/actividades", icon: "🏭", label: "Actividades de proceso", show: isAdminOrSupervisor },
+    { to: "/recorrido-productivo", icon: "🧭", label: "Recorrido productivo", show: true },
     { to: "/fill-form", icon: "📝", label: "Llenar Formulario", show: true },
     { to: "/tickets", icon: "🎫", label: "Tickets", show: true },
     { to: "/my-drafts", icon: "📋", label: "Mis Borradores", show: true },
@@ -225,6 +227,7 @@ function getPageName(pathname) {
     '/novedades': 'Novedades',
     '/cumplimiento': 'Control de cumplimiento',
     '/actividades': 'Actividades de proceso',
+    '/recorrido-productivo': 'Recorrido productivo',
     '/create-template': 'Crear Plantilla',
     '/fill-form': 'Llenar Formulario',
     '/manage-templates': 'Administrar Plantillas',
@@ -548,6 +551,15 @@ function App() {
                 <ProtectedRoute>
                   <ErrorBoundary>
                     <ClasificacionProduccion />
+                  </ErrorBoundary>
+                </ProtectedRoute>
+              } />
+
+              {/* Recorrido productivo - etapas del proceso, acceso para todos */}
+              <Route path="/recorrido-productivo" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <RecorridoProductivo />
                   </ErrorBoundary>
                 </ProtectedRoute>
               } />

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import authService from '../services/authService';
 import { CLOUDINARY_CONFIG } from '../config/cloudinary.config';
 import { API_BASE_URL } from '../apiConfig';
+import { urlImagen } from '../utils/urlImagen';
 import './MySignature.css';
 
 const MySignature = () => {
@@ -363,7 +364,7 @@ const MySignature = () => {
             </div>
 
             <div className="signature-preview">
-              <img src={signatureUrl} alt="Tu firma" />
+              <img src={urlImagen(signatureUrl)} alt="Tu firma" />
             </div>
 
             <div className="signature-info">
@@ -425,7 +426,7 @@ const MySignature = () => {
             <div className="upload-area" onClick={() => fileInputRef.current.click()}>
               {signatureUrl && selectedFile ? (
                 <div className="preview-container">
-                  <img src={signatureUrl} alt="Preview de firma" className="signature-preview-img" />
+                  <img src={urlImagen(signatureUrl)} alt="Preview de firma" className="signature-preview-img" />
                   <p className="preview-text">✅ Imagen seleccionada - Haz clic para cambiar</p>
                 </div>
               ) : (

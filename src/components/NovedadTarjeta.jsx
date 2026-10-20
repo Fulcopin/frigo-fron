@@ -30,6 +30,16 @@ export default function NovedadTarjeta({ novedad, nueva = false, acciones = null
         {estado && <span className={`nov-estado nov-estado-${estado.clave}`}>{estado.texto}</span>}
       </header>
 
+      {novedad?.imagenBase64 && (
+        <div className="nov-imagen">
+          <img
+            src={novedad.imagenBase64}
+            alt={`Imagen de la novedad ${novedad?.titulo || ''}`.trim()}
+            loading="lazy"
+          />
+        </div>
+      )}
+
       {/* pre-wrap: se respetan los saltos de línea que escribió el administrador */}
       <p className="nov-mensaje">{novedad?.mensaje}</p>
 

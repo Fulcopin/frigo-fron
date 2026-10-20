@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { uploadToCloudinary } from '../services/cloudinaryService';
 import authService from '../services/authService';
+import { urlImagen } from '../utils/urlImagen';
 import './MySignatureManager.css';
 
 const MySignatureManager = ({ onSignatureSelected, autoSelect = false }) => {
@@ -112,7 +113,7 @@ const MySignatureManager = ({ onSignatureSelected, autoSelect = false }) => {
       {savedSignature ? (
         <div className="saved-signature-card">
           <div className="signature-preview">
-            <img src={savedSignature.url} alt="Mi firma permanente" />
+            <img src={urlImagen(savedSignature.url)} alt="Mi firma permanente" />
           </div>
           <div className="signature-info">
             <p className="signature-date">

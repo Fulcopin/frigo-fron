@@ -11,6 +11,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { urlImagen } from '../utils/urlImagen';
+import { descargarImagen } from '../utils/descargarImagen';
 import './VisorImagen.css';
 
 const ZOOMS = [1, 1.5, 2, 3, 4];
@@ -106,9 +108,9 @@ export default function VisorImagen({ src, titulo, onClose }) {
           <button type="button" onClick={siguienteZoom} title="Cambiar el zoom (o teclas + y -)">
             🔍 {zoom}x
           </button>
-          <a href={src} download target="_blank" rel="noopener noreferrer" title="Descargar la imagen">
+          <button type="button" onClick={() => descargarImagen(src, titulo || 'imagen')} title="Descargar la imagen">
             ⬇️
-          </a>
+          </button>
           <button type="button" onClick={cerrar} title="Cerrar (Escape)">✕</button>
         </div>
       </div>
@@ -125,7 +127,7 @@ export default function VisorImagen({ src, titulo, onClose }) {
         onTouchEnd={alSoltar}
       >
         <img
-          src={src}
+          src={urlImagen(src)}
           alt={titulo || 'Imagen'}
           className="vi-img"
           style={{

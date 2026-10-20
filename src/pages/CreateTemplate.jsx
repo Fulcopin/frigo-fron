@@ -2285,6 +2285,30 @@ function CreateTemplate() {
                         </small>
                       </div>
 
+                      {/* 📊 TOTAL EN PERSONAL
+                          Check explícito: marca ESTA columna como «Peso producido»
+                          para que su total aparezca como «Total producido (Lbs)»
+                          en el menú de Personal. Es la MISMA marca del desplegable
+                          de arriba («Qué representa»), solo que en un clic: se
+                          guarda dentro de la columna, así que no cambia el nombre,
+                          el orden ni los datos ya llenados de la tabla. */}
+                      <div className="form-group">
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0, fontWeight: '600', color: column.rol === 'pesoProducido' ? '#0f766e' : '#4a5568' }}>
+                          <input
+                            type="checkbox"
+                            checked={column.rol === 'pesoProducido'}
+                            onChange={(e) => updateColumnInTable(elementIndex, colIndex, 'rol', e.target.checked ? 'pesoProducido' : (column.rol === 'pesoProducido' ? '' : column.rol))}
+                            style={{ width: '18px', height: '18px', accentColor: '#0d9488', cursor: 'pointer' }}
+                          />
+                          📊 Mostrar total en Personal
+                        </label>
+                        <small style={{ fontSize: '11px', color: '#0d9488', display: 'block', marginTop: '3px' }}>
+                          {column.rol === 'pesoProducido'
+                            ? 'El total de esta columna se verá como «Total producido (Lbs)» en el menú de Personal.'
+                            : 'Marcala para que el total de esta columna se vea en el menú de Personal.'}
+                        </small>
+                      </div>
+
                       {/* 📋 Campos de la ventana de detalle.
                           Son las columnas que va a tener la tabla emergente:
                           por ejemplo Tamaño y Cantidad, o Código, Material,

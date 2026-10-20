@@ -508,7 +508,7 @@ export default function PersonalDashboard() {
                             que son los del flujo. El código, el número y el
                             proceso SÍ se muestran: cada paso es un formulario
                             distinto y hay que poder identificarlo. */}
-                        {mismoQueAnterior && ['fecha', 'destino', 'lote'].includes(id)
+                        {mismoQueAnterior && ['fecha', 'turno', 'destino', 'lote'].includes(id)
                           ? <span className="pd-idem">↳</span>
                           : valorTexto(r, id)}
                       </td>

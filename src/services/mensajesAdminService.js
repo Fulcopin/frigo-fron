@@ -66,8 +66,23 @@ export async function enviarMensajeAdmin({ asunto, mensaje }) {
  * poder leer la respuesta que les dieron.
  * @returns {Promise<Array>} del más nuevo al más viejo
  */
-export async function listarMensajes() {
-  const res = await fetch(API_ENDPOINTS.tickets);
+/**
+ * Mensajes que le corresponden a quien está mirando.
+ *
+ * @param {boolean} [verTodos] solo para administradores: traer también los
+ *   mensajes dirigidos a otra persona.
+ *
+ * 📬 Un operario puede tener configurado que sus mensajes le lleguen a UNA
+ * persona (Reglas de reparto). En ese caso los demás administradores no los
+ * ven, salvo que pidan ver todos.
+ */
+export async function listarMensajes(verTodos = false) {
+  const yo = remitente();
+  const url = esAdminDeMensajes() && !verTodos && yo.email
+    ? `${API_ENDPOINTS.tickets}?para=${encodeURIComponent(yo.email)}`
+    : API_ENDPOINTS.tickets;
+
+  const res = await fetch(url);
   if (!res.ok) throw new Error(await motivoDelError(res));
   const data = await res.json();
   const lista = Array.isArray(data) ? data : (data?.['$values'] ?? []);
@@ -175,3 +190,65 @@ export default {
   enviarMensajeAdmin, listarMensajes, responderMensaje, cambiarEstado,
   contarPendientes, contarRespondidos, esAdminDeMensajes, ESTADOS_MENSAJE,
 };
+
+// ── 📬 Reglas de reparto: los mensajes de X le llegan a Y ──────────────
+
+/** Reglas guardadas. */
+export async function listarRutas() {
+  const res = await fetch(`${API_ENDPOINTS.tickets}/rutas`);
+  if (!res.ok) throw new Error(await motivoDelError(res));
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data?.['$values'] ?? []);
+}
+
+/**
+ * Guarda (o quita) la regla de un operario.
+ * Con destinatarioEmail vacío, sus mensajes vuelven a ir a todos.
+ */
+export async function guardarRuta({ usuarioEmail, usuarioNombre, destinatarioEmail, destinatarioNombre }) {
+  const yo = remitente();
+  const res = await fetch(`${API_ENDPOINTS.tickets}/rutas`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      usuarioEmail: String(usuarioEmail || '').trim(),
+      usuarioNombre: usuarioNombre || '',
+      destinatarioEmail: String(destinatarioEmail || '').trim(),
+      destinatarioNombre: destinatarioNombre || '',
+      actualizadoPor: yo.nombre || yo.email,
+    }),
+  });
+  if (!res.ok) throw new Error(await motivoDelError(res));
+  return res.json();
+}
+
+/** ¿Este mensaje está dirigido a alguien en particular? */
+export const destinatarioDe = (t) =>
+  String(t?.asignadoANombre || t?.asignadoAEmail || '').trim();
+
+/** Valor que identifica la regla general (ver TicketsController). */
+export const DESTINATARIO_POR_DEFECTO = '*';
+
+/**
+ * ¿Este mensaje es MÍO? Para el aviso rojo.
+ *
+ * Mío = dirigido a mí. Los que no tienen destinatario cuentan solo si NO hay
+ * una regla general: con un destinatario por defecto configurado, el aviso le
+ * aparece a una sola persona y no a todos los administradores.
+ */
+export function esParaMi(ticket, { hayReglaGeneral = false } = {}) {
+  const yo = remitente();
+  const asignado = String(ticket?.asignadoAEmail || '').trim().toLowerCase();
+  if (asignado) return asignado === String(yo.email || '').toLowerCase();
+  return !hayReglaGeneral;
+}
+
+/** ¿Hay una regla general configurada? */
+export async function hayDestinatarioPorDefecto() {
+  try {
+    const rutas = await listarRutas();
+    return rutas.some(r => r.usuarioEmail === DESTINATARIO_POR_DEFECTO && r.activa !== false);
+  } catch {
+    return false;
+  }
+}

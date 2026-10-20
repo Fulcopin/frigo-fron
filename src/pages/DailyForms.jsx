@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
+import { filasParaExcel } from '../utils/numeroParaExcel';
+import { mapaColumnasCombinadas, rellenarCombinadas } from '../utils/combinarFilas';
 import ScrollButton from "../components/ScrollButton";
 import { ordenarFormularios, etiquetaFormulario } from "../utils/ordenFormularios";
 import "../styles/DailyForms.css";
@@ -19,7 +21,17 @@ function DailyForms() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [templates, setTemplates] = useState([]);
+  const [templatesFull, setTemplatesFull] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState("all");
+
+  // ─── Columnas que la plantilla dibuja combinadas ─────────────────────────
+  // Lote, talla, zona… se escriben una sola vez y bajan combinadas; al guardar
+  // quedan en la primera fila del grupo y las hijas en blanco. Al exportar hay
+  // que repetir el valor en cada fila (utils/combinarFilas).
+  const columnasCombinadas = useMemo(
+    () => mapaColumnasCombinadas(templatesFull),
+    [templatesFull]
+  );
   
   // Estados para vista detallada
   const [selectedForm, setSelectedForm] = useState(null);
@@ -101,6 +113,16 @@ function DailyForms() {
       console.log('📋 Plantillas únicas encontradas:', uniqueTemplates);
       
       setTemplates(uniqueTemplates);
+
+      // Plantillas COMPLETAS: hacen falta para saber qué columnas van
+      // combinadas (lote, talla…) y repetir su valor en cada fila hija.
+      try {
+        const resTpl = await fetch(`${API_BASE_URL}/Templates`);
+        const dataTpl = await resTpl.json();
+        setTemplatesFull(dataTpl.$values || dataTpl || []);
+      } catch (eTpl) {
+        console.warn('⚠️ No se pudieron cargar las plantillas completas:', eTpl);
+      }
       
     } catch (err) {
       console.error('❌ Error cargando formularios:', err);
@@ -164,7 +186,7 @@ function DailyForms() {
         'Última Actualización': form.updatedAt ? new Date(form.updatedAt).toLocaleString('es-ES') : '-'
       }));
 
-      const summarySheet = XLSX.utils.json_to_sheet(summaryData);
+      const summarySheet = XLSX.utils.json_to_sheet(filasParaExcel(summaryData));
       XLSX.utils.book_append_sheet(workbook, summarySheet, 'Resumen');
 
       // Procesar TODOS los formularios del día
@@ -239,9 +261,15 @@ function DailyForms() {
                   );
                   const dataToExport = nonEmptyRows.length > 0 ? nonEmptyRows : parsedRows;
 
+                  // Repetir lote/talla/zona en cada fila hija del grupo combinado.
+                  rellenarCombinadas(
+                    dataToExport, 0, dataToExport.length,
+                    columnasCombinadas.get(String(form.templateID || form.TemplateID || ''))
+                  );
+
                   if (dataToExport.length > 0) {
                     tableCount++;
-                    const bodySheet = XLSX.utils.json_to_sheet(dataToExport);
+                    const bodySheet = XLSX.utils.json_to_sheet(filasParaExcel(dataToExport));
                     const cleanTitle = sectionTitle.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 12);
                     const sheetName = `${formNumber}_${cleanTitle}`.substring(0, 31);
                     
@@ -259,8 +287,13 @@ function DailyForms() {
                   return row;
                 }).filter(row => row && typeof row === 'object');
 
+                rellenarCombinadas(
+                  parsedBodyData, 0, parsedBodyData.length,
+                  columnasCombinadas.get(String(form.templateID || form.TemplateID || ''))
+                );
+
                 if (parsedBodyData.length > 0) {
-                  const bodySheet = XLSX.utils.json_to_sheet(parsedBodyData);
+                  const bodySheet = XLSX.utils.json_to_sheet(filasParaExcel(parsedBodyData));
                   const sheetName = `${formNumber}_${templateName}_Datos`.substring(0, 31);
                   
                   XLSX.utils.book_append_sheet(workbook, bodySheet, sheetName);
@@ -277,7 +310,7 @@ function DailyForms() {
               }));
               
               if (headerArray.length > 0) {
-                const headerSheet = XLSX.utils.json_to_sheet(headerArray);
+                const headerSheet = XLSX.utils.json_to_sheet(filasParaExcel(headerArray));
                 
                 // Nombre con plantilla y número
                 const templateName = (form.templateName || form.TemplateName || 'Form').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 15);

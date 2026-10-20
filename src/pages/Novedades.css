@@ -135,6 +135,21 @@
   font-size: 15px;
 }
 
+.nov-imagen {
+  margin: 10px 0 12px;
+}
+
+.nov-imagen img,
+.nov-imagen-previa img {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
 .nov-pie {
   display: flex;
   justify-content: space-between;
@@ -213,7 +228,18 @@
   width: 100%;
 }
 
+.nov-campo input[type="file"] {
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+}
+
 .nov-campo textarea { resize: vertical; }
+
+.nov-ayuda {
+  color: #64748b;
+  font-size: 12px;
+}
 
 .nov-fila { display: flex; gap: 12px; flex-wrap: wrap; }
 
@@ -239,6 +265,29 @@
   font-size: 12px;
   color: #64748b;
   margin-bottom: 6px;
+}
+
+.nov-imagen-previa {
+  margin: 12px 0;
+  padding: 10px;
+  background: #f8fafc;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+}
+
+.nov-imagen-previa img {
+  max-height: 240px;
+}
+
+.nov-imagen-previa-acciones {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #64748b;
 }
 
 .nov-botones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }

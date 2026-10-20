@@ -10,9 +10,11 @@
  */
 
 import ExcelJS from 'exceljs';
+import { urlImagen } from '../utils/urlImagen';
 import { saveAs } from 'file-saver';
 import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
+import { comoNumero } from '../utils/numeroParaExcel';
 import { alinearBodyData } from '../utils/emparejarBodyData';
 import { columnasParaDibujar } from '../utils/columnasDelCuadro';
 
@@ -76,7 +78,7 @@ const getBase64ImageForExcel = async (imgUrl) => {
         console.error('❌ Error cargando imagen via canvas:', imgUrl, err);
         reject(new Error(`No se pudo cargar la imagen: ${imgUrl}`));
       };
-      img.src = imgUrl;
+      img.src = urlImagen(imgUrl);
     });
   } catch (error) {
     console.error('❌ Error cargando imagen para Excel:', error);
@@ -812,7 +814,10 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
                 }
               }
               const dataCell = worksheet.getCell(currentRow, tIdx + 2);
-              dataCell.value = String(val);
+              // Mismo criterio que las demás tablas: número cuando lo es, para
+              // poder sumar y promediar; texto cuando no (un «-», una nota).
+              const numeroTina = comoNumero(val);
+              dataCell.value = numeroTina !== null ? numeroTina : String(val);
               applyCellStyle(dataCell, isAlt);
               dataCell.alignment = { vertical: 'middle', horizontal: 'center' };
             });
@@ -992,8 +997,23 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
 
         const cellValue = value ?? "";
         const isEmpty = String(cellValue).trim() === '';
-        const unitSuffix = (!isEmpty && col.unit) ? ` ${col.unit}` : '';
-        dataCell.value = isEmpty ? '' : String(cellValue) + unitSuffix;
+
+        // 🔢 Número sin la unidad pegada.
+        //
+        // Antes la celda decía «1572 Lbs» y Excel la tomaba como TEXTO: no se
+        // podían sumar las columnas. Ahora va el número solo y la unidad queda
+        // en el encabezado, que ya la muestra: «TOTAL Lbs NETAS (Lbs)».
+        //
+        // Lo que no es un número (lotes como 4098-26, tallas 31-35, horas) se
+        // escribe tal cual, con su unidad si la tenía.
+        const numero = isEmpty ? null : comoNumero(cellValue);
+        if (isEmpty) {
+          dataCell.value = '';
+        } else if (numero !== null) {
+          dataCell.value = numero;
+        } else {
+          dataCell.value = String(cellValue) + (col.unit ? ` ${col.unit}` : '');
+        }
         
         // Estilo según si tiene datos o está vacío
         if (isEmpty && isEmptyTable) {

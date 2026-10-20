@@ -28,6 +28,9 @@ export const COLUMNAS_PERSONAL = [
   { id: 'pesoProduccion', label: 'Peso producción (Lbs)', ancho: 18, tipo: 'decimal' },
   { id: 'proceso', label: 'Proceso', ancho: 24, tipo: 'texto' },
   { id: 'fecha', label: 'Fecha', ancho: 12, tipo: 'fecha' },
+  // Turno: va junto a la fecha. Sin él, dos filas del mismo proceso y el
+  // mismo día (día y noche) no se distinguen entre sí.
+  { id: 'turno', label: 'Turno', ancho: 10, tipo: 'texto' },
   { id: 'planta', label: 'Planta', ancho: 10, tipo: 'entero' },
   { id: 'externo', label: 'Externo', ancho: 10, tipo: 'entero' },
   { id: 'horaInicio', label: 'Hora inicio', ancho: 12, tipo: 'texto' },
@@ -93,6 +96,9 @@ export function valorCrudo(r, id) {
     // "produjo nada", que es otra afirmación.
     case 'pesoProduccion': return r.pesoProduccion != null ? Number(r.pesoProduccion) : null;
     case 'proceso': return r.proceso ?? '';
+    // Turno (Día / Noche). Sin este caso caía en el default y la columna
+    // salía vacía aunque el backend mandara el dato.
+    case 'turno': return r.turno ?? '';
     case 'fecha': {
       if (!r.fecha) return null;
       const d = new Date(r.fecha);
@@ -113,49 +119,54 @@ export function valorTexto(r, id) {
   switch (id) {
     case 'fecha': {
       const d = valorCrudo(r, 'fecha');
-      return d ? d.toLocaleDateString('es-EC') : '—';
+      return d ? d.toLocaleDateString('es-EC') : '';
     }
     case 'horaInicio':
     case 'horaFin':
-      return valorCrudo(r, id) || '—';
+      return valorCrudo(r, id) || '';
     case 'horas':
-      return r.horasTrabajadas != null ? Number(r.horasTrabajadas).toFixed(2) : '—';
+      return r.horasTrabajadas != null ? Number(r.horasTrabajadas).toFixed(2) : '';
     case 'pesoProduccion':
       return r.pesoProduccion != null
         ? Number(r.pesoProduccion).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        : '—';
+        : '';
     case 'formID':
-      return r.formID != null ? `#${r.formID}` : '—';
+      return r.formID != null ? `#${r.formID}` : '';
     case 'flujo': {
       // Con símbolos en pantalla: se ve de un vistazo dónde entra y dónde sale
       // cada flujo sin tener que leer la palabra.
       const m = [];
       if (r.esInicio) m.push('▶ Entrada');
       if (r.esCierre) m.push('■ Salida');
-      return m.length > 0 ? m.join(' ') : '—';
+      return m.length > 0 ? m.join(' ') : '';
     }
     case 'horasTotales':
-      return r.horasTotales != null ? Number(r.horasTotales).toFixed(2) : '—';
+      return r.horasTotales != null ? Number(r.horasTotales).toFixed(2) : '';
     case 'horasTotalesUnicas':
-      return r.horasTotalesUnicas != null ? Number(r.horasTotalesUnicas).toFixed(2) : '—';
+      return r.horasTotalesUnicas != null ? Number(r.horasTotalesUnicas).toFixed(2) : '';
     case 'pesoTotal':
       return r.pesoTotalFormulario != null
         ? Number(r.pesoTotalFormulario).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        : '—';
+        : '';
     case 'pesoTotalUnico':
       return r.pesoTotalUnico != null
         ? Number(r.pesoTotalUnico).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        : '—';
-    // Guion en vez de celda vacía. Una celda en blanco se lee como "todavía no
-    // lo llenaron" o como un error de la pantalla; el guion dice "ese
-    // formulario no registra este dato", que es lo que pasa de verdad.
+        : '';
+    // Celda vacía de verdad, sin guion.
+    //
+    // Antes se ponía "—" para decir "este formulario no registra este dato",
+    // pero un guion se lee como un dato más: al copiar la tabla, al filtrar y
+    // al ordenar molesta, y en las columnas donde un vacío es normal —Entrada
+    // /Salida, una franja sin peso— llenaba la vista de rayas. El vacío se
+    // entiende igual y deja la tabla limpia.
     case 'destino':
     case 'lote':
     case 'especie':
+    case 'turno':
     case 'codigo':
     case 'proceso': {
       const v = String(valorCrudo(r, id) ?? '').trim();
-      return v || '—';
+      return v;
     }
     default:
       return valorCrudo(r, id);

@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "traer-imagenes": "node scripts/traer-imagenes.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

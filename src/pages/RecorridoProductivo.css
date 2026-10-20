@@ -1,0 +1,562 @@
+/* ============================================================================
+   🏭 RECORRIDO PRODUCTIVO
+   ----------------------------------------------------------------------------
+   Misma línea visual que la bandeja de firmas: fondo blanco, línea de 1px,
+   micro-etiquetas en mayúsculas y un solo acento verde. Sin bloques de color.
+   ========================================================================== */
+
+.rp-page {
+  --rp-linea: #e1e5e1;
+  --rp-linea-fuerte: #c8d0c9;
+  --rp-tinta: #1f2621;
+  --rp-tenue: #7c847e;
+  --rp-acento: #2f6b5f;
+  --rp-ambar: #9a6a1e;
+  --rp-fondo: #fbfbfa;
+
+  padding: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+  color: var(--rp-tinta);
+  font-size: 13px;
+}
+
+/* Encabezado ------------------------------------------------------------- */
+
+.rp-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rp-linea);
+}
+
+.rp-eyebrow {
+  font-size: 10px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--rp-tenue);
+  margin-bottom: 4px;
+}
+
+.rp-h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.rp-fechas {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rp-input {
+  height: 30px;
+  font: inherit;
+  font-size: 12px;
+  padding: 0 7px;
+  border: 1px solid var(--rp-linea);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--rp-tinta);
+}
+
+.rp-input:focus { outline: none; border-color: var(--rp-acento); }
+
+.rp-flecha { color: var(--rp-tenue); font-size: 12px; }
+
+.rp-btn {
+  height: 30px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--rp-linea);
+  border-radius: 4px;
+  background: #fff;
+  color: #3d453f;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+
+.rp-btn:hover { background: #f6f7f6; border-color: var(--rp-linea-fuerte); }
+
+/* Línea de resumen -------------------------------------------------------- */
+
+.rp-resumen {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 0;
+  font-size: 11px;
+  color: var(--rp-tenue);
+}
+
+.rp-resumen b { font-weight: 600; color: var(--rp-tinta); font-variant-numeric: tabular-nums; }
+
+.rp-resumen-rango {
+  font: 600 10.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--rp-acento);
+  background: #eef4f1;
+  border: 1px solid #dbe7e2;
+  border-radius: 3px;
+  padding: 3px 6px;
+}
+
+.rp-punto { width: 3px; height: 3px; border-radius: 50%; background: #c8d0c9; }
+
+/* Flujo de etapas --------------------------------------------------------- */
+
+.rp-flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.rp-etapa {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 132px;
+  padding: 10px 11px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid var(--rp-linea);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color .12s, background .12s, box-shadow .12s;
+}
+
+.rp-etapa:hover { border-color: var(--rp-linea-fuerte); }
+
+.rp-etapa.on {
+  border-color: var(--rp-acento);
+  box-shadow: inset 0 0 0 1px var(--rp-acento);
+  background: #f7faf8;
+}
+
+.rp-etapa.vacia { background: #fcfcfb; }
+.rp-etapa.vacia .rp-etapa-count { color: #b6bdb7; }
+
+.rp-etapa-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rp-etapa-num {
+  font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .08em;
+  color: var(--rp-tenue);
+}
+
+.rp-etapa-count {
+  font: 600 20px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--rp-acento);
+  font-variant-numeric: tabular-nums;
+}
+
+.rp-etapa-nombre {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.rp-etapa-detalle {
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--rp-tenue);
+  min-height: 26px;
+}
+
+.rp-etapa-codigos {
+  font: 500 9.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #9aa29b;
+  letter-spacing: .02em;
+}
+
+.rp-etapa-pie {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px dashed var(--rp-linea);
+  font-size: 9.5px;
+  color: var(--rp-tenue);
+}
+
+.rp-pend {
+  color: var(--rp-ambar);
+  white-space: nowrap;
+}
+
+/* Fuente complementaria --------------------------------------------------- */
+
+.rp-complemento {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 11px;
+  border: 1px dashed var(--rp-linea-fuerte);
+  border-radius: 6px;
+  background: var(--rp-fondo);
+  margin-bottom: 14px;
+}
+
+.rp-complemento-t {
+  font-size: 9.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--rp-tenue);
+}
+
+.rp-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.rp-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font: 500 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #4a524c;
+  background: #fff;
+  border: 1px solid var(--rp-linea);
+  border-radius: 20px;
+  padding: 4px 8px;
+}
+
+.rp-chip b { color: var(--rp-acento); font-weight: 700; }
+
+/* Detalle ----------------------------------------------------------------- */
+
+.rp-detalle {
+  border: 1px solid var(--rp-linea);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.rp-detalle-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rp-linea);
+  background: #fdfdfc;
+}
+
+.rp-detalle-num {
+  font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .12em;
+  color: var(--rp-tenue);
+}
+
+.rp-detalle-head h2 {
+  margin: 3px 0 2px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.rp-detalle-head p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--rp-tenue);
+}
+
+.rp-detalle-total { text-align: right; }
+.rp-detalle-total b {
+  display: block;
+  font: 600 20px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.rp-detalle-total span {
+  font-size: 9.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--rp-tenue);
+}
+
+/* Plantillas de la etapa */
+
+.rp-plantillas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rp-linea);
+  background: var(--rp-fondo);
+}
+
+.rp-plantilla {
+  border: 1px solid var(--rp-linea);
+  border-radius: 5px;
+  background: #fff;
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rp-plantilla.sin-datos { opacity: .62; }
+
+.rp-plantilla-codigo {
+  font: 600 9.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .05em;
+  color: var(--rp-acento);
+}
+
+.rp-plantilla-nombre {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rp-plantilla-pie {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--rp-tenue);
+}
+
+.rp-plantilla-pie b {
+  font: 600 13px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--rp-tinta);
+}
+
+/* KPIs */
+
+.rp-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  border-bottom: 1px solid var(--rp-linea);
+}
+
+.rp-kpi {
+  padding: 10px 14px;
+  border-right: 1px solid var(--rp-linea);
+  min-width: 0;
+}
+
+.rp-kpi:last-child { border-right: none; }
+
+.rp-kpi-label {
+  display: block;
+  font-size: 9.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--rp-tenue);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-kpi-valor {
+  display: block;
+  margin-top: 3px;
+  font: 600 17px/1.15 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--rp-tinta);
+}
+
+.rp-kpi-valor em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--rp-tenue);
+  margin-left: 3px;
+}
+
+.rp-kpi-ambar .rp-kpi-valor { color: var(--rp-ambar); }
+
+/* Bloques internos */
+
+.rp-columnas {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 12px 14px;
+}
+
+.rp-bloque { min-width: 0; }
+
+.rp-columnas .rp-bloque { padding: 0; }
+.rp-detalle > .rp-bloque { padding: 12px 14px; border-top: 1px solid var(--rp-linea); }
+
+.rp-bloque h3 {
+  margin: 0 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #4a524c;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.rp-bloque h3 span {
+  font: 500 9.5px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--rp-tenue);
+  background: #f2f4f2;
+  border: 1px solid var(--rp-linea);
+  border-radius: 20px;
+  padding: 2px 6px;
+}
+
+.rp-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.rp-tabla th {
+  text-align: left;
+  font-size: 9.5px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--rp-tenue);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--rp-linea);
+  white-space: nowrap;
+}
+
+.rp-tabla td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f2f0;
+  vertical-align: top;
+}
+
+.rp-tabla tbody tr:last-child td { border-bottom: none; }
+.rp-tabla tbody tr:hover td { background: #fafbfa; }
+
+.rp-tabla td:first-child {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rp-tabla .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.rp-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; }
+
+.rp-link {
+  color: var(--rp-acento);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 10.5px;
+}
+
+.rp-tabla-scroll { max-height: 340px; overflow: auto; }
+
+/* Barras de actividad */
+
+.rp-barras { display: flex; flex-direction: column; gap: 5px; }
+
+.rp-barra {
+  display: grid;
+  grid-template-columns: 38px 1fr 26px;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: var(--rp-tenue);
+}
+
+.rp-barra-fecha {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.rp-barra-pista {
+  position: relative;
+  height: 9px;
+  background: #f1f3f1;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.rp-barra-valor {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  background: #9dbcae;
+  border-radius: 2px;
+}
+
+.rp-barra-n { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Estados */
+
+.rp-vacio,
+.rp-nota {
+  padding: 26px 14px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--rp-tenue);
+}
+
+.rp-nota { padding: 10px 0; text-align: left; }
+
+.rp-error {
+  margin: 10px 0;
+  padding: 9px 12px;
+  border: 1px solid #e7c9c6;
+  background: #fdf3f2;
+  color: #b42318;
+  border-radius: 5px;
+  font-size: 11.5px;
+}
+
+.rp-aviso {
+  margin: 10px 14px 0;
+  padding: 8px 10px;
+  border: 1px solid #f0e3c2;
+  background: #fdf8ec;
+  color: #7a5a17;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* Adaptación a pantallas chicas ------------------------------------------ */
+
+@media (max-width: 900px) {
+  .rp-columnas { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .rp-page { padding: 12px; }
+  .rp-h1 { font-size: 19px; }
+  .rp-flow { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .rp-etapa { min-height: 118px; }
+  .rp-kpis { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+}

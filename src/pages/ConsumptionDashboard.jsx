@@ -124,10 +124,10 @@ export default function ConsumptionDashboard() {
       setExporting(true);
       // Basic CSV export
       let csvContent = "data:text/csv;charset=utf-8,";
-      csvContent += "CÓDIGO DEL FORMULARIO,FECHA REGISTRADA,FORMULARIO,CREADO POR,CÓDIGO,INSUMO,CANTIDAD,UNIDAD DE MEDIDA\n";
+      csvContent += "# FORM,CÓDIGO DEL FORMULARIO,FECHA REGISTRADA,FORMULARIO,DESTINO,CREADO POR,CÓDIGO,INSUMO,CANTIDAD,UNIDAD DE MEDIDA\n";
       consolidatedInsumos.forEach(row => {
         const fecha = new Date(row.createdAt).toLocaleDateString('es-ES');
-        const rowStr = `"${row.templateCode}","${fecha}","${row.templateName}","${row.filledBy}","${row.codigo || ''}","${row.producto}",${row.cantidad},"${row.unidad}"`;
+        const rowStr = `"${row.formID}","${row.templateCode}","${fecha}","${row.templateName}","${row.destino || ''}","${row.filledBy}","${row.codigo || ''}","${row.producto}",${row.cantidad},"${row.unidad}"`;
         csvContent += rowStr + "\r\n";
       });
       
@@ -192,6 +192,9 @@ export default function ConsumptionDashboard() {
               formID: form.formID,
               templateCode: form.templateCode || 'N/A',
               templateName: form.templateName,
+              // Destino del encabezado del formulario (Frigolab, San Mateo,
+              // Ecuatun...). Viene del backend; vacio si el registro no lo trae.
+              destino: form.destino || '',
               createdAt: form.createdAt,
               filledBy: form.filledBy || 'Desconocido',
               codigo,
@@ -334,9 +337,11 @@ export default function ConsumptionDashboard() {
                   <thead>
                     <tr style={{ background: '#f1f5f9' }}>
                       <th style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>#</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }} title="Número de este registro">🔢 # FORM</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CÓDIGO DEL FORMULARIO</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>FECHA REGISTRADA</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>FORMULARIO</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }} title="Destino declarado en el encabezado">DESTINO</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CREADO POR</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CÓDIGO</th>
                       <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>INSUMO</th>
@@ -347,7 +352,7 @@ export default function ConsumptionDashboard() {
                   <tbody>
                     {consolidatedInsumos.length === 0 ? (
                       <tr>
-                        <td colSpan="9" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                        <td colSpan="11" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
                           No se detectaron tablas de "Insumos" o "Materiales de Empaque" en los formularios de este rango de fechas.
                         </td>
                       </tr>
@@ -355,6 +360,9 @@ export default function ConsumptionDashboard() {
                       consolidatedInsumos.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? 'white' : '#fafbfc' }}>
                           <td style={{ padding: '10px 14px', textAlign: 'center', color: '#94a3b8', fontWeight: '500' }}>{(currentPage - 1) * itemsPerPage + idx + 1}</td>
+                          <td style={{ padding: '10px 14px', color: '#0f172a', fontWeight: '700', fontFamily: 'monospace' }}>
+                            # {item.formID}
+                          </td>
                           <td style={{ padding: '10px 14px', color: '#475569', fontWeight: '600', fontFamily: 'monospace' }}>
                             {item.templateCode}
                           </td>
@@ -364,6 +372,7 @@ export default function ConsumptionDashboard() {
                           <td style={{ padding: '10px 14px', color: '#1e40af', fontWeight: '600' }}>
                             {item.templateName}
                           </td>
+                          <td style={{ padding: '10px 14px', color: '#475569', fontWeight: '600' }}>{item.destino || '—'}</td>
                           <td style={{ padding: '10px 14px', color: '#64748b', fontWeight: '500' }}>{item.filledBy}</td>
                           <td style={{ padding: '10px 14px', color: '#475569', fontWeight: '600', fontFamily: 'monospace' }}>{item.codigo || '-'}</td>
                           <td style={{ padding: '10px 14px', color: '#1e293b', fontWeight: '600' }}>{item.producto}</td>

@@ -16,6 +16,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
+import { filasParaExcel } from '../utils/numeroParaExcel';
 import authService from '../services/authService';
 import {
   getMovimientosGlobal, getLotes, getCostos, guardarCosto, borrarCosto,
@@ -200,7 +201,7 @@ export default function Kardex() {
     const wb = XLSX.utils.book_new();
     const hoja = (nombre, datos) => {
       if (!datos.length) return;
-      const ws = XLSX.utils.json_to_sheet(datos);
+      const ws = XLSX.utils.json_to_sheet(filasParaExcel(datos));
       ws['!autofilter'] = { ref: ws['!ref'] };
       ws['!cols'] = Object.keys(datos[0]).map(k => ({ wch: Math.min(Math.max(k.length + 4, 12), 40) }));
       XLSX.utils.book_append_sheet(wb, ws, nombre);

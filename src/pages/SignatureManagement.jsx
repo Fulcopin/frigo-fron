@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import signatureService from '../services/signatureService';
 
 import { firmasFaltantes, resumenFirmas } from '../utils/firmasFaltantes';
-import { abrirImagen } from '../utils/abrirImagen';
+import { descargarImagen } from '../utils/descargarImagen';
+import { urlImagen } from '../utils/urlImagen';
 import VisorImagen from '../components/VisorImagen';
 import authService from '../services/authService';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -891,120 +892,72 @@ export default function SignatureManagement() {
   }
 
   return (
-    <div className="signature-management">
+    <div className="signature-management sigm-page">
       {/* Header */}
-      <div className="page-header">
-        <div className="header-content">
-          <h1>✍️ Gestión de Firmas</h1>
-          <p className="subtitle">Revisa y firma los registros completados</p>
+      <div className="sigm-head">
+        <div>
+          <div className="sigm-eyebrow">Firmas</div>
+          <h1 className="sigm-h1">Pendientes de firma</h1>
         </div>
-        <div className="header-actions" style={{ display: 'flex', gap: '10px' }}>
+        <div className="sigm-head-actions">
           {isSGI && (
-            <Link to="/audit-signatures" className="btn-secondary" style={{ backgroundColor: '#2563eb', color: 'white', borderColor: '#1d4ed8' }}>
-              📑 Auditoría de Fechas (SGI)
+            <Link to="/audit-signatures" className="sigm-btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
+              Auditoría de fechas (SGI)
             </Link>
           )}
-          <Link to="/" className="btn-secondary">
-            ← Volver al Inicio
+          <Link to="/" className="sigm-btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
+            ← Inicio
           </Link>
         </div>
       </div>
 
-      {/* Estadísticas */}
+      {/* Resumen compacto */}
       {stats && (
-        <div className="stats-grid">
-          <div className="stat-card pending">
-            <div className="stat-icon">📝</div>
-            <div className="stat-content">
-              <h3>{filteredForms.length}</h3>
-              <p>Pendientes de Firma</p>
-            </div>
+        <div className="sigm-stats">
+          <div className="sigm-stat">
+            <b>{filteredForms.length}</b>
+            <span>Pendientes</span>
           </div>
-          <div className="stat-card signed">
-            <div className="stat-icon">✅</div>
-            <div className="stat-content">
-              <h3>{stats.signedToday || 0}</h3>
-              <p>Firmados Hoy</p>
-            </div>
+          <div className="sigm-stat">
+            <b>{stats.signedToday || 0}</b>
+            <span>Firmados hoy</span>
           </div>
-          <div className="stat-card total">
-            <div className="stat-icon">📊</div>
-            <div className="stat-content">
-              <h3>{stats.totalSigned || 0}</h3>
-              <p>Total Firmados</p>
-            </div>
+          <div className="sigm-stat">
+            <b>{stats.totalSigned || 0}</b>
+            <span>Total firmados</span>
           </div>
-          <div className="stat-card rejected">
-            <div className="stat-icon">❌</div>
-            <div className="stat-content">
-              <h3>{stats.rejectedCount || 0}</h3>
-              <p>Rechazados</p>
-            </div>
+          <div className="sigm-stat">
+            <b>{stats.rejectedCount || 0}</b>
+            <span>Rechazados</span>
           </div>
         </div>
       )}
 
       {/* Pestañas Principales - visible para todos los usuarios autenticados */}
       {currentUser && (
-        <div className="main-tabs" style={{
-          display: 'flex',
-          gap: 0,
-          marginBottom: '1.5rem',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          border: '2px solid #e5e7eb'
-        }}>
+        <div className="sigm-tabs">
           <button
+            type="button"
             onClick={() => setMainTab('pending')}
-            style={{
-              flex: 1,
-              padding: '12px 20px',
-              border: 'none',
-              background: mainTab === 'pending' ? 'linear-gradient(135deg, #1e40af, #3b82f6)' : '#f8fafc',
-              color: mainTab === 'pending' ? '#fff' : '#64748b',
-              fontWeight: mainTab === 'pending' ? 700 : 500,
-              fontSize: '0.95rem',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
+            className={`sigm-tab ${mainTab === 'pending' ? 'on' : ''}`}
           >
-            📝 Mis Firmas Pendientes
+            Mis firmas pendientes
           </button>
           {isSGI && (
             <button
+              type="button"
               onClick={() => setMainTab('admin_all')}
-              style={{
-                flex: 1,
-                padding: '12px 20px',
-                border: 'none',
-                borderLeft: '1px solid #e5e7eb',
-                background: mainTab === 'admin_all' ? 'linear-gradient(135deg, #10b981, #059669)' : '#f8fafc',
-                color: mainTab === 'admin_all' ? '#fff' : '#64748b',
-                fontWeight: mainTab === 'admin_all' ? 700 : 500,
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
+              className={`sigm-tab ${mainTab === 'admin_all' ? 'on' : ''}`}
             >
-              🛡️ Supervisión General (Admin)
+              Supervisión general
             </button>
           )}
           <button
+            type="button"
             onClick={() => { setMainTab('timing'); loadTimingReport(); }}
-            style={{
-              flex: 1,
-              padding: '12px 20px',
-              border: 'none',
-              borderLeft: '1px solid #e5e7eb',
-              background: mainTab === 'timing' ? 'linear-gradient(135deg, #1e40af, #3b82f6)' : '#f8fafc',
-              color: mainTab === 'timing' ? '#fff' : '#64748b',
-              fontWeight: mainTab === 'timing' ? 700 : 500,
-              fontSize: '0.95rem',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
+            className={`sigm-tab ${mainTab === 'timing' ? 'on' : ''}`}
           >
-            ⏱️ Tiempos y Rechazos
+            Tiempos y rechazos
           </button>
         </div>
       )}
@@ -1013,286 +966,274 @@ export default function SignatureManagement() {
       {(mainTab === 'pending' || mainTab === 'admin_all') && (
         <>
       {/* Controles y Filtros */}
-      <div className="controls-section">
-        <div className="filters">
-          <input
-            type="text"
-            placeholder="🔍 Buscar por nombre o código..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="search-input"
-          />
-          
-          <select
-            value={filterArea}
-            onChange={(e) => setFilterArea(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Todas las Áreas</option>
-            {uniqueAreas.map(area => (
-              <option key={area} value={area}>{area}</option>
-            ))}
-          </select>
+      <div className="sigm-controls">
+        <input
+          type="text"
+          placeholder="Buscar por nombre o código…"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="sigm-input"
+        />
 
-          <select
-            value={filterTemplate}
-            onChange={(e) => setFilterTemplate(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Todas las Plantillas</option>
-            {uniqueTemplates.map(template => (
-              <option key={template.id} value={template.id}>
-                {etiquetaFormulario(template)}
-              </option>
-            ))}
-          </select>
-        </div>
+        <select
+          value={filterArea}
+          onChange={(e) => setFilterArea(e.target.value)}
+          className="sigm-select"
+        >
+          <option value="">Todas las áreas</option>
+          {uniqueAreas.map(area => (
+            <option key={area} value={area}>{area}</option>
+          ))}
+        </select>
 
-        <div className="actions">
+        <select
+          value={filterTemplate}
+          onChange={(e) => setFilterTemplate(e.target.value)}
+          className="sigm-select"
+        >
+          <option value="">Todas las plantillas</option>
+          {uniqueTemplates.map(template => (
+            <option key={template.id} value={template.id}>
+              {etiquetaFormulario(template)}
+            </option>
+          ))}
+        </select>
+
+        <span className="sigm-spacer" />
+
+        <button
+          type="button"
+          onClick={handleSelectAll}
+          className="sigm-btn-ghost"
+          disabled={filteredForms.length === 0}
+        >
+          {filteredForms.length > 0 && selectedForms.length === filteredForms.length
+            ? 'Deseleccionar todo'
+            : 'Seleccionar todo'}
+        </button>
+
+        {isSGI && mainTab === 'admin_all' && (
           <button
-            onClick={handleSelectAll}
-            className="btn-secondary"
-            disabled={filteredForms.length === 0}
-          >
-            {filteredForms.length > 0 && selectedForms.length === filteredForms.length
-              ? '☑️ Deseleccionar Todo'
-              : '☐ Seleccionar Todo'}
-          </button>
-          
-          {isSGI && mainTab === 'admin_all' && (
-            <button
-              onClick={handleUnlockSelected}
-              className="btn-secondary"
-              style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
-              disabled={selectedForms.length === 0}
-            >
-              🔓 Habilitar Validación (&gt;{lockThreshold}h) ({selectedForms.length})
-            </button>
-          )}
-
-          {isSGI && (
-            <button
-              onClick={handleHideSelected}
-              className="btn-secondary"
-              style={{ backgroundColor: '#64748b', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
-              disabled={selectedForms.length === 0}
-              title="Los seleccionados dejan de aparecer en pendientes de firma para todos (no se borra el formulario)"
-            >
-              🙈 Ocultar de Pendientes ({selectedForms.length})
-            </button>
-          )}
-
-          <button
-            onClick={() => openSignatureModal(true)}
-            className="btn-primary"
+            type="button"
+            onClick={handleUnlockSelected}
+            className="sigm-btn-ghost"
             disabled={selectedForms.length === 0}
           >
-            ✍️ Firmar Seleccionados ({selectedForms.length})
+            Habilitar (&gt;{lockThreshold}h) ({selectedForms.length})
           </button>
-        </div>
+        )}
+
+        {isSGI && (
+          <button
+            type="button"
+            onClick={handleHideSelected}
+            className="sigm-btn-ghost"
+            disabled={selectedForms.length === 0}
+            title="Los seleccionados dejan de aparecer en pendientes de firma para todos (no se borra el formulario)"
+          >
+            Ocultar ({selectedForms.length})
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => openSignatureModal(true)}
+          className="sigm-btn-solid"
+          disabled={selectedForms.length === 0}
+        >
+          Firmar seleccionados ({selectedForms.length})
+        </button>
       </div>
 
       {/* Lista de Formularios Pendientes */}
-      <div className="forms-container">
+      <div className="sigm-list">
         {filteredForms.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">📋</div>
-            <h3>No hay formularios pendientes</h3>
-            <p>Todos los formularios han sido firmados o no hay registros para mostrar</p>
+          <div className="sigm-empty">
+            <p className="sigm-empty-t">No hay formularios pendientes</p>
+            <p style={{ margin: 0 }}>Todos los formularios han sido firmados o no hay registros para mostrar.</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <>
+            <div className="sigm-list-tools">
+              <span>
+                {Object.keys(groupedFilteredForms).length} grupos ·{' '}
+                {filteredForms.length} registros
+              </span>
+              <button
+                type="button"
+                className="sigm-link"
+                onClick={() => {
+                  const mapa = {};
+                  Object.keys(groupedFilteredForms).forEach((k) => {
+                    mapa[k] = true;
+                  });
+                  setExpandedSigGroups(mapa);
+                }}
+              >
+                Expandir todo
+              </button>
+              <button
+                type="button"
+                className="sigm-link"
+                onClick={() => {
+                  const mapa = {};
+                  Object.keys(groupedFilteredForms).forEach((k) => {
+                    mapa[k] = false;
+                  });
+                  setExpandedSigGroups(mapa);
+                }}
+              >
+                Contraer todo
+              </button>
+            </div>
             {Object.entries(groupedFilteredForms).map(([groupKey, groupForms]) => {
               const isExpanded = expandedSigGroups[groupKey] !== false; // Abierto por defecto
               const currentPage = sigGroupPages[groupKey] || 1;
               const totalPages = Math.ceil(groupForms.length / sigItemsPerPage);
               const startIndex = (currentPage - 1) * sigItemsPerPage;
               const paginatedForms = groupForms.slice(startIndex, startIndex + sigItemsPerPage);
+              const grupoSeleccionado = groupForms.length > 0 && groupForms.every(f => selectedForms.includes(f.id));
 
               return (
-                <div key={groupKey} style={{ background: 'white', borderRadius: '16px', border: '1px solid #cbd5e1', boxShadow: '0 4px 10px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+                <section key={groupKey} className="sigm-group">
                   {/* Cabecera del Grupo / Acordeón */}
-                  <div 
+                  <div
+                    className="sigm-group-head"
                     onClick={() => toggleSigGroup(groupKey)}
-                    style={{ background: 'linear-gradient(to right, #f8fafc, #f1f5f9)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '10px' }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>📁 {groupKey}</span>
-                      <span style={{ background: '#3b82f6', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 700 }}>{groupForms.length} registro{groupForms.length !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span className="sigm-group-title" title={groupKey}>{groupKey}</span>
+                    <span className="sigm-count">{groupForms.length}</span>
+                    <div className="sigm-group-tools">
                       <button
                         type="button"
+                        className="sigm-link"
                         onClick={(e) => {
                           e.stopPropagation();
                           const groupIds = groupForms.map(f => f.id);
-                          const allSelected = groupIds.every(id => selectedForms.includes(id));
-                          if (allSelected) {
+                          if (grupoSeleccionado) {
                             setSelectedForms(prev => prev.filter(id => !groupIds.includes(id)));
                           } else {
                             setSelectedForms(prev => [...new Set([...prev, ...groupIds])]);
                           }
                         }}
-                        className="btn-secondary"
-                        style={{ fontSize: '0.8rem', padding: '6px 12px', background: '#e2e8f0', color: '#1e293b', border: '1px solid #cbd5e1' }}
                       >
-                        {groupForms.every(f => selectedForms.includes(f.id)) ? '☑️ Deseleccionar Grupo' : '☐ Seleccionar Grupo'}
+                        {grupoSeleccionado ? 'Quitar grupo' : 'Seleccionar grupo'}
                       </button>
-                      <span style={{ fontWeight: 'bold', color: '#64748b' }}>
-                        {isExpanded ? '▼ Desplegado' : '▶ Desplegar'}
-                      </span>
+                      <span className="sigm-caret">{isExpanded ? '▾' : '▸'}</span>
                     </div>
                   </div>
 
                   {/* Contenido Desplegado */}
                   {isExpanded && (
-                    <div style={{ padding: '20px', background: '#fcfcfd' }}>
-                      <div className="forms-grid">
-                        {paginatedForms.map(form => (
-                          <div
-                            key={form.id}
-                            // Amarillo: a este formulario le faltan firmas
-                            className={`form-card ${selectedForms.includes(form.id) ? 'selected' : ''} ${firmasFaltantes(form).length > 0 ? 'falta-firma' : ''}`}
-                          >
-                            <div className="form-card-header">
-                              <input
-                                type="checkbox"
-                                checked={selectedForms.includes(form.id)}
-                                onChange={() => handleSelectForm(form.id)}
-                                className="form-checkbox"
-                              />
-                              <div className="form-info">
-                                <h3>{form.templateName}</h3>
-                                <span className="form-code">{form.formCode}</span>
+                    <div className="sigm-body">
+                      <div className="sigm-grid">
+                        {paginatedForms.map(form => {
+                          const firmas = resumenFirmas(form);
+                          const seleccionado = selectedForms.includes(form.id);
+                          const bloqueado = estaBloqueadoParaFirma(form, lockThreshold);
+                          return (
+                            <article
+                              key={form.id}
+                              className={`sigm-card ${seleccionado ? 'is-sel' : ''} ${firmasFaltantes(form).length > 0 ? 'is-falta' : ''}`}
+                              onClick={() => handleSelectForm(form.id)}
+                            >
+                              <div className="sigm-top">
+                                <input
+                                  type="checkbox"
+                                  checked={seleccionado}
+                                  onChange={() => handleSelectForm(form.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="sigm-checkbox"
+                                  aria-label={`Seleccionar ${form.formCode || form.templateName}`}
+                                />
+                                <span className="sigm-code" title={form.formCode || ''}>{form.formCode || 'S/C'}</span>
+                                <span className="sigm-days">{calculatePendingTime(form)}</span>
                               </div>
-                            </div>
 
-                            <div className="form-card-body">
-                              <div className="form-detail">
-                                <span className="detail-label">📅 Fecha:</span>
-                                <span className="detail-value">
-                                  {new Date(form.createdDate).toLocaleDateString('es-ES')}
-                                </span>
+                              <h3 className="sigm-title" title={form.templateName}>{form.templateName}</h3>
+
+                              <div className="sigm-meta">
+                                <span>{new Date(form.createdDate).toLocaleDateString('es-ES')}</span>
+                                <span title={form.createdByEmail || ''}>{form.createdBy}</span>
+                                {form.area && <span>{form.area}</span>}
                               </div>
-                              
-                              <div className="form-detail">
-                                <span className="detail-label">👤 Creado por:</span>
-                                <span className="detail-value">
-                                  {form.createdBy}
-                                  {form.createdByEmail && (
-                                    <span className="created-by-email" style={{ 
-                                      display: 'block', 
-                                      fontSize: '0.85em', 
-                                      color: '#4b5563',
-                                      marginTop: '2px'
-                                    }}>
-                                      📧 {form.createdByEmail}
+
+                              {/* ✍️ Quién falta firmar, sin abrir el formulario */}
+                              {firmas.total > 0 && (
+                                <div className={`sigm-faltan ${firmas.completo ? 'ok' : ''}`}>
+                                  {firmas.completo
+                                    ? `Firmado por todos (${firmas.total})`
+                                    : `Faltan ${firmas.faltan.length} de ${firmas.total}: `}
+                                  {!firmas.completo && firmas.faltan.map((f, i) => (
+                                    <span key={`falta-${form.id}-${i}`} className="sigm-nombre">
+                                      {f.nombre || 'Sin asignar'}
+                                      {f.reemplazos.length > 0 && (
+                                        <em title={f.reemplazos.join(', ')}> ({f.reemplazos[0]})</em>
+                                      )}
+                                      {i < firmas.faltan.length - 1 ? ', ' : ''}
                                     </span>
-                                  )}
-                                </span>
-                              </div>
-
-                              {form.area && (
-                                <div className="form-detail">
-                                  <span className="detail-label">🏢 Área:</span>
-                                  <span className="detail-value">{form.area}</span>
+                                  ))}
                                 </div>
                               )}
 
-                              <div className="form-detail">
-                                <span className="detail-label">⏰ Pendiente:</span>
-                                <span className="detail-value pending-time">
-                                  {calculatePendingTime(form)}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* ✍️ Quién falta firmar, sin abrir el formulario */}
-                            {(() => {
-                              const firmas = resumenFirmas(form);
-                              if (firmas.total === 0) return null;
-                              return (
-                                <div className={`firmas-estado ${firmas.completo ? 'firmas-ok' : 'firmas-faltan'}`}>
-                                  <div className="firmas-titulo">
-                                    {firmas.completo
-                                      ? `✅ Firmado por todos (${firmas.total})`
-                                      : `⚠️ Faltan ${firmas.faltan.length} de ${firmas.total} firmas`}
-                                  </div>
-                                  {firmas.faltan.map((f, i) => (
-                                    <div key={`falta-${form.id}-${i}`} className="firma-pendiente">
-                                      <strong>{f.nombre || 'Sin asignar'}</strong>
-                                      <span className="firma-puesto">{f.puesto}</span>
-                                      {f.reemplazos.length > 0 && (
-                                        <span className="firma-reemplazo" title={f.reemplazos.join(', ')}>
-                                          reemplazo: {f.reemplazos[0]}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            })()}
-
-                            <div className="form-card-actions">
-                              {(() => {
-                                if (estaBloqueadoParaFirma(form, lockThreshold)) {
-                                  return (
-                                    <button
-                                      onClick={() => alert(mensajeBloqueoFirma(lockThreshold))}
-                                      className="btn-sign"
-                                      style={{ backgroundColor: '#9ca3af', cursor: 'not-allowed' }}
-                                    >
-                                      🔒 Bloqueado (&gt;{lockThreshold}h)
-                                    </button>
-                                  );
-                                }
-                                return (
+                              <div className="sigm-actions" onClick={(e) => e.stopPropagation()}>
+                                {bloqueado ? (
                                   <button
+                                    type="button"
+                                    onClick={() => alert(mensajeBloqueoFirma(lockThreshold))}
+                                    className="sigm-btn block"
+                                  >
+                                    Bloqueado &gt;{lockThreshold}h
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
                                     onClick={() => {
                                       setSelectedForms([form.id]);
                                       openContractPreview(form.id);
                                     }}
-                                    className="btn-sign"
+                                    className="sigm-btn sign"
                                   >
-                                    {form.unlocked36h ? '🔓 Firmar (Habilitado)' : '✍️ Firmar'}
+                                    {form.unlocked36h ? 'Firmar (habilitado)' : 'Firmar'}
                                   </button>
-                                );
-                              })()}
+                                )}
 
-                              {isSGI && (
-                                <button
-                                  onClick={() => openRejectModal(form.id)}
-                                  className="btn-reject"
-                                >
-                                  ❌ Rechazar
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                                {isSGI && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openRejectModal(form.id)}
+                                    className="sigm-btn reject"
+                                  >
+                                    Rechazar
+                                  </button>
+                                )}
+                              </div>
+                            </article>
+                          );
+                        })}
                       </div>
 
                       {/* Paginación interna del grupo */}
                       {totalPages > 1 && (
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '20px', paddingTop: '16px', borderTop: '1px dashed #cbd5e1' }}>
+                        <div className="sigm-pager">
                           <button
                             type="button"
                             disabled={currentPage === 1}
                             onClick={() => handleSigPageChange(groupKey, currentPage - 1)}
-                            style={{ padding: '8px 14px', border: '1px solid #cbd5e1', background: 'white', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#334155', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1 }}
+                            className="sigm-btn-ghost"
                           >
                             ← Anterior
                           </button>
-                          
-                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#475569', padding: '0 8px' }}>
-                            Página {currentPage} de {totalPages} ({groupForms.length} registros en total)
+
+                          <span className="sigm-pager-info">
+                            {currentPage} / {totalPages} · {groupForms.length} registros
                           </span>
 
                           <button
                             type="button"
                             disabled={currentPage === totalPages}
                             onClick={() => handleSigPageChange(groupKey, currentPage + 1)}
-                            style={{ padding: '8px 14px', border: '1px solid #cbd5e1', background: 'white', borderRadius: '8px', fontSize: '13px', fontWeight: '600', color: '#334155', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                            className="sigm-btn-ghost"
                           >
                             Siguiente →
                           </button>
@@ -1300,10 +1241,10 @@ export default function SignatureManagement() {
                       )}
                     </div>
                   )}
-                </div>
+                </section>
               );
             })}
-          </div>
+          </>
         )}
       </div>
       </>
@@ -1746,7 +1687,7 @@ export default function SignatureManagement() {
                           <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
                             <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
                             {value && typeof value === 'string' && (value.startsWith('https://res.cloudinary.com') || value.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(value))
-                              ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} onClick={(e) => { e.stopPropagation(); abrirImagen(value, key); }} title="Clic para ampliar" />
+                              ? <img src={urlImagen(value)} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} onClick={(e) => { e.stopPropagation(); descargarImagen(value, key); }} title="Clic para descargar" />
                               : <span style={{ color: '#111827' }}>{value || '-'}</span>
                             }
                           </div>
@@ -1781,7 +1722,7 @@ export default function SignatureManagement() {
                                 <div key={key} style={{ fontSize: '0.9rem', padding: '4px 0' }}>
                                   <strong style={{ color: '#6b7280' }}>{key}:</strong>{' '}
                                   {isImage
-                                    ? <img src={value} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} onClick={(e) => { e.stopPropagation(); abrirImagen(value, key); }} title="Clic para ampliar" />
+                                    ? <img src={urlImagen(value)} alt={key} style={{ maxWidth: '100%', maxHeight: '120px', objectFit: 'contain', borderRadius: '6px', marginTop: '4px', display: 'block', border: '1px solid #e5e7eb' }} onClick={(e) => { e.stopPropagation(); descargarImagen(value, key); }} title="Clic para descargar" />
                                     : <span style={{ color: '#111827' }}>{displayValue || '-'}</span>
                                   }
                                 </div>
@@ -1956,7 +1897,7 @@ export default function SignatureManagement() {
                                       return (
                                         <td key={colIndex} style={{ padding: '8px', border: '1px solid #e5e7eb', textAlign: 'center' }}>
                                           {isImageValue
-                                            ? <img src={displayValue} alt="img" style={{ maxWidth: '80px', maxHeight: '80px', objectFit: 'contain', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); abrirImagen(displayValue, "Imagen del registro"); }} title="Clic para ampliar" />
+                                            ? <img src={urlImagen(displayValue)} alt="img" style={{ maxWidth: '80px', maxHeight: '80px', objectFit: 'contain', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); descargarImagen(displayValue, `Imagen - ${key}`); }} title="Clic para descargar" />
                                             : (displayValue !== undefined && displayValue !== null && displayValue !== '' ? String(displayValue) : '-')
                                           }
                                         </td>
@@ -2053,7 +1994,7 @@ export default function SignatureManagement() {
                                 {firmado ? (
                                   <>
                                     <img
-                                      src={dato.firma.url || dato.firma.base64}
+                                      src={urlImagen(dato.firma.url || dato.firma.base64)}
                                       alt={`Firma de ${dato?.nombre || p?.puesto}`}
                                       style={{ maxHeight: '58px', maxWidth: '100%', objectFit: 'contain',
                                                background: 'white', borderRadius: '6px', marginTop: '6px', display: 'block' }}
@@ -2350,7 +2291,7 @@ export default function SignatureManagement() {
                   <div className="signature-preview" style={{ marginTop: '12px', textAlign: 'center' }}>
                     <p style={{ color: '#4caf50', fontWeight: 'bold', marginBottom: '8px' }}>✅ Firma lista:</p>
                     <img
-                      src={signatureImage}
+                      src={urlImagen(signatureImage)}
                       alt="Firma"
                       style={{ maxWidth: '250px', maxHeight: '120px', border: '1px solid #ddd', borderRadius: '8px', padding: '8px', background: '#fff' }}
                     />

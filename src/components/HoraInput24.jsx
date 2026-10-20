@@ -13,7 +13,8 @@
 // AM/PM que marcar, así que no hay forma de equivocarse. Y en tablet un
 // desplegable es más rápido y más preciso que escribir en un campo chico.
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { validarRangoHorario } from '../utils/validarHorarios';
 import './HoraInput24.css';
 
 /** "08:30:00" o "8:30" → { hh: "08", mm: "30" } */
@@ -45,9 +46,13 @@ const MINUTOS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
  * @param {string}   [desde]    hora de inicio, para avisar si el fin es anterior
  * @param {boolean}  [disabled]
  * @param {boolean}  [sinAvisos] apaga los avisos de turno y de orden
+ * @param {boolean}  [validarOrden] con `desde`, marca en ROJO un fin anterior al
+ *        inicio con la MISMA regla que bloquea el guardado (validarHorarios.js).
+ *        Funciona aunque `sinAvisos` esté activo.
  */
-export default function HoraInput24({ value, onChange, turno, desde, disabled, sinAvisos = false, className = '', ...rest }) {
+export default function HoraInput24({ value, onChange, turno, desde, disabled, sinAvisos = false, validarOrden = false, marcarVacio = false, className = '', ...rest }) {
   const { hh, mm } = useMemo(() => partir(value), [value]);
+  const [tocado, setTocado] = useState(false);
 
   const emitir = (nuevaHh, nuevoMm) => {
     // Elegir solo una de las dos partes deja el valor incompleto: se completa
@@ -78,7 +83,16 @@ export default function HoraInput24({ value, onChange, turno, desde, disabled, s
     }
   }
 
-  if (!sinAvisos && hh !== '' && desde) {
+  // ⏱️ Error de orden: fin antes que inicio (08:00 → 04:00). Es la misma
+  // regla que impide guardar, así el operario lo ve al elegir la hora y no
+  // recién al presionar Guardar. Un turno nocturno corto (21:00 → 01:30) pasa.
+  const errorOrden = validarOrden && hh !== '' && desde
+    ? validarRangoHorario(desde, `${hh}:${mm || '00'}`)
+    : null;
+
+  const errorVacio = marcarVacio && tocado && hh === '';
+
+  if (!validarOrden && !sinAvisos && hh !== '' && desde) {
     const ini = partir(desde);
     if (ini.hh !== '') {
       const minIni = parseInt(ini.hh, 10) * 60 + parseInt(ini.mm || '0', 10);
@@ -94,14 +108,16 @@ export default function HoraInput24({ value, onChange, turno, desde, disabled, s
   const conAviso = avisos.length > 0;
 
   return (
-    <div className={`h24 ${conAviso ? 'h24--aviso' : ''} ${className}`} {...rest}>
+    <div className={`h24 ${conAviso ? 'h24--aviso' : ''} ${errorOrden || errorVacio ? 'h24--error' : ''} ${className}`} {...rest}>
       <div className="h24-campos">
         <select
-          className="h24-sel"
+          className={`h24-sel ${errorVacio ? 'h24-sel--empty' : ''}`}
           value={hh}
           onChange={(e) => emitir(e.target.value, mm)}
+          onBlur={() => setTocado(true)}
           disabled={disabled}
           aria-label="Hora"
+          aria-invalid={errorVacio || undefined}
         >
           <option value="">--</option>
           {HORAS.map(h => <option key={h} value={h}>{h}</option>)}
@@ -110,11 +126,13 @@ export default function HoraInput24({ value, onChange, turno, desde, disabled, s
         <span className="h24-sep">:</span>
 
         <select
-          className="h24-sel"
+          className={`h24-sel ${errorVacio ? 'h24-sel--empty' : ''}`}
           value={mm}
           onChange={(e) => emitir(hh, e.target.value)}
+          onBlur={() => setTocado(true)}
           disabled={disabled}
           aria-label="Minutos"
+          aria-invalid={errorVacio || undefined}
         >
           <option value="">--</option>
           {MINUTOS.map(m => <option key={m} value={m}>{m}</option>)}
@@ -126,6 +144,18 @@ export default function HoraInput24({ value, onChange, turno, desde, disabled, s
       {conAviso && (
         <div className="h24-mensaje">
           {avisos.map((a, i) => <div key={i}>⚠️ {a}</div>)}
+        </div>
+      )}
+
+      {errorOrden && (
+        <div className="h24-error" role="alert">
+          ⛔ Revisa bien la hora de inicio y de fin: {errorOrden} No se va a poder guardar así.
+        </div>
+      )}
+
+      {errorVacio && (
+        <div className="h24-error" role="alert">
+          ⛔ La hora no puede quedar vacía.
         </div>
       )}
     </div>
