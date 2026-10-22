@@ -16,6 +16,7 @@ import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
 import { comoNumero } from '../utils/numeroParaExcel';
 import { alinearBodyData } from '../utils/emparejarBodyData';
+import { aRichTextExcel } from '../utils/textoEnriquecido';
 import { columnasParaDibujar } from '../utils/columnasDelCuadro';
 
 /**
@@ -504,18 +505,23 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
     // ── NOTA ESTÁTICA ──────────────────────────────────────────────
     if (section.type === 'nota_estatica') {
       const texto = section.contenido || '';
-      const lines = texto.split('\n').filter(Boolean);
-      for (const line of lines) {
-        const clean = line.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1');
-        const isBold = /\*\*/.test(line);
+      const lineas = String(texto).split('\n');
+      const fuenteBase = { name: 'Calibri', size: 10, color: { argb: '1C1917' } };
+      for (const line of lineas) {
+        if (!line.trim()) continue;
+        // Conserva negrita / cursiva / subrayado dentro de la celda
+        const richText = [
+          { text: '  ', font: { ...fuenteBase } },
+          ...aRichTextExcel(line, fuenteBase),
+        ];
         safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
         const noteCell = worksheet.getCell(currentRow, 1);
-        noteCell.value = `  ${clean}`;
-        noteCell.font = { name: 'Calibri', size: 10, bold: isBold, color: { argb: '1C1917' } };
+        noteCell.value = { richText };
+        noteCell.font = { ...fuenteBase };
         noteCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBEB' } };
         noteCell.border = { left: { style: 'medium', color: { argb: 'D97706' } } };
         noteCell.alignment = { wrapText: true, vertical: 'middle' };
-        worksheet.getRow(currentRow).height = 18;
+        worksheet.getRow(currentRow).height = /^#{1,3}\s+/.test(line.trim()) ? 22 : 18;
         currentRow++;
       }
       currentRow++; // blank gap after note

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import FormHeader from "../components/FormHeader"
 import SignatureUploader from "../components/SignatureUploader"
+import TextoEnriquecido from "../components/TextoEnriquecido"
 import UserSelector from "../components/UserSelector"
 import { CLOUDINARY_CONFIG } from "../config/cloudinary.config"
 import { fetchUsers, filterUsersByPuesto } from "../services/userService"
@@ -1382,7 +1383,7 @@ Template: ${template?.nombre}
                     if (field.type === 'nota') {
                       return (
                         <div key={fieldIndex} style={{ gridColumn: '1 / -1', borderLeft: '4px solid #7c3aed', background: '#faf5ff', border: '1px solid #c4b5fd', borderRadius: '6px', padding: '10px 14px', fontSize: '0.88rem', color: '#3b1d72', margin: '4px 0' }}>
-                          <strong>{field.label}:</strong> {field.staticContent || ''}
+                          <strong>{field.label}:</strong> <TextoEnriquecido texto={field.staticContent} enLinea />
                         </div>
                       );
                     }

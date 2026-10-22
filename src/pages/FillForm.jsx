@@ -7,6 +7,7 @@ import FormHeader from "../components/FormHeader"
 import AccordionSection from "../components/AccordionSection"
 import LoteSelectorAPI from "../components/LoteSelectorAPI"
 import SignatureUploader from "../components/SignatureUploader"
+import TextoEnriquecido from "../components/TextoEnriquecido"
 import UserSelector from "../components/UserSelector"
 import ScrollButton from "../components/ScrollButton"
 import EspecieProductoSelector from "../components/EspecieProductoSelector"
@@ -6083,19 +6084,7 @@ useEffect(() => {
               color: '#3b1d72',
               lineHeight: '1.7',
             }}>
-              {(field.staticContent || '').split('\n').map((line, li, arr) => {
-                const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
-                return (
-                  <span key={li}>
-                    {parts.map((p, pi) =>
-                      p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
-                      p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> :
-                      <span key={pi}>{p}</span>
-                    )}
-                    {li < arr.length - 1 && <br />}
-                  </span>
-                );
-              })}
+              <TextoEnriquecido texto={field.staticContent} />
             </div>
           );
 
@@ -10224,28 +10213,6 @@ useEffect(() => {
           if (!currentElementData) return null;
 
           if (element.type === 'nota_estatica') {
-            const renderNotaText = (text) => {
-              if (!text) return null;
-              // Split by lines first, then parse inline bold/underline per line
-              return text.split('\n').map((line, lineIdx, arr) => {
-                const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
-                const rendered = parts.map((part, i) => {
-                  if (part.startsWith('**') && part.endsWith('**')) {
-                    return <strong key={i}>{part.slice(2, -2)}</strong>;
-                  }
-                  if (part.startsWith('__') && part.endsWith('__')) {
-                    return <u key={i}>{part.slice(2, -2)}</u>;
-                  }
-                  return <span key={i}>{part}</span>;
-                });
-                return (
-                  <span key={lineIdx}>
-                    {rendered}
-                    {lineIdx < arr.length - 1 && <br />}
-                  </span>
-                );
-              });
-            };
             return (
               <div key={element.id || elementIndex} style={{
                 margin: '12px 0',
@@ -10265,8 +10232,7 @@ useEffect(() => {
                     style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', marginBottom: '10px', display: 'block' }}
                   />
                 )}
-                {renderNotaText(element.contenido || '')}
-              </div>
+                <TextoEnriquecido texto={element.contenido} />              </div>
             );
           }
 

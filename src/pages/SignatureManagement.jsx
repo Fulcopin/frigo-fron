@@ -5,6 +5,7 @@ import { firmasFaltantes, resumenFirmas } from '../utils/firmasFaltantes';
 import { descargarImagen } from '../utils/descargarImagen';
 import { urlImagen } from '../utils/urlImagen';
 import VisorImagen from '../components/VisorImagen';
+import TextoEnriquecido from '../components/TextoEnriquecido';
 import authService from '../services/authService';
 import { Link, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../apiConfig';
@@ -1750,7 +1751,7 @@ export default function SignatureManagement() {
                           {templateElement.imagen && (
                             <img src={templateElement.imagen} alt="Nota" style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', marginBottom: '10px', display: 'block' }} />
                           )}
-                          <div dangerouslySetInnerHTML={{ __html: templateElement.texto ? templateElement.texto.replace(/\n/g, '<br/>') : '' }} />
+                          <TextoEnriquecido texto={templateElement.contenido || templateElement.texto} />
                         </div>
                       );
                     }

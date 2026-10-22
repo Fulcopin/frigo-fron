@@ -11,6 +11,8 @@ import { InventarioColumnaConfig, InventarioAutoCompletar, InventarioTablaConfig
 import BusquedaProductoSelect from "../components/BusquedaProductoSelect";
 import SelectorActividadesProceso from "../components/SelectorActividadesProceso";
 import EditorOpciones from "../components/EditorOpciones";
+import EditorTextoEnriquecido from "../components/EditorTextoEnriquecido";
+import TextoEnriquecido from "../components/TextoEnriquecido";
 import { TIPOS_CAMPO_DETALLE, TIPOS_CON_OPCIONES } from "../utils/tiposCampoDetalle";
 
 const API_URL = `${API_BASE_URL}/Templates`;
@@ -817,23 +819,19 @@ function CreateTemplate() {
                 <div style={{ background: '#faf5ff', border: '2px solid #7c3aed', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <p style={{ margin: 0, fontWeight: 700, color: '#5b21b6', fontSize: '0.88rem' }}>📝 Escribe el texto de advertencia (aparece fijo en el formulario)</p>
                   <div style={{ background: '#ede9fe', borderRadius: '6px', padding: '7px 10px', fontSize: '0.76rem', color: '#5b21b6' }}>
-                    💡 Usa <strong>**texto**</strong> para <strong>negrilla</strong> y <code>__texto__</code> para <u>subrayado</u>.
+                    💡 Usa la barra de formato: <strong>N</strong> negrita, <em>C</em> cursiva, <u>S</u> subrayado, <strong>Título</strong> y <strong>Subtítulo</strong>. También puedes escribir <code>**texto**</code>, <code>*texto*</code>, <code>__texto__</code>, <code># Título</code> o <code>- viñeta</code>.
                   </div>
-                  <textarea
-                    value={field.staticContent || ''}
-                    onChange={(e) => updateHeaderField(index, 'staticContent', e.target.value)}
+                  <EditorTextoEnriquecido
+                    value={field.staticContent}
+                    onChange={(v) => updateHeaderField(index, 'staticContent', v)}
                     placeholder="Escribe la advertencia o nota que se verá al llenar el formulario..."
                     rows={3}
-                    style={{ width: '100%', padding: '10px', fontSize: '0.88rem', border: '1.5px solid #a78bfa', borderRadius: '6px', background: 'white', fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical', lineHeight: '1.6' }}
+                    style={{ border: '1.5px solid #a78bfa', background: 'white', padding: '10px' }}
                   />
                   {field.staticContent && (
                     <div style={{ borderLeft: '4px solid #7c3aed', background: '#ede9fe', borderRadius: '4px', padding: '10px 14px', fontSize: '0.88rem', lineHeight: '1.7' }}>
-                      {field.staticContent.split('\n').map((line, li, arr) => (
-                        <span key={li}>{line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g).map((p, pi) =>
-                          p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
-                          p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> : <span key={pi}>{p}</span>
-                        )}{li < arr.length - 1 && <br />}</span>
-                      ))}
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#5b21b6', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>Vista previa:</span>
+                      <TextoEnriquecido texto={field.staticContent} />
                     </div>
                   )}
                 </div>
@@ -1124,15 +1122,14 @@ function CreateTemplate() {
                 {/* Hint */}
                 <div style={{ background: '#fef3c7', border: '2px solid #d97706', borderRadius: '6px', padding: '10px 14px', fontSize: '0.85rem', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '1.2rem' }}>📌</span>
-                  <span>Escribe o pega el texto. Usa <strong>**texto**</strong> para <strong>negrilla</strong> y <code>__texto__</code> para <u>subrayado</u>. El texto respeta saltos de línea.</span>
+                  <span>Selecciona el texto y usa la barra: <strong>N</strong> negrita, <em>C</em> cursiva, <u>S</u> subrayado, <strong>Título</strong>/<strong>Subtítulo</strong> para encabezados y <strong>• Viñeta</strong> para listas. El texto respeta los saltos de línea.</span>
                 </div>
                 {/* Textarea de contenido */}
-                <textarea
-                  value={element.contenido || ''}
-                  onChange={(e) => updateBodyElement(elementIndex, 'contenido', e.target.value)}
-                  placeholder={'Escribe o pega el texto de la nota.\nEjemplo:\n**NOTA:** Cuando El inspector de Aseg. de Calidad evidencie cualquier peligro inminente que pueda ocasionar directa o indirectamente algún tipo de contaminación hacia el producto, deberá comunicar al dpto. de mantenimiento para que solucione.\n**No** podrán iniciar las labores y/o seguir procesando en el área afectada si el problema no se ha resuelto.'}
+                <EditorTextoEnriquecido
+                  value={element.contenido}
+                  onChange={(v) => updateBodyElement(elementIndex, 'contenido', v)}
+                  placeholder={'Escribe o pega el texto de la nota.\nEjemplo:\n# Título de la nota\n## Subtítulo\n**NOTA:** Cuando el inspector de Aseg. de Calidad evidencie cualquier peligro inminente...\n- Primer punto\n- Segundo punto'}
                   rows={6}
-                  style={{ width: '100%', padding: '10px 12px', fontSize: '0.88rem', border: '2px solid #d97706', borderRadius: '6px', background: '#fffbeb', fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical', lineHeight: '1.6' }}
                 />
                 {/* Imagen opcional */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1162,19 +1159,7 @@ function CreateTemplate() {
                     <p style={{ margin: '0 0 4px', fontSize: '0.75rem', fontWeight: 600, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Vista previa:</p>
                     <div style={{ border: '1.5px solid #92400e', borderLeft: '5px solid #d97706', borderRadius: '4px', background: '#fffbeb', padding: '10px 14px', fontSize: '0.88rem', color: '#1c1917', lineHeight: '1.6' }}>
                       {element.imagen && <img src={element.imagen} alt="img" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px', marginBottom: '8px', display: 'block' }} />}
-                      {(element.contenido || '').split('\n').map((line, li, arr) => {
-                        const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
-                        return (
-                          <span key={li}>
-                            {parts.map((p, pi) =>
-                              p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
-                              p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> :
-                              <span key={pi}>{p}</span>
-                            )}
-                            {li < arr.length - 1 && <br />}
-                          </span>
-                        );
-                      })}
+                      <TextoEnriquecido texto={element.contenido} />
                     </div>
                   </div>
                 )}
@@ -1207,32 +1192,20 @@ function CreateTemplate() {
                         <div style={{ background: '#faf5ff', border: '2px solid #7c3aed', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           <p style={{ margin: 0, fontWeight: 700, color: '#5b21b6', fontSize: '0.88rem' }}>📝 Escribe el texto de la nota (aparecerá fijo en el formulario)</p>
                           <div style={{ background: '#ede9fe', borderRadius: '6px', padding: '7px 10px', fontSize: '0.76rem', color: '#5b21b6' }}>
-                            💡 Usa <strong>**texto**</strong> para <strong>negrilla</strong> y <code>__texto__</code> para <u>subrayado</u>. Enter = nueva línea.
+                            💡 Usa la barra de formato: <strong>N</strong> negrita, <em>C</em> cursiva, <u>S</u> subrayado, <strong>Título</strong>, <strong>Subtítulo</strong> y <strong>• Viñeta</strong>. Enter = nueva línea.
                           </div>
-                          <textarea
-                            value={field.staticContent || ''}
-                            onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, 'staticContent', e.target.value)}
+                          <EditorTextoEnriquecido
+                            value={field.staticContent}
+                            onChange={(v) => updateFieldInSection(elementIndex, fieldIndex, 'staticContent', v)}
                             placeholder="Escribe aquí el texto que se mostrará al llenar el formulario..."
                             rows={4}
-                            style={{ width: '100%', padding: '10px', fontSize: '0.88rem', border: '1.5px solid #a78bfa', borderRadius: '6px', background: 'white', fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical', lineHeight: '1.6' }}
+                            style={{ border: '1.5px solid #a78bfa', background: 'white', padding: '10px' }}
                           />
                           {field.staticContent && (
                             <>
                               <p style={{ margin: '4px 0 2px', fontSize: '0.73rem', fontWeight: 700, color: '#5b21b6', textTransform: 'uppercase' }}>Vista previa:</p>
                               <div style={{ borderLeft: '4px solid #7c3aed', background: '#ede9fe', borderRadius: '4px', padding: '10px 14px', fontSize: '0.88rem', lineHeight: '1.7' }}>
-                                {field.staticContent.split('\n').map((line, li, arr) => {
-                                  const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
-                                  return (
-                                    <span key={li}>
-                                      {parts.map((p, pi) =>
-                                        p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
-                                        p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> :
-                                        <span key={pi}>{p}</span>
-                                      )}
-                                      {li < arr.length - 1 && <br />}
-                                    </span>
-                                  );
-                                })}
+                                <TextoEnriquecido texto={field.staticContent} />
                               </div>
                             </>
                           )}

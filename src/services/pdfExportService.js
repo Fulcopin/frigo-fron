@@ -14,6 +14,7 @@ import { PDFDocument } from 'pdf-lib';
 import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
 import { alinearBodyData } from '../utils/emparejarBodyData';
+import { construirLineasPDF, altoLineasPDF, dibujarLineasPDF } from '../utils/textoEnriquecido';
 import { urlImagen } from '../utils/urlImagen';
 import { columnasParaDibujar } from '../utils/columnasDelCuadro';
 
@@ -1119,45 +1120,69 @@ export const exportFormToPDF = async (form, template, options = {}) => {
       // ── NOTA ESTÁTICA ──────────────────────────────────────────────
       if (section.type === 'nota_estatica') {
         const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
         const contentW = pageW - 16;
         const texto = section.contenido || '';
-        // Pre-calcular líneas envueltas para conocer altura real del cuadro
-        const rawLines = texto.split('\n').filter(l => l !== undefined);
-        const lineHeight = 5;
-        const allWrappedLines = rawLines.map(line => {
-          const clean = line.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1');
-          return doc.splitTextToSize(clean, contentW - 12);
-        });
-        const totalWrapped = allWrappedLines.reduce((sum, w) => sum + w.length, 0);
-        const totalH = Math.max(totalWrapped * lineHeight + 10, 16);
-        // Yellow background box
-        doc.setFillColor(255, 251, 235);
-        doc.setDrawColor(217, 119, 6);
-        doc.setLineWidth(0.4);
-        doc.rect(8, currentY, contentW, totalH, 'FD');
-        // Orange left bar
-        doc.setFillColor(217, 119, 6);
-        doc.rect(8, currentY, 2.5, totalH, 'F');
-        let textY = currentY + 5;
-        doc.setFontSize(8.5);
-        doc.setTextColor(28, 25, 23);
-        for (let li = 0; li < rawLines.length; li++) {
-          const line = rawLines[li];
-          const isBold = /^\*\*/.test(line.trim()) || line.trim().startsWith('**');
-          doc.setFont('helvetica', isBold ? 'bold' : 'normal');
-          doc.text(allWrappedLines[li], 13, textY);
-          textY += allWrappedLines[li].length * lineHeight;
+
+        // Líneas con negrita / cursiva / subrayado / títulos
+        const lineas = construirLineasPDF(doc, texto, contentW - 12, { tamano: 8.5 });
+
+        const tieneImagen = Boolean(section.imagen && section.imagen.startsWith('data:image/'));
+        const altoImagen = tieneImagen ? 58 : 0;
+        const ext = tieneImagen ? (section.imagen.includes('data:image/png') ? 'PNG' : 'JPEG') : 'JPEG';
+
+        let restantes = lineas;
+        let primeraPagina = true;
+        while (restantes.length > 0) {
+          const imagenAqui = primeraPagina && tieneImagen;
+          const reservaImagen = imagenAqui ? altoImagen : 0;
+          const disponible = pageH - 12 - currentY - 8 - reservaImagen;
+
+          let acumulado = 0;
+          let corte = restantes.length;
+          for (let i = 0; i < restantes.length; i++) {
+            if (i > 0 && acumulado + restantes[i].alto > disponible) {
+              corte = i;
+              break;
+            }
+            acumulado += restantes[i].alto;
+          }
+          // Salvaguarda: siempre dibujar al menos una línea
+          if (corte === 0) corte = 1;
+
+          const trozo = restantes.slice(0, corte);
+          const altoTexto = altoLineasPDF(trozo);
+          const altoCaja = Math.max(altoTexto + 8 + reservaImagen, 16);
+
+          // Caja amarilla con barra naranja
+          doc.setFillColor(255, 251, 235);
+          doc.setDrawColor(217, 119, 6);
+          doc.setLineWidth(0.4);
+          doc.rect(8, currentY, contentW, altoCaja, 'FD');
+          doc.setFillColor(217, 119, 6);
+          doc.rect(8, currentY, 2.5, altoCaja, 'F');
+
+          if (imagenAqui) {
+            try {
+              doc.addImage(section.imagen, ext, 13, currentY + 2, 80, 55);
+            } catch (_) { /* imagen inválida: se ignora */ }
+          }
+
+          doc.setTextColor(28, 25, 23);
+          dibujarLineasPDF(doc, trozo, 13, currentY + reservaImagen + 4.6);
+
+          currentY += altoCaja + 4;
+          restantes = restantes.slice(corte);
+          primeraPagina = false;
+
+          if (restantes.length > 0) {
+            doc.addPage();
+            currentY = 20;
+          }
         }
-        // Image if present
-        if (section.imagen && section.imagen.startsWith('data:image/')) {
-          try {
-            const ext = section.imagen.includes('data:image/png') ? 'PNG' : 'JPEG';
-            doc.addImage(section.imagen, ext, 13, textY + 1, 80, 55);
-            textY += 58;
-          } catch (_) { /* skip */ }
-        }
+
         doc.setFont('helvetica', 'normal');
-        currentY += totalH + 4;
+        doc.setTextColor(...COLORS.text);
         continue;
       }
 
@@ -1615,19 +1640,19 @@ const rows = tableData.map((row, rowIndex) => {
             if (!contentText.trim()) continue;
             // Bloque visual estilo advertencia/nota
             doc.setFontSize(8.5);
-            doc.setFont('helvetica', 'italic');
             doc.setTextColor(91, 33, 182); // morado
-            const contentMdLines = wrapMarkdownText(doc, contentText, maxW - 4, 'italic');
-            if (currentY + contentMdLines.length * 5.5 + 6 > pageH - 10) { doc.addPage(); currentY = 20; }
+            const contentMdLines = construirLineasPDF(doc, contentText, maxW - 8, { tamano: 8.5 });
+            const altoContenido = altoLineasPDF(contentMdLines);
+            if (currentY + altoContenido + 6 > pageH - 10) { doc.addPage(); currentY = 20; }
             doc.setDrawColor(167, 139, 250);
             doc.setFillColor(245, 243, 255);
             doc.setLineWidth(0.3);
-            doc.roundedRect(10, currentY - 4, secPgW2 - 20, contentMdLines.length * 5.5 + 6, 2, 2, 'FD');
+            doc.roundedRect(10, currentY - 4, secPgW2 - 20, altoContenido + 8, 2, 2, 'FD');
             doc.setTextColor(91, 33, 182);
-            drawMarkdownLines(doc, contentMdLines, 13, currentY, 5.5, 'italic');
+            dibujarLineasPDF(doc, contentMdLines, 13, currentY + 2);
             doc.setDrawColor(0); doc.setFillColor(255, 255, 255);
             doc.setTextColor(...COLORS.text); doc.setFont('helvetica', 'normal');
-            currentY += contentMdLines.length * 5.5 + 10;
+            currentY += altoContenido + 10;
             hasRendered = true;
             continue;
           }

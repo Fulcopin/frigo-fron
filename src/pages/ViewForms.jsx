@@ -9,6 +9,7 @@ import { urlImagen } from '../utils/urlImagen';
 import VersionIndicator from "../components/VersionIndicator"
 import ScrollButton from "../components/ScrollButton"
 import SignatureUploader from "../components/SignatureUploader"
+import TextoEnriquecido from "../components/TextoEnriquecido"
 import { loadFormWithVersionInfo, updateFilledForm } from "../utils/filledFormsUtils"
 import { exportFormToPDF } from "../services/pdfExportService"
 import { exportFormToExcel } from "../services/excelExportService"
@@ -1426,12 +1427,7 @@ function ViewForms() {
                         return (
                           <div key={fieldDef.label} style={{ gridColumn: '1 / -1', borderLeft: '5px solid #f59e0b', background: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '6px', padding: '10px 14px', fontSize: '0.88rem', lineHeight: '1.7', color: '#78350f', margin: '4px 0' }}>
                             <span style={{ fontWeight: 700, marginRight: '6px' }}>⚠️ {fieldDef.label}:</span>
-                            {texto.split('\n').map((line, li, arr) => (
-                              <span key={li}>{line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g).map((p, pi) =>
-                                p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
-                                p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> : <span key={pi}>{p}</span>
-                              )}{li < arr.length - 1 && <br />}</span>
-                            ))}
+                            <TextoEnriquecido texto={texto} enLinea />
                           </div>
                         );
                       }
@@ -1842,19 +1838,7 @@ function ViewForms() {
             // Renderizar NOTA ESTÁTICA
             if (templateElement.type === 'nota_estatica') {
               const texto = templateElement.contenido || '';
-              const renderNota = (text) => text.split('\n').map((line, li, arr) => {
-                const parts = line.split(/(\*\*[^*]+\*\*|__[^_]+__)/g);
-                return (
-                  <span key={li}>
-                    {parts.map((p, pi) =>
-                      p.startsWith('**') && p.endsWith('**') ? <strong key={pi}>{p.slice(2,-2)}</strong> :
-                      p.startsWith('__') && p.endsWith('__') ? <u key={pi}>{p.slice(2,-2)}</u> :
-                      <span key={pi}>{p}</span>
-                    )}
-                    {li < arr.length - 1 && <br />}
-                  </span>
-                );
-              });
+              const renderNota = (text) => <TextoEnriquecido texto={text} />;
               return (
                 <div key={templateElement.id || elementIndex} style={{
                   margin: '10px 0',
