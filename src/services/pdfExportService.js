@@ -359,15 +359,38 @@ const drawFrigolabHeader = async (doc, templateData) => {
     doc.rect(marginL + 4, 9, 26, 26);
   }
   
-  // Título del formulario (centro)
-  const titleAreaX = marginL + logoAreaW + 4;
-  const titleAreaW = metaX - titleAreaX - 4;
+  // Título del formulario: en mayúsculas, centrado en la mitad central de la página.
+  // Antes iba fijo en 12 pt y se veía chico frente al logo y a la caja de metadatos.
+  // Ahora se busca el tamaño más grande (máx. 3 líneas) que entre en ese ancho.
+  const titulo = sanitizeText(nombre || '').toUpperCase();
+  const centroTituloX = pageW / 2;
+  const anchoMaxTitulo = Math.min(metaX - (marginL + logoAreaW) - 8, pageW * 0.5);
+
   doc.setTextColor(...COLORS.text);
-  doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  const titleLines = doc.splitTextToSize(sanitizeText(nombre), titleAreaW);
-  const titleY = 5 + (headerH / 2) - ((titleLines.length * 6) / 2) + 4;
-  doc.text(titleLines, titleAreaX + titleAreaW / 2, titleY, { align: 'center' });
+
+  let titleFontSize = 10;
+  let titleLines = [];
+  for (let size = 19; size >= 10; size -= 0.5) {
+    doc.setFontSize(size);
+    const lineas = doc.splitTextToSize(titulo, anchoMaxTitulo);
+    const anchoMayor = lineas.reduce((max, l) => Math.max(max, doc.getTextWidth(l)), 0);
+    if (lineas.length <= 3 && anchoMayor <= anchoMaxTitulo) {
+      titleFontSize = size;
+      titleLines = lineas;
+      break;
+    }
+  }
+  if (!titleLines.length) {
+    doc.setFontSize(10);
+    titleLines = doc.splitTextToSize(titulo, anchoMaxTitulo);
+  }
+
+  doc.setFontSize(titleFontSize);
+  // jsPDF usa interlineado de 1.15 * fontSize (pt) → lo paso a mm.
+  const lineH = titleFontSize * 1.15 * 0.3528;
+  const titleY = 5 + (headerH / 2) - ((titleLines.length - 1) * lineH) / 2 + titleFontSize * 0.12;
+  doc.text(titleLines, centroTituloX, titleY, { align: 'center' });
   
   // Metadatos (derecha) con líneas horizontales internas
   const metaContentX = metaX + 3;
