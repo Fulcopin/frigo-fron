@@ -59,6 +59,17 @@ export async function detectarSoporteImagenes() {
 export function urlImagen(src) {
   const s = String(src || '');
   if (!ES_CLOUDINARY.test(s) || !servidorListo) return src;
+  return urlImagenForzada(s);
+}
+
+/**
+ * Igual que `urlImagen`, pero sin esperar la confirmación del servidor.
+ * Se usa donde hay reintento propio (PDF/Excel): primero el proxy local y,
+ * si falla, la dirección original de Cloudinary.
+ */
+export function urlImagenForzada(src) {
+  const s = String(src || '');
+  if (!ES_CLOUDINARY.test(s)) return src;
   return `${API_BASE_URL}/Images/proxy?u=${encodeURIComponent(s)}`;
 }
 

@@ -10,7 +10,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import { urlImagen } from '../utils/urlImagen';
+import { urlImagenForzada } from '../utils/urlImagen';
 import { saveAs } from 'file-saver';
 import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
@@ -62,25 +62,32 @@ const getBase64ImageForExcel = async (imgUrl) => {
     }
     
     // ✅ Método 2: Usar canvas para convertir cualquier formato (WebP/JPG/PNG) a PNG base64
-    // Esto resuelve problemas de CORS y formatos no soportados como WebP
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const dataURL = canvas.toDataURL('image/png');
-        resolve(dataURL.split(',')[1]); // Retorna base64 sin prefijo
-      };
-      img.onerror = (err) => {
-        console.error('❌ Error cargando imagen via canvas:', imgUrl, err);
-        reject(new Error(`No se pudo cargar la imagen: ${imgUrl}`));
-      };
-      img.src = urlImagen(imgUrl);
-    });
+    // Esto resuelve problemas de CORS y formatos no soportados como WebP.
+    // Si el proxy local falla, se reintenta con la dirección original.
+    const intentos = [...new Set([urlImagenForzada(imgUrl), imgUrl])].filter(Boolean);
+    let ultimoError = null;
+    for (const url of intentos) {
+      try {
+        const dataURL = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'Anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+          };
+          img.onerror = () => reject(new Error(`No se pudo cargar la imagen: ${url}`));
+          img.src = url;
+        });
+        return dataURL.split(',')[1]; // Retorna base64 sin prefijo
+      } catch (error) {
+        ultimoError = error;
+      }
+    }
+    throw ultimoError || new Error(`No se pudo cargar la imagen: ${imgUrl}`);
   } catch (error) {
     console.error('❌ Error cargando imagen para Excel:', error);
     throw error;

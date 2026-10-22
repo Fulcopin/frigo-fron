@@ -15,7 +15,7 @@ import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
 import { alinearBodyData } from '../utils/emparejarBodyData';
 import { construirLineasPDF, altoLineasPDF, dibujarLineasPDF, tituloVisibleNota } from '../utils/textoEnriquecido';
-import { urlImagen } from '../utils/urlImagen';
+import { urlImagenForzada } from '../utils/urlImagen';
 import { columnasParaDibujar } from '../utils/columnasDelCuadro';
 
 /**
@@ -131,65 +131,78 @@ const drawMarkdownLines = (doc, lines, x, y, lineHeight, baseFont = 'normal') =>
 };
 
 /**
+ * Carga una imagen y, si falla, reintenta con la otra vía:
+ * proxy local ⇄ dirección original de Cloudinary. Así funciona tanto si la
+ * planta bloquea res.cloudinary.com como si el servidor no tiene el endpoint.
+ */
+const crearImagen = (src) => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.crossOrigin = 'Anonymous';
+  img.onload = () => resolve(img);
+  img.onerror = () => reject(new Error(`No se pudo cargar la imagen: ${src}`));
+  img.src = src;
+});
+
+const cargarImagen = async (src) => {
+  const original = String(src || '');
+  const proxied = urlImagenForzada(original);
+  const intentos = [...new Set([proxied, original])].filter(Boolean);
+  let ultimoError = null;
+  for (const url of intentos) {
+    try {
+      return await crearImagen(url);
+    } catch (error) {
+      ultimoError = error;
+    }
+  }
+  throw ultimoError || new Error('No se pudo cargar la imagen');
+};
+
+/**
  * Convierte imagen a Base64 para incrustar en PDF.
  * `maxDim` limita el lado mayor en píxeles para no incrustar fotos de 12 MP
  * a resolución completa (un PDF de 4 fotos pesaba más de 30 MB).
  */
-const getBase64Image = (imgUrl, maxDim = 1600) => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      let w = img.width || 800;
-      let h = img.height || 600;
-      if (maxDim > 0 && Math.max(w, h) > maxDim) {
-        const s = maxDim / Math.max(w, h);
-        w = Math.max(1, Math.round(w * s));
-        h = Math.max(1, Math.round(h * s));
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
-      const dataURL = canvas.toDataURL('image/png');
-      resolve(dataURL);
-    };
-    img.onerror = reject;
-    img.src = urlImagen(imgUrl);
-  });
+const getBase64Image = async (imgUrl, maxDim = 1600) => {
+  const img = await cargarImagen(imgUrl);
+  let w = img.width || 800;
+  let h = img.height || 600;
+  if (maxDim > 0 && Math.max(w, h) > maxDim) {
+    const s = maxDim / Math.max(w, h);
+    w = Math.max(1, Math.round(w * s));
+    h = Math.max(1, Math.round(h * s));
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL('image/png');
 };
 
-const getImageDataAndDims = (imgUrl, options = {}) => {
+const getImageDataAndDims = async (imgUrl, options = {}) => {
   const opts = typeof options === 'number' ? { maxDim: options } : (options || {});
   const { maxDim = 1600, jpeg = false, quality = 0.85 } = opts;
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'Anonymous';
-    img.onload = () => {
-      let w = img.width || 800;
-      let h = img.height || 600;
-      if (maxDim > 0 && Math.max(w, h) > maxDim) {
-        const s = maxDim / Math.max(w, h);
-        w = Math.max(1, Math.round(w * s));
-        h = Math.max(1, Math.round(h * s));
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (jpeg) {
-        // JPEG no tiene transparencia: fondo blanco para no dejar zonas negras
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, w, h);
-      }
-      ctx.drawImage(img, 0, 0, w, h);
-      const dataURL = jpeg ? canvas.toDataURL('image/jpeg', quality) : canvas.toDataURL('image/png');
-      resolve({ dataURL, width: w, height: h, format: jpeg ? 'JPEG' : 'PNG' });
-    };
-    img.onerror = reject;
-    img.src = urlImagen(imgUrl);
-  });
+  const img = await cargarImagen(imgUrl);
+  let w = img.width || 800;
+  let h = img.height || 600;
+  if (maxDim > 0 && Math.max(w, h) > maxDim) {
+    const s = maxDim / Math.max(w, h);
+    w = Math.max(1, Math.round(w * s));
+    h = Math.max(1, Math.round(h * s));
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (jpeg) {
+    // JPEG no tiene transparencia: fondo blanco para no dejar zonas negras
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+  }
+  ctx.drawImage(img, 0, 0, w, h);
+  const dataURL = jpeg ? canvas.toDataURL('image/jpeg', quality) : canvas.toDataURL('image/png');
+  return { dataURL, width: w, height: h, format: jpeg ? 'JPEG' : 'PNG' };
 };
 
 /**
