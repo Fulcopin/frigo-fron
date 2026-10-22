@@ -37,6 +37,29 @@ Es **idempotente**: si se corre dos veces, la segunda no cambia nada.
 Este paquete incluye también el arreglo de imágenes
 (`/api/Images/proxy`, precarga y diagnóstico).
 
+### Automático (recomendado)
+
+En el servidor, con PowerShell **como Administrador**:
+
+1. Descomprimir `actualizacion-backend.zip` en una carpeta.
+2. Copiar `APLICAR-NOTAS-CC07.ps1` en esa misma carpeta.
+3. Ejecutar:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\APLICAR-NOTAS-CC07.ps1
+```
+
+El script respalda el DLL actual, copia los archivos, recicla el App Pool,
+muestra qué falta, pide confirmación (`SI`) y verifica al final.
+
+Para mirar sin cambiar nada:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\APLICAR-NOTAS-CC07.ps1 -SoloVerificar
+```
+
+### Manual
+
 ## Verificar antes de aplicar (solo lectura)
 
 Abrir en el navegador:
