@@ -742,9 +742,15 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
   const firmasPorFila = Math.max(1, Math.min(sigAvailW > 200 ? 3 : 2, totalFirmas));
   const anchoColumna = sigAvailW / firmasPorFila;
 
-  // Alto estimado de una firma según lo que realmente se dibuja
-  const altoDeFirma = (data, puesto) => {
-    // El puesto puede ocupar más de una línea según el ancho de la columna
+  // 📐 Todas las firmas de una misma fila comparten la MISMA altura de texto y la
+  // MISMA caja para la imagen. Así la línea/rótulo de firma queda alineado aunque
+  // una firma tenga email, fecha u hora y otra no: antes cada columna avanzaba a
+  // su propio ritmo y las firmas salían disparejas.
+  const ALTO_CAJA_FIRMA = 24; // alto de la caja reservada para la imagen de la firma
+
+  // Alto del bloque de texto (puesto, reemplazo, nombre, email, fecha, hora).
+  const altoTextoFirma = (data, puesto) => {
+    const obj = (data && typeof data === 'object') ? data : {};
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     const puestoLineas = doc.splitTextToSize(
@@ -752,26 +758,43 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       Math.max(anchoColumna - 6, 10)
     ).length;
     let alto = Math.max(1, puestoLineas) * 4.5;
-    if (data && typeof data === 'object') {
-      if (data.esReemplazo && data.cargoFirmante) alto += 5; // "En repr. de…"
-      alto += 5; // nombre o "(Sin firmar)"
-      if (data.email) alto += 4;
-      if (data.fecha) alto += 5;
-      if (data.hora) alto += 5;
-      if (data.firma && (data.firma.url || data.firma.base64)) alto += 26; // imagen
+    if (obj.esReemplazo && obj.cargoFirmante) alto += 5; // "En repr. de…"
+    // El nombre y el email se parten en varias líneas si no caben en la columna.
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    const nombreLineas = doc.splitTextToSize(
+      sanitizeText(obj.nombre || '(Sin firmar)'),
+      Math.max(anchoColumna - 6, 10)
+    ).length;
+    alto += Math.max(1, nombreLineas) * 5;
+    if (obj.email) {
+      doc.setFontSize(7);
+      const emailLineas = doc.splitTextToSize(
+        sanitizeText(`Email: ${obj.email}`),
+        Math.max(anchoColumna - 6, 10)
+      ).length;
+      alto += Math.max(1, emailLineas) * 4;
     }
-    return alto + 2 + 7; // espacio antes de la línea + rótulo "Firma"
+    if (obj.fecha) alto += 5;
+    if (obj.hora) alto += 5;
+    return alto;
   };
 
-  const altoFila = (inicio) => {
+  // Alto del texto más alto de la fila.
+  const altoTextoFila = (inicio) => {
     let alto = 0;
+    let hay = false;
     for (let k = 0; k < firmasPorFila; k++) {
       const item = firmasArray[inicio + k];
       if (!item) break;
-      alto = Math.max(alto, altoDeFirma(item[1], item[0]));
+      hay = true;
+      alto = Math.max(alto, altoTextoFirma(item[1], item[0]));
     }
-    return alto || 14;
+    return hay ? alto : 5;
   };
+
+  // Alto total de la fila: texto + aire + caja de firma + rótulo.
+  const altoFila = (inicio) => altoTextoFila(inicio) + 2 + ALTO_CAJA_FIRMA + 8;
 
   // Reservar título + primera fila; solo se abre otra página si de verdad no caben.
   const primeraFilaH = esObjetoFirmas ? (totalFirmas > 0 ? altoFila(0) : 12) : 50;
@@ -808,6 +831,16 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       return currentY + 10;
     }
     
+    // Altura de texto de la fila en curso (se recalcula al empezar cada fila).
+    let altoTextoDeFila = altoTextoFila(0);
+    // Si la última fila queda con menos firmas, se centra en vez de quedar
+    // pegada a la izquierda (se veía "dispareja").
+    const offsetDeFila = (inicio) => {
+      const enFila = Math.min(firmasPorFila, totalFirmas - inicio);
+      return ((firmasPorFila - enFila) * anchoColumna) / 2;
+    };
+    let offsetFila = offsetDeFila(0);
+
     // Usar for...of para soportar await
     for (let index = 0; index < firmasArray.length; index++) {
       const [puesto, data] = firmasArray[index];
@@ -819,7 +852,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       
       // Determinar posición (columna izquierda o derecha)
       const columna = index % firmasPorFila;
-      const xPos = 10 + (columna * anchoColumna) + 2;
+      const xPos = 10 + offsetFila + (columna * anchoColumna) + 2;
       
       // Si es una nueva fila, ajustar Y
       if (columna === 0 && index > 0) {
@@ -827,6 +860,8 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
 
         // Si la fila completa (incluida la imagen) no cabe, saltar de página
         // para que la firma NUNCA se corte.
+        altoTextoDeFila = altoTextoFila(index);
+        offsetFila = offsetDeFila(index);
         const altoSiguiente = altoFila(index);
         if (currentY + altoSiguiente > safeBottom) {
           doc.addPage();
@@ -893,17 +928,18 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
       
-      // Mostrar nombre
+      // Mostrar nombre (partido en varias líneas si es muy largo)
+      const nombreLineas = doc.splitTextToSize(sanitizeText(nombre || '(Sin firmar)'), Math.max(anchoColumna - 6, 10));
       if (nombre) {
-        doc.text(sanitizeText(nombre), xPos, localY);
-        localY += 5;
+        doc.text(nombreLineas, xPos, localY);
+        localY += nombreLineas.length * 5;
       } else {
         doc.setTextColor(150, 150, 150);
         doc.setFont('helvetica', 'italic');
-        doc.text('(Sin firmar)', xPos, localY);
+        doc.text(nombreLineas, xPos, localY);
         doc.setTextColor(...COLORS.text);
         doc.setFont('helvetica', 'normal');
-        localY += 5;
+        localY += nombreLineas.length * 5;
       }
       
       // Mostrar email del firmante (si existe)
@@ -911,10 +947,11 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       if (email) {
         doc.setFontSize(7);
         doc.setTextColor(0, 102, 204);
-        doc.text(`Email: ${email}`, xPos, localY);
+        const emailLineas = doc.splitTextToSize(sanitizeText(`Email: ${email}`), Math.max(anchoColumna - 6, 10));
+        doc.text(emailLineas, xPos, localY);
         doc.setTextColor(...COLORS.text);
         doc.setFontSize(9);
-        localY += 4;
+        localY += emailLineas.length * 4;
       }
       
       // Mostrar fecha (si existe) - formateada
@@ -946,9 +983,12 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
         localY += 5;
       }
       
-      // Espacio antes de la línea
-      localY += 2;
-      
+      // 📐 La caja de la firma arranca SIEMPRE a la misma altura en toda la fila
+      // (debajo del texto más alto), así las firmas quedan alineadas.
+      localY = startYForThisFirma + altoTextoDeFila + 2;
+      const cajaFirmaY = localY;
+      const rotuloFirmaY = cajaFirmaY + ALTO_CAJA_FIRMA + 4;
+
       // 🆕 Renderizar firma PNG si existe
       if (firmaImg) {
         console.log('   🖼️ Intentando renderizar imagen de firma...');
@@ -959,7 +999,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
           // 📐 Caja MÁXIMA disponible para la firma dentro de la columna.
           // La imagen se escala para caber aquí SIN deformarse (mantiene su proporción real).
           const maxFirmaW = anchoColumna - 8;
-          const maxFirmaH = 24; // alto máximo de la firma (proporcional, sin deformar)
+          const maxFirmaH = ALTO_CAJA_FIRMA; // alto máximo de la firma (proporcional, sin deformar)
 
           // Convertir imagen a PNG Base64 via canvas (soporta WebP, JPG, etc.) y obtener
           // sus dimensiones reales para poder escalarla proporcionalmente.
@@ -990,24 +1030,25 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
             firmaImgHeight = natH * scale;
           }
 
-          // Centrar la imagen horizontalmente dentro de la columna.
+          // Centrar la imagen horizontalmente dentro de la columna y apoyarla en el
+          // borde inferior de la caja: todas las firmas de la fila terminan a la
+          // misma altura, sin importar la proporción de cada imagen.
           const firmaImgX = xPos + (maxFirmaW - firmaImgWidth) / 2;
+          const firmaImgY = cajaFirmaY + ALTO_CAJA_FIRMA - firmaImgHeight;
 
-          console.log('   📐 Dimensiones firma:', { firmaImgWidth, firmaImgHeight, x: firmaImgX, y: localY });
+          console.log('   📐 Dimensiones firma:', { firmaImgWidth, firmaImgHeight, x: firmaImgX, y: firmaImgY });
 
           // Añadir imagen de firma (ahora en PNG Base64, escalada y proporcional)
-          doc.addImage(imageToAdd, 'PNG', firmaImgX, localY, firmaImgWidth, firmaImgHeight);
+          doc.addImage(imageToAdd, 'PNG', firmaImgX, firmaImgY, firmaImgWidth, firmaImgHeight);
           console.log('   ✅ Imagen agregada exitosamente');
 
-          localY += firmaImgHeight + 2;
-
-          // Texto "Firma Digital" centrado bajo la imagen (respecto al ancho de la columna)
+          // Texto "Firma Digital" centrado bajo la caja (misma Y en toda la fila)
           doc.setFontSize(7);
           doc.setTextColor(100, 100, 100);
           const firmaTextWidth = doc.getTextWidth('Firma Digital');
-          doc.text('Firma Digital', xPos + (maxFirmaW - firmaTextWidth) / 2, localY + 3.5);
+          doc.text('Firma Digital', xPos + (maxFirmaW - firmaTextWidth) / 2, rotuloFirmaY);
           doc.setTextColor(...COLORS.text);
-          localY += 5;
+          localY = cajaFirmaY + ALTO_CAJA_FIRMA + 8;
         } catch (error) {
           console.error('   ❌ Error al agregar imagen de firma:', error);
           console.error('   Error completo:', error.message, error.stack);
@@ -1015,14 +1056,14 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
           doc.setDrawColor(80, 80, 80);
           doc.setLineWidth(0.3);
           const firmaLineWidth = anchoColumna - 8;
-          doc.line(xPos, localY, xPos + firmaLineWidth, localY);
+          doc.line(xPos, cajaFirmaY + ALTO_CAJA_FIRMA - 4, xPos + firmaLineWidth, cajaFirmaY + ALTO_CAJA_FIRMA - 4);
           
           doc.setFontSize(7);
           doc.setTextColor(100, 100, 100);
           const firmaTextWidth = doc.getTextWidth('Firma');
-          doc.text('Firma', xPos + (firmaLineWidth - firmaTextWidth) / 2, localY + 3.5);
+          doc.text('Firma', xPos + (firmaLineWidth - firmaTextWidth) / 2, rotuloFirmaY);
           doc.setTextColor(...COLORS.text);
-          localY += 5;
+          localY = cajaFirmaY + ALTO_CAJA_FIRMA + 8;
         }
       } else {
         console.log('   ⚠️ NO hay imagen de firma para renderizar');
@@ -1030,15 +1071,15 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
         doc.setDrawColor(80, 80, 80);
         doc.setLineWidth(0.3);
         const firmaLineWidth = anchoColumna - 8;
-        doc.line(xPos, localY, xPos + firmaLineWidth, localY);
+        doc.line(xPos, cajaFirmaY + ALTO_CAJA_FIRMA - 4, xPos + firmaLineWidth, cajaFirmaY + ALTO_CAJA_FIRMA - 4);
         
-        // Texto "Firma" centrado bajo la línea
+        // Texto "Firma" centrado bajo la línea (misma Y en toda la fila)
         doc.setFontSize(7);
         doc.setTextColor(100, 100, 100);
         const firmaTextWidth = doc.getTextWidth('Firma');
-        doc.text('Firma', xPos + (firmaLineWidth - firmaTextWidth) / 2, localY + 3.5);
+        doc.text('Firma', xPos + (firmaLineWidth - firmaTextWidth) / 2, rotuloFirmaY);
         doc.setTextColor(...COLORS.text);
-        localY += 5;
+        localY = cajaFirmaY + ALTO_CAJA_FIRMA + 8;
       }
       
       // Actualizar currentY al máximo de todas las columnas de esta fila

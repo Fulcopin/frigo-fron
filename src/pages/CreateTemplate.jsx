@@ -17,6 +17,16 @@ import { TIPOS_CAMPO_DETALLE, TIPOS_CON_OPCIONES } from "../utils/tiposCampoDeta
 
 const API_URL = `${API_BASE_URL}/Templates`;
 
+// 🎛️ Opciones generales del formulario (ayudas del encabezado y botones de la
+// barra). Se guardan en cada elemento del cuerpo para que queden en el JSON de
+// la plantilla, pero mientras la plantilla todavía no tiene elementos se
+// guardan también en el estado raíz y se heredan al agregar el primero.
+const CAMPOS_CONFIG_GENERAL = [
+  'ayudaOcultarCol', 'ayudaAplicarTodas', 'ayudaImportarCol', 'ayudaCompletarRango',
+  'barraAgregarVarias', 'barraLimpiarVacias', 'barraRestaurarFilas', 'barraAgruparFilas',
+  'barraCopiarDato', 'soloDesplegable',
+];
+
 function CreateTemplate() {
   const initialState = {
     codigo: "",
@@ -215,7 +225,14 @@ function CreateTemplate() {
       newElement.columns = [];
       newElement.defaultRows = 5;
     }
-    setTemplate(prev => ({ ...prev, bodyElements: [...prev.bodyElements, newElement] }));
+    setTemplate(prev => {
+      // Heredar la configuración general elegida antes de crear el elemento:
+      // en una plantilla nueva todavía no hay dónde guardarla.
+      for (const campo of CAMPOS_CONFIG_GENERAL) {
+        if (prev[campo] !== undefined) newElement[campo] = prev[campo];
+      }
+      return { ...prev, bodyElements: [...prev.bodyElements, newElement] };
+    });
   };
 
   const updateBodyElement = (elementIndex, field, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => i === elementIndex ? { ...el, [field]: value } : el) }));
@@ -507,11 +524,16 @@ function CreateTemplate() {
               { campo: 'ayudaOcultarCol',   etiqueta: '🚫 Ocultar columna',  detalle: 'Deja la columna fuera del Ver / PDF / Excel de ese registro.' },
               { campo: 'ayudaAplicarTodas', etiqueta: '⬇ Aplicar a todas',   detalle: 'Copia un valor a todas las filas de la columna.' },
               { campo: 'ayudaImportarCol',  etiqueta: '📥 Importar columna',  detalle: 'Trae los datos de esa columna desde otro formulario.' },
+              { campo: 'ayudaCompletarRango', etiqueta: '🐟 Completar rango', detalle: 'Llena un rango de filas con Especie → Producto.' },
             ].map(({ campo, etiqueta, detalle }) => {
-              const tablas = (template.bodyElements || []).filter(el => el?.type === 'table');
-              // Activa mientras ninguna tabla la tenga apagada. Sin valor guardado
-              // cuenta como activa, así las plantillas viejas no cambian.
-              const activa = !tablas.some(el => el[campo] === false);
+              // Apagada si algún elemento del cuerpo la tiene en false. Si la
+              // plantilla todavía no tiene elementos, manda el valor guardado en
+              // la raíz (antes no se podía destildar hasta crear una tabla).
+              const elementos = template.bodyElements || [];
+              const conValor = elementos.filter(el => el && el[campo] !== undefined);
+              const activa = conValor.length > 0
+                ? !conValor.some(el => el[campo] === false)
+                : template[campo] !== false;
               return (
                 <div key={campo} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '10px' }}>
                   <input
@@ -522,8 +544,9 @@ function CreateTemplate() {
                       const valor = e.target.checked;
                       setTemplate(prev => ({
                         ...prev,
+                        [campo]: valor,
                         bodyElements: (prev.bodyElements || []).map(el =>
-                          el?.type === 'table' ? { ...el, [campo]: valor } : el
+                          el ? { ...el, [campo]: valor } : el
                         ),
                       }));
                     }}
@@ -562,10 +585,14 @@ function CreateTemplate() {
               { campo: 'barraCopiarDato',     etiqueta: '📋 Copiar dato guardado',  detalle: 'Botón morado junto a cada campo del encabezado: trae un valor de otro formulario ya guardado.' },
               { campo: 'soloDesplegable',     etiqueta: '🔒 Solo permitir valores de la lista', detalle: 'Bloquea la escritura manual en las columnas de inventario. En tablet el operario podía tipear un lote que no existe.' },
             ].map(({ campo, etiqueta, detalle }) => {
-              const tablas = (template.bodyElements || []).filter(el => el?.type === 'table');
-              // Activo mientras ninguna tabla lo tenga apagado. Sin valor
-              // guardado cuenta como activo: las plantillas viejas no cambian.
-              const activa = !tablas.some(el => el[campo] === false);
+              // Apagado si algún elemento del cuerpo lo tiene en false. Si la
+              // plantilla todavía no tiene elementos, manda el valor guardado en
+              // la raíz (antes no se podía destildar hasta crear una tabla).
+              const elementos = template.bodyElements || [];
+              const conValor = elementos.filter(el => el && el[campo] !== undefined);
+              const activa = conValor.length > 0
+                ? !conValor.some(el => el[campo] === false)
+                : template[campo] !== false;
               return (
                 <div key={campo} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '10px' }}>
                   <input
@@ -576,8 +603,9 @@ function CreateTemplate() {
                       const valor = e.target.checked;
                       setTemplate(prev => ({
                         ...prev,
+                        [campo]: valor,
                         bodyElements: (prev.bodyElements || []).map(el =>
-                          el?.type === 'table' ? { ...el, [campo]: valor } : el
+                          el ? { ...el, [campo]: valor } : el
                         ),
                       }));
                     }}

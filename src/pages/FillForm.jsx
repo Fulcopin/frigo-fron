@@ -11927,7 +11927,7 @@ useEffect(() => {
                   // no existe en el inventario. En la computadora el desplegable
                   // suele resolverse solo, por eso el problema se veía únicamente
                   // en tablet.
-                  col.soloDesplegable ? (
+                  col.soloDesplegable || element?.soloDesplegable ? (
                     <input
                       type="text"
                       value={valorAct}
