@@ -115,18 +115,27 @@ const drawMarkdownLines = (doc, lines, x, y, lineHeight, baseFont = 'normal') =>
 };
 
 /**
- * Convierte imagen a Base64 para incrustar en PDF
+ * Convierte imagen a Base64 para incrustar en PDF.
+ * `maxDim` limita el lado mayor en píxeles para no incrustar fotos de 12 MP
+ * a resolución completa (un PDF de 4 fotos pesaba más de 30 MB).
  */
-const getBase64Image = (imgUrl) => {
+const getBase64Image = (imgUrl, maxDim = 1600) => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
     img.onload = () => {
+      let w = img.width || 800;
+      let h = img.height || 600;
+      if (maxDim > 0 && Math.max(w, h) > maxDim) {
+        const s = maxDim / Math.max(w, h);
+        w = Math.max(1, Math.round(w * s));
+        h = Math.max(1, Math.round(h * s));
+      }
       const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h);
       const dataURL = canvas.toDataURL('image/png');
       resolve(dataURL);
     };
@@ -135,18 +144,32 @@ const getBase64Image = (imgUrl) => {
   });
 };
 
-const getImageDataAndDims = (imgUrl) => {
+const getImageDataAndDims = (imgUrl, options = {}) => {
+  const opts = typeof options === 'number' ? { maxDim: options } : (options || {});
+  const { maxDim = 1600, jpeg = false, quality = 0.85 } = opts;
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
     img.onload = () => {
+      let w = img.width || 800;
+      let h = img.height || 600;
+      if (maxDim > 0 && Math.max(w, h) > maxDim) {
+        const s = maxDim / Math.max(w, h);
+        w = Math.max(1, Math.round(w * s));
+        h = Math.max(1, Math.round(h * s));
+      }
       const canvas = document.createElement('canvas');
-      canvas.width = img.width || 800;
-      canvas.height = img.height || 600;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const dataURL = canvas.toDataURL('image/png');
-      resolve({ dataURL, width: img.width || 800, height: img.height || 600 });
+      if (jpeg) {
+        // JPEG no tiene transparencia: fondo blanco para no dejar zonas negras
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.drawImage(img, 0, 0, w, h);
+      const dataURL = jpeg ? canvas.toDataURL('image/jpeg', quality) : canvas.toDataURL('image/png');
+      resolve({ dataURL, width: w, height: h, format: jpeg ? 'JPEG' : 'PNG' });
     };
     img.onerror = reject;
     img.src = urlImagen(imgUrl);
@@ -327,7 +350,7 @@ const drawFrigolabHeader = async (doc, templateData) => {
   
   // Logo (izquierda)
   try {
-    const logoBase64 = await getBase64Image(logoUrl);
+    const logoBase64 = await getBase64Image(logoUrl, 400);
     doc.addImage(logoBase64, 'PNG', marginL + 4, 9, 26, 26);
   } catch (error) {
     console.warn('⚠️ No se pudo cargar el logo:', error);
@@ -685,20 +708,78 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
   console.log('Es array?:', Array.isArray(firmasData));
   console.log('startY:', startY, 'pageHeight:', pageHeight);
   
-  // 📏 Altura máxima que puede ocupar un bloque de firma (texto + imagen PNG + "Firma Digital").
-  // Se reserva SIEMPRE este alto antes de dibujar, para que la firma nunca quede cortada
-  // ni pisando el pie de página ("Página X de Y…", que se dibuja en pageHeight - 8).
-  const FIRMA_BLOCK_H = 72;
-  const safeBottom = pageHeight - 15; // margen inferior seguro por encima del pie de página
+  // 📏 El alto del bloque de firmas se calcula con los datos reales de cada firma.
+  // Antes se reservaban 72 mm fijos (y 52 mm extra entre filas), así que un bloque
+  // de 55 mm saltaba a una página nueva y dejaba media hoja en blanco.
+  const safeBottom = pageHeight - 12; // margen seguro por encima del pie de página
 
-  // Verificar si hay espacio para el título de la sección + al menos una firma completa.
-  if (currentY + 15 + FIRMA_BLOCK_H > safeBottom) {
+  // 🔑 Normalizar puesto para comparar SIN sensibilidad a mayúsculas, tildes ni espacios.
+  // Evita que una firma "desaparezca" del PDF cuando se edita la plantilla y el texto del
+  // puesto cambia de casing/acento/espacios respecto al que se guardó al firmar.
+  const normPuesto = (p) => (p || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  const esObjetoFirmas = firmasData && typeof firmasData === 'object' && !Array.isArray(firmasData);
+  const templateFirmas = template?.firmas || [];
+  const puestosValidos = templateFirmas.map(f => f.puesto);
+  const puestosValidosNorm = puestosValidos.map(normPuesto);
+
+  // Si el template no define puestos de firmas, mostrar todas las firmas del formulario
+  const firmasArray = esObjetoFirmas
+    ? (puestosValidos.length > 0
+      ? Object.entries(firmasData).filter(([puesto]) => puestosValidosNorm.includes(normPuesto(puesto)))
+      : Object.entries(firmasData))
+    : [];
+  const totalFirmas = firmasArray.length;
+
+  const sigPgW = doc.internal.pageSize.getWidth();
+  const sigContentW = sigPgW - 16;
+  const sigAvailW = sigPgW - 20; // 10 mm de margen a cada lado
+  const firmasPorFila = Math.max(1, Math.min(sigAvailW > 200 ? 3 : 2, totalFirmas));
+  const anchoColumna = sigAvailW / firmasPorFila;
+
+  // Alto estimado de una firma según lo que realmente se dibuja
+  const altoDeFirma = (data, puesto) => {
+    // El puesto puede ocupar más de una línea según el ancho de la columna
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    const puestoLineas = doc.splitTextToSize(
+      sanitizeText(`${(puesto || '').toString().toUpperCase()}:`),
+      Math.max(anchoColumna - 6, 10)
+    ).length;
+    let alto = Math.max(1, puestoLineas) * 4.5;
+    if (data && typeof data === 'object') {
+      if (data.esReemplazo && data.cargoFirmante) alto += 5; // "En repr. de…"
+      alto += 5; // nombre o "(Sin firmar)"
+      if (data.email) alto += 4;
+      if (data.fecha) alto += 5;
+      if (data.hora) alto += 5;
+      if (data.firma && (data.firma.url || data.firma.base64)) alto += 26; // imagen
+    }
+    return alto + 2 + 7; // espacio antes de la línea + rótulo "Firma"
+  };
+
+  const altoFila = (inicio) => {
+    let alto = 0;
+    for (let k = 0; k < firmasPorFila; k++) {
+      const item = firmasArray[inicio + k];
+      if (!item) break;
+      alto = Math.max(alto, altoDeFirma(item[1], item[0]));
+    }
+    return alto || 14;
+  };
+
+  // Reservar título + primera fila; solo se abre otra página si de verdad no caben.
+  const primeraFilaH = esObjetoFirmas ? (totalFirmas > 0 ? altoFila(0) : 12) : 50;
+  if (currentY + 15 + primeraFilaH > safeBottom) {
     doc.addPage();
     currentY = 20;
   }
-  
-  const sigPageW = doc.internal.pageSize.getWidth();
-  const sigContentW = sigPageW - 16;
+
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   doc.setFillColor(...COLORS.secondary);
@@ -712,32 +793,9 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
   currentY += 15;
   
   // Si firmasData es un objeto con estructura de puestos
-  if (firmasData && typeof firmasData === 'object' && !Array.isArray(firmasData)) {
-    // 🔧 FILTRAR: Solo incluir firmas que están en la plantilla actual
-    const templateFirmas = template?.firmas || [];
-    const puestosValidos = templateFirmas.map(f => f.puesto);
-
-    // 🔑 Normalizar puesto para comparar SIN sensibilidad a mayúsculas, tildes ni espacios.
-    // Evita que una firma "desaparezca" del PDF cuando se edita la plantilla y el texto del
-    // puesto cambia de casing/acento/espacios respecto al que se guardó al firmar.
-    const normPuesto = (p) => (p || '')
-      .toString()
-      .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
-      .toLowerCase()
-      .trim();
-    const puestosValidosNorm = puestosValidos.map(normPuesto);
-
+  if (esObjetoFirmas) {
     console.log('🔍 Puestos válidos en template:', puestosValidos);
     console.log('🔍 Puestos en formulario guardado:', Object.keys(firmasData));
-
-    // Si el template no define puestos de firmas, mostrar todas las firmas del formulario
-    const firmasArray = puestosValidos.length > 0
-      ? Object.entries(firmasData).filter(([puesto]) => puestosValidosNorm.includes(normPuesto(puesto)))
-      : Object.entries(firmasData);
-    
-    const totalFirmas = firmasArray.length;
-    
     console.log('📋 Total de firmas FILTRADAS:', totalFirmas);
     console.log('📋 Firmas array FILTRADAS:', firmasArray);
     
@@ -749,12 +807,6 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       doc.text('No hay firmas registradas', 12, currentY);
       return currentY + 10;
     }
-    
-    // Calcular cuántas firmas por fila (máximo 2)
-    const sigPgW = doc.internal.pageSize.getWidth();
-    const sigAvailW = sigPgW - 20; // 10mm margins
-    const firmasPorFila = Math.min(sigAvailW > 200 ? 3 : 2, totalFirmas);
-    const anchoColumna = sigAvailW / firmasPorFila;
     
     // Usar for...of para soportar await
     for (let index = 0; index < firmasArray.length; index++) {
@@ -771,11 +823,12 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
       
       // Si es una nueva fila, ajustar Y
       if (columna === 0 && index > 0) {
-        currentY += 52; // Espacio entre filas (ajustado para firma más alta)
+        currentY += 8; // separación entre filas (el alto ya lo aportó la fila anterior)
 
-        // Verificar que la fila completa (incluida la imagen) quepa por encima del pie de
-        // página. Si no cabe, saltar a una página nueva para que la firma NUNCA se corte.
-        if (currentY + FIRMA_BLOCK_H > safeBottom) {
+        // Si la fila completa (incluida la imagen) no cabe, saltar de página
+        // para que la firma NUNCA se corte.
+        const altoSiguiente = altoFila(index);
+        if (currentY + altoSiguiente > safeBottom) {
           doc.addPage();
           currentY = 20;
         }
@@ -916,7 +969,7 @@ const drawSignaturesSection = async (doc, firmasData, startY, template) => {
           if (firmaImg.startsWith('http') || firmaImg.startsWith('data:image')) {
             console.log('   Convirtiendo imagen de firma a PNG Base64...');
             try {
-              const imgData = await getImageDataAndDims(firmaImg);
+              const imgData = await getImageDataAndDims(firmaImg, { maxDim: 500 });
               imageToAdd = imgData.dataURL;
               natW = imgData.width;
               natH = imgData.height;
@@ -1107,12 +1160,62 @@ export const exportFormToPDF = async (form, template, options = {}) => {
       
       console.log(`📌 Sección ${index + 1}:`, section);
       
-      // Verificar si hay espacio, si no, agregar nueva página
-      // Para tablas se reserva más espacio (título + cabeceras de grupo + primeras filas)
-      // para evitar el patrón: título en pág 1 → página en blanco → datos en pág 2
+      // Verificar si hay espacio, si no, agregar nueva página.
+      // La reserva se calcula con el alto real de la tabla (título + cabecera + 2 filas)
+      // en lugar de un valor fijo: en hoja horizontal una reserva de 85 mm empujaba
+      // secciones cortas a la página siguiente y dejaba media hoja en blanco.
       const _isTableSection = section.type === 'table' && section.columns;
-      const _minSpace = _isTableSection ? (isCompactMode ? 65 : 85) : 45;
-      if (currentY + _minSpace > doc.internal.pageSize.getHeight()) {
+      const _titleSpace = isCompactMode ? 8 : 11;
+      let _minSpace = _titleSpace + 14;
+      if (_isTableSection) {
+        const _cols = (section.columns || []).filter(c => c && c.isHidden !== true);
+        const _st = getTableStyles(Math.max(_cols.length, 1), doc.internal.pageSize.getWidth(), { left: 8, right: 8 }, isCompactMode);
+        const _headRows = _cols.some(c => c.group) ? 2 : 1;
+        const _lineMM = 0.406; // alto de línea aproximado (1.15 × 0.3528 mm/pt)
+        const _headH = _headRows * (_st.headerFontSize * _lineMM + _st.cellPadding.top + _st.cellPadding.bottom);
+        const _rowH = _st.bodyFontSize * _lineMM + _st.cellPadding.top + _st.cellPadding.bottom;
+        _minSpace = _titleSpace + _headH + _rowH * 2 + 3;
+      }
+
+      // Secciones de campos: si el primer campo visible es una imagen o una nota
+      // larga, reservar su alto para que el título no quede solo al pie de página.
+      if (section.type === 'section' && Array.isArray(section.fields) && section.fields.length > 0) {
+        const _sd = (_elementData && typeof _elementData === 'object')
+          ? (_elementData.data || _elementData.rows || _elementData)
+          : {};
+        const _ocultos = _elementData?.hiddenFields || {};
+        const _primero = section.fields.find(fd => {
+          if (_ocultos[fd.label || fd.name] === true || fd.isHidden === true) return false;
+          const t = String(fd.type || '').toLowerCase();
+          const _val = String(
+            _sd?.[fd.label] ??
+            _sd?.[String(fd.label || '').toLowerCase()] ??
+            _sd?.[String(fd.label || '').toUpperCase()] ??
+            ''
+          ).trim();
+          if (t === 'nota' || t === 'label' || t === 'staticcontent') {
+            return !!String(fd.staticContent || fd.content || fd.label || '').trim();
+          }
+          if (t === 'image') return !!_val || !!fd.staticImage;
+          return true;
+        });
+        if (_primero) {
+          const t = String(_primero.type || '').toLowerCase();
+          if (t === 'image') {
+            _minSpace = Math.max(_minSpace, _titleSpace + 40);
+          } else if (t === 'nota' || t === 'label' || t === 'staticcontent') {
+            const _txt = _primero.staticContent || _primero.content || _primero.label || '';
+            const _lineas = construirLineasPDF(doc, _txt, doc.internal.pageSize.getWidth() - 30, { tamano: 8.5 });
+            _minSpace = Math.max(_minSpace, _titleSpace + altoLineasPDF(_lineas) + 12);
+          } else {
+            _minSpace = Math.max(_minSpace, _titleSpace + 16);
+          }
+        }
+      } else if (section.type === 'observaciones' || section.type === 'text' || section.type === 'textarea') {
+        _minSpace = Math.max(_minSpace, _titleSpace + 20);
+      }
+
+      if (currentY + _minSpace > doc.internal.pageSize.getHeight() - 12) {
         doc.addPage();
         currentY = 20;
       }
@@ -1127,9 +1230,20 @@ export const exportFormToPDF = async (form, template, options = {}) => {
         // Líneas con negrita / cursiva / subrayado / títulos
         const lineas = construirLineasPDF(doc, texto, contentW - 12, { tamano: 8.5 });
 
-        const tieneImagen = Boolean(section.imagen && section.imagen.startsWith('data:image/'));
+        // La imagen se reduce antes de incrustarla (una nota con foto de móvil
+        // podía hacer que el PDF pesara decenas de MB).
+        let imagenNota = null;
+        let formatoNota = 'JPEG';
+        if (section.imagen && (section.imagen.startsWith('data:image/') || section.imagen.startsWith('http'))) {
+          try {
+            const _r = await getImageDataAndDims(section.imagen, { maxDim: 1100, jpeg: true });
+            imagenNota = _r.dataURL;
+            formatoNota = _r.format || 'JPEG';
+          } catch (_) { imagenNota = null; }
+        }
+
+        const tieneImagen = Boolean(imagenNota);
         const altoImagen = tieneImagen ? 58 : 0;
-        const ext = tieneImagen ? (section.imagen.includes('data:image/png') ? 'PNG' : 'JPEG') : 'JPEG';
 
         let restantes = lineas;
         let primeraPagina = true;
@@ -1164,7 +1278,7 @@ export const exportFormToPDF = async (form, template, options = {}) => {
 
           if (imagenAqui) {
             try {
-              doc.addImage(section.imagen, ext, 13, currentY + 2, 80, 55);
+              doc.addImage(imagenNota, formatoNota, 13, currentY + 2, 80, 55);
             } catch (_) { /* imagen inválida: se ignora */ }
           }
 
@@ -1763,14 +1877,16 @@ const rows = tableData.map((row, rowIndex) => {
               let imageData = imageSource;
               let origW = 800;
               let origH = 600;
+              let imageFormat = 'PNG';
               if (imageSource.startsWith('http') || imageSource.startsWith('data:image')) {
                 try {
-                  const res = await getImageDataAndDims(imageSource);
+                  const res = await getImageDataAndDims(imageSource, { maxDim: 1400, jpeg: true });
                   imageData = res.dataURL;
                   origW = res.width || 800;
                   origH = res.height || 600;
+                  imageFormat = res.format || 'JPEG';
                 } catch (err) {
-                  imageData = await getBase64Image(imageSource);
+                  imageData = await getBase64Image(imageSource, 1400);
                 }
               }
 
@@ -1793,6 +1909,15 @@ const rows = tableData.map((row, rowIndex) => {
                 imgHeight = imgWidth / aspect;
               }
 
+              // Aprovechar el hueco que queda en la página: si la imagen no cabe
+              // entera se reduce (hasta 35 mm) en vez de saltar de hoja y dejar
+              // media página en blanco.
+              const espacioImagen = (pageH - 16) - (currentY + 4.5 + 5) - 0.5;
+              if (imgHeight > espacioImagen && espacioImagen >= 35) {
+                imgHeight = espacioImagen;
+                imgWidth = imgHeight * aspect;
+              }
+
               // Evaluar salto de página antes de imprimir el título para mantener título + imagen juntos
               if (currentY + imgHeight + 10 > pageH - 16) { 
                 doc.addPage(); 
@@ -1810,7 +1935,7 @@ const rows = tableData.map((row, rowIndex) => {
               doc.setDrawColor(210, 210, 210);
               doc.setLineWidth(0.3);
               doc.rect(12, currentY, imgWidth, imgHeight);
-              doc.addImage(imageData, 'PNG', 12, currentY, imgWidth, imgHeight);
+              doc.addImage(imageData, imageFormat, 12, currentY, imgWidth, imgHeight);
               currentY += imgHeight + 5;
               hasRendered = true;
             } catch (imgError) {
@@ -2211,6 +2336,11 @@ const rows = tableData.map((row, rowIndex) => {
     console.log('✅ PDF generado exitosamente:', fileName);
     
     // 7. Descargar o devolver bytes según options
+    if (options.returnDoc) {
+      // Diagnóstico: devuelve el documento jsPDF (sin descargarlo) para poder
+      // medir páginas y aprovechamiento de espacio durante pruebas.
+      return { success: true, fileName, doc };
+    }
     if (options.returnBytes) {
       return { success: true, fileName, pdfBytes: doc.output('arraybuffer') };
     }
