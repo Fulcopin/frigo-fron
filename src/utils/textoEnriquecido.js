@@ -318,3 +318,66 @@ export function aRichTextExcel(texto, fuente = { name: 'Calibri', size: 10 }) {
 
   return partes.length ? partes : [{ text: '', font: fuente }];
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+ *  Utilidades para HTML (impresión / ventanas emergentes)
+ * ══════════════════════════════════════════════════════════════════════ */
+
+const escaparHtml = (texto) =>
+  String(texto ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+/** Convierte el texto con marcas a HTML simple (para imprimir / documento nuevo). */
+export function aHtml(texto) {
+  const bloques = parsearTexto(texto);
+  let html = '';
+  let enLista = false;
+
+  const cerrarLista = () => {
+    if (enLista) {
+      html += '</ul>';
+      enLista = false;
+    }
+  };
+
+  for (const bloque of bloques) {
+    if (bloque.tipo === 'vacio') {
+      cerrarLista();
+      html += '<div style="height:6px"></div>';
+      continue;
+    }
+
+    if (bloque.tipo === 'vineta') {
+      if (!enLista) {
+        html += '<ul style="margin:2px 0 2px 18px;padding:0">';
+        enLista = true;
+      }
+      html += `<li>${bloque.tokens.map(htmlDeToken).join('')}</li>`;
+      continue;
+    }
+
+    cerrarLista();
+
+    if (bloque.tipo === 'titulo' || bloque.tipo === 'subtitulo' || bloque.tipo === 'subtitulo3') {
+      const tamano = bloque.tipo === 'titulo' ? 13 : bloque.tipo === 'subtitulo' ? 12 : 11;
+      html += `<div style="font-weight:800;font-size:${tamano}px;margin:4px 0 2px">${bloque.tokens.map(htmlDeToken).join('')}</div>`;
+      continue;
+    }
+
+    html += `<div>${bloque.tokens.map(htmlDeToken).join('')}</div>`;
+  }
+
+  cerrarLista();
+  return html;
+}
+
+function htmlDeToken(token) {
+  let html = escaparHtml(token.texto);
+  if (token.cursiva) html = `<em>${html}</em>`;
+  if (token.negrita) html = `<strong>${html}</strong>`;
+  if (token.subrayado) html = `<u>${html}</u>`;
+  return html;
+}

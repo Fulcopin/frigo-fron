@@ -14,6 +14,7 @@ import SelectorActividadesProceso from "../components/SelectorActividadesProceso
 import EditorOpciones from "../components/EditorOpciones";
 import EditorTextoEnriquecido from "../components/EditorTextoEnriquecido";
 import TextoEnriquecido from "../components/TextoEnriquecido";
+import { aHtml } from "../utils/textoEnriquecido";
 import { TIPOS_CAMPO_DETALLE, TIPOS_CON_OPCIONES } from "../utils/tiposCampoDetalle";
 
 const API_URL = `${API_BASE_URL}/Templates`;
@@ -447,7 +448,8 @@ function EditTemplate() {
     const headerHtml = hf.map(f => `<tr><td style="font-weight:600;width:200px;background:#f0f4ff;padding:8px;border:1px solid #ccc;">${f.label||''}</td><td style="padding:8px;border:1px solid #ccc;min-width:250px;">&nbsp;</td></tr>`).join('');
     const bodyHtml = be.map(el => {
       if (el.type==='table') { const cols=el.columns||[]; const hr=cols.map(c=>`<th style="padding:6px;border:1px solid #ccc;background:#e8eef6;font-size:11px;">${c.label||''}</th>`).join(''); const rows=Array.from({length:10},()=>cols.map(()=>`<td style="padding:6px;border:1px solid #ccc;"></td>`).join('')).map(r=>`<tr>${r}</tr>`).join(''); return `<div style="margin-top:16px;"><h3 style="font-size:13px;">${el.title||'Tabla'}</h3><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>${hr}</tr></thead><tbody>${rows}</tbody></table></div>`; }
-      if (el.type==='section') { const fields=(el.fields||[]).map(f=>`<tr><td style="font-weight:600;width:180px;background:#f9fafb;padding:6px;border:1px solid #ccc;font-size:11px;">${f.label||''}</td><td style="padding:6px;border:1px solid #ccc;">&nbsp;</td></tr>`).join(''); return `<div style="margin-top:16px;"><h3 style="font-size:13px;">${el.title||'Secci\u00f3n'}</h3><table style="width:100%;border-collapse:collapse;">${fields}</table></div>`; }
+      if (el.type==='section') { const fields=(el.fields||[]).map(f=>f.type==='nota'?`<tr><td colspan="2" style="padding:6px;border:1px solid #ccc;background:#fffbeb;font-size:11px;">${aHtml(f.staticContent||'')}</td></tr>`:`<tr><td style="font-weight:600;width:180px;background:#f9fafb;padding:6px;border:1px solid #ccc;font-size:11px;">${f.label||''}</td><td style="padding:6px;border:1px solid #ccc;">&nbsp;</td></tr>`).join(''); return `<div style="margin-top:16px;"><h3 style="font-size:13px;">${el.title||'Secci\u00f3n'}</h3><table style="width:100%;border-collapse:collapse;">${fields}</table></div>`; }
+      if (el.type==='nota_estatica') { return `<div style="margin-top:16px;border:1px solid #d97706;border-left:4px solid #d97706;background:#fffbeb;padding:10px;font-size:11px;line-height:1.5;">${aHtml(el.contenido||'')}${el.imagen?`<div style="margin-top:8px;"><img src="${el.imagen}" style="max-width:100%;"></div>`:''}</div>`; }
       return '';
     }).join('');
     const firmasHtml = fi.length>0 ? `<div style="margin-top:30px;display:flex;justify-content:space-around;flex-wrap:wrap;">${fi.map(f=>`<div style="text-align:center;min-width:150px;margin:10px;"><div style="border-bottom:1px solid #333;height:60px;margin-bottom:5px;"></div><div style="font-size:11px;font-weight:600;">${f.puesto||''}</div><div style="font-size:10px;color:#4b5563;">Fecha: __/__/____</div></div>`).join('')}</div>` : '';
@@ -3193,6 +3195,7 @@ function EditTemplate() {
                 <h3 style={{color:'#374151',fontSize:'14px',marginBottom:'8px'}}>{el.title||el.type}</h3>
                 {el.type==='table'&&(<table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}><thead><tr>{(el.columns||[]).map((c,j)=><th key={j} style={{padding:'6px',border:'1px solid #ccc',background:'#e8eef6'}}>{c.label}</th>)}</tr></thead><tbody>{Array.from({length:3},(_,r)=><tr key={r}>{(el.columns||[]).map((_,j)=><td key={j} style={{padding:'6px',border:'1px solid #ccc',color:'#d1d5db'}}>—</td>)}</tr>)}</tbody></table>)}
                 {el.type==='section'&&(<table style={{width:'100%',borderCollapse:'collapse'}}>{(el.fields||[]).map((f,j)=><tr key={j}><td style={{fontWeight:'600',background:'#f9fafb',padding:'6px',border:'1px solid #ccc',width:'180px',fontSize:'12px'}}>{f.label}</td><td style={{padding:'6px',border:'1px solid #ccc',color: '#6b7280',fontStyle:'italic',fontSize:'12px'}}>( vacío )</td></tr>)}</table>)}
+                {el.type==='nota_estatica'&&(<div style={{border:'1.5px solid #92400e',borderLeft:'5px solid #d97706',borderRadius:'4px',background:'#fffbeb',padding:'10px 14px'}}><TextoEnriquecido texto={el.contenido} style={{fontSize:'12px',lineHeight:1.6}} /></div>)}
               </div>
             ))}
             {(Array.isArray(template.firmas)?template.firmas:[]).length>0&&(
