@@ -333,10 +333,26 @@ const calculateSmartColumnWidths = (columns, rows, availableWidth, doc, fontSize
   const totalMin = colWidths.reduce((sum, c) => sum + c.minWidth, 0);
   
   if (totalMin >= availableWidth) {
-    // Ni los mínimos caben → distribuir proporcional a su minWidth (para no desperdiciar en columnas cortas)
+    // Ni los mínimos caben (ej.: tablas de 30+ columnas). Antes se forzaba un
+    // mínimo de 10 mm por columna y la tabla se salía por la derecha de la hoja.
+    // Ahora todo el ancho disponible se reparte en proporción a los mínimos.
+    const MIN_COL = Math.min(6, availableWidth / Math.max(colWidths.length, 1));
     const ratio = availableWidth / totalMin;
-    colWidths.forEach(c => {
-      result[c.index] = { cellWidth: Math.max(c.minWidth * ratio, 10) };
+    const anchos = colWidths.map(c => Math.max(c.minWidth * ratio, MIN_COL));
+
+    // Si el piso hizo crecer el total, se descuenta de las columnas más anchas
+    // para que la suma vuelva a ser exactamente el ancho disponible.
+    let total = anchos.reduce((sum, w) => sum + w, 0);
+    if (total > availableWidth) {
+      const sobra = total - availableWidth;
+      const flex = anchos.reduce((sum, w) => sum + Math.max(0, w - MIN_COL), 0);
+      for (let i = 0; i < anchos.length; i++) {
+        const margen = Math.max(0, anchos[i] - MIN_COL);
+        if (flex > 0) anchos[i] -= (margen / flex) * sobra;
+      }
+    }
+    colWidths.forEach((c, i) => {
+      result[c.index] = { cellWidth: anchos[i] };
     });
   } else {
     // Distribuir: cada col obtiene su mínimo + proporción del espacio restante
@@ -357,11 +373,13 @@ const calculateSmartColumnWidths = (columns, rows, availableWidth, doc, fontSize
 const drawFrigolabHeader = async (doc, templateData) => {
   const { codigo, nombre, version, fechaVersion, templateCreatedAt, headerData, createdAt } = templateData;
   
-  const headerH = 40;
+  const headerH = 30;
   const pageW = doc.internal.pageSize.getWidth();
   const marginL = 10;
   const marginR = 10;
   const contentW = pageW - marginL - marginR;
+  const logoSize = 20;
+  const logoY = 5 + (headerH - logoSize) / 2;
   
   // Borde exterior del encabezado
   doc.setDrawColor(0, 102, 153);
@@ -380,12 +398,12 @@ const drawFrigolabHeader = async (doc, templateData) => {
   // Logo (izquierda)
   try {
     const logoBase64 = await getBase64Image(logoUrl, 400);
-    doc.addImage(logoBase64, 'PNG', marginL + 4, 9, 26, 26);
+    doc.addImage(logoBase64, 'PNG', marginL + 4, logoY, logoSize, logoSize);
   } catch (error) {
     console.warn('⚠️ No se pudo cargar el logo:', error);
     doc.setDrawColor(180, 180, 180);
     doc.setLineWidth(0.3);
-    doc.rect(marginL + 4, 9, 26, 26);
+    doc.rect(marginL + 4, logoY, logoSize, logoSize);
   }
   
   // Título del formulario: en mayúsculas, centrado en la mitad central de la página.
@@ -400,7 +418,7 @@ const drawFrigolabHeader = async (doc, templateData) => {
 
   let titleFontSize = 10;
   let titleLines = [];
-  for (let size = 19; size >= 10; size -= 0.5) {
+  for (let size = 16; size >= 9.5; size -= 0.5) {
     doc.setFontSize(size);
     const lineas = doc.splitTextToSize(titulo, anchoMaxTitulo);
     const anchoMayor = lineas.reduce((max, l) => Math.max(max, doc.getTextWidth(l)), 0);
@@ -411,7 +429,7 @@ const drawFrigolabHeader = async (doc, templateData) => {
     }
   }
   if (!titleLines.length) {
-    doc.setFontSize(10);
+    doc.setFontSize(9.5);
     titleLines = doc.splitTextToSize(titulo, anchoMaxTitulo);
   }
 
@@ -488,6 +506,9 @@ const drawFrigolabHeader = async (doc, templateData) => {
   
   // Resetear color de texto
   doc.setTextColor(...COLORS.text);
+
+  // Alto total del encabezado: el contenido sigue justo debajo.
+  return 5 + headerH;
 };
 
 /**
@@ -1227,11 +1248,11 @@ export const exportFormToPDF = async (form, template, options = {}) => {
     
     // 1. Dibujar encabezado Frigolab
     console.log('🎨 Dibujando encabezado...');
-    await drawFrigolabHeader(doc, templateData);
+    const headerBottom = await drawFrigolabHeader(doc, templateData);
     
     // 2. Dibujar sección de header (Información General)
     console.log('📝 Dibujando información del encabezado...');
-    let currentY = drawHeaderSection(doc, templateData.headerData, 48, templateData);
+    let currentY = drawHeaderSection(doc, templateData.headerData, headerBottom + 2, templateData);
     
     // 3. Dibujar TODAS las secciones dinámicas del bodyElements
     console.log('📊 Dibujando secciones dinámicas del cuerpo...');
@@ -2522,8 +2543,8 @@ export const exportMultipleFormsToPDF = async (forms, templates) => {
       const bodyData = form.bodyData || [];
       const firmasData = form.firmasData || {};
       
-      await drawFrigolabHeader(doc, templateData);
-      let currentY = drawHeaderSection(doc, templateData.headerData, 60, templateData);
+      const headerBottom2 = await drawFrigolabHeader(doc, templateData);
+      let currentY = drawHeaderSection(doc, templateData.headerData, headerBottom2 + 2, templateData);
       
       const ptPgW = doc.internal.pageSize.getWidth();
       const ptContentW = ptPgW - 16;
