@@ -8,6 +8,7 @@ import AccordionSection from "../components/AccordionSection"
 import LoteSelectorAPI from "../components/LoteSelectorAPI"
 import SignatureUploader from "../components/SignatureUploader"
 import TextoEnriquecido from "../components/TextoEnriquecido"
+import TituloNota from "../components/TituloNota"
 import UserSelector from "../components/UserSelector"
 import ScrollButton from "../components/ScrollButton"
 import EspecieProductoSelector from "../components/EspecieProductoSelector"
@@ -10225,6 +10226,7 @@ useEffect(() => {
                 color: '#1c1917',
                 lineHeight: '1.6'
               }}>
+                <TituloNota title={element.title} />
                 {element.imagen && (
                   <img
                     src={element.imagen}

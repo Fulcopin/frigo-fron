@@ -13,6 +13,7 @@ import SelectorActividadesProceso from "../components/SelectorActividadesProceso
 import EditorOpciones from "../components/EditorOpciones";
 import EditorTextoEnriquecido from "../components/EditorTextoEnriquecido";
 import TextoEnriquecido from "../components/TextoEnriquecido";
+import TituloNota from "../components/TituloNota";
 import { TIPOS_CAMPO_DETALLE, TIPOS_CON_OPCIONES } from "../utils/tiposCampoDetalle";
 
 const API_URL = `${API_BASE_URL}/Templates`;
@@ -1186,6 +1187,7 @@ function CreateTemplate() {
                   <div>
                     <p style={{ margin: '0 0 4px', fontSize: '0.75rem', fontWeight: 600, color: '#78350f', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Vista previa:</p>
                     <div style={{ border: '1.5px solid #92400e', borderLeft: '5px solid #d97706', borderRadius: '4px', background: '#fffbeb', padding: '10px 14px', fontSize: '0.88rem', color: '#1c1917', lineHeight: '1.6' }}>
+                      <TituloNota title={element.title} />
                       {element.imagen && <img src={element.imagen} alt="img" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '4px', marginBottom: '8px', display: 'block' }} />}
                       <TextoEnriquecido texto={element.contenido} />
                     </div>

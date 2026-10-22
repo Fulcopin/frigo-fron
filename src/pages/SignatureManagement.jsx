@@ -6,6 +6,7 @@ import { descargarImagen } from '../utils/descargarImagen';
 import { urlImagen } from '../utils/urlImagen';
 import VisorImagen from '../components/VisorImagen';
 import TextoEnriquecido from '../components/TextoEnriquecido';
+import TituloNota from '../components/TituloNota';
 import authService from '../services/authService';
 import { Link, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../apiConfig';
@@ -1748,6 +1749,7 @@ export default function SignatureManagement() {
                           color: '#1c1917',
                           lineHeight: '1.6'
                         }}>
+                          <TituloNota title={templateElement.title} />
                           {templateElement.imagen && (
                             <img src={templateElement.imagen} alt="Nota" style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', marginBottom: '10px', display: 'block' }} />
                           )}

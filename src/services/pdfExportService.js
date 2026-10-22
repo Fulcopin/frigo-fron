@@ -14,7 +14,7 @@ import { PDFDocument } from 'pdf-lib';
 import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
 import { alinearBodyData } from '../utils/emparejarBodyData';
-import { construirLineasPDF, altoLineasPDF, dibujarLineasPDF } from '../utils/textoEnriquecido';
+import { construirLineasPDF, altoLineasPDF, dibujarLineasPDF, tituloVisibleNota } from '../utils/textoEnriquecido';
 import { urlImagen } from '../utils/urlImagen';
 import { columnasParaDibujar } from '../utils/columnasDelCuadro';
 
@@ -28,6 +28,22 @@ const sanitizeText = (text) => {
   // Mantener solo: ASCII imprimible (espacio a ~) y Latin-1 Supplement (¡ a ÿ) + saltos de linea/tab
   // eslint-disable-next-line no-control-regex
   return text.replace(/[^\x20-\x7E\xA0-\xFF\n\r\t]/g, '').trim();
+};
+
+/**
+ * Banda del título de una nota (elemento `nota_estatica`).
+ * Se dibuja aparte del texto: centrada, en mayúsculas y a 11 pt (el contenido va a 8.5).
+ */
+const TAMANO_TITULO_NOTA = 11;
+const LINEA_TITULO_NOTA = TAMANO_TITULO_NOTA * 1.15 * 0.3528; // mm
+
+const medirBandaTituloNota = (doc, section, anchoMax) => {
+  const titulo = sanitizeText(tituloVisibleNota(section?.title));
+  if (!titulo) return { titulo: '', lineas: [], alto: 0 };
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(TAMANO_TITULO_NOTA);
+  const lineas = doc.splitTextToSize(titulo, anchoMax);
+  return { titulo, lineas, alto: Math.max(9, lineas.length * LINEA_TITULO_NOTA + 4) };
 };
 
 /**
@@ -1279,6 +1295,13 @@ export const exportFormToPDF = async (form, template, options = {}) => {
         _minSpace = Math.max(_minSpace, _titleSpace + 20);
       }
 
+      // Las notas con título llevan una banda arriba: reservarla para que el
+      // título no quede solo al final de la página.
+      if (section.type === 'nota_estatica') {
+        const _banda = medirBandaTituloNota(doc, section, doc.internal.pageSize.getWidth() - 24);
+        if (_banda.alto > 0) _minSpace = Math.max(_minSpace, _banda.alto + 16);
+      }
+
       if (currentY + _minSpace > doc.internal.pageSize.getHeight() - 12) {
         doc.addPage();
         currentY = 20;
@@ -1290,6 +1313,34 @@ export const exportFormToPDF = async (form, template, options = {}) => {
         const pageH = doc.internal.pageSize.getHeight();
         const contentW = pageW - 16;
         const texto = section.contenido || '';
+
+        // Banda del título de la nota: centrada, en mayúsculas y más grande
+        // que el texto (11 pt contra 8.5 pt del contenido).
+        const bandaTitulo = medirBandaTituloNota(doc, section, contentW - 12);
+        if (bandaTitulo.alto > 0) {
+          if (currentY + bandaTitulo.alto + 20 > pageH - 12) {
+            doc.addPage();
+            currentY = 20;
+          }
+
+          doc.setFillColor(254, 243, 199);
+          doc.setDrawColor(217, 119, 6);
+          doc.setLineWidth(0.4);
+          doc.rect(8, currentY, contentW, bandaTitulo.alto, 'FD');
+          doc.setFillColor(217, 119, 6);
+          doc.rect(8, currentY, 2.5, bandaTitulo.alto, 'F');
+
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(TAMANO_TITULO_NOTA);
+          doc.setTextColor(120, 53, 15);
+          const yBaseTitulo = currentY + bandaTitulo.alto / 2 + 0.95
+            - ((bandaTitulo.lineas.length - 1) * LINEA_TITULO_NOTA) / 2;
+          doc.text(bandaTitulo.lineas, pageW / 2, yBaseTitulo, { align: 'center' });
+
+          currentY += bandaTitulo.alto;
+          doc.setDrawColor(217, 119, 6);
+          doc.setTextColor(28, 25, 23);
+        }
 
         // Líneas con negrita / cursiva / subrayado / títulos
         const lineas = construirLineasPDF(doc, texto, contentW - 12, { tamano: 8.5 });

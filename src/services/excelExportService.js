@@ -16,7 +16,7 @@ import logoUrl from '../assets/logo-1.png';
 import { evaluarFormula, buildGroupedRowAlias, buildComputedRow, mergeCrossTableRow } from '../utils/formulaEngine';
 import { comoNumero } from '../utils/numeroParaExcel';
 import { alinearBodyData } from '../utils/emparejarBodyData';
-import { aRichTextExcel } from '../utils/textoEnriquecido';
+import { aRichTextExcel, tituloVisibleNota } from '../utils/textoEnriquecido';
 import { columnasParaDibujar } from '../utils/columnasDelCuadro';
 
 /**
@@ -507,6 +507,26 @@ const createBodyTable = async (worksheet, bodyData, bodyElements, startRow, temp
       const texto = section.contenido || '';
       const lineas = String(texto).split('\n');
       const fuenteBase = { name: 'Calibri', size: 10, color: { argb: '1C1917' } };
+
+      // Encabezado de la nota: centrado, en mayúsculas y más grande (igual que en el PDF).
+      const tituloNota = tituloVisibleNota(section.title);
+      if (tituloNota) {
+        safeMergeCells(worksheet, currentRow, 1, currentRow, maxCols);
+        const tituloCell = worksheet.getCell(currentRow, 1);
+        tituloCell.value = tituloNota;
+        tituloCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: '78350F' } };
+        tituloCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FEF3C7' } };
+        tituloCell.border = {
+          top: { style: 'thin', color: { argb: 'D97706' } },
+          left: { style: 'medium', color: { argb: 'D97706' } },
+          right: { style: 'thin', color: { argb: 'D97706' } },
+          bottom: { style: 'thin', color: { argb: 'D97706' } },
+        };
+        tituloCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        worksheet.getRow(currentRow).height = 24;
+        currentRow++;
+      }
+
       for (const line of lineas) {
         if (!line.trim()) continue;
         // Conserva negrita / cursiva / subrayado dentro de la celda

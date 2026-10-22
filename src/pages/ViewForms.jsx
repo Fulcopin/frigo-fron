@@ -10,6 +10,7 @@ import VersionIndicator from "../components/VersionIndicator"
 import ScrollButton from "../components/ScrollButton"
 import SignatureUploader from "../components/SignatureUploader"
 import TextoEnriquecido from "../components/TextoEnriquecido"
+import TituloNota from "../components/TituloNota"
 import { loadFormWithVersionInfo, updateFilledForm } from "../utils/filledFormsUtils"
 import { exportFormToPDF } from "../services/pdfExportService"
 import { exportFormToExcel } from "../services/excelExportService"
@@ -1851,6 +1852,7 @@ function ViewForms() {
                   color: '#1c1917',
                   lineHeight: '1.6'
                 }}>
+                  <TituloNota title={templateElement.title} />
                   {templateElement.imagen && (
                     <img src={templateElement.imagen} alt="Imagen de la nota" style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', marginBottom: '10px', display: 'block' }} />
                   )}

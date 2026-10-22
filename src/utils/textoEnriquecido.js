@@ -141,6 +141,19 @@ export function limpiarParaPDF(texto) {
   return String(texto ?? '').replace(RE_PDF_VALIDOS, '');
 }
 
+/**
+ * Título visible de una nota (`elemento.title`), listo para mostrarse como
+ * encabezado: quita el prefijo de agrupación ("DECLARACIONES - ...") y lo
+ * deja en mayúsculas. Devuelve '' si la nota no tiene título.
+ */
+export function tituloVisibleNota(title) {
+  let texto = String(title ?? '').trim();
+  if (!texto) return '';
+  const agrupado = /^(declaraciones?|notas?)\s*[-–—:]\s*(.+)$/i.exec(texto);
+  if (agrupado && agrupado[2].trim()) texto = agrupado[2].trim();
+  return texto.toUpperCase();
+}
+
 const estiloPDF = (token) => {
   if (token.negrita && token.cursiva) return 'bolditalic';
   if (token.negrita) return 'bold';
