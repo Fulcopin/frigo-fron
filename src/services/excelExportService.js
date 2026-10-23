@@ -18,6 +18,7 @@ import { comoNumero } from '../utils/numeroParaExcel';
 import { alinearBodyData } from '../utils/emparejarBodyData';
 import { aRichTextExcel, tituloVisibleNota } from '../utils/textoEnriquecido';
 import { columnasParaDibujar } from '../utils/columnasDelCuadro';
+import { API_BASE_URL } from '../apiConfig';
 
 /**
  * 🎨 PALETA DE COLORES CORPORATIVOS FRIGOLAB
@@ -1417,6 +1418,118 @@ const createSignaturesSection = async (worksheet, firmasData, startRow, maxCols 
 };
 
 /**
+ * 📝 Trae el historial de cambios (registro de modificaciones) de la plantilla.
+ * Nunca lanza error: si el servidor no responde, la exportación sigue igual.
+ */
+const fetchTemplateChangelog = async (templateId) => {
+  if (!templateId) return [];
+  try {
+    const response = await fetch(`${API_BASE_URL}/Templates/${templateId}/changelog`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    const arr = Array.isArray(data) ? data : (data?.$values || []);
+    return arr.map(e => ({
+      fecha: e.fecha || e.Fecha || '',
+      version: e.version ?? e.Version ?? '',
+      cambio: e.cambioRealizado || e.CambioRealizado || ''
+    })).filter(e => e.fecha || e.cambio);
+  } catch (error) {
+    console.warn('⚠️ No se pudo cargar el historial de cambios para el Excel:', error?.message || error);
+    return [];
+  }
+};
+
+/**
+ * 📋 Dibuja al final de la hoja el cuadro de registro de cambios:
+ *    FECHA | VERSIÓN | MODIFICACIÓN
+ * Se muestra siempre (aunque no haya registros) para que el Excel quede completo.
+ */
+const createChangeLogSection = (worksheet, entries, startRow, maxCols = 8) => {
+  let currentRow = startRow;
+  const totalCols = Math.max(3, maxCols);
+
+  // Reparto proporcional de las 3 columnas del registro
+  const fechaCols = Math.max(1, Math.round(totalCols * 0.18));
+  const versionCols = Math.max(1, Math.round(totalCols * 0.14));
+  const fechaEnd = fechaCols;
+  const versionStart = fechaEnd + 1;
+  const versionEnd = Math.min(totalCols - 1, versionStart + versionCols - 1);
+  const cambioStart = versionEnd + 1;
+
+  // Título de la sección
+  safeMergeCells(worksheet, currentRow, 1, currentRow, totalCols);
+  const titleCell = worksheet.getCell(currentRow, 1);
+  titleCell.value = '  HISTORIAL DE CAMBIOS Y/O MODIFICACIONES';
+  applySectionTitleStyle(titleCell);
+  worksheet.getRow(currentRow).height = 26;
+  currentRow++;
+
+  // Encabezados
+  safeMergeCells(worksheet, currentRow, 1, currentRow, fechaEnd);
+  safeMergeCells(worksheet, currentRow, versionStart, currentRow, versionEnd);
+  safeMergeCells(worksheet, currentRow, cambioStart, currentRow, totalCols);
+
+  const setHeader = (col, text) => {
+    const cell = worksheet.getCell(currentRow, col);
+    cell.value = text;
+    applyHeaderStyle(cell);
+  };
+  setHeader(1, 'FECHA');
+  setHeader(versionStart, 'VERSIÓN');
+  setHeader(cambioStart, 'MODIFICACIÓN');
+  worksheet.getRow(currentRow).height = 20;
+  currentRow++;
+
+  const formatearFecha = (valor) => {
+    if (!valor) return '';
+    const soloFecha = String(valor).split('T')[0];
+    const partes = soloFecha.split('-');
+    if (partes.length === 3) return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    return soloFecha;
+  };
+
+  // Si no hay registros, igual se deja el cuadro con una fila informativa
+  const sinRegistros = !entries || entries.length === 0;
+  const filas = sinRegistros
+    ? [{ fecha: '', version: '', cambio: 'Sin registros de cambios' }]
+    : entries;
+
+  filas.forEach((entry, index) => {
+    const alterno = index % 2 === 1;
+
+    safeMergeCells(worksheet, currentRow, 1, currentRow, fechaEnd);
+    safeMergeCells(worksheet, currentRow, versionStart, currentRow, versionEnd);
+    safeMergeCells(worksheet, currentRow, cambioStart, currentRow, totalCols);
+
+    const cFecha = worksheet.getCell(currentRow, 1);
+    cFecha.value = formatearFecha(entry.fecha);
+    applyCellStyle(cFecha, alterno);
+    cFecha.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+    const cVersion = worksheet.getCell(currentRow, versionStart);
+    cVersion.value = entry.version !== undefined && entry.version !== null && entry.version !== ''
+      ? String(entry.version)
+      : '';
+    applyCellStyle(cVersion, alterno);
+    cVersion.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+    const cCambio = worksheet.getCell(currentRow, cambioStart);
+    cCambio.value = String(entry.cambio || '').replace(/^\[Auto\]\s*/i, '');
+    applyCellStyle(cCambio, alterno);
+    if (sinRegistros) cCambio.font = { ...cCambio.font, italic: true };
+    cCambio.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true, indent: 1 };
+
+    // Alto según el largo del texto (≈ 14 caracteres por columna)
+    const anchoTexto = 14 * Math.max(1, totalCols - (fechaCols + versionCols));
+    const lineas = Math.max(1, Math.ceil(String(cCambio.value || '').length / Math.max(anchoTexto, 20)));
+    worksheet.getRow(currentRow).height = Math.max(18, lineas * 15);
+    currentRow++;
+  });
+
+  return currentRow;
+};
+
+/**
  * 🎯 FUNCIÓN PRINCIPAL: Exportar formulario a Excel
  */
 export const exportFormToExcel = async (form, template) => {
@@ -1526,9 +1639,22 @@ export const exportFormToExcel = async (form, template) => {
     }
     
     // 5. Crear sección de firmas
-    await createSignaturesSection(worksheet, firmasData, currentRow, maxCols);
+    const finFirmas = await createSignaturesSection(worksheet, firmasData, currentRow, maxCols);
+    if (typeof finFirmas === 'number' && !isNaN(finFirmas)) currentRow = finFirmas;
     
-    // 6. Generar buffer y descargar
+    // 6. Registro de cambios de la plantilla, al final del documento
+    const idPlantilla = template?.templateID || template?.id || form.templateID || form.templateId || form.TemplateID;
+    const cambiosPlantilla = await fetchTemplateChangelog(idPlantilla);
+    // Se muestran los registros manuales; si no hay, el historial automático.
+    const cambiosManuales = cambiosPlantilla.filter(c => !/^\[Auto\]/i.test(String(c.cambio || '')));
+    currentRow = createChangeLogSection(
+      worksheet,
+      cambiosManuales.length > 0 ? cambiosManuales : cambiosPlantilla,
+      currentRow + 2,
+      maxCols
+    );
+    
+    // 7. Generar buffer y descargar
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `${templateData.codigo}_${new Date(form.createdAt || Date.now()).toISOString().split('T')[0]}_Form${form.formID || ''}.xlsx`;
     
