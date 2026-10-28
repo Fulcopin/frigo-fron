@@ -17,11 +17,12 @@
  * "Solo PD" permite ver todos los formularios si hace falta.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_BASE_URL } from '../apiConfig';
 import { useAuth } from '../contexts/AuthContext';
+import authService from '../services/authService';
+import { fetchUsers } from '../services/userService';
 import { fechaInternaDeFormulario } from '../utils/fechaFormulario';
-import { ordenarFormularios } from '../utils/ordenFormularios';
 import './BorradoresPendientes.css';
 
 // Costos es la usuaria del aviso; admin y supervisor lo ven para poder ayudar.
@@ -93,6 +94,32 @@ export default function BorradoresPendientes() {
   // debe pisar a la nueva.
   const ultimaPeticion = useRef(0);
 
+  // userName/email → nombre completo, para que el aviso diga "Grace Mora" y no
+  // "Gmora". Si la API de usuarios no responde, se muestra el usuario y listo.
+  const [nombres, setNombres] = useState({});
+
+  useEffect(() => {
+    if (!puedeVer) return undefined;
+    let vivo = true;
+    (async () => {
+      try {
+        const usuarios = await fetchUsers(authService.getToken());
+        if (!vivo) return;
+        const mapa = {};
+        (usuarios || []).forEach((u) => {
+          const nombre = u.nombreCompleto || u.nombre || '';
+          if (!nombre) return;
+          if (u.userName) mapa[String(u.userName).toLowerCase()] = nombre;
+          if (u.email) mapa[String(u.email).toLowerCase()] = nombre;
+        });
+        setNombres(mapa);
+      } catch {
+        // Sin nombres: el aviso sigue funcionando con el usuario.
+      }
+    })();
+    return () => { vivo = false; };
+  }, [puedeVer]);
+
   const cargar = useCallback(async ({ silencioso = false } = {}) => {
     if (!puedeVer) return;
     if (!silencioso) setCargando(true);
@@ -146,11 +173,32 @@ export default function BorradoresPendientes() {
 
   if (!puedeVer) return null;
 
-  const filas = ordenarFormularios(
-    borradores,
-    (d) => d.templateCodigo ?? d.TemplateCodigo,
-    (d) => d.templateName ?? d.TemplateName,
-  );
+  // Un formulario puede tener varios borradores repetidos (se abre, se cierra y
+  // se vuelve a abrir). Para el aviso vale uno solo: el más reciente de cada
+  // formulario + responsable + fecha de encabezado. Los que no tienen fecha no
+  // se juntan, porque podrían ser documentos distintos.
+  const filas = useMemo(() => {
+    const porClave = new Map();
+    for (const d of borradores) {
+      const fecha = fechaInternaDeFormulario(d);
+      const clave = fecha
+        ? `${d.templateCodigo}|${String(d.userName || '').toLowerCase()}|${fecha}`
+        : `sin-fecha|${d.draftID}`;
+      const previo = porClave.get(clave);
+      if (!previo || new Date(d.updatedAt || 0) > new Date(previo.updatedAt || 0)) {
+        porClave.set(clave, { ...d, fecha });
+      }
+    }
+
+    return [...porClave.values()].sort((a, b) => {
+      // Primero lo más reciente (es lo que se necesita para el reporte de hoy).
+      if (a.fecha && b.fecha && a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
+      if (a.fecha && !b.fecha) return -1;
+      if (!a.fecha && b.fecha) return 1;
+      const porCodigo = String(a.templateCodigo || '').localeCompare(String(b.templateCodigo || ''));
+      return porCodigo !== 0 ? porCodigo : String(a.userName || '').localeCompare(String(b.userName || ''));
+    });
+  }, [borradores]);
   const total = filas.length;
 
   return (
@@ -232,10 +280,13 @@ export default function BorradoresPendientes() {
                     const id = d.draftID ?? d.DraftID;
                     const codigo = d.templateCodigo ?? d.TemplateCodigo ?? '';
                     const nombre = d.templateName ?? d.TemplateName ?? '';
-                    const fecha = fechaInternaDeFormulario(d);
-                    const responsable = d.userName || d.UserName
-                      || d.userEmail || d.UserEmail
-                      || 'Sin usuario';
+                    const fecha = d.fecha;
+                    const usuario = d.userName || d.UserName || '';
+                    const email = d.userEmail || d.UserEmail || '';
+                    const nombreCompleto = nombres[String(usuario).toLowerCase()]
+                      || nombres[String(email).toLowerCase()]
+                      || '';
+                    const responsable = nombreCompleto || usuario || email || 'Sin usuario';
                     const progreso = Number(d.progress ?? d.Progress ?? 0);
                     const actualizado = d.updatedAt ?? d.UpdatedAt;
 
@@ -264,6 +315,7 @@ export default function BorradoresPendientes() {
                         <td>
                           <span className="borradores-responsable">{responsable}</span>
                           <span className="borradores-detalle">
+                            {nombreCompleto && usuario ? `${usuario} · ` : ''}
                             {progreso > 0 ? `${progreso}% llenado` : 'Recién empezado'}
                             {actualizado ? ` · ${hace(actualizado)}` : ''}
                           </span>

@@ -121,7 +121,17 @@
 
 .borradores-tabla-wrap {
   margin-top: 0.75rem;
-  overflow-x: auto;
+  /* Se mantiene como ventanita: si hay muchos borradores, la lista se desplaza
+     y el encabezado queda fijo. */
+  max-height: 17.5rem;
+  overflow: auto;
+}
+
+.borradores-tabla thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface, #ffffff);
 }
 
 .borradores-tabla {
