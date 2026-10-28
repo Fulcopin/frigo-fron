@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import personalService from '../services/personalService';
+import BorradoresPendientes from '../components/BorradoresPendientes';
 import { exportarPersonalExcel } from '../services/personalExcelService';
 import { ordenarFormularios, etiquetaFormulario } from '../utils/ordenFormularios';
 import {
@@ -248,6 +249,10 @@ export default function PersonalDashboard() {
         </p>
         <Link to="/registro-personal" className="pd-link-btn">➕ Registro manual de Personal</Link>
       </div>
+
+      {/* 📝 Aviso de Costos: formularios que siguen en borrador (solo PD por defecto).
+          El componente se oculta solo si el rol no corresponde. */}
+      <BorradoresPendientes />
 
       <div className="pd-filtros">
         <div className="pd-campo">

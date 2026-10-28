@@ -3,6 +3,7 @@
 import { useNavigate } from "react-router-dom"
 import ScrollButton from "../components/ScrollButton"
 import NovedadesInicio from "../components/NovedadesInicio"
+import BorradoresPendientes from "../components/BorradoresPendientes"
 import "./Home.css"
 
 // La pantalla quedó solo con los accesos principales. Con las tarjetas de
@@ -19,6 +20,10 @@ function Home() {
         <h1>🏠 Panel de Control - Frigolab</h1>
         <p>Elegí a dónde querés ir</p>
       </div>
+
+      {/* 📝 Aviso para Costos: formularios que siguen en borrador. Solo lo
+          ven costos, admin y supervisor (el componente se oculta solo). */}
+      <BorradoresPendientes />
 
       {/* 📢 Novedades de la administración (el admin publica desde aquí) */}
       <NovedadesInicio />
