@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import ExcelJS from 'exceljs';
 import consumptionService from '../services/consumptionService';
 import { Link } from 'react-router-dom';
 import './ConsumptionDashboard.css';
@@ -114,34 +115,199 @@ export default function ConsumptionDashboard() {
     return Object.values(selectedSections).filter(Boolean).length;
   };
 
-  const handleExportSelected = () => {
+  // Descarga un archivo sin usar data: URIs. Con 3.500+ filas el enlace
+  // data:text/csv supera el límite del navegador (~2 MB) y el click no hacía
+  // nada: por eso "no dejaba exportar".
+  const descargarArchivo = (blob, nombre) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = nombre;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  };
+
+  const nombreArchivo = (ext) => {
+    const rango = filters.startDate && filters.endDate
+      ? `${filters.startDate}_al_${filters.endDate}`
+      : (filters.startDate || filters.endDate || new Date().toISOString().slice(0, 10));
+    return `Resumen_Consumos_Insumos_${rango}.${ext}`;
+  };
+
+  const fechaDe = (valor) => {
+    const d = new Date(valor);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  const handleExportSelected = async () => {
     if (consolidatedInsumos.length === 0) {
       alert('⚠️ No hay datos para exportar en este resumen');
       return;
     }
 
+    setExporting(true);
     try {
-      setExporting(true);
-      // Basic CSV export
-      let csvContent = "data:text/csv;charset=utf-8,";
-      csvContent += "# FORM,CÓDIGO DEL FORMULARIO,FECHA REGISTRADA,FORMULARIO,DESTINO,CREADO POR,CÓDIGO,INSUMO,CANTIDAD,UNIDAD DE MEDIDA\n";
-      consolidatedInsumos.forEach(row => {
-        const fecha = new Date(row.createdAt).toLocaleDateString('es-ES');
-        const rowStr = `"${row.formID}","${row.templateCode}","${fecha}","${row.templateName}","${row.destino || ''}","${row.filledBy}","${row.codigo || ''}","${row.producto}",${row.cantidad},"${row.unidad}"`;
-        csvContent += rowStr + "\r\n";
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Frigolab Docs';
+      wb.created = new Date();
+
+      // ── Hoja 1: detalle, igual que la tabla de la pantalla ──
+      const ws = wb.addWorksheet('Resumen', { views: [{ state: 'frozen', ySplit: 4 }] });
+
+      ws.mergeCells('A1:K1');
+      const titulo = ws.getCell('A1');
+      titulo.value = 'RESUMEN GENERAL DE INSUMOS Y MATERIALES';
+      titulo.font = { bold: true, size: 14, color: { argb: 'FF024A73' } };
+      titulo.alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getRow(1).height = 24;
+
+      ws.mergeCells('A2:K2');
+      const subtitulo = ws.getCell('A2');
+      subtitulo.value =
+        `Desde ${filters.startDate || '—'} hasta ${filters.endDate || '—'}   ·   ` +
+        `${consolidatedInsumos.length} registros   ·   Generado ${new Date().toLocaleString('es-EC')}`;
+      subtitulo.font = { size: 10, color: { argb: 'FF6B7280' } };
+      subtitulo.alignment = { horizontal: 'center' };
+
+      ws.addRow([]);
+      const headers = [
+        '#', '# FORM', 'CÓDIGO DEL FORMULARIO', 'FECHA REGISTRADA', 'FORMULARIO',
+        'DESTINO', 'CREADO POR', 'CÓDIGO', 'INSUMO', 'CANTIDAD', 'UNIDAD DE MEDIDA',
+      ];
+      const headerRow = ws.addRow(headers);
+      headerRow.height = 28;
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF024A73' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       });
-      
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `Resumen_Consumos_Insumos_${filters.startDate}_al_${filters.endDate}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
+
+      consolidatedInsumos.forEach((row, i) => {
+        const fecha = fechaDe(row.createdAt);
+        const fila = ws.addRow([
+          i + 1,
+          row.formID,
+          row.templateCode,
+          fecha || '',
+          row.templateName,
+          row.destino || '',
+          row.filledBy || '',
+          row.codigo || '',
+          row.producto,
+          Number(row.cantidad) || 0,
+          row.unidad || '',
+        ]);
+        if (fecha) fila.getCell(4).numFmt = 'dd/mm/yyyy';
+        fila.getCell(10).numFmt = '#,##0.00';
+        fila.getCell(4).alignment = { horizontal: 'center' };
+        fila.getCell(10).alignment = { horizontal: 'right' };
+      });
+
+      ws.columns = [
+        { width: 6 }, { width: 8 }, { width: 20 }, { width: 14 }, { width: 42 },
+        { width: 14 }, { width: 20 }, { width: 18 }, { width: 42 }, { width: 12 }, { width: 14 },
+      ];
+      ws.autoFilter = {
+        from: { row: headerRow.number, column: 1 },
+        to: { row: headerRow.number + consolidatedInsumos.length, column: 11 },
+      };
+
+      // ── Hoja 2: totales por insumo (lo que Costos suma a mano) ──
+      const agrupado = new Map();
+      consolidatedInsumos.forEach((row) => {
+        const clave = `${row.codigo || ''}|${row.producto}|${row.unidad || ''}`.toLowerCase();
+        if (!agrupado.has(clave)) {
+          agrupado.set(clave, {
+            codigo: row.codigo || '',
+            insumo: row.producto,
+            unidad: row.unidad || '',
+            cantidad: 0,
+            registros: 0,
+          });
+        }
+        const item = agrupado.get(clave);
+        item.cantidad += Number(row.cantidad) || 0;
+        item.registros += 1;
+      });
+
+      const ws2 = wb.addWorksheet('Totales por insumo');
+      ws2.mergeCells('A1:E1');
+      const t2 = ws2.getCell('A1');
+      t2.value = 'TOTALES POR INSUMO';
+      t2.font = { bold: true, size: 14, color: { argb: 'FF024A73' } };
+      t2.alignment = { horizontal: 'center' };
+      ws2.addRow([]);
+      const header2 = ws2.addRow(['CÓDIGO', 'INSUMO', 'UNIDAD DE MEDIDA', 'CANTIDAD TOTAL', 'REGISTROS']);
+      header2.eachCell((cell) => {
+        cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF024A73' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+
+      [...agrupado.values()]
+        .sort((a, b) => a.insumo.localeCompare(b.insumo, 'es'))
+        .forEach((item) => {
+          const fila = ws2.addRow([item.codigo, item.insumo, item.unidad, item.cantidad, item.registros]);
+          fila.getCell(4).numFmt = '#,##0.00';
+        });
+
+      ws2.columns = [{ width: 20 }, { width: 48 }, { width: 16 }, { width: 16 }, { width: 12 }];
+      ws2.views = [{ state: 'frozen', ySplit: 3 }];
+
+      const buffer = await wb.xlsx.writeBuffer();
+      descargarArchivo(
+        new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+        nombreArchivo('xlsx')
+      );
     } catch (error) {
-      console.error('Error al exportar:', error);
-      alert('❌ Error al exportar: ' + error.message);
+      console.error('Error al exportar a Excel:', error);
+      alert('❌ Error al exportar a Excel: ' + error.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportCsv = () => {
+    if (consolidatedInsumos.length === 0) {
+      alert('⚠️ No hay datos para exportar en este resumen');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const escapar = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lineas = [
+        ['#', '# FORM', 'CÓDIGO DEL FORMULARIO', 'FECHA REGISTRADA', 'FORMULARIO',
+          'DESTINO', 'CREADO POR', 'CÓDIGO', 'INSUMO', 'CANTIDAD', 'UNIDAD DE MEDIDA']
+          .map(escapar).join(','),
+      ];
+      consolidatedInsumos.forEach((row, i) => {
+        const fecha = fechaDe(row.createdAt);
+        lineas.push([
+          i + 1,
+          row.formID,
+          row.templateCode,
+          fecha ? fecha.toLocaleDateString('es-EC') : '',
+          row.templateName,
+          row.destino || '',
+          row.filledBy || '',
+          row.codigo || '',
+          row.producto,
+          Number(row.cantidad) || 0,
+          row.unidad || '',
+        ].map(escapar).join(','));
+      });
+
+      // BOM para que Excel abra bien las tildes.
+      const blob = new Blob(['\uFEFF' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+      descargarArchivo(blob, nombreArchivo('csv'));
+    } catch (error) {
+      console.error('Error al exportar CSV:', error);
+      alert('❌ Error al exportar CSV: ' + error.message);
     } finally {
       setExporting(false);
     }
@@ -246,8 +412,21 @@ export default function ConsumptionDashboard() {
               opacity: consolidatedInsumos.length === 0 ? 0.5 : 1,
               cursor: consolidatedInsumos.length === 0 ? 'not-allowed' : 'pointer',
             }}
+            title="Descarga un .xlsx con el detalle y los totales por insumo"
           >
-            {exporting ? '⏳ Exportando...' : `📥 Exportar Resumen a CSV`}
+            {exporting ? '⏳ Exportando...' : `📥 Exportar a Excel`}
+          </button>
+          <button
+            onClick={handleExportCsv}
+            disabled={exporting || consolidatedInsumos.length === 0}
+            className="btn-secondary"
+            style={{
+              opacity: consolidatedInsumos.length === 0 ? 0.5 : 1,
+              cursor: consolidatedInsumos.length === 0 ? 'not-allowed' : 'pointer',
+            }}
+            title="Descarga el mismo resumen en CSV"
+          >
+            📄 CSV
           </button>
           <Link to="/" className="btn-secondary">
             ← Volver al Inicio
