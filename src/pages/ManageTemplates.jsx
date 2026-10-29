@@ -10,6 +10,12 @@ import alertService from "../services/alertService";
 import { fetchUsers } from "../services/userService";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 
+// El servidor pasó a guardar la descripción como nvarchar(max). El tope de acá
+// es solo para que nadie pegue un documento entero sin querer.
+const MAX_CAMBIO_CHARS = 4000;
+// Lo que aguanta la versión del API que todavía tiene la columna en 1000.
+const LIMITE_API_VIEJO = 1000;
+
 function ManageTemplates() {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -306,6 +312,10 @@ function ManageTemplates() {
       alert('Por favor completa la fecha y el cambio realizado.');
       return;
     }
+    if (newHistoryCambio.trim().length > MAX_CAMBIO_CHARS) {
+      alert(`El cambio realizado no puede superar los ${MAX_CAMBIO_CHARS} caracteres.`);
+      return;
+    }
     const optimisticEntry = {
       id: Date.now(), // temporal hasta recargar
       fecha: newHistoryFecha.trim(),
@@ -320,10 +330,15 @@ function ManageTemplates() {
         body: JSON.stringify({
           fecha: newHistoryFecha.trim(),
           version: optimisticEntry.version,
-          cambioRealizado: newHistoryCambio.trim()
+          cambioRealizado: optimisticEntry.cambioRealizado
         })
       });
-      if (!response.ok) throw new Error(`Error ${response.status} al guardar`);
+      if (!response.ok) {
+        // Mostrar el motivo real del servidor en vez de un "Error 500" pelado.
+        let detalle = '';
+        try { detalle = (await response.text()).slice(0, 300); } catch { /* sin cuerpo */ }
+        throw new Error(`Error ${response.status} al guardar${detalle ? ` — ${detalle}` : ''}`);
+      }
       setNewHistoryFecha('');
       setNewHistoryCambio('');
       setNewHistoryVersion(manualHistoryTemplate.version || '');
@@ -343,7 +358,22 @@ function ManageTemplates() {
         }
       }
     } catch (err) {
-      alert('Error guardando el registro: ' + err.message);
+      // "Failed to fetch" no dice nada: casi siempre es el servidor cortando la
+      // conexión (texto demasiado largo para la columna) o el API caído.
+      const esFalloDeRed = err instanceof TypeError
+        || /Failed to fetch|NetworkError|Load failed/i.test(err?.message || '');
+      if (esFalloDeRed) {
+        const largo = newHistoryCambio.trim().length > LIMITE_API_VIEJO;
+        alert(
+          'No se pudo guardar el registro: el servidor no respondió.\n\n'
+          + (largo
+            ? `El texto tiene ${newHistoryCambio.trim().length} caracteres y este servidor guarda hasta ${LIMITE_API_VIEJO}. `
+              + 'Acortá el texto o pedí que apliquen la actualización del backend (columna CambioRealizado a nvarchar(max)).'
+            : 'Verificá que el servidor esté activo y volvé a intentar.')
+        );
+      } else {
+        alert('Error guardando el registro: ' + err.message);
+      }
     } finally {
       setSavingHistoryEntry(false);
     }
@@ -608,7 +638,23 @@ function ManageTemplates() {
                     onChange={(e) => setNewHistoryCambio(e.target.value)}
                     placeholder="Describe qué se modificó..."
                     rows={3}
+                    maxLength={MAX_CAMBIO_CHARS}
+                    style={{ resize: 'vertical' }}
                   />
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', gap: '8px',
+                    marginTop: '3px', fontSize: '11px',
+                    color: newHistoryCambio.length > LIMITE_API_VIEJO ? '#b45309' : '#6b7280'
+                  }}>
+                    <span>
+                      {newHistoryCambio.length > LIMITE_API_VIEJO
+                        ? `⚠️ Si el servidor todavía no está actualizado, guarda hasta ${LIMITE_API_VIEJO}.`
+                        : 'Podés escribir varias líneas.'}
+                    </span>
+                    <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                      {newHistoryCambio.length} / {MAX_CAMBIO_CHARS}
+                    </span>
+                  </div>
                 </div>
                 <div className="mh-field">
                   <label>Versión</label>

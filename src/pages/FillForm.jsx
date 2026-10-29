@@ -4476,49 +4476,76 @@ useEffect(() => {
     }
   };
 
+  /**
+   * Vuelve a una pestaña que quedó abierta mientras se estaba en el selector
+   * de plantillas (después de "Cambiar Plantilla" o "Nueva Pestaña").
+   */
+  const volverAPestana = (index) => {
+    const tab = openTabs[index];
+    if (!tab) return;
+
+    if (index === activeTabIndex) {
+      // Es la misma pestaña que se estaba llenando: solo hay que volver a
+      // mostrarla con lo que tenía.
+      setSelectedTemplate(tab.template);
+      setHeaderData(tab.headerData || {});
+      setBodyData(tab.bodyData || []);
+      setFirmasData(tab.firmasData || {});
+      setLotesConfirmados(tab.lotesConfirmados || false);
+      setSelectedLotes(tab.selectedLotes || []);
+      setCurrentDraftId(tab.draftId || null);
+      return;
+    }
+
+    switchToTab(index);
+  };
+
   const handleChangeTemplate = () => {
-    handleSafeExit(() => {
-      if (openTabs.length > 1) {
-        // Si hay más de una pestaña, solo cerrar la pestaña actual
-        // y navegar a la selección de plantilla para abrir una nueva
-        const indexToRemove = activeTabIndex;
-        setOpenTabs(prev => {
-          const newTabs = prev.filter((_, i) => i !== indexToRemove);
-          const nextIndex = Math.max(0, indexToRemove - 1);
-          const nextTab = newTabs[nextIndex];
-          
-          if (nextTab) {
-            setActiveTabIndex(nextIndex);
-            setSelectedTemplate(nextTab.template);
-            setHeaderData(nextTab.headerData || {});
-            setBodyData(nextTab.bodyData || []);
-            setFirmasData(nextTab.firmasData || {});
-            setLotesConfirmados(nextTab.lotesConfirmados || false);
-            setSelectedLotes(nextTab.selectedLotes || []);
-            setCurrentDraftId(nextTab.draftId || null);
-          }
-          
-          localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
-            tabs: newTabs,
-            activeIdx: nextIndex,
-            usuario: usuarioDeLaSesion(),
-                         nextId: nextTabId
-          }));
-          
-          return newTabs;
-        });
+    // Cambiar de plantilla NO borra lo que ya se llenó: la pestaña actual queda
+    // abierta con sus datos y se vuelve al selector. Desde ahí se abre otra
+    // plantilla en una pestaña nueva, o se regresa a la que estaba.
+    // Antes esto cerraba la pestaña (y el respaldo local nunca se recuperaba),
+    // así que el operario veía "desaparecer" todo lo escrito.
+    const tieneDatos = hayAlgoCargado();
+
+    setOpenTabs(prev => {
+      let tabs = prev.map((tab, i) => {
+        if (i !== activeTabIndex) return tab;
+        return {
+          ...tab,
+          headerData,
+          bodyData,
+          firmasData,
+          hasUnsavedChanges,
+          lotesConfirmados,
+          selectedLotes,
+          apiDetailsData,
+          apiMovimientoData,
+          draftId: currentDraftId
+        };
+      });
+
+      // Una pestaña vacía no vale la pena dejarla abierta.
+      if (!tieneDatos) tabs = tabs.filter((_, i) => i !== activeTabIndex);
+
+      if (tabs.length > 0) {
+        localStorage.setItem(TABS_PERSISTENCE_KEY, JSON.stringify({
+          tabs,
+          activeIdx: Math.min(activeTabIndex, tabs.length - 1),
+          usuario: usuarioDeLaSesion(),
+          nextId: nextTabId
+        }));
       } else {
-        // Si es la única pestaña, limpiar todo
-        setSelectedTemplate(null);
-        setSelectedLotes([]);
-        setLotesConfirmados(false);
-        setCurrentDraftId(null);
-        setOpenTabs([]);
-        setActiveTabIndex(0);
-        setNextTabId(1);
         localStorage.removeItem(TABS_PERSISTENCE_KEY);
       }
+
+      return tabs;
     });
+
+    setSelectedTemplate(null);
+    setSelectedLotes([]);
+    setLotesConfirmados(false);
+    setCurrentDraftId(null);
   };
 
   const handleCancelEdit = () => {
@@ -7544,6 +7571,47 @@ useEffect(() => {
     return (
         <div className="fill-form">
             <h1>Llenar Formulario</h1>
+
+            {/* Formularios que quedaron abiertos: se puede volver sin perder nada */}
+            {openTabs.length > 0 && (
+                <div style={{
+                    display: 'flex', gap: '0.5rem', flexWrap: 'wrap',
+                    alignItems: 'center', padding: '0.6rem 0.75rem',
+                    background: '#f8fafc', border: '1px solid #e5e7eb',
+                    borderRadius: '8px', marginBottom: '0.9rem'
+                }}>
+                    <span style={{
+                        fontSize: '0.75rem', fontWeight: 700, color: '#475569',
+                        textTransform: 'uppercase', letterSpacing: '0.04em'
+                    }}>
+                        📂 Formularios abiertos
+                    </span>
+                    {openTabs.map((tab, i) => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => volverAPestana(i)}
+                            title={`Volver a ${tab.templateName}`}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                padding: '0.4rem 0.8rem', borderRadius: '6px',
+                                border: '1px solid #cbd5e1', background: 'white',
+                                color: '#035b8d', fontSize: '0.85rem', fontWeight: 600,
+                                cursor: 'pointer', maxWidth: '240px'
+                            }}
+                        >
+                            {tab.hasUnsavedChanges && (
+                                <span style={{ color: '#f59e0b' }} title="Tiene datos sin guardar">●</span>
+                            )}
+                            <span style={{
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                            }}>
+                                {tab.templateName}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
             
             {/* BARRA DE BÚSQUEDA Y FILTROS */}
             <div className="filters-container">
