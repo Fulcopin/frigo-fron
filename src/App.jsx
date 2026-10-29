@@ -77,6 +77,8 @@ function Navigation() {
   }
 
   const isAdminOrSupervisor = userRole === 'admin' || userRole === 'supervisor'
+  // Costos entra a Indicadores de Personal para ver el aviso de borradores.
+  const puedeVerBorradores = isAdminOrSupervisor || userRole === 'costos'
 
   const navLinks = [
     { to: "/", icon: "🏠", label: "Inicio", show: true },
@@ -117,7 +119,7 @@ function Navigation() {
     { to: "/production-plan", icon: "📊", label: "Comparativo Plan", show: true },
     { divider: true, label: "Personal", show: true },
     { to: "/registro-personal", icon: "👥", label: "Registro de Personal", show: true },
-    { to: "/personal-indicadores", icon: "📈", label: "Indicadores de Personal", show: isAdminOrSupervisor },
+    { to: "/personal-indicadores", icon: "📈", label: "Indicadores de Personal", show: puedeVerBorradores },
   ]
 
   return (
@@ -470,9 +472,9 @@ function App() {
                 </ProtectedRoute>
               } />
 
-              {/* Indicadores de Personal - Solo Admin y Supervisor */}
+              {/* Indicadores de Personal - Admin, Supervisor y Costos (aviso de borradores) */}
               <Route path="/personal-indicadores" element={
-                <RoleBasedRoute allowedRoles={['admin', 'supervisor']}>
+                <RoleBasedRoute allowedRoles={['admin', 'supervisor', 'costos']}>
                   <PersonalDashboard />
                 </RoleBasedRoute>
               } />
