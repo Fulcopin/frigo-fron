@@ -324,11 +324,21 @@ export default function ConsumptionDashboard() {
         // Filtrar solo las tablas llamadas Insumos o Materiales de Empaque
         if (section.sectionType === 'table' && (title.includes('INSUMO') || title.includes('EMPAQUE') || title.includes('MATERIAL'))) {
           const cols = section.columns || [];
-          
-          const prodColIdx = cols.findIndex(c => /PRODUCTO|ITEM|DESCRIPCI[OÓ]N|ART[IÍ]CULO|INSUMO|MATERIAL/i.test(c));
+          const esColumnaCodigo = (c) => /C[OÓ]DIGO/i.test(c);
+          const esColumnaProducto = (c) => /PRODUCTO|ITEM|DESCRIPCI[OÓ]N|ART[IÍ]CULO|INSUMO|MATERIAL/i.test(c);
+
           const cantColIdx = cols.findIndex(c => /CANTIDAD|USADO|CONSUMO|KILOS|LIBRAS/i.test(c) && !/MERMA/i.test(c));
           const unitColIdx = cols.findIndex(c => /UNIDAD|MEDIDA|U\.M/i.test(c));
-          const codigoColIdx = cols.findIndex(c => /C[OÓ]DIGO/i.test(c));
+          const codigoColIdx = cols.findIndex(c => esColumnaCodigo(c));
+
+          // OJO: hay formularios cuya primera columna se llama "CÓDIGO INSUMO".
+          // Si no se excluye, se tomaba como columna de producto y el Excel
+          // mostraba el código (EM-CJA-061, EM-PLT-061...) en vez del material.
+          let prodColIdx = cols.findIndex(c => esColumnaProducto(c) && !esColumnaCodigo(c));
+          if (prodColIdx === -1) {
+            // Último recurso: la primera columna que no sea código, cantidad ni unidad.
+            prodColIdx = cols.findIndex((c, i) => i !== codigoColIdx && i !== cantColIdx && i !== unitColIdx);
+          }
 
           if (prodColIdx === -1 && cantColIdx === -1) return;
 
@@ -351,6 +361,15 @@ export default function ConsumptionDashboard() {
             let qty = parseFloat(qtyStr) || 0;
             let unit = getVal(unitColIdx) || '';
             let codigo = getVal(codigoColIdx) || '';
+
+            // Red de seguridad: si quedó el código como nombre, buscar otra
+            // columna que sí describa el material.
+            if (codigo && String(prodName).trim() === String(codigo).trim()) {
+              const altIdx = cols.findIndex(
+                (c, i) => i !== codigoColIdx && i !== prodColIdx && esColumnaProducto(c) && !esColumnaCodigo(c)
+              );
+              if (altIdx !== -1) prodName = getVal(altIdx) || prodName;
+            }
 
             if (!prodName || prodName === 'Desconocido' || prodName.toString().trim() === '') return;
 
