@@ -6973,8 +6973,15 @@ useEffect(() => {
     const avisosFechaGuardar = avisosDeFecha({ headerData }, 30);
     if (avisosFechaGuardar.length > 0) {
       const detalle = avisosFechaGuardar.join('\n');
-      alert(`⚠️ Fechas del formulario\n\n${detalle}\n\nSi el dato está mal escrito, corrígela antes de guardar. Guardando igualmente.`);
-      console.warn('💾 [SAVE] ⚠️ Fechas del formulario con avisos (no bloquean):', avisosFechaGuardar);
+      const seguirConFecha = window.confirm(
+        `⚠️ Fechas del formulario\n\n${detalle}\n\nSi el dato está mal escrito, corrígela antes de guardar. ¿Guardar de todas formas?`
+      );
+      if (!seguirConFecha) {
+        console.warn('💾 [SAVE] ❌ Cancelado por revisión de fecha');
+        isSavingRef.current = false;
+        setFormSaving(false);
+        return;
+      }
     }
 
     // ⚖️ NO SE PUEDE PRODUCIR MÁS DE LO QUE ENTRÓ.
@@ -6988,11 +6995,16 @@ useEffect(() => {
 
     if (avisosMp.length > 0) {
       const detalle = avisosMp.map(r => `• ${r.mensaje}`).join('\n\n');
-      alert(
+      const seguir = window.confirm(
         `⚠️ La producción supera a la materia prima\n\n${detalle}\n\n` +
-        `Si es por glaseo o reproceso podés continuar. Guardando igualmente.`
+        `Si es por glaseo o reproceso podés continuar. ¿Guardar de todas formas?`
       );
-      console.warn('💾 [SAVE] ⚠️ Producción supera materia prima (aviso, no bloquea):', avisosMp.map(r => r.mensaje));
+      if (!seguir) {
+        console.warn('💾 [SAVE] ❌ Cancelado por control de materia prima');
+        isSavingRef.current = false;
+        setFormSaving(false);
+        return;
+      }
     }
 
     // ✍️ FIRMA DE RESPONSABILIDAD OBLIGATORIA.
@@ -7210,13 +7222,11 @@ useEffect(() => {
     //    turnos de noche, jornadas largas o horas fuera del rango pueden ser
     //    válidos (turnos partidos, reemplazos). El operario guarda y revisa el
     //    cuadro; los errores reales (arriba) sí impiden guardar.
-    const avisosTurnoLista = porTurno?.avisos || [];
-    if (avisosTurnoLista.length > 0) {
-      const cortos = avisosTurnoLista.slice(0, 8).map(a => `• ${a}`);
-      setAvisosTurno(
-        ['⚠️ Revisa los horarios del turno', '', ...cortos, '', 'Guardando de todas formas — revisá el cuadro.'].join('\n')
-      );
-      console.warn('💾 [SAVE] ⚠️ Horarios con avisos (no bloquean):', avisosTurnoLista);
+    if (porTurno.necesitaConfirmar && !window.confirm(mensajeDeRevision(porTurno))) {
+      console.warn('💾 [SAVE] ⏱️ El usuario eligió revisar las horas', porTurno.avisos);
+      isSavingRef.current = false;
+      setFormSaving(false);
+      return;
     }
 
     const payload = {
