@@ -6969,18 +6969,12 @@ useEffect(() => {
     // ⚠️ FECHA ANTIGUA / FUTURA ANTES DE GUARDAR
     //    Si la fecha que se escribió dentro del formulario quedó más de X días
     //    atrás (default 30 = "un mes") o está en el futuro, avisamos antes de guardar.
+    //    ⚠️ NO BLOQUEA: la ventana (alert) avisa y se sigue al siguiente paso.
     const avisosFechaGuardar = avisosDeFecha({ headerData }, 30);
     if (avisosFechaGuardar.length > 0) {
       const detalle = avisosFechaGuardar.join('\n');
-      const seguirConFecha = window.confirm(
-        `⚠️ Fechas del formulario\n\n${detalle}\n\nSi el dato está mal escrito, corrígela antes de guardar. ¿Guardar igualmente?`
-      );
-      if (!seguirConFecha) {
-        console.warn('💾 [SAVE] ❌ Cancelado por revisión de fecha');
-        isSavingRef.current = false;
-        setFormSaving(false);
-        return;
-      }
+      alert(`⚠️ Fechas del formulario\n\n${detalle}\n\nSi el dato está mal escrito, corrígela antes de guardar. Guardando igualmente.`);
+      console.warn('💾 [SAVE] ⚠️ Fechas del formulario con avisos (no bloquean):', avisosFechaGuardar);
     }
 
     // ⚖️ NO SE PUEDE PRODUCIR MÁS DE LO QUE ENTRÓ.
@@ -6994,16 +6988,11 @@ useEffect(() => {
 
     if (avisosMp.length > 0) {
       const detalle = avisosMp.map(r => `• ${r.mensaje}`).join('\n\n');
-      const seguir = window.confirm(
+      alert(
         `⚠️ La producción supera a la materia prima\n\n${detalle}\n\n` +
-        `Si es por glaseo o reproceso podés continuar. ¿Guardar de todas formas?`
+        `Si es por glaseo o reproceso podés continuar. Guardando igualmente.`
       );
-      if (!seguir) {
-        console.warn('💾 [SAVE] ❌ Cancelado por control de materia prima');
-        isSavingRef.current = false;
-        setFormSaving(false);
-        return;
-      }
+      console.warn('💾 [SAVE] ⚠️ Producción supera materia prima (aviso, no bloquea):', avisosMp.map(r => r.mensaje));
     }
 
     // ✍️ FIRMA DE RESPONSABILIDAD OBLIGATORIA.
