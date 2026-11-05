@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   listarActividades, crearActividad, actualizarActividad, darDeBajaActividad,
+  refrescarCatalogo,
 } from '../services/actividadesService';
+import { SEMILLA_PESCADO, SEMILLA_CAMARON, normActividad } from '../utils/actividadesProceso';
 import './ActividadesProceso.css';
 
 /**
@@ -19,6 +21,7 @@ export default function ActividadesProceso() {
 
   const [nueva, setNueva] = useState({ nombre: '', pescado: true, camaron: false });
   const [editando, setEditando] = useState(null);   // { id, nombre, pescado, camaron, activa }
+  const [restaurando, setRestaurando] = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -76,6 +79,61 @@ export default function ActividadesProceso() {
   const reactivar = (a) =>
     conMensaje(() => actualizarActividad(a.id, { ...a, activa: true }), `♻️ "${a.nombre}" reactivada.`);
 
+  /**
+   * 📥 Pasa a la base las actividades históricas que todavía no están en la
+   * tabla. No toca las existentes ni reactiva las dadas de baja: solo agrega
+   * las que faltan, con su ámbito de pescado/camarón.
+   */
+  const restaurarCatalogo = async () => {
+    const existentes = new Set(actividades.map(a => normActividad(a.nombre)));
+    const mapa = new Map();
+    for (const nombre of SEMILLA_PESCADO) {
+      mapa.set(normActividad(nombre), { nombre, pescado: true, camaron: false });
+    }
+    for (const nombre of SEMILLA_CAMARON) {
+      const k = normActividad(nombre);
+      const previa = mapa.get(k);
+      if (previa) previa.camaron = true;
+      else mapa.set(k, { nombre, pescado: false, camaron: true });
+    }
+    const faltan = [...mapa.values()].filter(s => !existentes.has(normActividad(s.nombre)));
+
+    if (faltan.length === 0) {
+      setError('');
+      setAviso('✅ El catálogo base ya está completo en la base.');
+      return;
+    }
+    if (!window.confirm(
+      `Se van a agregar ${faltan.length} actividad(es) del catálogo base que faltan.\n\n` +
+      `No se modifica ni se borra ninguna de las que ya existen. ¿Continuar?`
+    )) return;
+
+    setError('');
+    setAviso('');
+    setRestaurando(true);
+    let ok = 0;
+    const errores = [];
+    try {
+      for (const s of faltan) {
+        try {
+          await crearActividad(s, { refrescar: false });
+          ok++;
+        } catch (e) {
+          errores.push(`${s.nombre}: ${e.message}`);
+        }
+      }
+      await refrescarCatalogo();
+      await cargar();
+      setAviso(`✅ Se agregaron ${ok} actividad(es) al catálogo.` +
+        (errores.length ? ` ${errores.length} no se pudieron agregar.` : ''));
+      if (errores.length) setError(errores.slice(0, 5).join(' · '));
+    } catch (e) {
+      setError(e.message || 'No se pudo completar el catálogo.');
+    } finally {
+      setRestaurando(false);
+    }
+  };
+
   const totales = {
     activas: actividades.filter((a) => a.activa).length,
     pescado: actividades.filter((a) => a.activa && a.pescado).length,
@@ -115,6 +173,19 @@ export default function ActividadesProceso() {
         <span className="act-chip">Activas: <strong>{totales.activas}</strong></span>
         <span className="act-chip">🐟 {totales.pescado}</span>
         <span className="act-chip">🦐 {totales.camaron}</span>
+        <button
+          type="button"
+          onClick={restaurarCatalogo}
+          disabled={restaurando}
+          title="Agrega a la base las actividades históricas que falten, sin tocar las existentes ni reactivar las dadas de baja"
+          style={{
+            marginLeft: 'auto', background: '#ecfdf5', color: '#065f46',
+            border: '1px solid #a7f3d0', borderRadius: '6px', padding: '6px 12px',
+            fontWeight: 600, cursor: restaurando ? 'wait' : 'pointer',
+          }}
+        >
+          {restaurando ? '⏳ Agregando…' : '📥 Completar catálogo base'}
+        </button>
       </div>
 
       {cargando ? (
@@ -176,6 +247,8 @@ export default function ActividadesProceso() {
       <p className="act-nota">
         Al renombrar una actividad, <strong>los formularios ya guardados siguen con el nombre anterior</strong>:
         el plan de producción los cruza por ese texto. Dar de baja no borra nada, solo deja de ofrecerla.
+        {' '}El sistema también ofrece el catálogo base histórico aunque todavía no esté en esta tabla;
+        usá <strong>📥 Completar catálogo base</strong> para pasarlo a la base y poder administrarlo.
       </p>
     </div>
   );

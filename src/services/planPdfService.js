@@ -21,7 +21,7 @@
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { GRUPOS, ORDEN_GRUPOS, grupoEfectivo } from '../utils/gruposPlan';
+import { GRUPOS, ordenGrupos, grupoEfectivo } from '../utils/gruposPlan';
 
 // ── Colores ─────────────────────────────────────────────────────────────────
 const C_PLAN = '#b45309';
@@ -90,7 +90,13 @@ export function armarFilas(categories) {
     }
   }
   // El orden del reporte es el de la matriz: primero pescado, después camarón.
-  return filas.sort((a, b) => ORDEN_GRUPOS.indexOf(a.grupo) - ORDEN_GRUPOS.indexOf(b.grupo));
+  // Se lee en cada exportación: los grupos se pueden renombrar o reemplazar.
+  const orden = ordenGrupos();
+  return filas.sort((a, b) => {
+    const ia = orden.indexOf(a.grupo);
+    const ib = orden.indexOf(b.grupo);
+    return (ia < 0 ? orden.length : ia) - (ib < 0 ? orden.length : ib);
+  });
 }
 
 /** Serie del gráfico: las actividades con más movimiento del día. */

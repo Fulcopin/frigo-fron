@@ -6,7 +6,7 @@
 // Siempre se ofrece como datalist: se elige de la lista o se escribe una
 // nueva actividad — "agregar más" es simplemente tipearla.
 
-const SEMILLA_PESCADO = [
+export const SEMILLA_PESCADO = [
   'Cambio de Cajas', 'Cambio de Etiquetas', 'Capacitacion', 'Clasificacion',
   'Clasificar al Vacio', 'Codificar', 'Colgar', 'Congelado', 'Corte',
   'Corte y Clasificacion', 'Corte y Empaque', 'Decorar', 'Descabezado',
@@ -24,7 +24,7 @@ const SEMILLA_PESCADO = [
   'Visita de Planta',
 ];
 
-const SEMILLA_CAMARON = [
+export const SEMILLA_CAMARON = [
   'Cambio de Cajas', 'Cambio de Etiquetas', 'Clasificacion', 'Decorar',
   'Descabezado', 'Descarga', 'Descongelar', 'Empaque', 'Hidratar',
   'Imprimir Etiqueta', 'Lavar Mallas', 'Pelar', 'Recepcion de Pesca',
@@ -109,15 +109,68 @@ recalcular();
  */
 export async function sincronizarActividades(baseUrl) {
   try {
-    const url = `${baseUrl || ''}/ActividadesProceso`;
+    // `todas=true`: hacen falta también las dadas de baja, porque son las que
+    // dicen «esta actividad ya no se ofrece». Sin eso, el catálogo de respaldo
+    // las volvería a mostrar.
+    const url = `${baseUrl || ''}/ActividadesProceso?todas=true`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(`Error ${r.status}`);
     const data = await r.json();
     const lista = Array.isArray(data) ? data : (Array.isArray(data?.$values) ? data.$values : []);
     if (lista.length === 0) return { ok: false, total: 0 };
 
-    const pescado = lista.filter(a => a.pescado).map(a => String(a.nombre).trim());
-    const camaron = lista.filter(a => a.camaron).map(a => String(a.nombre).trim());
+    // La tabla de la base MANDA sobre una actividad que ya existe (nombre y
+    // ámbito), pero no borra el resto del catálogo histórico. Antes se
+    // reemplazaba la lista entera: con una tabla que tenía 4 actividades,
+    // desaparecían las otras 50 de los combos y del plan.
+    const porNombre = new Map();
+    for (const a of lista) {
+      const nombre = String(a?.nombre ?? '').trim();
+      if (!nombre) continue;
+      porNombre.set(normActividad(nombre), {
+        nombre,
+        pescado: !!a.pescado,
+        camaron: !!a.camaron,
+        activa: a.activa !== false,
+      });
+    }
+
+    // Catálogo de respaldo: una sola ficha por nombre, con los dos ámbitos.
+    const semilla = new Map();
+    for (const nombre of SEMILLA_PESCADO) {
+      semilla.set(normActividad(nombre), { nombre, pescado: true, camaron: false });
+    }
+    for (const nombre of SEMILLA_CAMARON) {
+      const k = normActividad(nombre);
+      const previa = semilla.get(k);
+      if (previa) previa.camaron = true;
+      else semilla.set(k, { nombre, pescado: false, camaron: true });
+    }
+
+    const pescado = [];
+    const camaron = [];
+    const puestos = new Set();
+    const agregar = (nombre, esPescado, esCamaron) => {
+      const k = normActividad(nombre);
+      if (!k || puestos.has(k)) return;
+      puestos.add(k);
+      if (esPescado) pescado.push(nombre);
+      if (esCamaron) camaron.push(nombre);
+    };
+
+    // 1) Lo histórico que la base no administra (o que sí y sigue activo).
+    for (const [k, s] of semilla) {
+      const db = porNombre.get(k);
+      if (db) {
+        if (db.activa) agregar(db.nombre, db.pescado, db.camaron);
+      } else {
+        agregar(s.nombre, s.pescado, s.camaron);
+      }
+    }
+    // 2) Lo nuevo agregado desde «Actividades de proceso».
+    for (const db of porNombre.values()) {
+      if (db.activa) agregar(db.nombre, db.pescado, db.camaron);
+    }
 
     ACTIVIDADES_PESCADO.length = 0;
     ACTIVIDADES_PESCADO.push(...pescado);

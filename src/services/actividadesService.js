@@ -27,13 +27,18 @@ export async function listarActividades(todas = false) {
   return comoLista(await leer(await fetch(`${BASE}?todas=${todas ? 'true' : 'false'}`)));
 }
 
-export async function crearActividad({ nombre, pescado, camaron }) {
+/**
+ * @param {{nombre: string, pescado: boolean, camaron: boolean}} datos
+ * @param {{refrescar?: boolean}} opciones  refrescar=false para altas masivas:
+ *        se refresca una sola vez al final en vez de una vez por actividad.
+ */
+export async function crearActividad({ nombre, pescado, camaron }, { refrescar = true } = {}) {
   const r = await leer(await fetch(BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nombre, pescado, camaron, activa: true, usuario: usuario() }),
   }));
-  await refrescarCatalogo();
+  if (refrescar) await refrescarCatalogo();
   return r;
 }
 

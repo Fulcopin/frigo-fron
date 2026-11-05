@@ -30,7 +30,7 @@ import { ACTIVIDADES_PESCADO as ACTIVIDADES_GENERAL, ACTIVIDADES_CAMARON,
 // vista: el desempate de especie pasó del nombre de la pestaña al grupo de
 // cada fila (utils/gruposPlan.js mantiene compatible lo viejo).
 import {
-  GRUPOS, GRUPO_PESCADO, GRUPO_CAMARON, ORDEN_GRUPOS, catalogoCompleto,
+  GRUPOS, GRUPO_PESCADO, GRUPO_CAMARON, catalogoCompleto,
   claveActividad, ambitoDeCategoria, ambitoDeFila, grupoEfectivo,
   unificarMatriz, esFormatoViejo, ordenarPorGrupo,
   ordenGrupos, listaGrupos, guardarGrupos, claveGrupo,
@@ -1797,7 +1797,16 @@ export default function ProductionPlanForm() {
           .map(p => claveActividad(grupoEfectivo(activeCategory, p), p.name)));
         const conFormsHoy = Object.keys(formsHoyPorActividad).length;
         // Con los dos catálogos juntos, cada bloque lleva su propio título.
-        const bloques = ORDEN_GRUPOS
+        // Se ordenan por los grupos configurados, pero NUNCA se descarta un
+        // bloque que no esté en esa lista: si alguien renombró/reemplazó
+        // PESCADO/CAMARÓN, sus actividades tienen que seguir apareciendo.
+        const orden = ordenGrupos();
+        const presentes = [...new Set(catalogoTab.map(a => a.grupo))];
+        const clavesBloque = [
+          ...orden.filter(g => presentes.includes(g)),
+          ...presentes.filter(g => !orden.includes(g)),
+        ];
+        const bloques = clavesBloque
           .map(g => ({ grupo: g, items: catalogoTab.filter(a => a.grupo === g) }))
           .filter(b => b.items.length > 0);
         return (
@@ -1807,6 +1816,8 @@ export default function ProductionPlanForm() {
               <span style={{ fontSize: '12px', color: '#1e40af' }}>
                 Marcá las del plan de hoy — el resto se quita de esta pestaña (la consulta 📌 de cada una
                 queda guardada igual: si la volvés a marcar otro día, no hay que reconfigurar nada).
+                {' '}<strong>{catalogoTab.length} actividad(es) en el catálogo</strong>; si falta alguna,
+                agregala en «🏭 Actividades de proceso».
               </span>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
                 <button
@@ -1933,7 +1944,18 @@ export default function ProductionPlanForm() {
                 agregar(a.actividad, a.grupo, a.grupo ? '' : ' · sin bloque');
               }
 
-              const bloques = [...ORDEN_GRUPOS, null]
+              // Mismo criterio que el panel «Actividades de hoy»: primero los
+              // grupos configurados y después cualquier grupo que aparezca en
+              // los datos. Antes se filtraba contra ORDEN_GRUPOS (una foto del
+              // arranque) y las filas de un grupo nuevo/renombrado se perdían.
+              const orden = ordenGrupos();
+              const gruposLineas = [...new Set(lineas.map(l => l.grupo || null))];
+              const clavesBloque = [
+                ...orden.filter(g => gruposLineas.includes(g)),
+                ...gruposLineas.filter(g => g !== null && !orden.includes(g)),
+                ...(gruposLineas.includes(null) ? [null] : []),
+              ];
+              const bloques = clavesBloque
                 .map(g => ({ grupo: g, items: lineas.filter(l => (l.grupo || null) === g) }))
                 .filter(b => b.items.length > 0);
 
