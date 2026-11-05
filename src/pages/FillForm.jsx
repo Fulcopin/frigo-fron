@@ -243,6 +243,9 @@ function FillForm() {
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // ⚠️ Avisos de turno/horarios que se muestran en un CUADRO dentro de la
+  //    pantalla (no bloquean el guardado: solo los errores reales lo hacen).
+  const [avisosTurno, setAvisosTurno] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [formCreatedAt, setFormCreatedAt] = useState(null); // ✅ NUEVO: Fecha de creación del formulario
   
@@ -6933,8 +6936,9 @@ useEffect(() => {
     console.log('💾 [SAVE] headerData keys:', Object.keys(headerData));
     console.log('💾 [SAVE] bodyData elements:', bodyData.length);
     console.log('💾 [SAVE] firmasData keys:', Object.keys(firmasData));
-    
+
     setError(null);
+    setAvisosTurno('');
     
     if (!selectedTemplate) {
       console.error('💾 [SAVE] ❌ No hay selectedTemplate, abortando');
@@ -7206,16 +7210,24 @@ useEffect(() => {
       console.warn('💾 [SAVE] ⛔ Horas fuera del rango del turno', porTurno.errores);
       alert(mensaje);
       setError(mensaje);
+      setAvisosTurno('');
       isSavingRef.current = false;
       setFormSaving(false);
       return;
     }
 
-    if (porTurno.necesitaConfirmar && !window.confirm(mensajeDeRevision(porTurno))) {
-      console.warn('💾 [SAVE] ⏱️ El usuario eligió revisar las horas', porTurno.avisos);
-      isSavingRef.current = false;
-      setFormSaving(false);
-      return;
+    // ⚠️ AVISOS DE TURNO: se muestran en el CUADRO de la pantalla (estado
+    //    `avisosTurno`) y NO bloquean el guardado ni piden confirmación: los
+    //    turnos de noche, jornadas largas o horas fuera del rango pueden ser
+    //    válidos (turnos partidos, reemplazos). El operario guarda y revisa el
+    //    cuadro; los errores reales (arriba) sí impiden guardar.
+    const avisosTurnoLista = porTurno?.avisos || [];
+    if (avisosTurnoLista.length > 0) {
+      const cortos = avisosTurnoLista.slice(0, 8).map(a => `• ${a}`);
+      setAvisosTurno(
+        ['⚠️ Revisa los horarios del turno', '', ...cortos, '', 'Guardando de todas formas — revisá el cuadro.'].join('\n')
+      );
+      console.warn('💾 [SAVE] ⚠️ Horarios con avisos (no bloquean):', avisosTurnoLista);
     }
 
     const payload = {
@@ -7259,6 +7271,7 @@ useEffect(() => {
 
       // ✅ EL GUARDADO FUE EXITOSO
       setHasUnsavedChanges(false);
+      setAvisosTurno('');
       // 🔐 La sesión vuelve a arrancar sus horas: quien está guardando
       // formularios está trabajando, no tiene por qué caérsele la sesión.
       authService.renewSession();
@@ -8721,6 +8734,7 @@ useEffect(() => {
         </div>
       )}
       {error && <div className="error-message">❌ {error}</div>}
+      {avisosTurno && <div className="warning-message">⚠️ {avisosTurno}</div>}
 
       {/* 🔍 BARRA DE ZOOM */}
       <div className="zoom-controls-bar">
