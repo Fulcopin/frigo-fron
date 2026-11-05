@@ -49,6 +49,7 @@ import { validarHorariosFormulario, mensajeDeErrorServidor } from '../utils/vali
 import { revisarHorariosDelFormulario, mensajeDeRevision } from '../utils/reglasTurno';
 import { recalcularFormulasBodyData } from '../utils/recalcularFormulas';
 import { camposDetalleActuales } from '../utils/detalleCamposActuales';
+import { avisosDeFecha } from '../utils/fechaFormulario';
 const TABS_PERSISTENCE_KEY = 'frigolab_tabs_persistence';
 
 /** Usuario de la sesión, para no mezclar el trabajo de dos personas. */
@@ -6961,6 +6962,23 @@ useEffect(() => {
       return;
     }
     
+    // ⚠️ FECHA ANTIGUA / FUTURA ANTES DE GUARDAR
+    //    Si la fecha que se escribió dentro del formulario quedó más de X días
+    //    atrás (default 30 = "un mes") o está en el futuro, avisamos antes de guardar.
+    const avisosFechaGuardar = avisosDeFecha({ headerData }, 30);
+    if (avisosFechaGuardar.length > 0) {
+      const detalle = avisosFechaGuardar.join('\n');
+      const seguirConFecha = window.confirm(
+        `⚠️ Fechas del formulario\n\n${detalle}\n\nSi el dato está mal escrito, corrígela antes de guardar. ¿Guardar igualmente?`
+      );
+      if (!seguirConFecha) {
+        console.warn('💾 [SAVE] ❌ Cancelado por revisión de fecha');
+        isSavingRef.current = false;
+        setFormSaving(false);
+        return;
+      }
+    }
+
     // ⚖️ NO SE PUEDE PRODUCIR MÁS DE LO QUE ENTRÓ.
     //    Las tablas con el control activado comparan su producción contra la
     //    materia prima declarada arriba. Se avisa pero NO se bloquea: con

@@ -118,4 +118,44 @@ export function fechaDifiereDeGuardado(form) {
   return interna !== aFechaISO(form?.createdAt);
 }
 
-export default { aFechaISO, encabezadoDe, fechaInternaDeFormulario, fechaDeBusqueda, entraEnRango, fechaDifiereDeGuardado };
+/**
+ * ⚠️ AVISOS DE FECHA ANTES DE GUARDAR.
+ *
+ * Detecta que la fecha que se escribió DENTRO del formulario quedó demasiado
+ * atrás (más de `diasAtrasoPermitidos`, default 30 = "un mes") o que quedó en el
+ * futuro. Sirve para el chequeo que se hace en `handleSaveForm` antes de guardar.
+ *
+ * @param {Object} [form]  — { headerData, createdAt }
+ * @param {number} [diasAtrasoPermitidos] — umbral de atraso permitido
+ * @returns {string[]} avisos (vacío = todo OK)
+ */
+export function avisosDeFecha(form, diasAtrasoPermitidos = 30) {
+  const avisos = [];
+  const fechaInterna = fechaInternaDeFormulario(form);
+  if (!fechaInterna) return avisos; // sin fecha propia no hay nada que comparar
+
+  const partes = String(fechaInterna).split('-').map(Number);
+  const diaUtc = Date.UTC(partes[0] || 1970, (partes[1] || 1) - 1, partes[2] || 1);
+  const hoyUtc = Date.UTC(
+    new Date().getUTCFullYear(),
+    new Date().getUTCMonth(),
+    new Date().getUTCDate()
+  );
+  const diasDeAtraso = Math.round((hoyUtc - diaUtc) / 86400000);
+
+  if (diasDeAtraso > diasAtrasoPermitidos) {
+    avisos.push(
+      `La fecha del formulario (${fechaInterna}) tiene ${Math.abs(diasDeAtraso)} días de atraso ` +
+      `(el máximo permitido es ${diasAtrasoPermitidos}).`
+    );
+  }
+
+  const diasDeFrente = Math.round((diaUtc - hoyUtc) / 86400000);
+  if (diasDeFrente > 1) {
+    avisos.push(`La fecha del formulario (${fechaInterna}) está ${diasDeFrente} días en el futuro.`);
+  }
+
+  return avisos;
+}
+
+export default { aFechaISO, encabezadoDe, fechaInternaDeFormulario, fechaDeBusqueda, entraEnRango, fechaDifiereDeGuardado, avisosDeFecha };
