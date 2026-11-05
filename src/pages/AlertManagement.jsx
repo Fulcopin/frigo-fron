@@ -41,6 +41,10 @@ export default function AlertManagement() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('active');
+  // Admin/Supervisor ven TODAS las alertas activas del sistema. Antes la
+  // pantalla filtraba por el correo del que estaba logueado y, como solo
+  // entra admin/supervisor, parecía que no había ninguna.
+  const [verTodas, setVerTodas] = useState(true);
   const [testEmail, setTestEmail] = useState('');
   const [configSaved, setConfigSaved] = useState(false);
   const [enviandoResumen, setEnviandoResumen] = useState(false);
@@ -190,9 +194,13 @@ export default function AlertManagement() {
             const alertsData = await alertsResponse.json();
             const alerts = Array.isArray(alertsData) ? alertsData : alertsData.$values || [];
             
-            const userAlerts = alerts.filter(alert => 
-              alert.targetEmail && alert.targetEmail.toLowerCase() === userEmail.toLowerCase()
-            );
+            // El admin/supervisor necesita ver el panorama completo para
+            // comprobar que las alertas se están generando para todos.
+            const userAlerts = isSGI
+              ? alerts
+              : alerts.filter(alert =>
+                  alert.targetEmail && alert.targetEmail.toLowerCase() === userEmail.toLowerCase()
+                );
             allUserAlerts = [...userAlerts];
           }
 
@@ -440,6 +448,14 @@ export default function AlertManagement() {
     );
   }
 
+  // Filtro de la pestaña «Alertas Activas»: todas las del sistema (para el
+  // admin) o solo las dirigidas a mi correo.
+  const miEmail = String(currentUser?.email || currentUser?.username || '').trim().toLowerCase();
+  const misAlertas = activeAlerts.filter(
+    a => String(a.targetEmail || '').trim().toLowerCase() === miEmail
+  );
+  const alertasVisibles = verTodas ? activeAlerts : misAlertas;
+
   return (
     <div className="alert-management">
       {/* Header */}
@@ -529,11 +545,47 @@ export default function AlertManagement() {
 
         {activeTab === 'active' && (
           <div className="active-alerts-section">
-            {activeAlerts.length === 0 ? (
+            {/* Las alertas se envían por correo a los destinatarios configurados;
+                esta pantalla es el tablero del admin para verlas todas. */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+              background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px',
+              padding: '10px 14px', marginBottom: '16px',
+            }}>
+              <span style={{ fontSize: '13px', color: '#475569' }}>
+                Las alertas se envían por correo a los destinatarios configurados.
+                Acá ves las activas de <strong>todo el sistema</strong>.
+              </span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setVerTodas(true)}
+                  className={`tab-btn ${verTodas ? 'active' : ''}`}
+                  style={{ padding: '6px 12px', fontSize: '12.5px' }}
+                >
+                  Todas ({activeAlerts.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVerTodas(false)}
+                  className={`tab-btn ${!verTodas ? 'active' : ''}`}
+                  style={{ padding: '6px 12px', fontSize: '12.5px' }}
+                  title={miEmail ? `Solo las dirigidas a ${miEmail}` : 'Tu usuario no tiene correo cargado'}
+                >
+                  Solo las mías ({misAlertas.length})
+                </button>
+              </div>
+            </div>
+
+            {alertasVisibles.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">✅</div>
-                <h3>No hay alertas activas</h3>
-                <p>Todo está al día, no hay registros pendientes ni firmas por realizar</p>
+                <h3>{verTodas ? 'No hay alertas activas' : 'No tenés alertas dirigidas a tu correo'}</h3>
+                <p>
+                  {verTodas
+                    ? 'Todo está al día, no hay registros pendientes ni firmas por realizar'
+                    : `No hay alertas activas para ${miEmail || 'tu usuario'}. Probá «Todas» para ver las del resto.`}
+                </p>
               </div>
             ) : (
               <>
@@ -544,7 +596,7 @@ export default function AlertManagement() {
                   </h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
                     {Object.entries(
-                      activeAlerts.reduce((acc, alert) => {
+                      alertasVisibles.reduce((acc, alert) => {
                         const typeLabel = alert.type === 'missing_form' ? 'Llenados Faltantes' : 
                                           alert.type === 'pending_signature' ? 'Firmas Pendientes' : 'Alertas';
                         const formIdentifier = alert.formCode || (alert.title && alert.title.split(' - ')[1]) || 'General';
@@ -572,13 +624,13 @@ export default function AlertManagement() {
                       Estos resúmenes se envían por correo según la frecuencia configurada.
                     </span>
                     <span style={{ fontSize: '0.95rem', color: '#334155', fontWeight: '600' }}>
-                      Total Acumulado: <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '1.2rem', marginLeft: '6px' }}>{activeAlerts.length}</span>
+                      Total Acumulado: <span style={{ color: '#ef4444', fontWeight: 'bold', fontSize: '1.2rem', marginLeft: '6px' }}>{alertasVisibles.length}</span>
                     </span>
                   </div>
                 </div>
 
                 <div className="alerts-grid">
-                {activeAlerts.map(alert => (
+                {alertasVisibles.map(alert => (
                   <div key={alert.id} className={`alert-card ${alert.priority}`}>
                     <div className="alert-header">
                       <div className="alert-type">
@@ -643,9 +695,56 @@ export default function AlertManagement() {
           <div className="config-section">
             <div className="config-container">
               <h2>⚙️ Configuración de Alertas</h2>
+
+              {/* Guía corta: la pantalla tiene varios bloques y no era obvio
+                  cuál hacía qué ni en qué orden configurarlos. */}
+              <div style={{
+                background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px',
+                padding: '12px 16px', marginBottom: '18px', fontSize: '13px', color: '#1e3a8a',
+                lineHeight: 1.55,
+              }}>
+                <strong>📌 Cómo se configura (en orden)</strong>
+                <ol style={{ margin: '8px 0 0 18px', padding: 0 }}>
+                  <li><strong>Resumen de cumplimiento:</strong> el correo periódico con lo que falta llenar/firmar. Elegí cada cuántas horas, días hacia atrás y destinatarios fijos.</li>
+                  <li><strong>Falta de llenado:</strong> avisa cuando un formulario diario no se llenó. Activá y cargá los destinatarios. La verificación automática corre a las 7:30; para probar ya, usá «📧 Enviar el resumen ahora».</li>
+                  <li><strong>Firmas pendientes:</strong> avisa a las X horas si un formulario quedó sin firmar. Acá también se define el bloqueo de firma.</li>
+                  <li><strong>Cambios en plantillas:</strong> un solo correo diario con las plantillas que cambiaron.</li>
+                  <li><strong>Email:</strong> remitente y nombre. La contraseña SMTP va en <code>appsettings.json</code> del backend.</li>
+                  <li><strong>Probar:</strong> usá «📧 Enviar Prueba» y «📧 Enviar el resumen ahora» antes de esperar al horario automático.</li>
+                </ol>
+                <div style={{ marginTop: '8px' }}>
+                  Para que el aviso le llegue a varias personas, cargá todos los correos separados por
+                  coma en <strong>Destinatarios</strong> (o usá <strong>📥 Cargar emails de firmantes</strong>).
+                  Guardá con <strong>💾 Guardar Configuración</strong> al terminar. Para reglas distintas
+                  en un formulario puntual, usá la pestaña <strong>🎯 Por formulario</strong>.
+                </div>
+              </div>
               
               {alertConfig && (
                 <div className="config-content">
+                  {/* Aviso típico: la alerta está prendida pero no tiene a
+                      quién avisar, así que «no llega a nadie». */}
+                  {(() => {
+                    const sinDestinatarios = [
+                      alertConfig.enableMissingFormAlerts && !safeJoinEmails(alertConfig.missingFormRecipients).trim()
+                        && 'Falta de llenado',
+                      alertConfig.enableSignatureAlerts && !safeJoinEmails(alertConfig.signatureRecipients).trim()
+                        && 'Firmas pendientes',
+                      alertConfig.enableTemplateChangeAlerts && !safeJoinEmails(alertConfig.templateChangeRecipients).trim()
+                        && 'Cambios de plantilla',
+                    ].filter(Boolean);
+                    if (sinDestinatarios.length === 0) return null;
+                    return (
+                      <div style={{
+                        background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '10px',
+                        padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#92400e',
+                      }}>
+                        ⚠️ Estas alertas están activadas pero <strong>no tienen destinatarios</strong>:
+                        {' '}<strong>{sinDestinatarios.join(', ')}</strong>. Agregá los correos en
+                        «Destinatarios» (separados por coma) o van a quedar sin enviarse.
+                      </div>
+                    );
+                  })()}
                   <div className="config-group">
                     {/* 📧 RESUMEN DE CUMPLIMIENTO CADA X HORAS
                         Manda el cuadro de "que falta" a los responsables. */}

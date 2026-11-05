@@ -42,7 +42,7 @@ function Home() {
             <h3>Ver Historial</h3>
             <p>Consultar, exportar y analizar formularios guardados</p>
           </div>
-          <div className="action-card" onClick={() => navigate('/alert-management')}>
+          <div className="action-card" onClick={() => navigate('/alerts')}>
             <div className="action-icon">🔔</div>
             <h3>Gestión de Alertas</h3>
             <p>Configura recordatorios y monitorea firmas pendientes</p>
