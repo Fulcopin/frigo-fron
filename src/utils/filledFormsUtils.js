@@ -1,5 +1,6 @@
 // Utilidades para manejo seguro de formularios llenados
 import { API_BASE_URL } from "../apiConfig";
+import { alinearClavesConPlantilla, mismoNombreDeColumna, aliasNoEnumerable } from "./nombresColumnas";
 
 const API_URL_FILLED_FORMS = `${API_BASE_URL}/FilledForms`;
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
@@ -220,6 +221,45 @@ function processFormData(data) {
   };
   
   console.log('✅ Datos procesados correctamente:', result);
+
+  // 🏷️ La columna se pudo renombrar en la plantilla DESPUÉS de llenar el
+  // formulario: las filas guardadas quedaron con la llave vieja y la vista (y
+  // el PDF) buscaban el nombre nuevo, así que la celda salía vacía aunque el
+  // dato estuviera ahí. Antes de dibujar, se reetiquetan las llaves con el
+  // nombre actual de la plantilla.
+  try {
+    const alineado = alinearClavesConPlantilla(
+      result.formData.bodyData,
+      result.template.bodyElements
+    );
+    result.formData.bodyData = alineado.bodyData;
+
+    // Lo mismo para el encabezado: los campos se guardan por su etiqueta.
+    const camposHdr = Array.isArray(result.template.headerFields) ? result.template.headerFields : [];
+    const hdr = result.formData.headerData;
+    if (camposHdr.length > 0 && hdr && typeof hdr === 'object' && !Array.isArray(hdr)) {
+      const etiquetasHdr = camposHdr.map(f => String(f?.label || f?.name || f?.id || '')).filter(Boolean);
+      const copiaHdr = { ...hdr };
+      let tocadoHdr = false;
+      etiquetasHdr.forEach(etiqueta => {
+        if (copiaHdr[etiqueta] !== undefined) return;
+        const candidatas = Object.keys(copiaHdr).filter(k =>
+          !k.startsWith('_') && !etiquetasHdr.includes(k) && mismoNombreDeColumna(k, etiqueta));
+        if (candidatas.length === 1 && copiaHdr[candidatas[0]] !== undefined) {
+          // Alias y no copia: el encabezado también se audita al guardar.
+          aliasNoEnumerable(copiaHdr, etiqueta, candidatas[0]);
+          tocadoHdr = true;
+        }
+      });
+      if (tocadoHdr) {
+        result.formData.headerData = copiaHdr;
+        console.warn('🔗 Campos del encabezado realineados con la plantilla');
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ No se pudieron realinear los nombres de columna:', e);
+  }
+
   return result;
 }
 

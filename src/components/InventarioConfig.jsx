@@ -800,6 +800,43 @@ export function CampoLoteEncabezadoConfig({ field, bodyElements, onChange, onCol
         <span>🔗 Este campo guarda los lotes de proceso del formulario</span>
       </label>
 
+      {/* ⚙️ Formato del número de lote. Por defecto seis dígitos (AAMMDD), que es
+          lo que evita los lotes con un dígito de más; se puede pasar a libre para
+          plantas que numeran con letras o con más caracteres. */}
+      {(activo || /LOTE/.test(String(field?.label || '').toUpperCase())) && (
+        <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1' }}>
+          <label style={{ ...etiqueta, color: '#334155' }}>🔢 Formato del número de lote</label>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <select
+              value={field?.loteFormato === 'fecha' ? 'fecha' : 'libre'}
+              onChange={(e) => onChange('loteFormato', e.target.value)}
+              style={{ ...control, maxWidth: '360px' }}
+            >
+              <option value="libre">Libre: letras y números (ej. L-2606-A1) — por defecto</option>
+              <option value="fecha">6 dígitos tipo fecha (AAMMDD · ej. 260606)</option>
+            </select>
+            {field?.loteFormato !== 'fecha' && (
+              <div>
+                <label style={{ ...etiqueta, color: '#334155' }}>Largo máximo</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={field?.loteLargoMax ?? 40}
+                  onChange={(e) => onChange('loteLargoMax', Math.max(1, Math.min(120, Number(e.target.value) || 40)))}
+                  style={{ ...control, width: '110px' }}
+                />
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '6px', lineHeight: 1.6 }}>
+            {field?.loteFormato !== 'fecha'
+              ? `Se aceptan letras y números hasta ${field?.loteLargoMax ?? 40} caracteres. El servidor guarda hasta 100.`
+              : 'El cuadro del lote no deja escribir más de seis dígitos ni letras: es lo que evita los lotes con un dígito de más.'}
+          </div>
+        </div>
+      )}
+
       {activo && (
         <div style={{ marginTop: '10px' }}>
           <label style={etiqueta}>¿Qué se le sugiere al operario?</label>

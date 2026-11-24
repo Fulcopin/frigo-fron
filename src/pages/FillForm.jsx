@@ -41,12 +41,12 @@ import {
 } from '../services/inventarioCeldaService';
 import { modoBusquedaProducto, destinoColumnaProducto } from '../utils/busquedaProducto';
 import { buscarCodigosEnUso, detalleDeUso } from '../services/codigosEnUsoService';
-import { validaEspecie, especieDelEncabezado, validarEspecieDeCodigo } from '../utils/validacionEspecie';
+import { validaEspecie, especieDelEncabezado, validarEspecieDeCodigo, coincideEspecie, especieDeFilaNoCoincide, textoEspecieQueNoCoincide } from '../utils/validacionEspecie';
 import { DIGITOS_LOTE } from '../utils/validacionLote';
 import HoraInput24 from '../components/HoraInput24';
 import DetalleFilas, { resumenDetalle } from '../components/DetalleFilas';
 import { validarHorariosFormulario, mensajeDeErrorServidor } from '../utils/validarHorarios';
-import { revisarHorariosDelFormulario, mensajeDeRevision } from '../utils/reglasTurno';
+import { revisarHorariosDelFormulario, mensajeDeRevision, calcularDuracion, rangoDe, aMinutos, turnoDelEncabezado, normalizarTurno } from '../utils/reglasTurno';
 import { recalcularFormulasBodyData } from '../utils/recalcularFormulas';
 import { camposDetalleActuales } from '../utils/detalleCamposActuales';
 import { avisosDeFecha } from '../utils/fechaFormulario';
@@ -219,6 +219,30 @@ const evaluarFormula = evaluarFormulaEngine;
 
 // Mantener compatibilidad con código existente que usa calcularFormulaDinamica
 const calcularFormulaDinamica = evaluarFormula;
+
+// ⚙️ CONFIGURACIÓN DE HORARIOS DE TURNO (ajustable por el Admin).
+// Por defecto: DÍA 06:00–17:00 y NOCHE 17:00–05:59 (así las 17:30 ya son Noche).
+const CONFIG_HORARIOS_KEY = 'frigolab.horarios.config';
+const CONFIG_HORARIOS_DEFECTO = {
+  dia: { inicio: '06:00', fin: '17:00' },
+  noche: { inicio: '17:00', fin: '05:59' },
+};
+const leerConfigHorarios = () => {
+  try {
+    const raw = localStorage.getItem(CONFIG_HORARIOS_KEY);
+    const p = raw ? JSON.parse(raw) : null;
+    return {
+      dia: { ...CONFIG_HORARIOS_DEFECTO.dia, ...(p?.dia || {}) },
+      noche: { ...CONFIG_HORARIOS_DEFECTO.noche, ...(p?.noche || {}) },
+    };
+  } catch {
+    return CONFIG_HORARIOS_DEFECTO;
+  }
+};
+const guardarConfigHorarios = (cfg) => {
+  try { localStorage.setItem(CONFIG_HORARIOS_KEY, JSON.stringify(cfg)); } catch { /* sin storage */ }
+};
+
 function FillForm() {
   // Hooks de navegación
   const { id } = useParams(); 
@@ -246,6 +270,39 @@ function FillForm() {
   // ⚠️ Avisos de turno/horarios que se muestran en un CUADRO dentro de la
   //    pantalla (no bloquean el guardado: solo los errores reales lo hacen).
   const [avisosTurno, setAvisosTurno] = useState('');
+  // 🔴 Marca "ya intentó guardar": el aviso rojo de obligatorio vacío recién se
+  // muestra después de intentar guardar (no desde que se abre el formulario).
+  const [intentoGuardar, setIntentoGuardar] = useState(false);
+  // ⚙️ Horarios de turno configurables + ventana para editarlos.
+  // Se guardan en el BACKEND (compartidos por toda la planta); el localStorage
+  // queda como respaldo por si el servidor no responde.
+  const [configHorarios, setConfigHorarios] = useState(leerConfigHorarios);
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/ConfiguracionHorarios`);
+        if (!r.ok) return;
+        const d = await r.json();
+        if (cancelado || !d) return;
+        const cfg = {
+          dia: {
+            inicio: d.TurnoDiaInicio || d.turnoDiaInicio || CONFIG_HORARIOS_DEFECTO.dia.inicio,
+            fin: d.TurnoDiaFin || d.turnoDiaFin || CONFIG_HORARIOS_DEFECTO.dia.fin,
+          },
+          noche: {
+            inicio: d.TurnoNocheInicio || d.turnoNocheInicio || CONFIG_HORARIOS_DEFECTO.noche.inicio,
+            fin: d.TurnoNocheFin || d.turnoNocheFin || CONFIG_HORARIOS_DEFECTO.noche.fin,
+          },
+        };
+        setConfigHorarios(cfg);
+        guardarConfigHorarios(cfg);
+      } catch { /* sin red: queda el respaldo local */ }
+    })();
+    return () => { cancelado = true; };
+  }, []);
+
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [formCreatedAt, setFormCreatedAt] = useState(null); // ✅ NUEVO: Fecha de creación del formulario
   
@@ -5826,6 +5883,175 @@ useEffect(() => {
 
   // --- RENDER FIELD CORREGIDO (COMBO BOX FIX) ---
  // --- RENDER FIELD CORREGIDO (COMPLETO Y DEFINITIVO) ---
+  /** ⚠️ Avisos EN VIVO de una celda de hora: jornada > 16 h o fuera del turno. */
+  const avisosHorarioCelda = (fila) => {
+    const avisos = [];
+    if (!fila) return avisos;
+    const claves = Object.keys(fila);
+    const claveInicio = claves.find(k => /hora/i.test(k) && /inicio|inicial|desde|entrada/i.test(k));
+    const claveFin = claves.find(k => /hora/i.test(k) && /fin|final|t[eé]rmino|salida/i.test(k));
+    if (!claveInicio || !claveFin) return avisos;
+    const inicio = fila[claveInicio];
+    const fin = fila[claveFin];
+    if (!inicio || !fin) return avisos;
+    const turno = normalizarTurno(turnoDelEncabezado(headerData)) || '';
+    const dur = calcularDuracion(inicio, fin, turno);
+    if (dur.valido && dur.horas > 16) {
+      avisos.push(`⚠️ Jornada de ${dur.texto} (más de 16 h): revisá las horas.`);
+    }
+    // El rango sale de la configuración GLOBAL (⚙️ Horarios, guardada en la BD).
+    if (dur.valido && turno) {
+      const cfg = turno === 'noche' ? configHorarios.noche : configHorarios.dia;
+      const desde = aMinutos(cfg.inicio);
+      const hasta = aMinutos(cfg.fin);
+      const inicioMin = aMinutos(inicio);
+      if (inicioMin !== null && desde !== null && hasta !== null) {
+        const fuera = desde <= hasta
+          ? (inicioMin < desde || inicioMin > hasta)
+          : (inicioMin < desde && inicioMin > hasta);
+        if (fuera) {
+          const etiqueta = turno === 'noche' ? 'Noche' : 'Día';
+          avisos.push(`⚠️ Horario fuera del turno ${etiqueta} (${cfg.inicio}–${cfg.fin}).`);
+        }
+      }
+    }
+    return avisos;
+  };
+
+  /**
+   * ⏱️ Turno del encabezado vs horas del "Control del Personal" (se usa como AVISO,
+   * no bloquea el guardado).
+   * NOCHE → entre 17:00 y 05:59; DÍA → entre 06:00 y 17:00 (configurable en ⚙️).
+   * Devuelve las horas que no cuadran.
+   */
+  const bloqueTurnoControlPersonal = (bodyData, bodyElements, turno) => {
+    const out = [];
+    const RX_HORA = /hora/i;
+    const RX_INI = /inicio|inicial|entrada|desde/i;
+    const RX_PERS = /personal|planta|externo|eventual|contratad|propio|cuadrilla/i;
+    const cfg = turno === 'noche' ? configHorarios.noche : configHorarios.dia;
+    const desde = aMinutos(cfg.inicio);
+    const hasta = aMinutos(cfg.fin);
+    const dentro = (min) => (desde <= hasta ? (min >= desde && min <= hasta) : (min >= desde || min <= hasta));
+
+    (bodyData || []).forEach((bloque, bi) => {
+      const el = bodyElements?.[bi];
+      const filas = bloque?.rows || bloque?.data;
+      if (!Array.isArray(filas) || filas.length === 0) return;
+      const cols = (el?.columns || []).map(c => String(c?.label || c?.name || '').trim());
+      const tieneHorario = cols.some(c => RX_HORA.test(c) && (RX_INI.test(c) || /fin|final|salida|t[eé]rmino|hasta/i.test(c)));
+      const tienePersonal = cols.some(c => RX_PERS.test(c));
+      if (!tieneHorario || !tienePersonal) return;
+      const titulo = el?.title || bloque?.title || `Tabla ${bi + 1}`;
+      filas.forEach((fila, fi) => {
+        if (!fila || typeof fila !== 'object') return;
+        Object.entries(fila).forEach(([k, v]) => {
+          if (!RX_HORA.test(k) || !RX_INI.test(k)) return;
+          const m = String(v ?? '').trim().match(/^(\d{1,2}):(\d{2})/);
+          if (!m) return;
+          const min = Number(m[1]) * 60 + Number(m[2]);
+          if (!dentro(min)) out.push(`${titulo}, fila ${fi + 1}: ${k} = ${v}`);
+        });
+      });
+    });
+    return out;
+  };
+
+  /**
+   * ⚠️ (Por fila) Una hora cargada y la otra vacía: inicio sin fin, o fin sin
+   * inicio. No bloquea; se suma a los avisos para que completen las dos.
+   */
+  const avisosHorasIncompletas = (bodyData, bodyElements) => {
+    const out = [];
+    const RX_INI = /(hora\s*(de\s*)?inici|hora\s*(de\s*)?entrada)/i;
+    const RX_FIN = /(hora\s*(de\s*)?fin|hora\s*(de\s*)?salida|hora\s*(de\s*)?t[eé]rmino)/i;
+    (bodyData || []).forEach((bloque, bi) => {
+      const el = bodyElements?.[bi];
+      const filas = bloque?.rows || bloque?.data;
+      if (!Array.isArray(filas) || filas.length === 0) return;
+      const cols = el?.columns || [];
+      const colIni = cols.find(c => c?.rol === 'horaInicio')
+        || cols.find(c => RX_INI.test(String(c?.label || c?.name || '')));
+      const colFin = cols.find(c => c?.rol === 'horaFin')
+        || cols.find(c => RX_FIN.test(String(c?.label || c?.name || '')));
+      if (!colIni || !colFin) return;
+      const kIni = colIni.label || colIni.name;
+      const kFin = colFin.label || colFin.name;
+      const titulo = el?.title || bloque?.title || `Tabla ${bi + 1}`;
+      filas.forEach((fila, fi) => {
+        if (!fila || typeof fila !== 'object') return;
+        const ini = String(fila[kIni] ?? '').trim();
+        const fin = String(fila[kFin] ?? '').trim();
+        if (ini && !fin) out.push(`${titulo}, fila ${fi + 1}: falta la hora de fin.`);
+        else if (!ini && fin) out.push(`${titulo}, fila ${fi + 1}: falta la hora de inicio.`);
+      });
+    });
+    return out;
+  };
+
+  /** 🐟 Aviso en vivo si la fila mezcla otra especie con la del encabezado. */
+  const avisoEspecieFila = (tablaEl, fila) => {
+    if (!tablaEl?.validarEspecieCodigo || !fila) return '';
+    const especie = especieDelEncabezado(headerData, tablaEl.especieHeaderField);
+    if (!especie) return '';
+    // Solo se usa una columna que diga explícitamente "especie": con producto o
+    // clasificación se disparaban falsos avisos (el nombre no siempre la menciona).
+    const clave = Object.keys(fila).find(k =>
+      /especie/i.test(k) && String(fila[k] ?? '').trim() !== '');
+    if (!clave) return '';
+    const texto = String(fila[clave]).trim();
+    if (coincideEspecie(especie, [texto])) return '';
+    return `⚠️ Especie distinta: la fila dice "${texto}" y el formulario es ${especie}.`;
+  };
+
+  /** 🔴🟡 Avisos en vivo de un campo: rojo si falta un obligatorio, amarillo el resto. */
+  const renderAvisosCampo = (field, value, filaActual) => {
+    const partes = [];
+    // 🔴 Solo DESPUÉS de intentar guardar, y solo en campos obligatorios.
+    if (intentoGuardar && field?.required && String(value ?? '').trim() === '') {
+      partes.push(
+        <span key="req" style={{ fontSize: '10.5px', fontWeight: 700, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', padding: '2px 4px', whiteSpace: 'normal' }}>
+          ❗ Obligatorio vacío
+        </span>
+      );
+    }
+    // 📅 Fecha antigua (>30 días) o futura, EN VIVO. Mismo amarillo que el resto.
+    const labelFecha = String(field?.label || field?.name || '');
+    if (value && (field?.type === 'date' || /fecha/i.test(labelFecha))
+        && !/vencim|caduc|version|expir|nacim/i.test(labelFecha)) {
+      const iso = String(value).slice(0, 10);
+      const d = new Date(`${iso}T00:00:00`);
+      if (!Number.isNaN(d.getTime())) {
+        const hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+        const dias = Math.round((hoy.getTime() - d.getTime()) / 86400000);
+        if (dias > 30) {
+          partes.push(
+            <span key="fechaAtraso" style={{ fontSize: '10.5px', fontWeight: 600, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', padding: '2px 4px', whiteSpace: 'normal' }}>
+              ⚠️ Fecha con {dias} días de atraso.
+            </span>
+          );
+        } else if (dias < -1) {
+          partes.push(
+            <span key="fechaFutura" style={{ fontSize: '10.5px', fontWeight: 600, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', padding: '2px 4px', whiteSpace: 'normal' }}>
+              ⚠️ Fecha futura ({-dias} días adelante).
+            </span>
+          );
+        }
+      }
+    }
+    if (filaActual) {
+      const nombre = String(field?.label || field?.name || '');
+      if (/hora/i.test(nombre) && /fin|final|t[eé]rmino|salida/i.test(nombre)) {
+        avisosHorarioCelda(filaActual).forEach((a, i) => partes.push(
+          <span key={`a${i}`} style={{ fontSize: '10.5px', fontWeight: 600, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', padding: '2px 4px', whiteSpace: 'normal' }}>{a}</span>
+        ));
+      }
+    }
+    if (partes.length === 0) return null;
+    return <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px' }}>{partes}</div>;
+  };
+
   const renderField = useCallback((field, value, onChange, rowIndex = null, filaActual = null) => {
     // Hora de inicio de ESTA fila, para avisar si la de fin es anterior. Se
     // busca por nombre de columna: es el único vínculo entre las dos celdas,
@@ -6853,7 +7079,138 @@ useEffect(() => {
     return f?.label || null;
   };
 
+  /**
+   * 🐟 Avisos (amarillo) cuando una fila de una tabla dice una especie distinta
+   * a la del encabezado del formulario.
+   *
+   * Mira TODAS las tablas, sin depender de que la plantilla tenga marcado el
+   * control por código (`validarEspecieCodigo`). Antes el aviso solo salía si
+   * alguien había configurado esa marca en esa tabla; en planta no se configura
+   * nunca, así que el panel de alertas no mostraba nada de especie y el
+   * formulario se guardaba mezclando pescados sin que nadie se enterara.
+   *
+   * Los formatos que mezclan especies a propósito (FOR-PD-05 / 10 / 14 / 15)
+   * quedan afuera, igual que antes.
+   */
+  const avisosDeEspecieTablas = (header, cuerpo, elementosDeCuerpo) => {
+    const salida = [];
+    const codigoForm = String(selectedTemplate?.codigo || '').toUpperCase().trim();
+    if (['FOR-PD-05', 'FOR-PD-10', 'FOR-PD-14', 'FOR-PD-15'].includes(codigoForm)) return salida;
+
+    (elementosDeCuerpo || []).forEach((el, ei) => {
+      if (el?.type !== 'table') return;
+      // La especie del formulario: el campo que eligió la plantilla o, si no
+      // hay, el primer campo del encabezado que hable de especie.
+      const especie = especieDelEncabezado(header, el.especieHeaderField);
+      if (!especie) return;
+
+      const filas = cuerpo?.[ei]?.data || cuerpo?.[ei]?.rows || [];
+      const malas = [];
+      (Array.isArray(filas) ? filas : []).forEach((fila, fi) => {
+        if (!fila || typeof fila !== 'object') return;
+        if (!especieDeFilaNoCoincide(especie, fila)) return;
+        malas.push({ fi, texto: textoEspecieQueNoCoincide(especie, fila) });
+      });
+      if (malas.length === 0) return;
+
+      // Un aviso por tabla (no uno por fila): con 20 filas mal el panel se
+      // hacía ilegible y se perdían los demás avisos.
+      const ejemplo = malas.slice(0, 3)
+        .map(m => `fila ${m.fi + 1}${m.texto ? ` ("${m.texto}")` : ''}`)
+        .join(', ');
+      salida.push(
+        `🐟 ${el.title || `Tabla ${ei + 1}`}: ${malas.length} fila(s) con especie distinta a ${especie} → ${ejemplo}`
+        + (malas.length > 3 ? ` … y ${malas.length - 3} más` : '')
+      );
+    });
+
+    return salida;
+  };
+
   /** Abre la vista previa. El guardado real corre al confirmar. */
+  /** Avisos (amarillo) y bloqueos (rojo) que se muestran al lado de la previa. */
+  const calcularAvisosPrevia = () => {
+    const avisos = [];
+    const bloqueos = [];
+    if (!selectedTemplate) return { avisos, bloqueos };
+
+    // 📅 Fecha
+    avisosDeFecha({ headerData }, 30).forEach(a => avisos.push(`📅 ${a}`));
+
+    // ⏱️ Horarios (inicio > fin, >12 h) y horas contra el turno
+    const horarios = validarHorariosFormulario(bodyData, selectedTemplate.bodyElements);
+    (horarios.errores || []).forEach(e =>
+      avisos.push(`⏱️ ${e.tabla}, fila ${e.fila}: ${e.horaInicio} → ${e.horaFin}. ${e.motivo}`));
+    const porTurno = revisarHorariosDelFormulario({
+      headerData,
+      bodyData,
+      bodyElements: selectedTemplate.bodyElements,
+    });
+    (porTurno.errores || []).forEach(e => avisos.push(`⏱️ ${e}`));
+    (porTurno.avisos || []).forEach(a => avisos.push(`⏱️ ${a}`));
+    // ⏱️ Hora suelta por fila
+    avisosHorasIncompletas(bodyData, selectedTemplate.bodyElements)
+      .forEach(a => avisos.push(`⏱️ ${a}`));
+
+    // ⚠️ Turno vs Control del Personal: AVISA (no bloquea).
+    const turnoHdr = normalizarTurno(turnoDelEncabezado(headerData));
+    if (turnoHdr) {
+      bloqueTurnoControlPersonal(bodyData, selectedTemplate.bodyElements, turnoHdr)
+        .forEach(b => avisos.push(`⏱️ Turno ${turnoHdr === 'noche' ? 'NOCHE' : 'DÍA'}: ${b}`));
+    }
+
+    // 🐟 Especie vs lo cargado en las tablas: AVISA en amarillo (no bloquea).
+    avisosDeEspecieTablas(headerData, bodyData, selectedTemplate.bodyElements)
+      .forEach(a => avisos.push(a));
+
+    // ⚖️ MP vs PT (producción > materia prima)
+    const avisosMp = (selectedTemplate.bodyElements || [])
+      .map((el, idx) => validarMateriaPrimaVsProduccion(el, selectedTemplate.bodyElements, bodyData, idx))
+      .filter(r => r.aplica && !r.ok);
+    avisosMp.forEach(r => avisos.push(`⚖️ ${r.mensaje}`));
+
+    // ✍️ Firma obligatoria
+    const puestosFirma = (selectedTemplate.firmas || []).filter(f => f?.puesto);
+    if (puestosFirma.length > 0 && puestosFirma.every(f => !firmasData[f.puesto])) {
+      bloqueos.push(`✍️ Falta la firma de responsabilidad (${puestosFirma.map(f => f.puesto).join(', ')})`);
+    }
+
+    // ⚖️ Peso de producción obligatorio
+    (selectedTemplate.bodyElements || []).forEach((el, ei) => {
+      if (el?.type !== 'table') return;
+      const filas = bodyData[ei]?.data || [];
+      const conDatos = filas.filter(row =>
+        row && Object.entries(row).some(([k, v]) => !k.startsWith('_') && v != null && String(v).trim() !== ''));
+      if (conDatos.length === 0) return;
+      (el.columns || []).forEach(col => {
+        if (!col?.required || col.rol !== 'pesoProducido') return;
+        const clave = col.label || col.name;
+        if (!clave) return;
+        const sinPeso = conDatos.filter(row => row[clave] == null || String(row[clave]).trim() === '').length;
+        if (sinPeso > 0) bloqueos.push(`⚖️ ${el.title || 'Tabla'}: ${sinPeso} fila(s) sin peso`);
+      });
+    });
+
+    // ❗ Obligatorios vacíos
+    for (const f of (selectedTemplate.headerFields || [])) {
+      if (!f?.required) continue;
+      const k = f.label || f.name;
+      if (k && String(headerData[k] ?? '').trim() === '') bloqueos.push(`❗ Obligatorio vacío: ${k}`);
+    }
+    (selectedTemplate.bodyElements || []).forEach((el, ei) => {
+      if (el?.type !== 'section') return;
+      (el.fields || []).forEach(f => {
+        if (!f?.required) return;
+        const k = f.label || f.name;
+        if (!k) return;
+        const v = bodyData[ei]?.data?.[k] ?? bodyData[ei]?.[k];
+        if (String(v ?? '').trim() === '') bloqueos.push(`❗ Obligatorio vacío: ${el.title || 'Sección'}: ${k}`);
+      });
+    });
+
+    return { avisos, bloqueos };
+  };
+
   const abrirPreviaGuardado = () => {
     if (isSavingRef.current || formSaving) return;
     if (!selectedTemplate) {
@@ -6878,12 +7235,15 @@ useEffect(() => {
     const valores = {};
     for (const c of campos) valores[c.label] = headerData?.[c.label] ?? '';
 
+    const { avisos, bloqueos } = calcularAvisosPrevia();
     setPreviaGuardado({
       campoFecha,
       campos,
       valores,
       filas,
       usuario: u?.nombreCompleto || u?.nombre || u?.username || '—',
+      avisos,
+      bloqueos,
     });
   };
 
@@ -6927,6 +7287,8 @@ useEffect(() => {
     }
     isSavingRef.current = true;
     setFormSaving(true);
+    // 🔴 A partir de acá (intento de guardar) se marcan en rojo los obligatorios vacíos.
+    setIntentoGuardar(true);
     
     console.log('💾 [SAVE] === INICIO handleSaveForm ===');
     console.log('💾 [SAVE] selectedTemplate:', selectedTemplate?.templateID, selectedTemplate?.nombre);
@@ -6939,7 +7301,10 @@ useEffect(() => {
 
     setError(null);
     setAvisosTurno('');
-    
+
+    // ⚠️ Avisos (NO bloquean): se juntan todos y se muestran en UN solo cuadro.
+    const avisosGuardado = [];
+
     if (!selectedTemplate) {
       console.error('💾 [SAVE] ❌ No hay selectedTemplate, abortando');
       alert('⚠️ No hay plantilla seleccionada. Selecciona una plantilla primero.');
@@ -6966,46 +7331,20 @@ useEffect(() => {
       return;
     }
     
-    // ⚠️ FECHA ANTIGUA / FUTURA ANTES DE GUARDAR
-    //    Si la fecha que se escribió dentro del formulario quedó más de X días
-    //    atrás (default 30 = "un mes") o está en el futuro, avisamos antes de guardar.
-    //    ⚠️ NO BLOQUEA: la ventana (alert) avisa y se sigue al siguiente paso.
+    // 📅 FECHA ANTIGUA / FUTURA: aviso (no bloquea).
     const avisosFechaGuardar = avisosDeFecha({ headerData }, 30);
-    if (avisosFechaGuardar.length > 0) {
-      const detalle = avisosFechaGuardar.join('\n');
-      const seguirConFecha = window.confirm(
-        `⚠️ Fechas del formulario\n\n${detalle}\n\nSi el dato está mal escrito, corrígela antes de guardar. ¿Guardar de todas formas?`
-      );
-      if (!seguirConFecha) {
-        console.warn('💾 [SAVE] ❌ Cancelado por revisión de fecha');
-        isSavingRef.current = false;
-        setFormSaving(false);
-        return;
-      }
-    }
+    avisosFechaGuardar.forEach(a => avisosGuardado.push(`📅 ${a}`));
 
     // ⚖️ NO SE PUEDE PRODUCIR MÁS DE LO QUE ENTRÓ.
     //    Las tablas con el control activado comparan su producción contra la
     //    materia prima declarada arriba. Se avisa pero NO se bloquea: con
     //    glaseo el peso de salida sube legítimamente, así que la última
     //    palabra la tiene el operario.
+    // ⚖️ PESO de MP vs PT (producción > materia prima): aviso (no bloquea).
     const avisosMp = (selectedTemplate.bodyElements || [])
       .map((el, idx) => validarMateriaPrimaVsProduccion(el, selectedTemplate.bodyElements, bodyData, idx))
       .filter(r => r.aplica && !r.ok);
-
-    if (avisosMp.length > 0) {
-      const detalle = avisosMp.map(r => `• ${r.mensaje}`).join('\n\n');
-      const seguir = window.confirm(
-        `⚠️ La producción supera a la materia prima\n\n${detalle}\n\n` +
-        `Si es por glaseo o reproceso podés continuar. ¿Guardar de todas formas?`
-      );
-      if (!seguir) {
-        console.warn('💾 [SAVE] ❌ Cancelado por control de materia prima');
-        isSavingRef.current = false;
-        setFormSaving(false);
-        return;
-      }
-    }
+    avisosMp.forEach(r => avisosGuardado.push(`⚖️ ${r.mensaje}`));
 
     // ✍️ FIRMA DE RESPONSABILIDAD OBLIGATORIA.
     //    Se estaban guardando registros sin ninguna firma. Si la plantilla tiene
@@ -7032,6 +7371,39 @@ useEffect(() => {
         }, 100);
         return;
       }
+    }
+
+    // ❗ CAMPOS OBLIGATORIOS VACÍOS: no se deja guardar con un campo obligatorio
+    //    en blanco (encabezado y secciones). Así el operario ve "vacío" en rojo
+    //    y no se graban registros incompletos.
+    const obligatoriosVacios = [];
+    for (const f of (selectedTemplate.headerFields || [])) {
+      if (!f?.required) continue;
+      const k = f.label || f.name;
+      if (!k) continue;
+      if (String(headerData[k] ?? '').trim() === '') obligatoriosVacios.push(k);
+    }
+    (selectedTemplate.bodyElements || []).forEach((el, ei) => {
+      if (el?.type !== 'section') return;
+      (el.fields || []).forEach(f => {
+        if (!f?.required) return;
+        const k = f.label || f.name;
+        if (!k) return;
+        const v = bodyData[ei]?.data?.[k] ?? bodyData[ei]?.[k];
+        if (String(v ?? '').trim() === '') obligatoriosVacios.push(`${el.title || 'Sección'}: ${k}`);
+      });
+    });
+    if (obligatoriosVacios.length > 0) {
+      const detalle = obligatoriosVacios.slice(0, 12).map(x => `• ${x}`).join('\n');
+      const mensaje = `❗ Faltan campos obligatorios:\n\n${detalle}` +
+        (obligatoriosVacios.length > 12 ? `\n• … y ${obligatoriosVacios.length - 12} más` : '') +
+        `\n\nCompletalos antes de guardar.`;
+      console.warn('💾 [SAVE] ❌ Campos obligatorios vacíos', obligatoriosVacios);
+      alert(mensaje);
+      setError(mensaje);
+      isSavingRef.current = false;
+      setFormSaving(false);
+      return;
     }
 
     const finalHeaderData = { ...headerData };
@@ -7107,7 +7479,21 @@ useEffect(() => {
     // 🆕 Obtener datos del usuario logueado para guardar quién creó el formulario
     const currentUser = authService.getCurrentUser();
     console.log('💾 [SAVE] Usuario:', currentUser?.nombre || currentUser?.username);
-    
+
+    // 🔐 SIN USUARIO NO SE GUARDA: si la sesión no trae al usuario, el
+    // formulario quedaría "sin id de usuario" (Usuario desconocido) y después
+    // no hay forma de saber de quién es. Se obliga a volver a iniciar sesión.
+    if (!currentUser?.nombre && !currentUser?.username) {
+      console.warn('💾 [SAVE] ❌ Sin usuario en sesión, abortando');
+      alert('🔐 Tu sesión no está activa (no se detecta el usuario).\n\n'
+        + 'Cerrá sesión y volvé a entrar antes de guardar: si no, el formulario '
+        + 'queda sin el nombre de quién lo llenó.');
+      setError('Sesión sin usuario: volvé a iniciar sesión antes de guardar.');
+      isSavingRef.current = false;
+      setFormSaving(false);
+      return;
+    }
+
     // 🧹 Limpiar filas vacías de las tablas antes de guardar
     const cleanedBodyData = bodyData.map(element => {
       if (element.type === 'table' && Array.isArray(element.data)) {
@@ -7179,54 +7565,58 @@ useEffect(() => {
       console.log(`💾 [SAVE] 🧮 ${formulasCorregidas} celda(s) de fórmula recalculadas antes de guardar`);
     }
 
-    // ⏱️ Hora de fin antes que la de inicio: no se guarda. El backend aplica
-    //    la misma regla; esto avisa sin esperar al servidor.
+    // ⏱️ Hora de fin antes que la de inicio: AVISA (no bloquea). Se permite el
+    //    cruce de medianoche (22:00 → 02:00); solo avisa jornadas imposibles (>12 h).
     const horarios = validarHorariosFormulario(bodyDataParaGuardar, selectedTemplate.bodyElements);
-    if (!horarios.esValido) {
-      console.warn('💾 [SAVE] ❌ Horarios inválidos, abortando', horarios.errores);
-      alert(horarios.mensaje);
-      setError(horarios.mensaje);
-      isSavingRef.current = false;
-      setFormSaving(false);
-      return;
-    }
+    (horarios.errores || []).forEach(e =>
+      avisosGuardado.push(`⏱️ ${e.tabla}, fila ${e.fila}: ${e.horaInicio} → ${e.horaFin}. ${e.motivo}`)
+    );
 
-    // ⏱️ Horas contra el TURNO del encabezado (reglasTurno.js).
-    //
-    //    BLOQUEA lo imposible: una hora fuera del rango del turno (07:00 cuando
-    //    era 19:00, la confusión de AM con PM) o un fin anterior al inicio sin
-    //    cruzar medianoche.
-    //
-    //    AVISA, sin impedir, cuando la jornada pasa de 8 horas: esa jornada
-    //    existe, y bloquearla obligaría a anotar una hora falsa para cerrar el
-    //    registro.
+    // ⏱️ Horas contra el TURNO del encabezado: AVISA (no bloquea). Los turnos
+    //    de noche, jornadas largas o horas fuera del rango pueden ser válidos
+    //    (turnos partidos, reemplazos); el operario decide.
     const porTurno = revisarHorariosDelFormulario({
       headerData: finalHeaderData,
       bodyData: bodyDataParaGuardar,
       bodyElements: selectedTemplate.bodyElements,
     });
+    (porTurno.errores || []).forEach(e => avisosGuardado.push(`⏱️ ${e}`));
+    (porTurno.avisos || []).forEach(a => avisosGuardado.push(`⏱️ ${a}`));
 
-    if (!porTurno.puedeGuardar) {
-      const mensaje = mensajeDeRevision(porTurno);
-      console.warn('💾 [SAVE] ⛔ Horas fuera del rango del turno', porTurno.errores);
-      alert(mensaje);
-      setError(mensaje);
-      setAvisosTurno('');
-      isSavingRef.current = false;
-      setFormSaving(false);
-      return;
+    // ⏱️ (Por fila) hora de inicio o de fin suelta: aviso.
+    avisosHorasIncompletas(bodyDataParaGuardar, selectedTemplate.bodyElements)
+      .forEach(a => avisosGuardado.push(`⏱️ ${a}`));
+
+    // ── BLOQUEOS (no se guarda) ──────────────────────────────────────────────
+
+    // ⚠️ TURNO del encabezado vs horas del "Control del Personal": AVISA (no bloquea).
+    const turnoHdr = normalizarTurno(turnoDelEncabezado(finalHeaderData));
+    if (turnoHdr) {
+      const fueraTurno = bloqueTurnoControlPersonal(bodyDataParaGuardar, selectedTemplate.bodyElements, turnoHdr);
+      fueraTurno.forEach(b => avisosGuardado.push(`⏱️ Turno ${turnoHdr === 'noche' ? 'NOCHE' : 'DÍA'}: ${b}`));
     }
 
-    // ⚠️ AVISOS DE TURNO: se muestran en el CUADRO de la pantalla (estado
-    //    `avisosTurno`) y NO bloquean el guardado ni piden confirmación: los
-    //    turnos de noche, jornadas largas o horas fuera del rango pueden ser
-    //    válidos (turnos partidos, reemplazos). El operario guarda y revisa el
-    //    cuadro; los errores reales (arriba) sí impiden guardar.
-    if (porTurno.necesitaConfirmar && !window.confirm(mensajeDeRevision(porTurno))) {
-      console.warn('💾 [SAVE] ⏱️ El usuario eligió revisar las horas', porTurno.avisos);
-      isSavingRef.current = false;
-      setFormSaving(false);
-      return;
+    // 🐟 ESPECIE vs PRODUCTO: AVISA en amarillo (no bloquea el guardado).
+    //    Antes esto cortaba el guardado con un alert; ahora entra en el mismo
+    //    cuadro de avisos ("¿Guardar de todas formas?"), que es donde el
+    //    operario lo ve y decide.
+    avisosDeEspecieTablas(finalHeaderData, bodyDataParaGuardar, selectedTemplate.bodyElements)
+      .forEach(a => avisosGuardado.push(a));
+
+    // ── AVISOS (no bloquean): UN SOLO CUADRO ─────────────────────────────────
+    if (avisosGuardado.length > 0) {
+      const detalle = avisosGuardado.slice(0, 20).map(a => `• ${a}`).join('\n');
+      const seguir = window.confirm(
+        `⚠️ Revisá estos avisos antes de guardar:\n\n${detalle}`
+        + (avisosGuardado.length > 20 ? `\n• … y ${avisosGuardado.length - 20} más` : '')
+        + `\n\n¿Guardar de todas formas?`
+      );
+      if (!seguir) {
+        console.warn('💾 [SAVE] ❌ Cancelado por avisos de guardado', avisosGuardado.length);
+        isSavingRef.current = false;
+        setFormSaving(false);
+        return;
+      }
     }
 
     const payload = {
@@ -10260,6 +10650,7 @@ useEffect(() => {
                       </button>
                       )}
                     </div>
+                    {renderAvisosCampo(field, headerData[field.label], null)}
                   </div>
                   );
                 })}
@@ -10815,6 +11206,7 @@ useEffect(() => {
                     <div key={field.label || `section-field-${elementIndex}-${fieldIndex}`} className="form-field">
                       <label>{field.label}{field.required && <span className="required">*</span>}</label>
                       {renderField(field, displayValue, value => handleSectionFieldChangeWithAutoSave(elementIndex, field.label, value))}
+                      {renderAvisosCampo(field, displayValue, null)}
                     </div>
                   );
                 })}
@@ -12175,7 +12567,20 @@ useEffect(() => {
                         background: '#f3f4f6', color: '#374151', cursor: 'not-allowed'
                       }}
                     />
-                  ) : renderField(colForRender, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex, row)}
+                  ) : (() => {
+                    const nombreCelda = colForRender?.label || colForRender?.name || '';
+                    const esFinHora = /hora/i.test(nombreCelda) && /fin|final|t[eé]rmino|salida/i.test(nombreCelda);
+                    const avisoEspecie = colIndex === 0 ? avisoEspecieFila(element, row) : '';
+                    return (
+                      <>
+                        {renderField(colForRender, row[resolvedCellName], (value) => handleTableFieldChangeWithAutoSave(elementIndex, rowIndex, resolvedCellName, value), rowIndex, row)}
+                        {renderAvisosCampo(colForRender, row[resolvedCellName], esFinHora ? row : null)}
+                        {avisoEspecie && (
+                          <span style={{ display: 'block', marginTop: '2px', fontSize: '10.5px', fontWeight: 600, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', padding: '2px 4px', whiteSpace: 'normal' }}>{avisoEspecie}</span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
                 {isApiCodigoTrigger && (
                   <button
@@ -13711,7 +14116,7 @@ useEffect(() => {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: '#fff', borderRadius: '14px', width: '100%', maxWidth: '560px', maxHeight: '88vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,.3)' }}
+            style={{ background: '#fff', borderRadius: '14px', width: '100%', maxWidth: '1100px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,.3)' }}
           >
             <div style={{ background: 'linear-gradient(135deg,#0ea5e9,#2563eb)', color: '#fff', padding: '16px 20px', borderRadius: '14px 14px 0 0' }}>
               <div style={{ fontSize: '17px', fontWeight: 700 }}>👁️ Revisá antes de guardar</div>
@@ -13720,7 +14125,9 @@ useEffect(() => {
               </div>
             </div>
 
-            <div style={{ padding: '18px 20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: '16px', padding: '18px 20px' }}>
+              {/* IZQUIERDA: confirmación y campos */}
+              <div>
               {/* 📅 FECHA DEL REGISTRO — bloque propio, arriba de todo.
                   Es el dato que más se equivoca: el operario llena el
                   formulario del turno de ayer y la fecha queda con la de hoy.
@@ -13830,6 +14237,10 @@ useEffect(() => {
                     // vencimiento o versión.
                     const esPrincipal = esFecha && !/vencim|caduc|version|expir/i.test(clave);
 
+                    // ¿Este campo aparece en alguna alerta/bloqueo? Se sombrea en rojo.
+                    const enAlerta = [...(previaGuardado.bloqueos || []), ...(previaGuardado.avisos || [])]
+                      .some(x => String(x).toLowerCase().includes(String(clave).toLowerCase()));
+
                     const estiloInput = {
                       width: '100%',
                       padding: esPrincipal ? '11px 12px' : '8px 10px',
@@ -13844,14 +14255,14 @@ useEffect(() => {
                       <div
                         key={clave}
                         style={{
-                          background: cambiado ? '#fffbeb' : (esPrincipal ? '#eff6ff' : '#f8fafc'),
-                          border: (esPrincipal ? 2 : 1) + 'px solid ' + (cambiado ? '#fcd34d' : (esPrincipal ? '#93c5fd' : '#e2e8f0')),
+                          background: enAlerta ? '#fef2f2' : (cambiado ? '#fffbeb' : (esPrincipal ? '#eff6ff' : '#f8fafc')),
+                          border: (esPrincipal ? 2 : 1) + 'px solid ' + (enAlerta ? '#ef4444' : (cambiado ? '#fcd34d' : (esPrincipal ? '#93c5fd' : '#e2e8f0'))),
                           borderRadius: '8px',
                           padding: esPrincipal ? '12px 14px' : '9px 11px',
                           // Fila entera: la fecha destaca sola y el calendario
                           // queda cómodo.
                           gridColumn: esPrincipal ? '1 / -1' : undefined,
-                          boxShadow: esPrincipal && !cambiado ? '0 0 0 3px rgba(59,130,246,.10)' : undefined,
+                          boxShadow: enAlerta ? '0 0 0 3px rgba(239,68,68,.22)' : (esPrincipal && !cambiado ? '0 0 0 3px rgba(59,130,246,.10)' : undefined),
                         }}
                       >
                         <label style={{ display: 'block', fontSize: esPrincipal ? '11.5px' : '10.5px', fontWeight: 700, color: esPrincipal ? '#1e40af' : '#64748b', textTransform: 'uppercase', marginBottom: '5px' }}>
@@ -13922,6 +14333,30 @@ useEffect(() => {
                   </div>
                 </div>
               )}
+              </div>
+
+              {/* DERECHA: alertas y bloqueos */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '70vh', overflowY: 'auto' }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>
+                  Alertas y bloqueos
+                </div>
+                {(() => {
+                  const { avisos, bloqueos } = calcularAvisosPrevia();
+                  if (bloqueos.length === 0 && avisos.length === 0) {
+                    return <div style={{ color: '#15803d', fontSize: '13px', fontWeight: 600 }}>✅ Todo bien. No hay alertas ni bloqueos.</div>;
+                  }
+                  return (
+                    <>
+                      {bloqueos.map((b, i) => (
+                        <div key={`bl-${i}`} style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: '6px', padding: '7px 9px', fontSize: '12.5px', fontWeight: 600 }}>{b}</div>
+                      ))}
+                      {avisos.map((a, i) => (
+                        <div key={`av-${i}`} style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309', borderRadius: '6px', padding: '7px 9px', fontSize: '12.5px', fontWeight: 600 }}>{a}</div>
+                      ))}
+                    </>
+                  );
+                })()}
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', padding: '14px 20px', borderTop: '1px solid #f1f5f9' }}>

@@ -7,6 +7,7 @@ import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig";
 import { MAPPABLE_API_FIELDS, API_CODIGO_ENDPOINTS, API_CODIGO_JSON_FIELDS } from "../api/apiMappings";
 import UserSelector from "../components/UserSelector";
 import { fetchUsers } from "../services/userService";
+import { listarBloques, obtenerBloque, crearBloque } from "../services/bloquesService";
 import { InventarioColumnaConfig, InventarioAutoCompletar, InventarioTablaConfig, CampoLoteEncabezadoConfig, ColumnaLotePadreConfig } from "../components/InventarioConfig";
 import BusquedaProductoSelect from "../components/BusquedaProductoSelect";
 import SelectorActividadesProceso from "../components/SelectorActividadesProceso";
@@ -238,6 +239,102 @@ function CreateTemplate() {
 
   const updateBodyElement = (elementIndex, field, value) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => i === elementIndex ? { ...el, [field]: value } : el) }));
   const removeBodyElement = (elementIndex) => setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.filter((_, i) => i !== elementIndex) }));
+
+  // ── Mover bloques y preguntas arriba/abajo ───────────────────────────────
+  const moverBodyElement = (index, delta) => {
+    setTemplate(prev => {
+      const j = index + delta;
+      if (!prev?.bodyElements || j < 0 || j >= prev.bodyElements.length) return prev;
+      const arr = [...prev.bodyElements];
+      [arr[index], arr[j]] = [arr[j], arr[index]];
+      return { ...prev, bodyElements: arr };
+    });
+  };
+
+  const moverFieldEnSeccion = (elementIndex, fieldIndex, delta) => {
+    setTemplate(prev => {
+      const el = prev?.bodyElements?.[elementIndex];
+      if (!el || !Array.isArray(el.fields)) return prev;
+      const j = fieldIndex + delta;
+      if (j < 0 || j >= el.fields.length) return prev;
+      const fields = [...el.fields];
+      [fields[fieldIndex], fields[j]] = [fields[j], fields[fieldIndex]];
+      return { ...prev, bodyElements: prev.bodyElements.map((e, i) => (i === elementIndex ? { ...e, fields } : e)) };
+    });
+  };
+
+  // ── Copiar / duplicar / pegar bloques ────────────────────────────────────
+  // El "Control del Personal", los procesos y la materia prima suelen ser
+  // idénticos en varias plantillas. Antes había que rearmar el bloque a mano;
+  // ahora se copia a un portapapeles (localStorage) y se pega donde haga falta,
+  // o se duplica al lado con un clic.
+  const clonarBloque = (el) => {
+    const copia = JSON.parse(JSON.stringify(el));
+    copia.id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    return copia;
+  };
+
+  const duplicarBodyElement = (elementIndex) => {
+    setTemplate(prev => {
+      const original = prev.bodyElements[elementIndex];
+      if (!original) return prev;
+      const elementos = [...prev.bodyElements];
+      elementos.splice(elementIndex + 1, 0, clonarBloque(original));
+      return { ...prev, bodyElements: elementos };
+    });
+  };
+
+  const copiarBodyElement = (elementIndex) => {
+    const original = template.bodyElements[elementIndex];
+    if (!original) return;
+    try {
+      localStorage.setItem('frigolab.bloque.copiado', JSON.stringify(original));
+    } catch { /* sin storage */ }
+    alert(`📋 Bloque "${original.title || 'sin título'}" copiado.\nPegalo en otra plantilla con "📥 Pegar bloque".`);
+  };
+
+  const pegarBodyElement = () => {
+    let copia = null;
+    try {
+      const raw = localStorage.getItem('frigolab.bloque.copiado');
+      if (!raw) { alert('No hay ningún bloque copiado todavía.'); return; }
+      copia = clonarBloque(JSON.parse(raw));
+    } catch {
+      alert('No se pudo pegar el bloque (portapapeles dañado).');
+      return;
+    }
+    setTemplate(prev => ({ ...prev, bodyElements: [...prev.bodyElements, copia] }));
+  };
+
+  // ── Biblioteca compartida (backend) ──────────────────────────────────────
+  const guardarEnBiblioteca = async (elementIndex) => {
+    const original = template.bodyElements[elementIndex];
+    if (!original) return;
+    const nombre = window.prompt('Nombre para guardar este bloque en la biblioteca:', original.title || 'Bloque sin título');
+    if (!nombre) return;
+    try {
+      await crearBloque({ nombre, tipo: original.type || 'section', contenido: JSON.stringify(original) });
+      alert('✅ Bloque guardado en la biblioteca compartida.');
+    } catch (e) {
+      alert('No se pudo guardar en la biblioteca: ' + (e?.message || e));
+    }
+  };
+
+  const insertarDeBiblioteca = async () => {
+    try {
+      const lista = await listarBloques();
+      if (lista.length === 0) { alert('La biblioteca está vacía. Guardá un bloque primero.'); return; }
+      const opciones = lista.map((b, i) => `${i + 1}. ${b.nombre} (${b.tipo})`).join('\n');
+      const resp = window.prompt(`Elegí el número del bloque a insertar:\n\n${opciones}`);
+      const idx = Number(resp) - 1;
+      if (!Number.isInteger(idx) || idx < 0 || idx >= lista.length) return;
+      const full = await obtenerBloque(lista[idx].id);
+      const copia = clonarBloque(JSON.parse(full.contenido));
+      setTemplate(prev => ({ ...prev, bodyElements: [...prev.bodyElements, copia] }));
+    } catch (e) {
+      alert('No se pudo cargar la biblioteca: ' + (e?.message || e));
+    }
+  };
   
   // --- MODIFICADO: Añadir 'apiMap' y 'apiEndpoint' a los campos de sección ---
   const addFieldToSection = (elementIndex) => {
@@ -1117,12 +1214,19 @@ function CreateTemplate() {
             <button onClick={() => addBodyElement('nota_estatica')} className="btn-secondary" style={{ background: '#d97706' }}>📌 Añadir Nota/Aviso</button>
             <button onClick={() => addBodyElement('tinas')} className="btn-secondary" style={{ background: '#0891b2' }}>🧊 Añadir Control de Tinas</button>
             <button onClick={() => addBodyElement('lote_entrante')} className="btn-secondary" style={{ background: '#16a34a' }}>📦 Añadir Lote Entrante</button>
+            <button onClick={pegarBodyElement} className="btn-secondary" style={{ background: '#7c3aed' }} title="Pegar el último bloque copiado (Control del Personal, procesos, etc.)">📥 Pegar bloque copiado</button>
+            <button onClick={insertarDeBiblioteca} className="btn-secondary" style={{ background: '#0f766e' }} title="Insertar un bloque guardado en la biblioteca compartida">📚 Biblioteca</button>
           </div>
         </div>
         {template.bodyElements.map((element, elementIndex) => (
           <div key={element.id} className="body-element-container">
             <div className="body-element-header">
               <input type="text" value={element.title} onChange={(e) => updateBodyElement(elementIndex, 'title', e.target.value)} className="section-title-input" placeholder="Título del bloque"/>
+              <button onClick={() => moverBodyElement(elementIndex, -1)} className="btn-remove" title="Subir este bloque" style={{ marginRight: '4px' }} disabled={elementIndex === 0}>↑</button>
+              <button onClick={() => moverBodyElement(elementIndex, 1)} className="btn-remove" title="Bajar este bloque" style={{ marginRight: '6px' }} disabled={elementIndex === template.bodyElements.length - 1}>↓</button>
+              <button onClick={() => duplicarBodyElement(elementIndex)} className="btn-remove" title="Duplicar este bloque (misma configuración)" style={{ marginRight: '6px' }}>⧉</button>
+              <button onClick={() => copiarBodyElement(elementIndex)} className="btn-remove" title="Copiar este bloque para pegarlo en otra plantilla" style={{ marginRight: '6px' }}>📋</button>
+              <button onClick={() => guardarEnBiblioteca(elementIndex)} className="btn-remove" title="Guardar este bloque en la biblioteca compartida" style={{ marginRight: '6px' }}>💾</button>
               <button onClick={() => removeBodyElement(elementIndex)} className="btn-remove" title="Eliminar este bloque completo">🗑️</button>
             </div>
             {element.type === 'observaciones' && (
@@ -1216,6 +1320,8 @@ function CreateTemplate() {
                               {sectionFieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                             </select>
                           </div>
+                          <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, -1)} className="btn-remove" title="Subir esta pregunta" style={{ marginTop: '20px', marginRight: '4px' }} disabled={fieldIndex === 0}>↑</button>
+                          <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, 1)} className="btn-remove" title="Bajar esta pregunta" style={{ marginTop: '20px', marginRight: '4px' }} disabled={fieldIndex === (element.fields?.length || 0) - 1}>↓</button>
                           <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo" style={{ marginTop: '20px' }}>🗑️</button>
                         </div>
                         {/* Cuerpo: textarea de contenido */}
@@ -1262,6 +1368,8 @@ function CreateTemplate() {
                               <input type="checkbox" checked={field.required} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)} />
                               Requerido
                             </label>
+                            <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, -1)} className="btn-remove" title="Subir esta pregunta" style={{ marginRight: '4px' }} disabled={fieldIndex === 0}>↑</button>
+                            <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, 1)} className="btn-remove" title="Bajar esta pregunta" style={{ marginRight: '4px' }} disabled={fieldIndex === (element.fields?.length || 0) - 1}>↓</button>
                             <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
                           </div>
                         </div>
@@ -1335,6 +1443,8 @@ function CreateTemplate() {
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)}/>Requerido</label></div>
                       <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
                       <BusquedaProductoSelect valor={field.busquedaProducto} onChange={(v) => updateFieldInSection(elementIndex, fieldIndex, "busquedaProducto", v)} />
+                      <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, -1)} className="btn-remove" title="Subir esta pregunta" style={{ marginRight: '4px' }} disabled={fieldIndex === 0}>↑</button>
+                      <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, 1)} className="btn-remove" title="Bajar esta pregunta" style={{ marginRight: '4px' }} disabled={fieldIndex === (element.fields?.length || 0) - 1}>↓</button>
                       <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
                     </div>
                     )}

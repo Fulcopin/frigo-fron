@@ -12,7 +12,7 @@
 
 import { useState } from 'react';
 import { lotesDelEncabezado, campoLoteEncabezado } from '../services/inventarioCeldaService';
-import { validarNumeroLote, lotesConProblema } from '../utils/validacionLote';
+import { validarNumeroLote, lotesConProblema, reglaLoteDeCampo } from '../utils/validacionLote';
 
 const chip = {
   display: 'inline-flex', alignItems: 'center', gap: '5px',
@@ -38,6 +38,10 @@ export default function LotesEncabezado({
   // El campo marcado en la plantilla manda; si no hay ninguno se busca por nombre.
   const campo = campoLoteEncabezado(headerData, campos);
   const todos = lotesDelEncabezado(headerData, campos);
+  // ⚙️ Formato declarado en la plantilla para ese campo: seis dígitos (fecha) o
+  // libre alfanumérico. Sin configuración se mantiene el control de siempre.
+  const campoCfg = (campos || []).find(f => (f?.label || '') === campo);
+  const regla = reglaLoteDeCampo(campoCfg);
 
   // Solo se editan los lotes del campo principal: si la plantilla tiene además
   // "LOTE 2" como campo aparte, esos se muestran pero se cambian en su casilla.
@@ -49,8 +53,8 @@ export default function LotesEncabezado({
   // ⚠️ Un lote con un dígito de más ("2605318") no cruza con nada: no aparece en
   // los desplegables de los otros formularios ni se le puede descontar stock.
   // Se avisa antes de agregarlo y se ofrece el número corregido.
-  const revisionNuevo = validarNumeroLote(nuevo);
-  const problemasCargados = lotesConProblema(propios);
+  const revisionNuevo = validarNumeroLote(nuevo, regla);
+  const problemasCargados = lotesConProblema(propios, regla);
 
   const agregar = () => {
     const valor = nuevo.trim();
@@ -58,7 +62,7 @@ export default function LotesEncabezado({
     // Se aceptan varios de un saque: "260731, 260732"
     const nuevos = valor.split(/[,;/|]+/).map(v => v.trim()).filter(Boolean);
 
-    const malos = lotesConProblema(nuevos);
+    const malos = lotesConProblema(nuevos, regla);
     if (malos.length > 0) {
       const detalle = malos
         .map(m => `• ${m.valor}: ${m.motivo}${m.sugerencia ? ` ¿Quisiste poner ${m.sugerencia}?` : ''}`)
@@ -144,7 +148,7 @@ export default function LotesEncabezado({
         </div>
         {/* ⚠️ Aviso de lote mal escrito, con el número corregido a un clic */}
         {(() => {
-          const r = validarNumeroLote(valor);
+          const r = validarNumeroLote(valor, regla);
           if (r.valido || !String(valor).trim()) return null;
           return (
             <div style={{

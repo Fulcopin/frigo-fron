@@ -8,6 +8,7 @@ import authService from "../services/authService";
 import { exportFormToExcel } from "../services/excelExportService";
 import alertService from "../services/alertService";
 import { fetchUsers } from "../services/userService";
+import ConfigHorarios from "../components/ConfigHorarios";
 const API_URL_TEMPLATES = `${API_BASE_URL}/Templates`;
 
 // El servidor pasó a guardar la descripción como nvarchar(max). El tope de acá
@@ -493,9 +494,13 @@ function ManageTemplates() {
     <div className="manage-templates">
       <div className="page-header">
         <h1>Administrar Plantillas de Formularios</h1>
-        <Link to="/create-template" className="btn-primary">
-          + Crear Nueva Plantilla
-        </Link>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* ⚙️ Configuración GLOBAL (toda la planta): horarios de turno */}
+          <ConfigHorarios />
+          <Link to="/create-template" className="btn-primary">
+            + Crear Nueva Plantilla
+          </Link>
+        </div>
       </div>
 
       {/* 🔍 BUSCADOR */}

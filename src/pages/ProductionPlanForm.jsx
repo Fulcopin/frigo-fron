@@ -4,6 +4,8 @@ import { API_BASE_URL } from '../apiConfig';
 import CalculadoraFormularios, { evaluarReceta, lista,
   indiceActividadesPlantilla, formCorrespondeAFila } from '../components/CalculadoraFormularios';
 import { fechaDeBusqueda } from '../utils/fechaFormulario';
+import { normalizarTurno, turnoDelEncabezado } from '../utils/reglasTurno';
+import { evaluarFormula } from '../utils/formulaEngine';
 import PlanDashboard from '../components/PlanDashboard';
 import { catalogoClasificaciones } from '../services/clasificacionesService';
 import { getLotes } from '../hooks/useLoteStore';
@@ -47,7 +49,13 @@ const n = (v) => Number.parseFloat(v) || 0;
 const safeDiv = (num, den) => (n(den) === 0 ? 0 : n(num) / n(den));
 
 export default function ProductionPlanForm() {
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  // 📅 Fecha de HOY en hora LOCAL. `toISOString()` es UTC y en Ecuador (UTC-5),
+  // a partir de las 19:00, adelantaba un día: el plan arrancaba en la fecha de
+  // MAÑANA y no cruzaba con los formularios del día (todo salía en 0).
+  const [fecha, setFecha] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
   const [turno, setTurno] = useState('DIA');
 
   const [customFields, setCustomFields] = useState([]);
@@ -404,8 +412,11 @@ export default function ProductionPlanForm() {
   // se fija cuando guardás. Lo tipeado a mano nunca se toca (el motor solo
   // escribe celdas con consulta).
   const [ultimaAuto, setUltimaAuto] = useState(null);
+  // ⏸ Mientras configurás la matriz, el auto-cálculo no refresca los valores
+  // con los formularios del día (antes lo pisaba cada 60 s).
+  const [autoPausado, setAutoPausado] = useState(false);
   useEffect(() => {
-    if (!fecha || fecha.length < 10) return;
+    if (!fecha || fecha.length < 10 || autoPausado) return;
     let vivo = true;
     const tick = async () => {
       try {
@@ -424,7 +435,7 @@ export default function ProductionPlanForm() {
     const alVolver = () => { if (document.visibilityState === 'visible') tick(); };
     document.addEventListener('visibilitychange', alVolver);
     return () => { vivo = false; clearInterval(id); document.removeEventListener('visibilitychange', alVolver); };
-  }, [fecha, turno, catalogo, borradoresEnVivo]);
+  }, [fecha, turno, catalogo, borradoresEnVivo, autoPausado]);
 
   // GUARDAR DATOS
   // Recibe las categorías por parámetro (y no del estado) para poder guardar
@@ -525,7 +536,8 @@ export default function ProductionPlanForm() {
     setActiveTabId(newCat.id);
   };
 
-  /** Botón "📋 Matriz estándar": reemplaza las pestañas por la matriz completa. */
+  /** Botón "📋 Matriz estándar": reemplaza las pestañas por la matriz completa
+   *  EN BLANCO, para configurarla a mano (no recalcula con los del día). */
   const cargarMatrizEstandar = () => {
     const hayDatos = categories.some(c => c.processes.some(p =>
       p.name || Object.values(p.plan || {}).some(v => v) || Object.values(p.prod || {}).some(v => v)));
@@ -533,7 +545,7 @@ export default function ProductionPlanForm() {
     const estandar = matrizEstandar();
     setCategories(estandar);
     setActiveTabId(estandar[0].id);
-    setSaveMessage('📋 Matriz estándar cargada. Configurá consultas y valores, y 💾 guardá: los días siguientes heredan esta configuración.');
+    setSaveMessage('📋 Matriz estándar cargada en blanco. Configurá consultas y valores, y 💾 guardá: los días siguientes heredan esta configuración.');
     setTimeout(() => setSaveMessage(''), 8000);
   };
   const updateCategoryName = (catId, val) => setCategories(cats => cats.map(c => c.id === catId ? { ...c, name: val } : c));
@@ -1100,15 +1112,24 @@ export default function ProductionPlanForm() {
   const aplicarFormulasAFila = (cat, p) => {
     let np = p;
     for (const f of (cat.formulasCol || [])) {
-      if (!f.destino || !f.a) continue;
-      const a = valorDeClave(np, f.a);
-      const b = f.b === '#num' ? n(f.bNum) : valorDeClave(np, f.b);
+      if (!f.destino) continue;
       let v;
-      switch (f.op) {
-        case '-': v = a - b; break;
-        case '*': v = a * b; break;
-        case '/': v = b === 0 ? 0 : a / b; break;
-        default: v = a + b;
+      if (f.op === 'f') {
+        // 🧮 Fórmula libre: permite "(A + B) / 2", sumar varias columnas, etc.
+        if (!String(f.formula || '').trim()) continue;   // sin fórmula escrita: no toca nada
+        const alias = {};
+        for (const [clave, label] of camposOperables) alias[label] = valorDeClave(np, clave);
+        v = n(evaluarFormula(f.formula, alias));
+      } else {
+        if (!f.a) continue;
+        const a = valorDeClave(np, f.a);
+        const b = f.b === '#num' ? n(f.bNum) : valorDeClave(np, f.b);
+        switch (f.op) {
+          case '-': v = a - b; break;
+          case '*': v = a * b; break;
+          case '/': v = b === 0 ? 0 : a / b; break;
+          default: v = a + b;
+        }
       }
       v = Number(v.toFixed(2));
       const [sec, field] = f.destino.split('.');
@@ -1173,7 +1194,16 @@ export default function ProductionPlanForm() {
     if (plants) idxActividadesRef.current = indiceActividadesPlantilla(plants);
     // Por la FECHA QUE ESCRIBIÓ EL OPERADOR en el encabezado, no por createdAt:
     // un formulario del día 20 que se guarda el 25 pertenece al plan del 20.
-    const delDia = datos.formularios.filter(f => fechaDeBusqueda(f) === dia);
+    // ⏱️ También por TURNO, pero SIN dejar afuera las actividades del día:
+    // si el formulario no trae turno (o viene con una etiqueta que no se
+    // reconoce), entra en los dos planes. Antes se contaba en ambos y no se
+    // quiere perder esa producción; solo se separa cuando el turno está bien
+    // identificado como Día o Noche.
+    const delDia = datos.formularios.filter(f => {
+      if (fechaDeBusqueda(f) !== dia) return false;
+      const turnoForm = normalizarTurno(turnoDelEncabezado(f?.headerData ?? f?.HeaderData));
+      return !turnoForm || turnoForm === normalizarTurno(turno);
+    });
 
     // Cuántos de los que entran al cálculo están sin cerrar: es lo que muestra
     // el asterisco arriba, para que nadie lea el número como definitivo.
@@ -1671,6 +1701,14 @@ export default function ProductionPlanForm() {
           onClick={cargarMatrizEstandar}
           title="Cargar la matriz completa con todas las actividades del catálogo (pescado + camarón)"
         >📋 Matriz estándar</button>
+        <button
+          className="pl-tab-add"
+          style={autoPausado
+            ? { background: '#fef2f2', border: '1.5px solid #ef4444', color: '#b91c1c' }
+            : { background: '#ecfdf5', border: '1.5px solid #10b981', color: '#047857' }}
+          onClick={() => setAutoPausado(p => !p)}
+          title={autoPausado ? 'Reanudar el auto-cálculo con los formularios del día' : 'Pausar el auto-cálculo mientras configurás la matriz'}
+        >{autoPausado ? '▶ Reanudar auto' : '⏸ Pausar auto'}</button>
       </div>
 
       {/* ACTIVE TAB ACTIONS */}
@@ -2183,15 +2221,29 @@ export default function ProductionPlanForm() {
                       <option value="-">−</option>
                       <option value="*">×</option>
                       <option value="/">÷</option>
+                      <option value="f">f(x)…</option>
                     </select>
-                    <select style={sel} value={f.b} onChange={e => setF({ b: e.target.value })}>
-                      <option value="">— Columna B —</option>
-                      <option value="#num">Nº fijo…</option>
-                      {camposOperables.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                    {f.b === '#num' && (
-                      <input type="number" style={{ ...sel, width: '90px' }} value={f.bNum}
-                        placeholder="valor" onChange={e => setF({ bNum: e.target.value })} />
+                    {f.op === 'f' ? (
+                      <input
+                        type="text"
+                        style={{ ...sel, flex: '1 1 240px', minWidth: '200px', fontFamily: 'monospace' }}
+                        value={f.formula || ''}
+                        placeholder='Fórmula: (PLAN · Nº Personas + PROD · Nº Personas) / 2'
+                        title='Escribí la fórmula usando los nombres de las columnas (ej.: (A + B) / 2)'
+                        onChange={e => setF({ formula: e.target.value })}
+                      />
+                    ) : (
+                      <>
+                        <select style={sel} value={f.b} onChange={e => setF({ b: e.target.value })}>
+                          <option value="">— Columna B —</option>
+                          <option value="#num">Nº fijo…</option>
+                          {camposOperables.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                        {f.b === '#num' && (
+                          <input type="number" style={{ ...sel, width: '90px' }} value={f.bNum}
+                            placeholder="valor" onChange={e => setF({ bNum: e.target.value })} />
+                        )}
+                      </>
                     )}
                     <button
                       style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontWeight: 700 }}
@@ -2203,7 +2255,7 @@ export default function ProductionPlanForm() {
               })}
               {(activeCategory.formulasCol || []).length === 0 && (
                 <span style={{ fontSize: '12px', color: '#115e59' }}>
-                  Ej.: <em>PROD · M.Obra $ = PROD · Hrs × Nº fijo 6.50</em> — tocá «+ Nueva operación» para armarla.
+                  Ej.: <em>PROD · M.Obra $ = PROD · Hrs × Nº fijo 6.50</em> — o con <em>f(x)</em> una fórmula libre, ej. <em>(PLAN · Nº Personas + PROD · Nº Personas) / 2</em>. Tocá «+ Nueva operación» para armarla.
                 </span>
               )}
             </div>

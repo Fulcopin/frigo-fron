@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import ExcelJS from 'exceljs';
 import consumptionService from '../services/consumptionService';
 import { Link } from 'react-router-dom';
+import { coincideFiltro } from '../utils/filtroColumna';
 import './ConsumptionDashboard.css';
 
 export default function ConsumptionDashboard() {
@@ -15,6 +16,9 @@ export default function ConsumptionDashboard() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
 
+  // Filtro "estilo Excel" por columna: { [clave]: texto }.
+  const [filtrosColumna, setFiltrosColumna] = useState({});
+
   const [filters, setFilters] = useState({
     startDate: getDefaultStartDate(),
     endDate: getDefaultEndDate(),
@@ -23,6 +27,10 @@ export default function ConsumptionDashboard() {
   useEffect(() => {
     loadAllSectionsData();
   }, []);
+
+  // Al cambiar un filtro de columna, volver a la primera página: si no, un
+  // filtro que deja 1 página podía mostrar una página vacía estando en la 5.
+  useEffect(() => { setCurrentPage(1); }, [filtrosColumna]);
 
   const loadAllSectionsData = async () => {
     try {
@@ -142,7 +150,7 @@ export default function ConsumptionDashboard() {
   };
 
   const handleExportSelected = async () => {
-    if (consolidatedInsumos.length === 0) {
+    if (consolidatedFiltrados.length === 0) {
       alert('⚠️ No hay datos para exportar en este resumen');
       return;
     }
@@ -167,7 +175,7 @@ export default function ConsumptionDashboard() {
       const subtitulo = ws.getCell('A2');
       subtitulo.value =
         `Desde ${filters.startDate || '—'} hasta ${filters.endDate || '—'}   ·   ` +
-        `${consolidatedInsumos.length} registros   ·   Generado ${new Date().toLocaleString('es-EC')}`;
+        `${consolidatedFiltrados.length} registros   ·   Generado ${new Date().toLocaleString('es-EC')}`;
       subtitulo.font = { size: 10, color: { argb: 'FF6B7280' } };
       subtitulo.alignment = { horizontal: 'center' };
 
@@ -184,7 +192,7 @@ export default function ConsumptionDashboard() {
         cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       });
 
-      consolidatedInsumos.forEach((row, i) => {
+      consolidatedFiltrados.forEach((row, i) => {
         const fecha = fechaDe(row.createdAt);
         const fila = ws.addRow([
           i + 1,
@@ -211,12 +219,12 @@ export default function ConsumptionDashboard() {
       ];
       ws.autoFilter = {
         from: { row: headerRow.number, column: 1 },
-        to: { row: headerRow.number + consolidatedInsumos.length, column: 11 },
+        to: { row: headerRow.number + consolidatedFiltrados.length, column: 11 },
       };
 
       // ── Hoja 2: totales por insumo (lo que Costos suma a mano) ──
       const agrupado = new Map();
-      consolidatedInsumos.forEach((row) => {
+      consolidatedFiltrados.forEach((row) => {
         const clave = `${row.codigo || ''}|${row.producto}|${row.unidad || ''}`.toLowerCase();
         if (!agrupado.has(clave)) {
           agrupado.set(clave, {
@@ -272,7 +280,7 @@ export default function ConsumptionDashboard() {
   };
 
   const handleExportCsv = () => {
-    if (consolidatedInsumos.length === 0) {
+    if (consolidatedFiltrados.length === 0) {
       alert('⚠️ No hay datos para exportar en este resumen');
       return;
     }
@@ -285,7 +293,7 @@ export default function ConsumptionDashboard() {
           'DESTINO', 'CREADO POR', 'CÓDIGO', 'INSUMO', 'CANTIDAD', 'UNIDAD DE MEDIDA']
           .map(escapar).join(','),
       ];
-      consolidatedInsumos.forEach((row, i) => {
+      consolidatedFiltrados.forEach((row, i) => {
         const fecha = fechaDe(row.createdAt);
         lineas.push([
           i + 1,
@@ -396,6 +404,48 @@ export default function ConsumptionDashboard() {
     return rowsList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [allSectionsData]);
 
+  // ── Filtro "estilo Excel" de la tabla de insumos ────────────────────────────
+  const columnasInsumo = [
+    { key: 'formID', label: '🔢 # FORM', tipo: 'decimal', align: 'left' },
+    { key: 'templateCode', label: 'CÓDIGO DEL FORMULARIO', tipo: 'texto', align: 'left' },
+    { key: 'createdAt', label: 'FECHA REGISTRADA', tipo: 'texto', align: 'left' },
+    { key: 'templateName', label: 'FORMULARIO', tipo: 'texto', align: 'left' },
+    { key: 'destino', label: 'DESTINO', tipo: 'texto', align: 'left' },
+    { key: 'filledBy', label: 'CREADO POR', tipo: 'texto', align: 'left' },
+    { key: 'codigo', label: 'CÓDIGO', tipo: 'texto', align: 'left' },
+    { key: 'producto', label: 'INSUMO', tipo: 'texto', align: 'left' },
+    { key: 'cantidad', label: 'CANTIDAD', tipo: 'decimal', align: 'right' },
+    { key: 'unidad', label: 'UNIDAD DE MEDIDA', tipo: 'texto', align: 'center' },
+  ];
+
+  const valorInsumo = (item, key) => {
+    if (key === 'cantidad') return Number(item.cantidad) || 0;
+    if (key === 'formID') return Number(item.formID) || 0;
+    if (key === 'createdAt') return item.createdAt ? new Date(item.createdAt).toLocaleDateString('es-ES') : '';
+    return String(item[key] ?? '');
+  };
+
+  const consolidatedFiltrados = useMemo(() => {
+    const activos = Object.entries(filtrosColumna).filter(([, v]) => String(v ?? '').trim());
+    if (activos.length === 0) return consolidatedInsumos;
+    return consolidatedInsumos.filter(item =>
+      activos.every(([key, filtro]) =>
+        coincideFiltro(valorInsumo(item, key), columnasInsumo.find(c => c.key === key)?.tipo, filtro)
+      )
+    );
+  }, [consolidatedInsumos, filtrosColumna]);
+
+  const filtroInput = (key, tipo) => (
+    <input
+      type="text"
+      placeholder="Filtrar…"
+      value={filtrosColumna[key] || ''}
+      onChange={(e) => setFiltrosColumna(prev => ({ ...prev, [key]: e.target.value }))}
+      title={tipo === 'decimal' ? 'Números: "10-50", ">100", "<=25" o "42"' : 'Filtra por texto (contiene)'}
+      style={{ width: '100%', boxSizing: 'border-box', padding: '4px 6px', fontSize: '11px', fontWeight: 400, border: '1px solid #cbd5e1', borderRadius: '6px', color: '#334155' }}
+    />
+  );
+
   if (loading && !allSectionsData) {
     return (
       <div className="consumption-dashboard">
@@ -425,11 +475,11 @@ export default function ConsumptionDashboard() {
         <div className="header-actions">
           <button
             onClick={handleExportSelected}
-            disabled={exporting || consolidatedInsumos.length === 0}
+            disabled={exporting || consolidatedFiltrados.length === 0}
             className="btn-primary"
             style={{
-              opacity: consolidatedInsumos.length === 0 ? 0.5 : 1,
-              cursor: consolidatedInsumos.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: consolidatedFiltrados.length === 0 ? 0.5 : 1,
+              cursor: consolidatedFiltrados.length === 0 ? 'not-allowed' : 'pointer',
             }}
             title="Descarga un .xlsx con el detalle y los totales por insumo"
           >
@@ -437,11 +487,11 @@ export default function ConsumptionDashboard() {
           </button>
           <button
             onClick={handleExportCsv}
-            disabled={exporting || consolidatedInsumos.length === 0}
+            disabled={exporting || consolidatedFiltrados.length === 0}
             className="btn-secondary"
             style={{
-              opacity: consolidatedInsumos.length === 0 ? 0.5 : 1,
-              cursor: consolidatedInsumos.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: consolidatedFiltrados.length === 0 ? 0.5 : 1,
+              cursor: consolidatedFiltrados.length === 0 ? 'not-allowed' : 'pointer',
             }}
             title="Descarga el mismo resumen en CSV"
           >
@@ -527,35 +577,31 @@ export default function ConsumptionDashboard() {
                 <span style={{ fontSize: '20px' }}>📦</span>
                 <h2 style={{ margin: 0, fontSize: '16px', color: '#1e293b' }}>Resumen General de Insumos y Materiales</h2>
                 <span style={{ marginLeft: 'auto', background: '#dbeafe', color: '#1e40af', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600' }}>
-                  {consolidatedInsumos.length} ítems
+                  {consolidatedFiltrados.length} ítems
                 </span>
               </div>
               <div style={{ overflowX: 'auto', padding: '0' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ background: '#f1f5f9' }}>
-                      <th style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>#</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }} title="Número de este registro">🔢 # FORM</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CÓDIGO DEL FORMULARIO</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>FECHA REGISTRADA</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>FORMULARIO</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }} title="Destino declarado en el encabezado">DESTINO</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CREADO POR</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CÓDIGO</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'left', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>INSUMO</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'right', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>CANTIDAD</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b' }}>UNIDAD DE MEDIDA</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'center', borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b', verticalAlign: 'top' }}>#</th>
+                      {columnasInsumo.map(c => (
+                        <th key={c.key} style={{ padding: '6px 8px', textAlign: c.align, borderBottom: '2px solid #e2e8f0', fontWeight: '600', color: '#64748b', verticalAlign: 'top' }}>
+                          <div style={{ marginBottom: '4px' }}>{c.label}</div>
+                          {filtroInput(c.key, c.tipo)}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {consolidatedInsumos.length === 0 ? (
+                    {consolidatedFiltrados.length === 0 ? (
                       <tr>
                         <td colSpan="11" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
-                          No se detectaron tablas de "Insumos" o "Materiales de Empaque" en los formularios de este rango de fechas.
+                          No se detectaron tablas de "Insumos" o "Materiales de Empaque" en los formularios de este rango de fechas{Object.values(filtrosColumna).some(v => String(v ?? '').trim()) ? ' (ninguno coincide con el filtro)' : ''}.
                         </td>
                       </tr>
                     ) : (
-                      consolidatedInsumos.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((item, idx) => (
+                      consolidatedFiltrados.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((item, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? 'white' : '#fafbfc' }}>
                           <td style={{ padding: '10px 14px', textAlign: 'center', color: '#94a3b8', fontWeight: '500' }}>{(currentPage - 1) * itemsPerPage + idx + 1}</td>
                           <td style={{ padding: '10px 14px', color: '#0f172a', fontWeight: '700', fontFamily: 'monospace' }}>
@@ -584,10 +630,10 @@ export default function ConsumptionDashboard() {
               </div>
               
               {/* Pagination Controls */}
-              {consolidatedInsumos.length > itemsPerPage && (
+              {consolidatedFiltrados.length > itemsPerPage && (
                 <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
                   <span style={{ fontSize: '14px', color: '#64748b' }}>
-                    Mostrando {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, consolidatedInsumos.length)} de {consolidatedInsumos.length}
+                    Mostrando {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, consolidatedFiltrados.length)} de {consolidatedFiltrados.length}
                   </span>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button 
@@ -598,9 +644,9 @@ export default function ConsumptionDashboard() {
                       Anterior
                     </button>
                     <button 
-                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(consolidatedInsumos.length / itemsPerPage)))}
-                      disabled={currentPage === Math.ceil(consolidatedInsumos.length / itemsPerPage)}
-                      style={{ padding: '6px 12px', border: '1px solid #cbd5e1', background: currentPage === Math.ceil(consolidatedInsumos.length / itemsPerPage) ? '#f1f5f9' : 'white', borderRadius: '6px', cursor: currentPage === Math.ceil(consolidatedInsumos.length / itemsPerPage) ? 'not-allowed' : 'pointer', color: '#475569' }}
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(consolidatedFiltrados.length / itemsPerPage)))}
+                      disabled={currentPage === Math.ceil(consolidatedFiltrados.length / itemsPerPage)}
+                      style={{ padding: '6px 12px', border: '1px solid #cbd5e1', background: currentPage === Math.ceil(consolidatedFiltrados.length / itemsPerPage) ? '#f1f5f9' : 'white', borderRadius: '6px', cursor: currentPage === Math.ceil(consolidatedFiltrados.length / itemsPerPage) ? 'not-allowed' : 'pointer', color: '#475569' }}
                     >
                       Siguiente
                     </button>

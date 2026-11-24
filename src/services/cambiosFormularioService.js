@@ -37,6 +37,27 @@ function normalizarClave(clave) {
   return norm(bruta);
 }
 
+/** Detalle de cambios de una tanda, venga como venga del serializador. */
+const detalleDeTanda = (tanda) => {
+  const d = tanda?.cambios?.['$values'] ?? tanda?.cambios ?? [];
+  return Array.isArray(d) ? d : [];
+};
+
+/**
+ * ¿La tanda tiene AL MENOS un valor anterior real?
+ *
+ * Cuando la comparación no tenía de dónde leer el "antes" (el cuerpo guardado
+ * venía ilegible, o las celdas estaban guardadas con otro nombre), TODAS las
+ * celdas quedaban como «antes: (vacío)» y la pantalla decía "este reporte fue
+ * modificado — 211 valores" con el ✏️ en cada celda de un formulario que nadie
+ * tocó. Una tanda así no es una edición: es una foto que salió vacía.
+ *
+ * Se filtra ACÁ, en el front, además de en el backend, para que la pantalla
+ * quede limpia incluso si el servidor todavía no se actualizó.
+ */
+const tieneValorAnterior = (tanda) =>
+  detalleDeTanda(tanda).some(c => String(c?.antes ?? '').trim() !== '');
+
 /**
  * Trae el historial de modificaciones de un formulario.
  * Si el backend todavía no tiene el endpoint desplegado devuelve un historial
@@ -58,10 +79,13 @@ export async function getCambiosFormulario(formId) {
     });
     if (!res.ok) return { tandas: [], totalCambios: 0 };
     const data = await res.json();
-    const tandas = data?.tandas?.['$values'] ?? data?.tandas ?? [];
+    const bruto = data?.tandas?.['$values'] ?? data?.tandas ?? [];
+    const todas = Array.isArray(bruto) ? bruto : [];
+    // Fuera las tandas fantasma (todas las celdas con "antes" vacío).
+    const tandas = todas.filter(tieneValorAnterior);
     return {
-      tandas: Array.isArray(tandas) ? tandas : [],
-      totalCambios: Number(data?.totalCambios) || 0,
+      tandas,
+      totalCambios: tandas.reduce((n, t) => n + detalleDeTanda(t).length, 0),
     };
   } catch {
     return { tandas: [], totalCambios: 0 }; // backend viejo / sin red
@@ -110,6 +134,17 @@ export function indexarCambios(tandas) {
       }
     }
   }
+
+  // Un cambio que terminó igual al valor que tenía (ida y vuelta) no es un
+  // cambio: pasa con la MISMA celda guardada con el nombre escrito distinto
+  // («LOTE » y «LOTE»): el servidor la ve como dos y acá, ya normalizadas, las
+  // dos se juntan y queda "260602 → 260602". Se descarta.
+  for (const [clave, c] of [...indice]) {
+    if (String(c?.antes ?? '').trim() === String(c?.despues ?? '').trim()) {
+      indice.delete(clave);
+    }
+  }
+
   return indice;
 }
 

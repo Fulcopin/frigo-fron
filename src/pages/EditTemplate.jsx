@@ -7,6 +7,7 @@ import { API_BASE_URL, API_EXTERNAL_BASE_URL } from "../apiConfig"
 import { MAPPABLE_API_FIELDS, API_CODIGO_ENDPOINTS, API_CODIGO_JSON_FIELDS } from "../api/apiMappings";
 import UserSelector from "../components/UserSelector";
 import { fetchUsers } from "../services/userService";
+import { listarBloques, obtenerBloque, crearBloque } from "../services/bloquesService";
 import { isResumenAutoEnabled, setResumenAutoEnabled } from "../hooks/useLoteStore";
 import { InventarioColumnaConfig, InventarioAutoCompletar, InventarioTablaConfig, CampoLoteEncabezadoConfig, ColumnaLotePadreConfig } from "../components/InventarioConfig";
 import BusquedaProductoSelect from "../components/BusquedaProductoSelect";
@@ -281,6 +282,77 @@ function EditTemplate() {
 
   const updateBodyElement = (elementIndex, field, value) => setTemplate(prev => ({...prev, bodyElements: prev.bodyElements.map((el, i) => i === elementIndex ? { ...el, [field]: value } : el)}));
   const removeBodyElement = (elementIndex) => setTemplate(prev => ({...prev, bodyElements: prev.bodyElements.filter((_, i) => i !== elementIndex)}));
+
+  // ── Copiar / duplicar / pegar bloques ────────────────────────────────────
+  // Reutilizar el "Control del Personal", procesos o materia prima entre
+  // plantillas sin rearmarlos a mano.
+  const clonarBloque = (el) => {
+    const copia = JSON.parse(JSON.stringify(el));
+    copia.id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    return copia;
+  };
+
+  const duplicarBodyElement = (elementIndex) => {
+    setTemplate(prev => {
+      const original = prev.bodyElements[elementIndex];
+      if (!original) return prev;
+      const elementos = [...prev.bodyElements];
+      elementos.splice(elementIndex + 1, 0, clonarBloque(original));
+      return { ...prev, bodyElements: elementos };
+    });
+  };
+
+  const copiarBodyElement = (elementIndex) => {
+    const original = template.bodyElements[elementIndex];
+    if (!original) return;
+    try {
+      localStorage.setItem('frigolab.bloque.copiado', JSON.stringify(original));
+    } catch { /* sin storage */ }
+    alert(`📋 Bloque "${original.title || 'sin título'}" copiado.\nPegalo en otra plantilla con "📥 Pegar bloque".`);
+  };
+
+  const pegarBodyElement = () => {
+    let copia = null;
+    try {
+      const raw = localStorage.getItem('frigolab.bloque.copiado');
+      if (!raw) { alert('No hay ningún bloque copiado todavía.'); return; }
+      copia = clonarBloque(JSON.parse(raw));
+    } catch {
+      alert('No se pudo pegar el bloque (portapapeles dañado).');
+      return;
+    }
+    setTemplate(prev => ({ ...prev, bodyElements: [...prev.bodyElements, copia] }));
+  };
+
+  // ── Biblioteca compartida (backend) ──────────────────────────────────────
+  const guardarEnBiblioteca = async (elementIndex) => {
+    const original = template.bodyElements[elementIndex];
+    if (!original) return;
+    const nombre = window.prompt('Nombre para guardar este bloque en la biblioteca:', original.title || 'Bloque sin título');
+    if (!nombre) return;
+    try {
+      await crearBloque({ nombre, tipo: original.type || 'section', contenido: JSON.stringify(original) });
+      alert('✅ Bloque guardado en la biblioteca compartida.');
+    } catch (e) {
+      alert('No se pudo guardar en la biblioteca: ' + (e?.message || e));
+    }
+  };
+
+  const insertarDeBiblioteca = async () => {
+    try {
+      const lista = await listarBloques();
+      if (lista.length === 0) { alert('La biblioteca está vacía. Guardá un bloque primero.'); return; }
+      const opciones = lista.map((b, i) => `${i + 1}. ${b.nombre} (${b.tipo})`).join('\n');
+      const resp = window.prompt(`Elegí el número del bloque a insertar:\n\n${opciones}`);
+      const idx = Number(resp) - 1;
+      if (!Number.isInteger(idx) || idx < 0 || idx >= lista.length) return;
+      const full = await obtenerBloque(lista[idx].id);
+      const copia = clonarBloque(JSON.parse(full.contenido));
+      setTemplate(prev => ({ ...prev, bodyElements: [...prev.bodyElements, copia] }));
+    } catch (e) {
+      alert('No se pudo cargar la biblioteca: ' + (e?.message || e));
+    }
+  };
   const addFieldToSection = (elementIndex) => {
     const newField = { label: "", type: "text", required: false, options: [], apiMap: "", apiEndpoint: "", formula: "" };
     setTemplate(prev => ({ ...prev, bodyElements: prev.bodyElements.map((el, i) => (i === elementIndex ? { ...el, fields: [...(el.fields || []), newField] } : el)) }));
@@ -1177,6 +1249,8 @@ function EditTemplate() {
             <button onClick={() => addBodyElement('nota_estatica')} className="btn-secondary" style={{ background: '#d97706' }}>📌 Añadir Nota/Aviso</button>
             <button onClick={() => addBodyElement('tinas')} className="btn-secondary" style={{ background: '#0891b2' }}>🧊 Añadir Control de Tinas</button>
             <button onClick={() => addBodyElement('lote_entrante')} className="btn-secondary" style={{ background: '#16a34a' }}>📦 Añadir Lote Entrante</button>
+            <button onClick={pegarBodyElement} className="btn-secondary" style={{ background: '#7c3aed' }} title="Pegar el último bloque copiado">📥 Pegar bloque copiado</button>
+            <button onClick={insertarDeBiblioteca} className="btn-secondary" style={{ background: '#0f766e' }} title="Insertar un bloque guardado en la biblioteca compartida">📚 Biblioteca</button>
           </div>
         </div>
         {template.bodyElements.map((element, elementIndex) => (
@@ -1189,6 +1263,9 @@ function EditTemplate() {
                 </label>
                 <button onClick={() => moveBodyElement(elementIndex, -1)} className="btn-move-up" disabled={elementIndex === 0} title="Mover arriba">⬆️</button>
                 <button onClick={() => moveBodyElement(elementIndex, 1)} className="btn-move-down" disabled={elementIndex === template.bodyElements.length - 1} title="Mover abajo">⬇️</button>
+                <button onClick={() => duplicarBodyElement(elementIndex)} className="btn-remove" title="Duplicar este bloque" style={{ marginRight: '6px' }}>⧉</button>
+                <button onClick={() => copiarBodyElement(elementIndex)} className="btn-remove" title="Copiar este bloque para pegarlo en otra plantilla" style={{ marginRight: '6px' }}>📋</button>
+                <button onClick={() => guardarEnBiblioteca(elementIndex)} className="btn-remove" title="Guardar este bloque en la biblioteca compartida" style={{ marginRight: '6px' }}>💾</button>
                 <button onClick={() => removeBodyElement(elementIndex)} className="btn-remove" title="Eliminar bloque">🗑️</button>
               </div>
             </div>

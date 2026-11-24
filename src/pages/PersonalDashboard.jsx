@@ -8,10 +8,12 @@ import {
   COLUMNAS_PERSONAL,
   definicionColumna,
   valorTexto,
+  valorCrudo,
   leerConfigGuardada,
   guardarConfig,
   configPorDefecto,
 } from '../utils/personalColumnas';
+import { coincideFiltro } from '../utils/filtroColumna';
 import {
   analizarAgrupacion,
   aHoraTexto,
@@ -20,8 +22,12 @@ import {
 } from '../utils/agrupacionPersonal';
 import './PersonalDashboard.css';
 
-const hoy = () => new Date().toISOString().split('T')[0];
-const haceDias = (d) => new Date(Date.now() - d * 86400000).toISOString().split('T')[0];
+// Fecha LOCAL (no UTC): en Ecuador, toISOString() adelanta un día a partir de
+// las 19:00, y el filtro "hasta hoy" quedaba en la fecha de mañana.
+const fechaLocalISO = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const hoy = () => fechaLocalISO();
+const haceDias = (d) => fechaLocalISO(new Date(Date.now() - d * 86400000));
 
 const ESTANDAR_VACIO = {
   id: null,
@@ -52,6 +58,9 @@ export default function PersonalDashboard() {
   // Agrupación: "misma naturaleza" puede significar mismo formulario (fileteo
   // vs productividad) o mismo proceso, según cómo esté cargado el dato.
   const [agruparPor, setAgruparPor] = useState('formulario');
+
+  // Filtro "estilo Excel" por columna: { [columnaId]: texto del input }.
+  const [filtrosColumna, setFiltrosColumna] = useState({});
 
   useEffect(() => { guardarConfig(columnas); }, [columnas]);
 
@@ -104,6 +113,22 @@ export default function PersonalDashboard() {
     [columnas],
   );
 
+  // ── Filtro "estilo Excel" aplicado a la tabla ───────────────────────────────
+  const valorParaFiltro = (r, id) => {
+    const tipo = definicionColumna(id)?.tipo;
+    return (tipo === 'entero' || tipo === 'decimal') ? valorCrudo(r, id) : valorTexto(r, id);
+  };
+
+  const registrosFiltrados = useMemo(() => {
+    const activos = Object.entries(filtrosColumna).filter(([, v]) => String(v ?? '').trim());
+    if (activos.length === 0) return registros;
+    return registros.filter(r =>
+      activos.every(([id, filtro]) =>
+        coincideFiltro(valorParaFiltro(r, id), definicionColumna(id)?.tipo, filtro)
+      )
+    );
+  }, [registros, filtrosColumna]);
+
   const alternarColumna = (id) => {
     setColumnas(prev => {
       const siguiente = prev.map(c => (c.id === id ? { ...c, visible: !c.visible } : c));
@@ -147,12 +172,20 @@ export default function PersonalDashboard() {
       setExportando(true);
       setError('');
       const tpl = buscarFormulario(filters.templateId);
+      // La descarga respeta el filtro aplicado a la tabla: lo que ves, se baja.
+      const totalesExport = registrosFiltrados.reduce((acc, r) => ({
+        planta: acc.planta + (r.personalPlanta || 0),
+        externo: acc.externo + (r.personalExterno || 0),
+        horas: acc.horas + (r.horasTrabajadas || 0),
+        formularios: acc.formularios + 1,
+        incumplimientos: acc.incumplimientos + (r.cumpleEstandar ? 0 : 1),
+      }), { planta: 0, externo: 0, horas: 0, formularios: 0, incumplimientos: 0 });
       await exportarPersonalExcel({
-        registros,
+        registros: registrosFiltrados,
         columnas: columnasVisibles,
         filtros: filters,
-        totales,
-        agrupacion,
+        totales: totalesExport,
+        agrupacion: analizarAgrupacion(registrosFiltrados, agruparPor),
         nombreFormulario: tpl ? etiquetaFormulario(tpl) : '',
       });
     } catch (err) {
@@ -435,15 +468,31 @@ export default function PersonalDashboard() {
               <thead>
                 <tr>
                   {columnasVisibles.map(id => (
-                    <th key={id}>{definicionColumna(id).label}</th>
+                    <th key={id}>
+                      <div style={{ marginBottom: '4px' }}>{definicionColumna(id).label}</div>
+                      <input
+                        type="text"
+                        placeholder="Filtrar…"
+                        value={filtrosColumna[id] || ''}
+                        onChange={(e) => setFiltrosColumna(prev => ({ ...prev, [id]: e.target.value }))}
+                        title={definicionColumna(id).tipo === 'entero' || definicionColumna(id).tipo === 'decimal'
+                          ? 'Números: "10-50", ">100", "<=25" o "42"'
+                          : 'Filtra por texto (contiene)'}
+                        style={{
+                          width: '100%', boxSizing: 'border-box', padding: '4px 6px',
+                          fontSize: '11px', fontWeight: 400, border: '1px solid #cbd5e1',
+                          borderRadius: '6px',
+                        }}
+                      />
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {registros.length === 0 && (
-                  <tr><td colSpan={columnasVisibles.length} className="pd-vacio">Sin registros de Control de Personal en el período seleccionado.</td></tr>
+                {registrosFiltrados.length === 0 && (
+                  <tr><td colSpan={columnasVisibles.length} className="pd-vacio">Sin registros de Control de Personal en el período seleccionado{Object.values(filtrosColumna).some(v => String(v ?? '').trim()) ? ' (ninguno coincide con el filtro)' : ''}.</td></tr>
                 )}
-                {registros.map((r, i) => {
+                {registrosFiltrados.map((r, i) => {
                   // ── Encadenado del FLUJO ────────────────────────────────
                   // Cada formulario es UN PASO del proceso: recepción de 07 a
                   // 08, fileteo de 08 a 10, empaque de 10 a 16. Son formularios
@@ -476,8 +525,8 @@ export default function PersonalDashboard() {
                     return !!fin && !!ini && fin === ini;
                   };
 
-                  const anterior = registros[i - 1];
-                  const siguiente = registros[i + 1];
+                  const anterior = registrosFiltrados[i - 1];
+                  const siguiente = registrosFiltrados[i + 1];
                   const mismoQueAnterior  = mismaCadena(anterior, r);
                   const mismoQueSiguiente = mismaCadena(r, siguiente);
                   // Cambio de día o de destino: línea marcada arriba. Sin ella

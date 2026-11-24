@@ -1052,10 +1052,30 @@ function ViewForms() {
       // Los campos nota son estáticos (no dependen de datos guardados) y pueden haberse añadido
       // al template después de que el formulario fue llenado.
       const mergedBodyElements = rawSnapshotBe.map((snapshotEl, idx) => {
-        if (snapshotEl?.type !== 'section') return snapshotEl;
+        // Emparejar con el bloque actual por id o por título (antes solo se
+        // buscaban secciones, así que las tablas no se fusionaban).
         const currentEl = rawCurrentBe.find(
-          el => el?.type === 'section' && (el.id === snapshotEl.id || el.title === snapshotEl.title)
+          el => el?.type === snapshotEl?.type && (el.id === snapshotEl.id || el.title === snapshotEl.title)
         ) || rawCurrentBe?.[idx];
+
+        // 📐 TABLAS: si el snapshot no trae la unidad de una columna porque se
+        // agregó después (ej. "°C" en temperatura), se toma la de la plantilla
+        // actual. Antes el visor mostraba "-20" sin el "°C".
+        if (snapshotEl?.type === 'table' && currentEl?.type === 'table') {
+          const parseCols = (v) => Array.isArray(v) ? v : (typeof v === 'string' ? safeParse(v, []) : []);
+          const colsSnapshot = parseCols(snapshotEl.columns);
+          const colsActual = parseCols(currentEl.columns);
+          if (colsSnapshot.length > 0) {
+            const cols = colsSnapshot.map(c => {
+              const actual = colsActual.find(x =>
+                String(x.label || x.name || '').trim() === String(c.label || c.name || '').trim());
+              return { ...c, unit: c.unit || actual?.unit || '' };
+            });
+            return { ...snapshotEl, columns: cols };
+          }
+        }
+
+        if (snapshotEl?.type !== 'section') return snapshotEl;
         if (!currentEl || currentEl.type !== 'section') return snapshotEl;
         // Agregar campos nota del template actual que no existen en el snapshot
         const rawSnapshotFields = Array.isArray(snapshotEl.fields) ? snapshotEl.fields : (typeof snapshotEl.fields === 'string' ? safeParse(snapshotEl.fields, []) : []);

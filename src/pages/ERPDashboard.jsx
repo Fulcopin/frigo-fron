@@ -99,6 +99,49 @@ const parseNum = (v) => {
     return Number.isFinite(n) ? n : null;
 };
 
+// ─── ¿Dos nombres son la MISMA columna escrita distinto? ────────────────────
+// El croquis y el Excel se arman con los nombres de la PLANTILLA (así se ve en
+// el PDF), pero los datos guardados conservan el nombre que la columna tenía
+// CUANDO SE LLENÓ el formulario. Si después alguien renombró la columna
+// —"PERSONAL EXTERNO" → "PERSONAL EXTERNO (CUADRILLA/EVENTUAL)"— el reporte
+// buscaba el nombre nuevo, no lo encontraba en la fila y la columna salía
+// vacía renglón tras renglón aunque el dato estuviera perfectamente guardado.
+//
+// Estas funciones deciden si dos nombres son la misma columna para poder
+// unificarlos. Son deliberadamente conservadoras: ante la duda, no se toca.
+const PALABRAS_IGNORADAS = new Set([
+    'DE', 'DEL', 'LA', 'EL', 'LOS', 'LAS', 'EN', 'Y', 'A', 'POR', 'PARA',
+    'N', 'NO', 'NUM', 'NRO', 'DATOS',
+]);
+
+const palabrasDeColumna = (nombre) => String(nombre ?? '')
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toUpperCase().replace(/[^A-Z0-9]+/g, ' ')
+    .split(' ')
+    .filter(w => w && !PALABRAS_IGNORADAS.has(w));
+
+const mismoNombreDeColumna = (a, b) => {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const pa = palabrasDeColumna(a);
+    const pb = palabrasDeColumna(b);
+    if (pa.length === 0 || pb.length === 0) return false;
+
+    const corto = pa.length <= pb.length ? pa : pb;
+    const largo = pa.length <= pb.length ? pb : pa;
+
+    // Una sola palabra ("CANTIDAD", "PESO", "TOTAL") es demasiado genérica:
+    // se repite en varias secciones y unirlas mezclaría tablas distintas.
+    if (corto.length < 2) return false;
+
+    const comunes = corto.filter(w => largo.includes(w)).length;
+    if (comunes / corto.length < 0.75) return false;
+
+    // El nombre largo no puede tener demasiadas palabras de más, para no
+    // terminar pegando una columna con otra que casualmente se le parece.
+    return largo.length <= corto.length + 4;
+};
+
 const fmtNum = (n) =>
     Number.isInteger(n) ? n.toLocaleString('es-EC')
                         : n.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -232,6 +275,11 @@ const ERPDashboard = () => {
 
     const [colSearch, setColSearch]     = useState('');   // buscador dentro del panel
     const [modoSeleccion, setModoSeleccion] = useState(false); // checks en la cabecera
+    // Aviso de columnas que se llamaban distinto en los datos guardados
+    // (columna renombrada en la plantilla): se puede cerrar.
+    const [ocultarAvisoAlias, setOcultarAvisoAlias] = useState(false);
+    // Diagnóstico de columnas que salen vacías (ver más abajo).
+    const [showDiag, setShowDiag] = useState(false);
 
     // ─── Orden de las columnas ──────────────────────────────────────────────
     // El orden de esta lista es el orden de las columnas del Excel. Antes salía
@@ -418,7 +466,7 @@ const ERPDashboard = () => {
     );
 
     // ─── Procesar datos → filas + columnas ──────────────────────────────────
-    const { rows, columns, formLabels, origenCols } = useMemo(() => {
+    const { rows, columns, formLabels, origenCols, aliasCols } = useMemo(() => {
         const processed  = [];
         const allColKeys = new Set(['N° REGISTRO', 'CODIGO', 'FECHA', 'PLANTILLA', 'OBSERVACIONES']);
 
@@ -522,6 +570,21 @@ const ERPDashboard = () => {
                     : Object.values(bodyRaw).filter(v => v && typeof v === 'object'),
                 form, templates);
 
+            // El bodyData guardado trae { id, type, data } SIN el título del
+            // bloque: el título se recupera de la plantilla por su id, para que
+            // el prefijo de las columnas coincida con el croquis.
+            const tplInfo = templates.find(t =>
+                String(t.templateID ?? t.TemplateID) === String(form.templateID ?? form.TemplateID));
+            const tplBe = tplInfo && Array.isArray(tplInfo.bodyElements)
+                ? tplInfo.bodyElements
+                : (tplInfo?.bodyElements ? safeParse(tplInfo.bodyElements, []) : []);
+            const tituloPorId = new Map();
+            (Array.isArray(tplBe) ? tplBe : []).forEach((el, i) => {
+                if (el && typeof el === 'object') {
+                    tituloPorId.set(String(el.id), el.title || el.name || el.label || `SECCIÓN_${i}`);
+                }
+            });
+
             // Normaliza cada elemento del body a { rowsData, sectionData, title }
             const normalized = bodyEls.map((el, idx) => {
                 if (!el || typeof el !== 'object') return { rowsData: [], sectionData: null, title: `EL_${idx}` };
@@ -554,7 +617,7 @@ const ERPDashboard = () => {
                 return {
                     rowsData,
                     sectionData,
-                    title: el.title || el.name || el.label || `SECCIÓN_${idx}`
+                    title: tituloPorId.get(String(el.id)) || el.title || el.name || el.label || `SECCIÓN_${idx}`
                 };
             });
 
@@ -571,21 +634,29 @@ const ERPDashboard = () => {
                 // A2. Tabla con filas → aplanar TODAS las filas a contexto
                 //     SOLO si se considera tabla auxiliar (sin keywords de tabla principal)
                 if (rowsData.length > 0 && !esTablaPrincipal(rowsData)) {
-                    // Tabla auxiliar: aplanar TODAS sus filas al contexto
+                    // Tabla auxiliar: aplanar TODAS sus filas al contexto.
+                    // Las columnas se marcan como de TABLA (no de sección): son
+                    // columnas de una tabla del formulario y así las reconoce el
+                    // croquis (y se pueden unificar si la plantilla las renombró).
                     rowsData.forEach((row, ri) => {
                         const flat = aplanarFila(row, ri);
                         const pref = rowsData.length > 1
                             ? `${title}_F${ri + 1}`   // diferenciar fila si hay múltiples
                             : title;
-                        Object.entries(flat).forEach(([k, v]) => addCtx(k, v, pref));
+                        Object.entries(flat).forEach(([k, v]) => addCtx(k, v, pref, 'tabla'));
                     });
                 }
             });
 
             // ── PASADA B: Tablas principales → filas de registros ─────────────
             const tablasPrincipales = normalized
-                .map(({ rowsData }) => rowsData.filter(r => !r._deleted))
-                .filter(rowsData => esTablaPrincipal(rowsData));
+                .map(({ rowsData, title }) => ({
+                    rowsData: rowsData.filter(r => !r._deleted),
+                    // El título ya trae el respaldo «SECCIÓN N» si el bloque no
+                    // tiene título, igual que el croquis.
+                    prefijo: title,
+                }))
+                .filter(t => esTablaPrincipal(t.rowsData));
 
             const hasDynamic = tablasPrincipales.length > 0;
 
@@ -594,7 +665,7 @@ const ERPDashboard = () => {
             // plantilla no vienen del todo vacíos: las columnas con fórmula
             // (% RENDIMIENTO, TOTAL...) traen un 0. Si el 0 contara como dato,
             // esos renglones se colaban igual al Excel.
-            const volcarFila = (row, rd, clavesDelCuerpo) => {
+            const volcarFila = (row, rd, clavesDelCuerpo, prefijo = '') => {
                 let aporto = false;
                 let numeros = 0;   // valores numéricos distintos de 0
                 let textos  = 0;   // producto, lote, horas… lo que identifica la fila
@@ -602,7 +673,9 @@ const ERPDashboard = () => {
                     if (isIgnored(k)) return;
                     if (v === '' || v === null || v === undefined) return;
                     if (String(v).trim() === String(form.formID).trim()) return;
-                    const ck = cleanKey(k);
+                    // Prefijo = sección de origen. Sin él, dos tablas con la misma
+                    // columna ("CANTIDAD" de subproductos e insumos) se pisan.
+                    const ck = cleanKey(k, prefijo);
                     if (!ck) return;
                     rd[ck] = typeof v === 'object' ? JSON.stringify(v) : v;
                     clavesDelCuerpo.add(ck);   // dato propio de la fila, no del encabezado
@@ -624,7 +697,7 @@ const ERPDashboard = () => {
                 // llenas solo las columnas de SU tabla y vacías las de la otra.
                 // Acá se unen por posición: la fila N de cada tabla forma UNA sola
                 // fila del reporte, que es como se llenan en planta.
-                const maxFilas = Math.max(...tablasPrincipales.map(t => t.length));
+                const maxFilas = Math.max(...tablasPrincipales.map(t => t.rowsData.length));
 
                 for (let i = 0; i < maxFilas; i++) {
                     const rd = { ...ctx };   // hereda header + firmas + secciones
@@ -632,9 +705,9 @@ const ERPDashboard = () => {
                     let hasData = false, numeros = 0, textos = 0;
 
                     tablasPrincipales.forEach(tabla => {
-                        const row = tabla[i];
+                        const row = tabla.rowsData[i];
                         if (!row) return;
-                        const res = volcarFila(row, rd, clavesDelCuerpo);
+                        const res = volcarFila(row, rd, clavesDelCuerpo, tabla.prefijo);
                         if (res.aporto) hasData = true;
                         numeros += res.numeros;
                         textos  += res.textos;
@@ -651,11 +724,11 @@ const ERPDashboard = () => {
                     processed.push(marcarCtx(rd, clavesDelCuerpo));
                 }
             } else {
-                tablasPrincipales.forEach(rowsData => {
+                tablasPrincipales.forEach(({ rowsData, prefijo }) => {
                     rowsData.forEach(row => {
                         const rd = { ...ctx };
                         const clavesDelCuerpo = new Set();
-                        const { aporto: hasData } = volcarFila(row, rd, clavesDelCuerpo);
+                        const { aporto: hasData } = volcarFila(row, rd, clavesDelCuerpo, prefijo);
 
                         // Guardar la fila aunque todos sus campos estén vacíos
                         // (igual tiene FECHA, PLANTILLA del contexto)
@@ -693,6 +766,77 @@ const ERPDashboard = () => {
             return 0;   // estable: mantiene el orden de aparición en el formulario
         });
 
+        // ── Unificar los nombres VIEJOS con los de la plantilla ──────────────
+        // Las columnas que ofrece el croquis son las de la plantilla. Los datos
+        // guardados, en cambio, traen el nombre que la columna tenía el día que
+        // se llenó el formulario. Si la columna se renombró después (por ej.
+        // "PERSONAL EXTERNO" → "PERSONAL EXTERNO (CUADRILLA/EVENTUAL)"), los dos
+        // nombres no coinciden: el croquis ofrecía una columna que ningún renglón
+        // tenía y salía vacía, aunque el PDF —que dibuja la tabla con sus datos—
+        // la mostrara bien.
+        //
+        // Acá se busca el nombre de la plantilla que corresponde al nombre
+        // guardado y se pasa el dato a ese nombre. Solo se unifica cuando hay UN
+        // candidato claro; si hay dos o más, se deja como está.
+        const nombresDePlantilla = new Set();
+        const idsConDatos = new Set(rawForms.map(f => String(f.templateID ?? f.TemplateID ?? '')));
+        (templates || []).forEach(t => {
+            const id = String(t?.templateID ?? t?.TemplateID ?? '');
+            if (!idsConDatos.has(id)) return;
+            const body = Array.isArray(t?.bodyElements) ? t.bodyElements
+                : (typeof t?.bodyElements === 'string' ? parseJson(t.bodyElements, []) : []);
+            (Array.isArray(body) ? body : []).forEach((el, i) => {
+                if (!el || typeof el !== 'object') return;
+                const cols = Array.isArray(el.columns) ? el.columns : parseJson(el.columns, []);
+                if (!Array.isArray(cols) || cols.length === 0) return;
+                const titulo = el.title || el.name || el.label || `SECCIÓN_${i}`;
+                cols.forEach(c => {
+                    if (!c || typeof c !== 'object') return;
+                    const n = cleanKey(c.label || c.header || c.name || c.id, titulo);
+                    if (n) nombresDePlantilla.add(n);
+                });
+            });
+        });
+
+        const aliasCol = new Map();   // nombre guardado → nombre de la plantilla
+        if (nombresDePlantilla.size > 0) {
+            allColKeys.forEach(guardado => {
+                if (SYS.includes(guardado)) return;
+                if (nombresDePlantilla.has(guardado)) return;                 // ya coincide
+                if ((origen.get(guardado) || 'seccion') !== 'tabla') return;  // solo columnas de tabla
+                const candidatos = [...nombresDePlantilla]
+                    .filter(n => mismoNombreDeColumna(guardado, n));
+                if (candidatos.length === 1) aliasCol.set(guardado, candidatos[0]);
+            });
+        }
+
+        if (aliasCol.size > 0) {
+            processed.forEach(r => {
+                aliasCol.forEach((nuevo, viejo) => {
+                    if (r[viejo] === undefined) return;
+                    if (r[nuevo] === undefined || r[nuevo] === '') r[nuevo] = r[viejo];
+                    delete r[viejo];
+                    // La clave venía del encabezado del formulario: sigue
+                    // contándose una sola vez por formulario al totalizar.
+                    if (r.__ctxKeys && r.__ctxKeys.has(viejo)) {
+                        r.__ctxKeys.delete(viejo);
+                        r.__ctxKeys.add(nuevo);
+                    }
+                });
+            });
+            aliasCol.forEach((nuevo, viejo) => {
+                if (origen.has(viejo) && !origen.has(nuevo)) origen.set(nuevo, origen.get(viejo));
+            });
+            console.warn('🔗 Columnas unificadas con el nombre de la plantilla:',
+                [...aliasCol].map(([v, n]) => `${v} → ${n}`).join('  |  '));
+        }
+
+        const columnasFinales = [];
+        sorted.forEach(c => {
+            const n = aliasCol.get(c) || c;
+            if (!columnasFinales.includes(n)) columnasFinales.push(n);
+        });
+
         // ── Etiqueta legible de cada formulario individual ───────────────────
         // "2026-07-10 · Lote 260710 · CONTROL DE PRODUCCIÓN · #482"
         const etiquetas = new Map();
@@ -708,7 +852,7 @@ const ERPDashboard = () => {
             etiquetas.set(id, partes.join(' · '));
         });
 
-        return { rows: processed, columns: sorted, formLabels: etiquetas, origenCols: origen };
+        return { rows: processed, columns: columnasFinales, formLabels: etiquetas, origenCols: origen, aliasCols: aliasCol };
     }, [rawForms, compactarFilas, omitirTotalesDelForm, templates, columnasCombinadas]);
 
     // Al llegar datos nuevos: si este formulario tiene una configuración
@@ -718,18 +862,31 @@ const ERPDashboard = () => {
         if (configForm.estado !== 'lista') return;   // esperar la respuesta del servidor
 
         const guardada = configForm.data;
+        // El armado guardado puede tener el nombre VIEJO de una columna que la
+        // plantilla ya renombró ("PERSONAL EVENTUAL" → "PERSONAL EXTERNO
+        // (CUADRILLA/EVENTUAL)"). Se traduce para que la columna siga marcada
+        // sin tener que volver a elegirla.
+        const alNombreNuevo = (lista) => {
+            const out = [];
+            (lista || []).forEach(c => {
+                const n = (aliasCols && aliasCols.get(c)) || c;
+                if (!out.includes(n)) out.push(n);
+            });
+            return out;
+        };
+
         if (guardada?.visibleCols?.length) {
             // Cargar todas las columnas guardadas (incluyendo las que actualmente
             // no tienen datos en el rango — el usuario las eligió explícitamente).
-            setVisibleCols(new Set(guardada.visibleCols));
+            setVisibleCols(new Set(alNombreNuevo(guardada.visibleCols)));
             // El armado guardado se graba EN ORDEN, así que ese mismo array es
             // el orden de las columnas. No se pisa el orden que el usuario
             // pueda estar acomodando ahora mismo (al recargar datos).
-            setColOrder(prev => (prev.length ? prev : guardada.visibleCols));
+            setColOrder(prev => (prev.length ? prev : alNombreNuevo(guardada.visibleCols)));
         } else {
             setVisibleCols(new Set(columns));
         }
-    }, [columns, configForm]);
+    }, [columns, configForm, aliasCols]);
 
     // ─── Columnas actualmente visibles ──────────────────────────────────────
     // activeCols  = las marcadas → son las que se exportan al Excel
@@ -743,9 +900,12 @@ const ERPDashboard = () => {
     const todasLasCols = useMemo(() => {
         if (!visibleCols) return columns;
         const dataSet = new Set(columns);
-        const extras = Array.from(visibleCols).filter(c => !dataSet.has(c));
+        // Los nombres VIEJOS (antes de unificar) no se agregan como columna
+        // aparte: son la misma columna con otro nombre y saldrían vacías.
+        const extras = Array.from(visibleCols)
+            .filter(c => !dataSet.has(c) && !(aliasCols && aliasCols.has(c)));
         return extras.length > 0 ? [...columns, ...extras] : columns;
-    }, [columns, visibleCols]);
+    }, [columns, visibleCols, aliasCols]);
 
     // Aplica el orden elegido por el usuario. Las columnas que él nunca movió
     // (o que aparecieron después) se quedan al final, en el orden del formulario.
@@ -769,6 +929,36 @@ const ERPDashboard = () => {
         () => ordenCompleto.filter(c => !visibleCols || visibleCols.has(c)),
         [ordenCompleto, visibleCols]
     );
+
+    // ─── Diagnóstico: por qué una columna sale vacía ────────────────────────
+    // Para cada columna que no tiene NI UN valor en el rango, busca entre las
+    // claves que sí traen datos las que más se le parecen. Si el dato está
+    // guardado con otro nombre (columna renombrada en la plantilla, nombre
+    // escrito distinto), aparece acá y se ve al toque.
+    const diagnosticoVacios = useMemo(() => {
+        if (!showDiag) return [];
+        const conValor = new Set();
+        rows.forEach(r => {
+            Object.keys(r).forEach(k => {
+                if (k.startsWith('__')) return;
+                const v = r[k];
+                if (v !== undefined && v !== null && String(v).trim() !== '') conValor.add(k);
+            });
+        });
+        const clavesConDatos = [...conValor];
+        return columns
+            .filter(c => !conValor.has(c))
+            .map(c => {
+                const pw = palabrasDeColumna(c);
+                const parecidas = clavesConDatos
+                    .map(k => ({ k, puntos: palabrasDeColumna(k).filter(w => pw.includes(w)).length }))
+                    .filter(x => x.puntos > 0)
+                    .sort((a, b) => b.puntos - a.puntos)
+                    .slice(0, 4)
+                    .map(x => x.k);
+                return { col: c, parecidas };
+            });
+    }, [showDiag, rows, columns]);
 
     // ─── Columnas numéricas (candidatas a sumarse) ──────────────────────────
     // El N° de registro es un identificador: sumarlo no significa nada.
@@ -2106,7 +2296,7 @@ const ERPDashboard = () => {
                     titulo: el.title || el.name || el.label || `Tabla ${i + 1}`,
                     tipo: 'tabla',
                     campos: cols.map(c => campo(c.label || c.header || c.name || c.id,
-                        el.title || el.name || el.label || '', 'tabla')),
+                        el.title || el.name || el.label || `SECCIÓN_${i}`, 'tabla')),
                 });
             });
         }
@@ -2245,6 +2435,13 @@ const ERPDashboard = () => {
                                 title="Ver el formulario dibujado y elegir los campos haciendo clic sobre él"
                             >
                                 🖼️ Ver formulario
+                            </button>
+                            <button
+                                className="btn-cols"
+                                onClick={() => setShowDiag(true)}
+                                title="Muestra qué columnas no tienen ningún dato y con qué nombre podrían estar guardadas"
+                            >
+                                🔍 Vacías
                             </button>
                             <button
                                 className="btn-cols"
@@ -2760,6 +2957,64 @@ const ERPDashboard = () => {
                 </div>
             )}
 
+            {/* ── DIAGNÓSTICO DE COLUMNAS VACÍAS ── */}
+            {showDiag && (
+                <div className="croquis-overlay" onClick={e => { if (e.target === e.currentTarget) setShowDiag(false); }}>
+                    <div className="croquis-panel" style={{ maxWidth: '760px' }}>
+                        <div className="col-panel-header">
+                            <div className="col-panel-title">
+                                <strong>🔍 Columnas sin ningún dato</strong>
+                                <span className="col-panel-sub">
+                                    {rows.length} filas · {columns.length} columnas ·
+                                    {' '}{diagnosticoVacios.length} sin valores en el rango
+                                </span>
+                            </div>
+                            <div className="col-panel-actions">
+                                <button onClick={() => setShowDiag(false)}>✕ Cerrar</button>
+                            </div>
+                        </div>
+
+                        <div style={{ padding: '14px 18px', fontSize: '13px', color: '#334155' }}>
+                            {diagnosticoVacios.length === 0 ? (
+                                <p style={{ margin: 0 }}>
+                                    ✅ Todas las columnas tienen al menos un dato en el rango.
+                                    Si alguna sigue saliendo vacía en pantalla, revisá el filtro
+                                    de fechas o de plantilla.
+                                </p>
+                            ) : (
+                                <>
+                                    <p style={{ marginTop: 0, color: '#64748b' }}>
+                                        A la derecha, las columnas que SÍ tienen datos y que más se
+                                        parecen por el nombre. Si el valor aparece ahí, la columna se
+                                        llama distinto en lo guardado.
+                                    </p>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <thead>
+                                            <tr style={{ background: '#f1f5f9', textAlign: 'left' }}>
+                                                <th style={{ padding: '6px 8px', borderBottom: '1px solid #cbd5e1' }}>Columna vacía</th>
+                                                <th style={{ padding: '6px 8px', borderBottom: '1px solid #cbd5e1' }}>Con datos, parecidas</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {diagnosticoVacios.map(({ col, parecidas }) => (
+                                                <tr key={col}>
+                                                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #e2e8f0', fontWeight: 600 }}>
+                                                        {col}
+                                                    </td>
+                                                    <td style={{ padding: '6px 8px', borderBottom: '1px solid #e2e8f0', color: '#0f766e' }}>
+                                                        {parecidas.length > 0 ? parecidas.join('  ·  ') : '—'}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ── CROQUIS DEL FORMULARIO: se elige haciendo clic sobre el campo ── */}
             {showCroquis && (
                 <div className="croquis-overlay" onClick={e => { if (e.target === e.currentTarget) setShowCroquis(false); }}>
@@ -2879,6 +3134,27 @@ const ERPDashboard = () => {
                         <button onClick={toggleSoloNumericas}>🔢 Solo numéricas</button>
                         <button className="banner-export" onClick={downloadExcelVista}>📥 Exportar selección</button>
                         <button onClick={() => setModoSeleccion(false)}>✔️ Listo</button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── AVISO: COLUMNAS RENOMBRADAS EN LA PLANTILLA ──
+                Los datos se guardaron con el nombre viejo de la columna y la
+                plantilla ya la llama distinto. Se unifican solos; esto lo deja
+                a la vista para que nadie se pregunte por qué cambió el nombre. */}
+            {!ocultarAvisoAlias && aliasCols && aliasCols.size > 0 && (
+                <div
+                    className="erp-select-banner"
+                    style={{ background: '#fffbeb', borderColor: '#fcd34d', color: '#92400e' }}
+                >
+                    <span>
+                        🔗 <strong>{aliasCols.size}</strong> columna(s) se llamaban distinto en los
+                        datos guardados: se unificaron con el nombre de la plantilla.
+                        {' '}
+                        {[...aliasCols].map(([viejo, nuevo]) => `${viejo} → ${nuevo}`).join(' · ')}
+                    </span>
+                    <div className="erp-select-banner-actions">
+                        <button onClick={() => setOcultarAvisoAlias(true)}>✔️ Entendido</button>
                     </div>
                 </div>
             )}
