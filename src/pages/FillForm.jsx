@@ -7929,6 +7929,14 @@ useEffect(() => {
           if (resEnt.creados.length > 0) await refrescarInventario();
         } catch (entErr) {
           console.warn('⚠️ [INVENTARIO] No se pudieron registrar lotes:', entErr.message);
+          // Antes solo quedaba en la consola: el formulario se guardaba, el lote
+          // no se creaba y en planta nadie se enteraba (después el proceso que
+          // lo consume decía "el lote no existe").
+          alert(
+            `⚠️ No se pudieron registrar los lotes en el Inventario de Lotes:\n\n` +
+            `${entErr.message}\n\n` +
+            `El formulario quedó guardado, pero los lotes NO se crearon.`
+          );
         }
       }
 

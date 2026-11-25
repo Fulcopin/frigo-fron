@@ -1365,6 +1365,36 @@ export function InventarioEntradaConfig({ element, onChange }) {
             </div>
           </div>
 
+          {/* 🐟 UN LOTE POR NÚMERO
+              Con columna de producto el lote se crea como "22W292125-PRODUCTO",
+              uno por producto. El formulario que después lo consume (MT-07
+              contra el MT-10) escribe solo "22W292125" y no encontraba el lote.
+              Tildando esto el lote queda con el número exacto y las filas del
+              mismo número se suman en un solo saldo. */}
+          {element?.guardaProductoCol && (
+            <div style={{
+              padding: '8px 10px',
+              background: element?.guardaSeparaPorProducto === false ? '#eff6ff' : '#f8fafc',
+              border: `1.5px solid ${element?.guardaSeparaPorProducto === false ? '#93c5fd' : '#e2e8f0'}`,
+              borderRadius: '8px',
+            }}>
+              <label style={{ ...filaCheck, fontSize: '13px', fontWeight: 600, color: element?.guardaSeparaPorProducto === false ? '#1d4ed8' : '#4a5568' }}>
+                <input
+                  type="checkbox"
+                  checked={element?.guardaSeparaPorProducto === false}
+                  onChange={(e) => onChange('guardaSeparaPorProducto', e.target.checked ? false : true)}
+                  style={{ ...check, width: '18px', height: '18px', accentColor: '#2563eb' }}
+                />
+                <span>🔗 Un solo lote por número — no separar por producto</span>
+              </label>
+              <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px', lineHeight: 1.6 }}>
+                {element?.guardaSeparaPorProducto === false
+                  ? 'El lote se crea con el número exacto (22W292125) y las filas del mismo número se suman en un solo saldo. Es lo que necesita el formulario que después lo consume (MT-07).'
+                  : 'Tal como está, cada producto crea su propio lote con el número más el producto (22W292125-Swordfish steaks). Ojo: el formulario que consume escribe solo el número y puede no encontrarlo.'}
+              </div>
+            </div>
+          )}
+
           {!element?.guardaLoteCol && (
             <div style={{ fontSize: '12px', color: '#b91c1c', fontWeight: 600 }}>
               ⚠️ Falta elegir la columna con el número de lote — sin eso no se guarda nada.
@@ -1378,7 +1408,10 @@ export function InventarioEntradaConfig({ element, onChange }) {
           {element?.guardaLoteCol && element?.guardaCantidadCol && (
             <div style={{ fontSize: '12px', color: '#15803d', fontWeight: 600, lineHeight: 1.6 }}>
               ✅ Por cada fila se crea el lote de <strong>{element.guardaLoteCol}</strong> con el peso
-              de <strong>{element.guardaCantidadCol}</strong>. Las filas con el mismo lote se suman.
+              de <strong>{element.guardaCantidadCol}</strong>.{' '}
+              {element?.guardaProductoCol && element?.guardaSeparaPorProducto !== false
+                ? `Con columna de producto cada producto es un lote aparte (${element.guardaLoteCol} + producto).`
+                : 'Las filas con el mismo lote se suman en un solo lote.'}
             </div>
           )}
         </div>

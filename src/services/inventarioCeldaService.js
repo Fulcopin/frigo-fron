@@ -721,16 +721,24 @@ function resolverLoteEnColumna(lotes, cfg, row, loteCol) {
   if (!valLote) return { numeroLote: '', lote: null, columna: loteCol };
 
   const hijosDe = (lotes || []).filter(l => norm(l.lotePadre) === norm(valLote));
+  // Lotes creados con el producto en el número ("22W292125-Swordfish steaks"):
+  // el formulario que crea saldo los separa así cuando tiene columna de
+  // producto, y el que consume escribe solo el número ("22W292125"). Sin este
+  // atajo el lote "no existe" y la fila no se descuenta.
+  const porPrefijo = (lotes || []).filter(l => {
+    const num = norm(l.numeroLote || l.lote);
+    return num && num.startsWith(norm(valLote) + '-');
+  });
 
   // 1) Hijo por producto: es lo que realmente se consume aguas abajo.
   const prodCol = cfg?.descuentaProductoCol;
   if (prodCol) {
     const valProd = String(leerCelda(row, prodCol) || '').trim();
     if (valProd) {
-      const hijo = hijosDe.find(l => norm(l.producto) === norm(valProd));
+      const hijo = [...hijosDe, ...porPrefijo].find(l => norm(l.producto) === norm(valProd));
       if (hijo) return { numeroLote: hijo.numeroLote, lote: hijo, columna: loteCol };
       // 2) …o por código de producto (lotes "260725-PT-TNA-1000").
-      const porCodigo = hijosDe.find(l => norm(codigoProductoDe(l)) === norm(valProd));
+      const porCodigo = [...hijosDe, ...porPrefijo].find(l => norm(codigoProductoDe(l)) === norm(valProd));
       if (porCodigo) return { numeroLote: porCodigo.numeroLote, lote: porCodigo, columna: loteCol };
     }
   }
@@ -741,7 +749,15 @@ function resolverLoteEnColumna(lotes, cfg, row, loteCol) {
   }
 
   const directo = buscarLote(lotes, valLote);
-  return { numeroLote: directo ? directo.numeroLote : valLote, lote: directo, columna: loteCol };
+  if (directo) return { numeroLote: directo.numeroLote, lote: directo, columna: loteCol };
+
+  // 4) Un único lote con el número + sufijo de producto: es ese.
+  if (porPrefijo.length === 1) {
+    const unico = porPrefijo[0];
+    return { numeroLote: unico.numeroLote || unico.lote, lote: unico, columna: loteCol };
+  }
+
+  return { numeroLote: valLote, lote: null, columna: loteCol };
 }
 
 /**
@@ -1766,8 +1782,16 @@ export async function aplicarEntradasInventario({ template, bodyData, formId, pr
       .slice(0, 40);
 
     const porLote = {};
+    let filasConDatos = 0;
     for (const row of datos) {
       if (row?._deleted) continue;
+      // ¿La fila tiene algo cargado? Sirve para distinguir "tabla vacía" (no hay
+      // nada que registrar, no se avisa) de "cargaron datos pero la columna del
+      // lote está vacía o mal configurada" (eso sí hay que decirlo).
+      const tieneAlgo = Object.entries(row || {}).some(
+        ([k, v]) => !k.startsWith('_') && String(v ?? '').trim() !== ''
+      );
+      if (tieneAlgo) filasConDatos++;
       const numeroLote = String(leerCelda(row, loteCol) || '').trim();
       if (!numeroLote) continue;
 
@@ -1799,8 +1823,17 @@ export async function aplicarEntradasInventario({ template, bodyData, formId, pr
       if (!acc.clasificacion && clasificacion) acc.clasificacion = clasificacion;
     }
 
-    const aCrear = Object.entries(porLote).map(([numeroLote, info]) => ({
-      lote: numeroLote,
+    // Filas cargadas pero sin número de lote en la columna configurada: es el
+    // caso en que el operario guarda y "no aparece ningún lote" sin explicación.
+    if (Object.keys(porLote).length === 0 && filasConDatos > 0) {
+      resultado.errores.push(
+        `${titulo}: hay ${filasConDatos} fila(s) cargadas pero ninguna tiene valor en la columna ` +
+        `«${loteCol}» (o la columna no existe en los datos) — no se creó ningún lote.`
+      );
+      continue;
+    }
+
+    const aCrear = Object.entries(porLote).map(([numeroLote, info]) => ({      lote: numeroLote,
       proceso: cfg.guardaProceso || procesoDefault || 'Sin proceso',
       producto: info.producto,
       clasificacion: info.clasificacion,
