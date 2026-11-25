@@ -12509,12 +12509,14 @@ useEffect(() => {
                   };
                 });
               } else {
-                // Sin lote escrito todavía en el formulario, igual se recorta:
-                //   1. solo los lotes que CREÓ el formulario enlazado (el MT-10),
-                //      reconocidos por el templateId con el que se registraron;
-                //   2. de esos, los del día del formulario (o los más recientes).
-                // Antes caía a la lista completa: decenas de lotes de otras
-                // producciones y de recepción, imposible de encontrar.
+                // Sin lote escrito todavía en el formulario: se ofrecen TODOS los
+                // lotes que creó el formulario enlazado (el MT-10), reconocidos
+                // por el templateId con el que se registraron. Quedan fuera los
+                // de recepción, liberación y otras producciones.
+                //
+                // No se recorta por fecha ni se deja solo el último: el mismo
+                // MT-10 genera varios lotes (uno por número de lote interno) y
+                // el operario tiene que ver todos los de esa producción.
                 const idsOrigen = new Set(
                   origenesDe(col)
                     .filter(o => esOrigenProduccion(o))
@@ -12525,37 +12527,7 @@ useEffect(() => {
                 // enlazado; los lotes del inventario se reconocen por templateId.
                 const delMismoFormulario = opciones.filter(o =>
                   o.fila || (o.lote && idsOrigen.has(String(o.lote.templateId || ''))));
-                const base = delMismoFormulario.length > 0 ? delMismoFormulario : opciones;
-
-                const claveFecha = Object.keys(headerData || {}).find(
-                  k => /fecha/i.test(k) && String(headerData[k] ?? '').trim()
-                );
-                const hoy = new Date();
-                const fechaForm = claveFecha
-                  ? String(headerData[claveFecha]).slice(0, 10)
-                  : `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-                const fechaDe = (o) => String(o.lote?.fecha || o.fila?.fecha || '').slice(0, 10);
-
-                const delDia = base.filter(o => fechaDe(o) === fechaForm);
-                if (delDia.length > 0) {
-                  opciones = delDia;
-                } else {
-                  const conFecha = base
-                    .map(o => ({ o, f: fechaDe(o) }))
-                    .filter(x => x.f);
-                  if (conFecha.length > 0) {
-                    conFecha.sort((a, b) => (a.f < b.f ? 1 : a.f > b.f ? -1 : 0));
-                    const ultima = conFecha[0].f;
-                    const recientes = conFecha.filter(x => x.f === ultima).map(x => x.o);
-                    if (recientes.length > 0 && recientes.length < opciones.length) {
-                      opciones = recientes;
-                    } else {
-                      opciones = base;
-                    }
-                  } else {
-                    opciones = base;
-                  }
-                }
+                if (delMismoFormulario.length > 0) opciones = delMismoFormulario;
               }
               // Lo ya escrito que no esté en la lista se sigue viendo.
               if (valorAct && !opciones.some(o => o.value === valorAct)) {
