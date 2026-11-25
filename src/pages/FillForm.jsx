@@ -12502,11 +12502,28 @@ useEffect(() => {
                     lote: loteInv,
                   };
                 });
-                // Lo ya escrito que no sea el lote del formulario se sigue viendo.
-                if (valorAct && !opciones.some(o => o.value === valorAct)) {
-                  const loteInv = buscarLote(invLotes, valorAct);
-                  opciones = [{ value: valorAct, label: `${valorAct} (fuera de la lista)`, lote: loteInv }, ...opciones];
-                }
+              } else if (esProd) {
+                // Todavía no hay lote escrito en el formulario: al menos no se
+                // ofrece todo el historial de producción. Se dejan solo los
+                // lotes del DÍA del formulario (los que acaba de generar el
+                // MT-10), que es donde está el que se va a consumir.
+                const claveFecha = Object.keys(headerData || {}).find(
+                  k => /fecha/i.test(k) && String(headerData[k] ?? '').trim()
+                );
+                const hoy = new Date();
+                const fechaForm = claveFecha
+                  ? String(headerData[claveFecha]).slice(0, 10)
+                  : `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+                const delDia = opciones.filter(o => {
+                  const f = String(o.fila?.fecha || '').slice(0, 10);
+                  return !f || f === fechaForm;
+                });
+                if (delDia.length > 0) opciones = delDia;
+              }
+              // Lo ya escrito que no esté en la lista se sigue viendo.
+              if (valorAct && !opciones.some(o => o.value === valorAct)) {
+                const loteInv = buscarLote(invLotes, valorAct);
+                opciones = [{ value: valorAct, label: `${valorAct} (fuera de la lista)`, lote: loteInv }, ...opciones];
               }
             }
             // Saldo a mostrar: con origen inventario es el lote elegido; con origen
