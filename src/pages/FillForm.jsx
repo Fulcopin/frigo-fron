@@ -631,19 +631,63 @@ function FillForm() {
 
   // 🔒 «MOSTRAR SOLO EL LOTE DE ESTE FORMULARIO»
   //
-  // En las tablas marcadas así (MT-07 consume contra el lote que declara el
-  // propio formulario) la columna del lote se completa sola con el lote del
-  // encabezado. Así el operario no tiene que elegirlo fila por fila y el
-  // desplegable no ofrece los demás lotes del inventario ni los de producción.
+  // De dónde salen los lotes que ESTE formulario declara, en orden:
+  //   1. el encabezado (campos marcados como «guarda los lotes» o los que digan LOTE),
+  //   2. un bloque «Lote Entrante» (es donde el MT-07 recibe el lote del MT-10),
+  //   3. la columna «lote de proceso / padre» de alguna tabla del formulario.
   //
-  // Solo se llena cuando el encabezado tiene UN lote, la celda está vacía y la
+  // Con eso se filtra el desplegable del lote: se ofrecen solo los lotes del
+  // formulario, con su saldo, en vez de la lista completa del inventario más
+  // todo el historial de producción del formulario enlazado (~70 lotes).
+  const lotesDelForm = useMemo(() => {
+    if (!selectedTemplate) return [];
+    const salida = [];
+    const push = (v) => {
+      const t = String(v ?? '').trim();
+      if (t && !salida.some(x => x.toLowerCase() === t.toLowerCase())) salida.push(t);
+    };
+
+    // 1) Encabezado
+    lotesDelEncabezado(headerData, camposLoteDeTemplate(selectedTemplate)).forEach(push);
+
+    const elementos = selectedTemplate.bodyElements || [];
+
+    // 2) Bloque «Lote Entrante»
+    elementos.forEach((el, i) => {
+      if (el?.type !== 'lote_entrante') return;
+      const bloque = bodyData?.[i];
+      const filas = Array.isArray(bloque?.data) ? bloque.data : (bloque?.data ? [bloque.data] : []);
+      filas.forEach(f => {
+        if (!f || typeof f !== 'object') return;
+        push(f.lote ?? f.LOTE ?? f.Lote ?? '');
+      });
+    });
+
+    // 3) Columna «lote de proceso / padre» de las tablas
+    elementos.forEach((el, i) => {
+      if (el?.type !== 'table' || !tablaTieneLotePadre(el)) return;
+      const label = (el.columns || []).find(esColumnaLotePadre)?.label;
+      if (!label) return;
+      (bodyData?.[i]?.data || []).forEach(f => {
+        if (!f || f._deleted) return;
+        push(f[claveCelda(f, label)]);
+      });
+    });
+
+    return salida;
+  }, [selectedTemplate, headerData, bodyData]);
+
+  // En las tablas marcadas «solo el lote de este formulario» la columna del lote
+  // se completa sola. Así el operario no tiene que elegirlo fila por fila y el
+  // desplegable no ofrece los demás lotes.
+  //
+  // Solo se llena cuando el formulario declara UN lote, la celda está vacía y la
   // fila ya tiene otros datos: una fila en blanco se deja como está (llenarla
   // la haría parecer usada) y un lote ya escrito no se pisa nunca.
   useEffect(() => {
     if (!selectedTemplate) return;
-    const declarados = lotesDelEncabezado(headerData, camposLoteDeTemplate(selectedTemplate));
-    if (declarados.length !== 1) return;
-    const lote = declarados[0];
+    if (lotesDelForm.length !== 1) return;
+    const lote = lotesDelForm[0];
 
     const tieneDatos = (fila, salvo) => Object.entries(fila || {}).some(
       ([k, v]) => k !== salvo && !k.startsWith('_') && String(v ?? '').trim() !== ''
@@ -678,8 +722,7 @@ function FillForm() {
       });
       return hubo ? nuevo : prev;
     });
-  }, [headerData, selectedTemplate, bodyData]);
-
+  }, [headerData, selectedTemplate, bodyData, lotesDelForm]);
   /** Refresca el inventario (tras guardar / descontar) para ver los saldos al día. */
   const refrescarInventario = useCallback(async () => {
     const lotes = await cargarInventario();
@@ -12439,7 +12482,7 @@ useEffect(() => {
             //    Si el encabezado todavía no tiene lote se deja la lista completa:
             //    es preferible eso a un desplegable vacío.
             if (esColLote && cfgTabla?.loteSoloEncabezado) {
-              const declarados = lotesDelEncabezado(headerData, camposLoteDeTemplate(selectedTemplate));
+              const declarados = lotesDelForm;
               if (declarados.length > 0) {
                 opciones = declarados.map(num => {
                   const loteInv = buscarLote(invLotes, num);
@@ -12729,6 +12772,10 @@ useEffect(() => {
                 if (!numeroLote) return null;
 
                 if (!lote) {
+                  // En las tablas con «solo el lote de este formulario» el lote
+                  // viene del propio formulario (MT-10 → MT-07) y es normal que
+                  // todavía no esté dado de alta: no se avisa como error.
+                  if (tablaCfg.loteSoloEncabezado) return null;
                   // Diagnóstico: casi siempre es que la columna de lote configurada
                   // apunta a otra columna (se lee la cantidad, un código, etc.).
                   const pareceCantidad = /^\d+([.,]\d+)?$/.test(numeroLote) && Number(numeroLote) < 10000;
@@ -13142,7 +13189,9 @@ useEffect(() => {
                         restante: saldo === null ? null : Number((saldo - info.pedido).toFixed(2)),
                       };
                     });
-                    const hayProblema = items.some(i => !i.existe || (i.restante !== null && i.restante < -0.0001));
+                    const hayProblema = items.some(i =>
+                      (i.existe ? false : !tablaCfg.loteSoloEncabezado)
+                      || (i.restante !== null && i.restante < -0.0001));
 
                     return (
                       <div style={{
@@ -13160,9 +13209,16 @@ useEffect(() => {
                             <div key={i.numeroLote} style={{ fontSize: '11.5px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'baseline' }}>
                               <strong style={{ color: '#0f172a', minWidth: '130px' }}>{i.numeroLote}</strong>
                               {!i.existe ? (
-                                <span style={{ color: '#b45309', fontWeight: 600 }}>
-                                  no está en el inventario — no se descontará
-                                </span>
+                                tablaCfg.loteSoloEncabezado ? (
+                                  <span style={{ color: '#475569' }}>
+                                    todavía no está en el inventario — el movimiento queda anotado y
+                                    se descuenta cuando el lote se dé de alta
+                                  </span>
+                                ) : (
+                                  <span style={{ color: '#b45309', fontWeight: 600 }}>
+                                    no está en el inventario — no se descontará
+                                  </span>
+                                )
                               ) : (
                                 <>
                                   <span style={{ color: '#475569' }}>
