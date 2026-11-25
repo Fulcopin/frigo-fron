@@ -480,6 +480,12 @@ function opcionesProduccion(filas, columnas, col, row, lotes, origen = origenDe(
   const mostrarProducto = col?.invMostrarProducto === true;
   const vistos = new Set();
   const opciones = [];
+
+  const aNumero = (v) => {
+    const n = Number(String(v ?? '').replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+  };
+
   for (const fila of pool) {
     const value = String(fila[campo] ?? '').trim();
     if (!value || vistos.has(value)) continue;
@@ -492,7 +498,17 @@ function opcionesProduccion(filas, columnas, col, row, lotes, origen = origenDe(
     }
     if (campo === 'loteProceso' && mostrarSaldo) {
       const saldo = saldoDeLoteProceso(lotes, value);
-      if (saldo > 0) label = `${label} · ${saldo.toFixed(1)} lbs disp.`;
+      if (saldo > 0) {
+        label = `${label} · ${saldo.toFixed(1)} lbs disp.`;
+      } else {
+        // El lote todavía no está dado de alta en el inventario (o entró con 0):
+        // se muestra lo PRODUCIDO según el resumen, para que el operario vea el
+        // peso igual y no una opción "vacía".
+        const producido = pool
+          .filter(f => String(f[campo] ?? '').trim() === value)
+          .reduce((n, f) => n + aNumero(f.pesoNeto), 0);
+        if (producido > 0) label = `${label} · ${producido.toFixed(1)} Lbs producidas`;
+      }
     }
     opciones.push({ value, label, fila });
   }
