@@ -1602,6 +1602,35 @@ export function InventarioTablaConfig({ element, onChange }) {
         </label>
       </div>
 
+      {/* 🔒 FILTRO DEL DESPLEGABLE DE LOTE
+          Los formularios que trabajan con UN lote (MT-07 consume contra el lote
+          que declara el propio formulario) ofrecían en el desplegable todo el
+          inventario más los resúmenes de producción: decenas de lotes que no
+          tienen nada que ver y el operario no encontraba el suyo. Con esto el
+          desplegable ofrece solo el lote del encabezado, con su saldo. */}
+      <div style={{
+        marginTop: '10px', padding: '8px 10px',
+        background: element?.loteSoloEncabezado ? '#f0fdf4' : '#f8fafc',
+        border: `1.5px solid ${element?.loteSoloEncabezado ? '#86efac' : '#e2e8f0'}`,
+        borderRadius: '8px',
+      }}>
+        <label style={{ ...filaCheck, fontSize: '13px', fontWeight: 600, color: element?.loteSoloEncabezado ? '#15803d' : '#4a5568' }}>
+          <input
+            type="checkbox"
+            checked={!!element?.loteSoloEncabezado}
+            onChange={(e) => onChange('loteSoloEncabezado', e.target.checked)}
+            style={{ ...check, width: '18px', height: '18px', accentColor: '#16a34a' }}
+          />
+          <span>🔒 Mostrar solo el lote de este formulario</span>
+        </label>
+        <div style={{ fontSize: '11px', color: element?.loteSoloEncabezado ? '#166534' : '#6b7280', marginTop: '4px', lineHeight: 1.6 }}>
+          {element?.loteSoloEncabezado
+            ? 'El desplegable del lote ofrece únicamente el lote escrito en el encabezado de este formulario, con su saldo, y se completa solo en las filas. No se mezclan los demás lotes del inventario ni los de producción.'
+            : 'Tildalo cuando la tabla consume el lote del PROPIO formulario (MT-07 y similares): el operario no tiene que buscar entre todos los lotes y no se ofrecen lotes ajenos.'}
+        </div>
+      </div>
+
+
       {/* Modo "solo dejar constancia": mismo mecanismo, pero sin tocar el saldo. */}
       <div style={{
         marginTop: '10px', padding: '8px 10px',

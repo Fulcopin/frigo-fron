@@ -37,7 +37,7 @@ import {
   usaListaLotePadre, filtrarLotesElegidos, listaLotePadreDe,
   ocultarColumnaLotePadre, loteUnicoDelEncabezado, claveCelda,
   validarMateriaPrimaVsProduccion,
-  saldoDe, leerCelda, columnaLoteDe, esColumnaInventario, elementosDe,
+  saldoDe, leerCelda, columnaLoteDe, esColumnaInventario, esColumnaDeLote, elementosDe,
 } from '../services/inventarioCeldaService';
 import { modoBusquedaProducto, destinoColumnaProducto } from '../utils/busquedaProducto';
 import { buscarCodigosEnUso, detalleDeUso } from '../services/codigosEnUsoService';
@@ -628,6 +628,57 @@ function FillForm() {
       return hubo ? nuevo : prev;
     });
   }, [headerData, selectedTemplate, bodyData, modoUnLote]);
+
+  // 🔒 «MOSTRAR SOLO EL LOTE DE ESTE FORMULARIO»
+  //
+  // En las tablas marcadas así (MT-07 consume contra el lote que declara el
+  // propio formulario) la columna del lote se completa sola con el lote del
+  // encabezado. Así el operario no tiene que elegirlo fila por fila y el
+  // desplegable no ofrece los demás lotes del inventario ni los de producción.
+  //
+  // Solo se llena cuando el encabezado tiene UN lote, la celda está vacía y la
+  // fila ya tiene otros datos: una fila en blanco se deja como está (llenarla
+  // la haría parecer usada) y un lote ya escrito no se pisa nunca.
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    const declarados = lotesDelEncabezado(headerData, camposLoteDeTemplate(selectedTemplate));
+    if (declarados.length !== 1) return;
+    const lote = declarados[0];
+
+    const tieneDatos = (fila, salvo) => Object.entries(fila || {}).some(
+      ([k, v]) => k !== salvo && !k.startsWith('_') && String(v ?? '').trim() !== ''
+    );
+
+    setBodyData(prev => {
+      let hubo = false;
+      const nuevo = prev.map((bloque, i) => {
+        const el = selectedTemplate.bodyElements?.[i];
+        if (!el || el.type !== 'table' || !el.loteSoloEncabezado) return bloque;
+        const filas = Array.isArray(bloque?.data) ? bloque.data : [];
+        if (filas.length === 0) return bloque;
+
+        const label = el.descuentaLoteCol
+          || (el.columns || []).find(esColumnaDeLote)?.label;
+        if (!label) return bloque;
+
+        let cambio = false;
+        const nuevas = filas.map(fila => {
+          if (!fila || fila._deleted) return fila;
+          const clave = claveCelda(fila, label);
+          const actual = String(fila[clave] ?? '').trim();
+          if (actual === lote) return fila;
+          if (actual) return fila;                     // ya tiene otro lote: no se pisa
+          if (!tieneDatos(fila, clave)) return fila;   // fila vacía: se deja
+          cambio = true;
+          return { ...fila, [clave]: lote };
+        });
+        if (!cambio) return bloque;
+        hubo = true;
+        return { ...bloque, data: nuevas };
+      });
+      return hubo ? nuevo : prev;
+    });
+  }, [headerData, selectedTemplate, bodyData]);
 
   /** Refresca el inventario (tras guardar / descontar) para ver los saldos al día. */
   const refrescarInventario = useCallback(async () => {
@@ -12375,11 +12426,38 @@ useEffect(() => {
           if (col.type === 'inventario' && !col.campoLibre) {
             const cfgTabla  = selectedTemplate?.bodyElements?.[elementIndex] || element;
             const colsTpl   = cfgTabla?.columns || element.columns || [];
-            const opciones  = opcionesInventario(invDatos, colsTpl, col, row);
+            let   opciones  = opcionesInventario(invDatos, colsTpl, col, row);
             const valorAct  = row[resolvedCellName] || '';
             const esProd    = esColumnaProduccion(col);
             const campoCol  = col.invCampo || (esProd ? 'loteProceso' : 'numeroLote');
             const esColLote = campoCol === 'numeroLote' || campoCol === 'loteProceso';
+            // 🔒 «Mostrar solo el lote de este formulario» (config de la tabla):
+            //    el desplegable del lote ofrece únicamente el lote que declara el
+            //    encabezado de ESTE formulario, con su saldo, en vez de todo el
+            //    inventario más los resúmenes de producción (decenas de lotes
+            //    ajenos que al operario no le sirven y lo hacían perderse).
+            //    Si el encabezado todavía no tiene lote se deja la lista completa:
+            //    es preferible eso a un desplegable vacío.
+            if (esColLote && cfgTabla?.loteSoloEncabezado) {
+              const declarados = lotesDelEncabezado(headerData, camposLoteDeTemplate(selectedTemplate));
+              if (declarados.length > 0) {
+                opciones = declarados.map(num => {
+                  const loteInv = buscarLote(invLotes, num);
+                  return {
+                    value: num,
+                    label: loteInv
+                      ? `${num} — ${saldoDe(loteInv).toFixed(1)} lbs disp.`
+                      : `${num} (no está en el inventario)`,
+                    lote: loteInv,
+                  };
+                });
+                // Lo ya escrito que no sea el lote del formulario se sigue viendo.
+                if (valorAct && !opciones.some(o => o.value === valorAct)) {
+                  const loteInv = buscarLote(invLotes, valorAct);
+                  opciones = [{ value: valorAct, label: `${valorAct} (fuera de la lista)`, lote: loteInv }, ...opciones];
+                }
+              }
+            }
             // Saldo a mostrar: con origen inventario es el lote elegido; con origen
             // de producción es el lote hijo real que resolvería el descuento.
             let loteSel = null;

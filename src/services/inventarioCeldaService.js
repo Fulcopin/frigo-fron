@@ -1032,6 +1032,16 @@ export async function aplicarDescuentosInventario({ template, bodyData, formId, 
       // Diagnóstico antes de llamar al backend: así el operario ve POR QUÉ no se
       // descontó, en vez de un error genérico de API.
       if (!info.lote) {
+        // Tablas configuradas con «Mostrar solo el lote de este formulario»: el
+        // lote sale del encabezado, no de una lista, así que el operario no pudo
+        // elegir mal. Si todavía no está dado de alta en el Inventario de Lotes,
+        // no hay saldo que restar — se omite sin avisar como si fuera un error.
+        if (cfg?.loteSoloEncabezado) {
+          resultado.omitidos.push(
+            `${titulo} · lote ${numeroLote}: todavía no está en el Inventario de Lotes, no se descontó.`
+          );
+          continue;
+        }
         resultado.errores.push(
           `${titulo} · fila(s) ${filas}: el lote "${numeroLote}" no existe en el Inventario de Lotes ` +
           `(revisá la columna de producto o sincronizá el inventario).`
