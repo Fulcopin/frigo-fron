@@ -12482,6 +12482,11 @@ useEffect(() => {
             const esProd    = esColumnaProduccion(col);
             const campoCol  = col.invCampo || (esProd ? 'loteProceso' : 'numeroLote');
             const esColLote = campoCol === 'numeroLote' || campoCol === 'loteProceso';
+            // ¿Esta celda está filtrada por la config «solo el lote de este
+            // formulario»? Sirve también para el texto de la opción vacía: si
+            // dice «— Producción —» el filtro NO está activo (build viejo o
+            // plantilla sin el check) y así se ve de un vistazo.
+            const soloLoteForm = !!cfgTabla?.loteSoloEncabezado && esColLote;
             // 🔒 «Mostrar solo el lote de este formulario» (config de la tabla):
             //    el desplegable del lote ofrece únicamente el lote que declara el
             //    encabezado de ESTE formulario, con su saldo, en vez de todo el
@@ -12503,10 +12508,10 @@ useEffect(() => {
                   };
                 });
               } else if (esProd) {
-                // Todavía no hay lote escrito en el formulario: al menos no se
-                // ofrece todo el historial de producción. Se dejan solo los
-                // lotes del DÍA del formulario (los que acaba de generar el
-                // MT-10), que es donde está el que se va a consumir.
+                // Todavía no hay lote escrito en el formulario: en vez de todo el
+                // historial de producción se ofrecen los lotes del DÍA del
+                // formulario y, si no hay de ese día, los del MT-10 más reciente
+                // (el que se acaba de guardar y que el operario tiene a mano).
                 const claveFecha = Object.keys(headerData || {}).find(
                   k => /fecha/i.test(k) && String(headerData[k] ?? '').trim()
                 );
@@ -12514,11 +12519,24 @@ useEffect(() => {
                 const fechaForm = claveFecha
                   ? String(headerData[claveFecha]).slice(0, 10)
                   : `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-                const delDia = opciones.filter(o => {
-                  const f = String(o.fila?.fecha || '').slice(0, 10);
-                  return !f || f === fechaForm;
-                });
-                if (delDia.length > 0) opciones = delDia;
+                const sinFila = opciones.filter(o => !o.fila);
+
+                const delDia = opciones.filter(o =>
+                  o.fila && String(o.fila.fecha || '').slice(0, 10) === fechaForm);
+
+                if (delDia.length > 0) {
+                  opciones = [...delDia, ...sinFila];
+                } else {
+                  // El más reciente: mismo formId de producción más alto.
+                  const ids = opciones
+                    .map(o => Number(o.fila?.formId) || 0)
+                    .filter(n => n > 0);
+                  const maxId = ids.length > 0 ? Math.max(...ids) : 0;
+                  if (maxId > 0) {
+                    const ultimos = opciones.filter(o => Number(o.fila?.formId) === maxId);
+                    if (ultimos.length > 0) opciones = [...ultimos, ...sinFila];
+                  }
+                }
               }
               // Lo ya escrito que no esté en la lista se sigue viendo.
               if (valorAct && !opciones.some(o => o.value === valorAct)) {
@@ -12553,7 +12571,10 @@ useEffect(() => {
                     title={esProd ? 'Valor tomado del resumen de producción del formulario configurado' : 'Valor tomado del Inventario de Lotes'}
                   >
                     <option value="">
-                      {campoCol === 'clasificacion' ? '— Clasificación —' : (esProd ? '— Producción —' : '— Inventario —')}
+                      {campoCol === 'clasificacion'
+                        ? '— Clasificación —'
+                        : (soloLoteForm ? '— Lote del formulario —'
+                           : (esProd ? '— Producción —' : '— Inventario —'))}
                     </option>
                     {fueraDeLista && <option value={valorAct}>{valorAct} (fuera de inventario)</option>}
                     {opciones.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
