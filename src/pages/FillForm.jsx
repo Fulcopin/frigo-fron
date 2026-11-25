@@ -12507,11 +12507,12 @@ useEffect(() => {
                     lote: loteInv,
                   };
                 });
-              } else if (esProd) {
-                // Todavía no hay lote escrito en el formulario: en vez de todo el
-                // historial de producción se ofrecen los lotes del DÍA del
-                // formulario y, si no hay de ese día, los del MT-10 más reciente
-                // (el que se acaba de guardar y que el operario tiene a mano).
+              } else {
+                // Sin lote escrito todavía en el formulario, igual se recorta la
+                // lista: primero los lotes DEL DÍA del formulario y, si no hay
+                // de ese día, los MÁS RECIENTES (los que acaba de crear el
+                // MT-10). Antes caía a la lista completa: 70 lotes de todas las
+                // fechas, imposible de encontrar para el operario.
                 const claveFecha = Object.keys(headerData || {}).find(
                   k => /fecha/i.test(k) && String(headerData[k] ?? '').trim()
                 );
@@ -12519,22 +12520,24 @@ useEffect(() => {
                 const fechaForm = claveFecha
                   ? String(headerData[claveFecha]).slice(0, 10)
                   : `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-                const sinFila = opciones.filter(o => !o.fila);
+                // El lote del inventario trae `fecha`; el del resumen de
+                // producción también (fecha de ese formulario).
+                const fechaDe = (o) => String(o.lote?.fecha || o.fila?.fecha || '').slice(0, 10);
 
-                const delDia = opciones.filter(o =>
-                  o.fila && String(o.fila.fecha || '').slice(0, 10) === fechaForm);
-
+                const delDia = opciones.filter(o => fechaDe(o) === fechaForm);
                 if (delDia.length > 0) {
-                  opciones = [...delDia, ...sinFila];
+                  opciones = delDia;
                 } else {
-                  // El más reciente: mismo formId de producción más alto.
-                  const ids = opciones
-                    .map(o => Number(o.fila?.formId) || 0)
-                    .filter(n => n > 0);
-                  const maxId = ids.length > 0 ? Math.max(...ids) : 0;
-                  if (maxId > 0) {
-                    const ultimos = opciones.filter(o => Number(o.fila?.formId) === maxId);
-                    if (ultimos.length > 0) opciones = [...ultimos, ...sinFila];
+                  const conFecha = opciones
+                    .map(o => ({ o, f: fechaDe(o) }))
+                    .filter(x => x.f);
+                  if (conFecha.length > 0) {
+                    conFecha.sort((a, b) => (a.f < b.f ? 1 : a.f > b.f ? -1 : 0));
+                    const ultima = conFecha[0].f;
+                    const recientes = conFecha.filter(x => x.f === ultima).map(x => x.o);
+                    if (recientes.length > 0 && recientes.length < opciones.length) {
+                      opciones = recientes;
+                    }
                   }
                 }
               }
