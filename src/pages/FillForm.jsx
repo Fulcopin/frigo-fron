@@ -30,6 +30,7 @@ import { isTrazaEnabled, isResumenAutoEnabled, addLote, addLotes, getLotesDispon
 import {
   templateUsaInventario, templateUsaPD04, cargarInventario, cargarProduccionDeTemplate,
   opcionesInventario, buscarLote, autocompletarDesdeFila, origenDe, esColumnaProduccion,
+  origenesDe, esOrigenProduccion, templateIdDeOrigen,
   aplicarDescuentosInventario, resumenDescuentos, resolverLoteDeFila, saldoDeFila,
   usaAutoProduccionLegacy, templateGuardaInventario, aplicarEntradasInventario, resumenEntradas,
   esColumnaLotePadre, lotesDelEncabezado, tablaTieneLotePadre, campoLoteEncabezado,
@@ -12508,11 +12509,24 @@ useEffect(() => {
                   };
                 });
               } else {
-                // Sin lote escrito todavía en el formulario, igual se recorta la
-                // lista: primero los lotes DEL DÍA del formulario y, si no hay
-                // de ese día, los MÁS RECIENTES (los que acaba de crear el
-                // MT-10). Antes caía a la lista completa: 70 lotes de todas las
-                // fechas, imposible de encontrar para el operario.
+                // Sin lote escrito todavía en el formulario, igual se recorta:
+                //   1. solo los lotes que CREÓ el formulario enlazado (el MT-10),
+                //      reconocidos por el templateId con el que se registraron;
+                //   2. de esos, los del día del formulario (o los más recientes).
+                // Antes caía a la lista completa: decenas de lotes de otras
+                // producciones y de recepción, imposible de encontrar.
+                const idsOrigen = new Set(
+                  origenesDe(col)
+                    .filter(o => esOrigenProduccion(o))
+                    .map(o => String(templateIdDeOrigen(o) || ''))
+                    .filter(Boolean)
+                );
+                // Las filas del resumen de producción ya vienen del formulario
+                // enlazado; los lotes del inventario se reconocen por templateId.
+                const delMismoFormulario = opciones.filter(o =>
+                  o.fila || (o.lote && idsOrigen.has(String(o.lote.templateId || ''))));
+                const base = delMismoFormulario.length > 0 ? delMismoFormulario : opciones;
+
                 const claveFecha = Object.keys(headerData || {}).find(
                   k => /fecha/i.test(k) && String(headerData[k] ?? '').trim()
                 );
@@ -12520,15 +12534,13 @@ useEffect(() => {
                 const fechaForm = claveFecha
                   ? String(headerData[claveFecha]).slice(0, 10)
                   : `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-                // El lote del inventario trae `fecha`; el del resumen de
-                // producción también (fecha de ese formulario).
                 const fechaDe = (o) => String(o.lote?.fecha || o.fila?.fecha || '').slice(0, 10);
 
-                const delDia = opciones.filter(o => fechaDe(o) === fechaForm);
+                const delDia = base.filter(o => fechaDe(o) === fechaForm);
                 if (delDia.length > 0) {
                   opciones = delDia;
                 } else {
-                  const conFecha = opciones
+                  const conFecha = base
                     .map(o => ({ o, f: fechaDe(o) }))
                     .filter(x => x.f);
                   if (conFecha.length > 0) {
@@ -12537,7 +12549,11 @@ useEffect(() => {
                     const recientes = conFecha.filter(x => x.f === ultima).map(x => x.o);
                     if (recientes.length > 0 && recientes.length < opciones.length) {
                       opciones = recientes;
+                    } else {
+                      opciones = base;
                     }
+                  } else {
+                    opciones = base;
                   }
                 }
               }
