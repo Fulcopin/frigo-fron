@@ -7927,7 +7927,9 @@ useEffect(() => {
           console.log('📥 [INVENTARIO] Entradas:', resEnt);
           const textoEnt = resumenEntradas(resEnt);
           if (textoEnt) alert(textoEnt);
-          if (resEnt.creados.length > 0) await refrescarInventario();
+          // Se refresca siempre: si los lotes ya existían no se duplican, pero
+          // puede que se les haya corregido el peso (lotes que entraron en 0).
+          await refrescarInventario();
         } catch (entErr) {
           console.warn('⚠️ [INVENTARIO] No se pudieron registrar lotes:', entErr.message);
           // Antes solo quedaba en la consola: el formulario se guardaba, el lote

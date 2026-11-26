@@ -1921,7 +1921,8 @@ export async function aplicarEntradasInventario({ template, bodyData, formId, pr
       })));
       if (nuevos < aCrear.length) {
         resultado.omitidos.push(
-          `${titulo}: ${aCrear.length - nuevos} lote(s) ya existían en el inventario — no se duplicaron.`
+          `${titulo}: ${aCrear.length - nuevos} lote(s) ya existían en el inventario — no se duplicaron` +
+          ` (si estaban en 0.00 Lbs, se les actualizó el peso).`
         );
       }
     } catch (err) {
