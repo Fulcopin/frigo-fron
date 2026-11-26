@@ -13228,12 +13228,22 @@ useEffect(() => {
 
                     const items = [...porLote.entries()].map(([numeroLote, info]) => {
                       const saldo = info.lote ? saldoDe(info.lote) : null;
+                      // ¿El lote existe pero separado por producto? El MT-10 con
+                      // columna de producto crea "22W292125-<producto>" en vez de
+                      // "22W292125", y entonces el descuento no encuentra el lote.
+                      // Se detecta para poder decir qué hacer en vez de "no tiene".
+                      const hijos = invLotes.filter(l => {
+                        const n = String(l.numeroLote || l.lote || '').toUpperCase();
+                        return n.startsWith(String(numeroLote).toUpperCase() + '-');
+                      });
                       return {
                         numeroLote,
                         existe: !!info.lote,
                         saldo,
                         pedido: Number(info.pedido.toFixed(2)),
                         restante: saldo === null ? null : Number((saldo - info.pedido).toFixed(2)),
+                        hijos: hijos.map(h => h.numeroLote || h.lote),
+                        hijosSaldo: hijos.reduce((n, h) => n + saldoDe(h), 0),
                       };
                     });
                     const hayProblema = items.some(i =>
@@ -13256,14 +13266,21 @@ useEffect(() => {
                             <div key={i.numeroLote} style={{ fontSize: '11.5px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'baseline' }}>
                               <strong style={{ color: '#0f172a', minWidth: '130px' }}>{i.numeroLote}</strong>
                               {!i.existe ? (
-                                tablaCfg.loteSoloEncabezado ? (
+                                !tablaCfg.loteSoloEncabezado ? (
+                                  <span style={{ color: '#b45309', fontWeight: 600 }}>
+                                    no está en el inventario — no se descontará
+                                  </span>
+                                ) : i.hijos.length > 0 ? (
+                                  <span style={{ color: '#b45309', fontWeight: 600, lineHeight: 1.6 }}>
+                                    está registrado por producto ({i.hijos.slice(0, 2).join(', ')}
+                                    {i.hijos.length > 2 ? '…' : ''} · {i.hijosSaldo.toFixed(2)} Lbs en total),
+                                    no con este número. En la plantilla del MT-10 tildá
+                                    <strong> «🔗 Un solo lote por número»</strong> y volvé a guardar el MT-10.
+                                  </span>
+                                ) : (
                                   <span style={{ color: '#475569' }}>
                                     todavía no está en el inventario — el movimiento queda anotado y
                                     se descuenta cuando el lote se dé de alta
-                                  </span>
-                                ) : (
-                                  <span style={{ color: '#b45309', fontWeight: 600 }}>
-                                    no está en el inventario — no se descontará
                                   </span>
                                 )
                               ) : (
