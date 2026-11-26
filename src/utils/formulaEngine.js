@@ -466,31 +466,74 @@ export const buildComputedRow = (row, templateCols, allRows = [], rowIndex = -1)
   // Copia de trabajo: iremos escribiendo los resultados para que columnas posteriores los vean
   let computedRow = { ...row };
 
+  // 📋 CELDAS COMBINADAS (rowSpan)
+  //
+  // Una columna combinada guarda el valor SOLO en la primera fila del grupo; las
+  // demás quedan vacías. En una fórmula eso parte el cálculo en dos:
+  //   TOTAL DE MUESTRA = CAMARON BUENO + CANTIDAD[*]
+  // daba 142 en la fila 1 y 42 en las siguientes, así que el MISMO porcentaje
+  // salía 7.04 % en una fila y 11.90 % en la otra ("todo el registro con error
+  // en la fórmula"). Acá se arrastra el valor hacia abajo, igual que al exportar.
+  if (rowIndex >= 0 && Array.isArray(allRows) && allRows.length > 0) {
+    templateCols.forEach((col, ci) => {
+      const lbl = col?.label || col?.header || col?.name || col?.id || `col_${ci}`;
+      if (!lbl) return;
+      const actual = computedRow[lbl];
+      if (actual !== undefined && String(actual).trim() !== '') return;
+      for (let j = rowIndex - 1; j >= 0; j--) {
+        const prev = allRows[j];
+        if (!prev) continue;
+        const span = Number(
+          prev?._rowSpan?.[lbl] ?? prev?._rowSpan?.[col?.id] ?? prev?._rowSpan?.[col?.name] ?? 0
+        );
+        if (!span || rowIndex - j >= span) continue;
+        const valor = prev[lbl] ?? prev[col?.id] ?? prev[col?.name];
+        if (valor !== undefined && String(valor).trim() !== '') computedRow[lbl] = valor;
+        break;
+      }
+    });
+  }
+
   // Evaluar columnas de fórmula EN ORDEN (el orden de columnas define la cadena de cálculo)
-  templateCols.forEach((col, ci) => {
-    const colType = (col.type || '').toLowerCase();
-    if ((colType === 'formula' || colType === 'calculated' || colType === 'percentage') && col.formula) {
-      const plainLabel = col.label || col.header || col.name || '';
-      const storedKey = colNMap.get(ci) || plainLabel;
+  //
+  // 🔁 DOS PASADAS: una fórmula puede usar una columna que está MÁS A LA DERECHA.
+  // Caso real del FOR-CC-02C:
+  //     PORCENTAJE (1)   = ( CANTIDAD (1) / TOTAL DE MUESTRA ) * 100
+  //     TOTAL DE MUESTRA = CAMARON BUENO + CANTIDAD (1)[*]      ← está después
+  // En la primera pasada TOTAL DE MUESTRA todavía no existe, así que el motor
+  // devolvía "⚠️ Fórmula sin coincidencia" y el registro entero salía con error
+  // (Joseph: "ayer salió bien y ahora todo el registro con error en la fórmula").
+  // La segunda pasada ya tiene los resultados de la primera y calcula el %.
+  const evaluarColumnasDeFormula = () => {
+    templateCols.forEach((col, ci) => {
+      const colType = (col.type || '').toLowerCase();
+      if ((colType === 'formula' || colType === 'calculated' || colType === 'percentage') && col.formula) {
+        const plainLabel = col.label || col.header || col.name || '';
+        const storedKey = colNMap.get(ci) || plainLabel;
 
-      // Resolver alias para grupos y etiquetas duplicadas, usando computedRow que ya tiene
-      // los resultados de las fórmulas anteriores calculados
-      const rowAlias = buildGroupedRowAlias(computedRow, templateCols, ci);
-      let result = evaluarFormula(col.formula, rowAlias, allRows, rowIndex, false);
+        // Resolver alias para grupos y etiquetas duplicadas, usando computedRow que ya tiene
+        // los resultados de las fórmulas anteriores calculados
+        const rowAlias = buildGroupedRowAlias(computedRow, templateCols, ci);
+        let result = evaluarFormula(col.formula, rowAlias, allRows, rowIndex, false);
 
-      if (colType === 'percentage' && result && result !== 'ERR' && result !== '⚠️') {
-        const numVal = parseFloat(result);
-        result = isNaN(numVal) ? '0' : String(numVal * 100);
+        if (colType === 'percentage' && result && result !== 'ERR' && result !== '⚠️') {
+          const numVal = parseFloat(result);
+          result = isNaN(numVal) ? '0' : String(numVal * 100);
+        }
+
+        if (result && result !== '⚠️' && result !== 'ERR') {
+          // Guardar bajo la etiqueta plana (para que otras fórmulas la encuentren por nombre)
+          if (plainLabel) computedRow[plainLabel] = result;
+          // También bajo la clave _colN si es distinta (para compatibilidad con el row almacenado)
+          if (storedKey && storedKey !== plainLabel) computedRow[storedKey] = result;
+        }
       }
+    });
+  };
 
-      if (result && result !== '⚠️' && result !== 'ERR') {
-        // Guardar bajo la etiqueta plana (para que otras fórmulas la encuentren por nombre)
-        if (plainLabel) computedRow[plainLabel] = result;
-        // También bajo la clave _colN si es distinta (para compatibilidad con el row almacenado)
-        if (storedKey && storedKey !== plainLabel) computedRow[storedKey] = result;
-      }
-    }
-  });
+  evaluarColumnasDeFormula();
+  // Segunda pasada: resuelve las fórmulas que dependen de una columna de la derecha.
+  evaluarColumnasDeFormula();
 
   return computedRow;
 };
