@@ -294,6 +294,7 @@ export default function ProductionPlanForm() {
     if (!Array.isArray(cats) || cats.length === 0) return false;
     const limpias = unificarMatriz(limpiarValores(cats));
     setCategories(limpias);
+    setMatrizEstandarActiva(false);
     setActiveTabId(limpias[0].id);
     const cfd = elegido.customFieldsDefinition ?? elegido.CustomFieldsDefinition;
     if (cfd) { try { setCustomFields(JSON.parse(cfd)); } catch { /* sin columnas extra */ } }
@@ -329,6 +330,7 @@ export default function ProductionPlanForm() {
               const estandar = matrizEstandar();
               setCategories(estandar);
               setActiveTabId(estandar[0].id);
+              setMatrizEstandarActiva(false);
               setCustomFields([]);
               setSaveMessage('📋 Plan nuevo: no había plan anterior que heredar — se cargó la matriz estándar con todas las actividades. Configurala y 💾 guardá: los próximos días heredan esa configuración.');
             } else {
@@ -361,6 +363,7 @@ export default function ProductionPlanForm() {
               const migrado = esFormatoViejo(guardadas);
               const parsedCats = unificarMatriz(guardadas);
               setCategories(parsedCats);
+              setMatrizEstandarActiva(false);
               if (parsedCats.length > 0) setActiveTabId(parsedCats[0].id);
               if (migrado) msg = 'Plan cargado y unido en una sola matriz (pescado + camarón) — 💾 guardá para dejarlo así.';
               // ✨ Auto-cálculo también en planes YA guardados: las celdas con
@@ -415,6 +418,10 @@ export default function ProductionPlanForm() {
   // ⏸ Mientras configurás la matriz, el auto-cálculo no refresca los valores
   // con los formularios del día (antes lo pisaba cada 60 s).
   const [autoPausado, setAutoPausado] = useState(false);
+  // 🛑 Matriz estándar en edición: mientras esté activa, NO se reemplazan las
+  // filas por las actividades del día (eso hacía que la matriz "se saliera" y
+  // volviera la vista compacta del plan guardado).
+  const [matrizEstandarActiva, setMatrizEstandarActiva] = useState(false);
   useEffect(() => {
     if (!fecha || fecha.length < 10 || autoPausado) return;
     let vivo = true;
@@ -460,6 +467,7 @@ export default function ProductionPlanForm() {
     setIsSaving(true);
     try {
       await guardarEnBD(categories);
+      setMatrizEstandarActiva(false);
       setSaveMessage('✅ Plan guardado exitosamente.');
     } catch (e) {
       console.error(e);
@@ -545,6 +553,7 @@ export default function ProductionPlanForm() {
     const estandar = matrizEstandar();
     setCategories(estandar);
     setActiveTabId(estandar[0].id);
+    setMatrizEstandarActiva(true);
     setSaveMessage('📋 Matriz estándar cargada en blanco. Configurá consultas y valores, y 💾 guardá: los días siguientes heredan esta configuración.');
     setTimeout(() => setSaveMessage(''), 8000);
   };
@@ -956,6 +965,16 @@ export default function ProductionPlanForm() {
         if (yaSonLasMismas) { setSugerenciaFecha(null); return; }
 
         if (!hayDatos) {
+          // 🛑 CONFIGURANDO LA MATRIZ A MANO: no se toca nada.
+          // Antes, al cargar «📋 Matriz estándar» este efecto veía que las filas
+          // no coincidían con los formularios del día y las REEMPLAZABA solo: la
+          // matriz en la que estabas trabajando desaparecía y volvía la vista
+          // compacta del plan guardado. Ahora, si la matriz estándar está activa
+          // (o el auto está pausado), solo se ofrece la sugerencia con el botón.
+          if (matrizEstandarActiva || autoPausado) {
+            setSugerenciaFecha({ claves, cantidad: claves.length });
+            return;
+          }
           const marcadas = new Set(claves);
           setSelMarcadas(marcadas);
           aplicarSelectorActividades(marcadas);
@@ -969,7 +988,7 @@ export default function ProductionPlanForm() {
     return () => { vivo = false; };
     // Solo al cambiar la fecha o de pestaña; no en cada tecleo del plan.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fecha, activeTabId, catalogoListo]);
+  }, [fecha, activeTabId, catalogoListo, matrizEstandarActiva, autoPausado]);
 
   /**
    * ✨ Deja la pestaña SOLO con las actividades que tienen formularios en la
