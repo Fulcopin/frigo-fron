@@ -263,6 +263,31 @@ function CreateTemplate() {
     });
   };
 
+  /** Mueve una COLUMNA de la tabla (las "preguntas" de una tabla). */
+  const moverColumna = (elementIndex, colIndex, delta) => {
+    setTemplate(prev => {
+      const el = prev?.bodyElements?.[elementIndex];
+      if (!el || !Array.isArray(el.columns)) return prev;
+      const j = colIndex + delta;
+      if (j < 0 || j >= el.columns.length) return prev;
+      const cols = [...el.columns];
+      [cols[colIndex], cols[j]] = [cols[j], cols[colIndex]];
+      return { ...prev, bodyElements: prev.bodyElements.map((e, i) => (i === elementIndex ? { ...e, columns: cols } : e)) };
+    });
+  };
+
+  // Botones de mover: chicos, azules y con la flecha bien visible. Antes usaban
+  // el estilo rojo de "Eliminar" y parecían botones de borrar, así que nadie
+  // los encontraba ("no puedo mover las preguntas").
+  const btnMover = (disabled) => ({
+    width: '26px', height: '26px', padding: 0, lineHeight: 1,
+    borderRadius: '6px', border: '1px solid #93c5fd',
+    background: disabled ? '#f1f5f9' : '#eff6ff',
+    color: disabled ? '#cbd5e1' : '#1d4ed8',
+    fontWeight: 800, fontSize: '13px',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  });
+
   // ── Copiar / duplicar / pegar bloques ────────────────────────────────────
   // El "Control del Personal", los procesos y la materia prima suelen ser
   // idénticos en varias plantillas. Antes había que rearmar el bloque a mano;
@@ -1222,8 +1247,8 @@ function CreateTemplate() {
           <div key={element.id} className="body-element-container">
             <div className="body-element-header">
               <input type="text" value={element.title} onChange={(e) => updateBodyElement(elementIndex, 'title', e.target.value)} className="section-title-input" placeholder="Título del bloque"/>
-              <button onClick={() => moverBodyElement(elementIndex, -1)} className="btn-remove" title="Subir este bloque" style={{ marginRight: '4px' }} disabled={elementIndex === 0}>↑</button>
-              <button onClick={() => moverBodyElement(elementIndex, 1)} className="btn-remove" title="Bajar este bloque" style={{ marginRight: '6px' }} disabled={elementIndex === template.bodyElements.length - 1}>↓</button>
+              <button onClick={() => moverBodyElement(elementIndex, -1)} style={btnMover(elementIndex === 0)} title="Subir este bloque" disabled={elementIndex === 0}>↑</button>
+              <button onClick={() => moverBodyElement(elementIndex, 1)} style={{ ...btnMover(elementIndex === template.bodyElements.length - 1), marginRight: '6px' }} title="Bajar este bloque" disabled={elementIndex === template.bodyElements.length - 1}>↓</button>
               <button onClick={() => duplicarBodyElement(elementIndex)} className="btn-remove" title="Duplicar este bloque (misma configuración)" style={{ marginRight: '6px' }}>⧉</button>
               <button onClick={() => copiarBodyElement(elementIndex)} className="btn-remove" title="Copiar este bloque para pegarlo en otra plantilla" style={{ marginRight: '6px' }}>📋</button>
               <button onClick={() => guardarEnBiblioteca(elementIndex)} className="btn-remove" title="Guardar este bloque en la biblioteca compartida" style={{ marginRight: '6px' }}>💾</button>
@@ -1320,8 +1345,8 @@ function CreateTemplate() {
                               {sectionFieldTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                             </select>
                           </div>
-                          <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, -1)} className="btn-remove" title="Subir esta pregunta" style={{ marginTop: '20px', marginRight: '4px' }} disabled={fieldIndex === 0}>↑</button>
-                          <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, 1)} className="btn-remove" title="Bajar esta pregunta" style={{ marginTop: '20px', marginRight: '4px' }} disabled={fieldIndex === (element.fields?.length || 0) - 1}>↓</button>
+                          <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, -1)} style={{ ...btnMover(fieldIndex === 0), marginTop: '20px', marginRight: '4px' }} title="Subir esta pregunta" disabled={fieldIndex === 0}>↑</button>
+                          <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, 1)} style={{ ...btnMover(fieldIndex === (element.fields?.length || 0) - 1), marginTop: '20px', marginRight: '4px' }} title="Bajar esta pregunta" disabled={fieldIndex === (element.fields?.length || 0) - 1}>↓</button>
                           <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo" style={{ marginTop: '20px' }}>🗑️</button>
                         </div>
                         {/* Cuerpo: textarea de contenido */}
@@ -1368,8 +1393,8 @@ function CreateTemplate() {
                               <input type="checkbox" checked={field.required} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)} />
                               Requerido
                             </label>
-                            <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, -1)} className="btn-remove" title="Subir esta pregunta" style={{ marginRight: '4px' }} disabled={fieldIndex === 0}>↑</button>
-                            <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, 1)} className="btn-remove" title="Bajar esta pregunta" style={{ marginRight: '4px' }} disabled={fieldIndex === (element.fields?.length || 0) - 1}>↓</button>
+                            <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, -1)} style={{ ...btnMover(fieldIndex === 0), marginRight: '4px' }} title="Subir esta pregunta" disabled={fieldIndex === 0}>↑</button>
+                            <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, 1)} style={{ ...btnMover(fieldIndex === (element.fields?.length || 0) - 1), marginRight: '4px' }} title="Bajar esta pregunta" disabled={fieldIndex === (element.fields?.length || 0) - 1}>↓</button>
                             <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
                           </div>
                         </div>
@@ -1443,8 +1468,8 @@ function CreateTemplate() {
                       <div className="form-group checkbox-group"><label><input type="checkbox" checked={field.required} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "required", e.target.checked)}/>Requerido</label></div>
                       <div className="form-group checkbox-group"><label title="Activa la búsqueda en línea de productos (solo aplica si es columna de código o producto)"><input type="checkbox" checked={field.usaApiAutocomplete !== false} onChange={(e) => updateFieldInSection(elementIndex, fieldIndex, "usaApiAutocomplete", e.target.checked)}/>🌐 API Búsqueda</label></div>
                       <BusquedaProductoSelect valor={field.busquedaProducto} onChange={(v) => updateFieldInSection(elementIndex, fieldIndex, "busquedaProducto", v)} />
-                      <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, -1)} className="btn-remove" title="Subir esta pregunta" style={{ marginRight: '4px' }} disabled={fieldIndex === 0}>↑</button>
-                      <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, 1)} className="btn-remove" title="Bajar esta pregunta" style={{ marginRight: '4px' }} disabled={fieldIndex === (element.fields?.length || 0) - 1}>↓</button>
+                      <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, -1)} style={{ ...btnMover(fieldIndex === 0), marginRight: '4px' }} title="Subir esta pregunta" disabled={fieldIndex === 0}>↑</button>
+                      <button onClick={() => moverFieldEnSeccion(elementIndex, fieldIndex, 1)} style={{ ...btnMover(fieldIndex === (element.fields?.length || 0) - 1), marginRight: '4px' }} title="Bajar esta pregunta" disabled={fieldIndex === (element.fields?.length || 0) - 1}>↓</button>
                       <button onClick={() => removeFieldFromSection(elementIndex, fieldIndex)} className="btn-remove" title="Eliminar campo">🗑️</button>
                     </div>
                     )}
@@ -2358,6 +2383,28 @@ function CreateTemplate() {
 
                 {element.columns.map((column, colIndex) => (
                   <div key={colIndex} className="field-item">
+                    {/* ↕️ Mover la columna dentro de la tabla. Faltaba: se podía
+                        crear, editar y borrar columnas, pero no cambiarlas de
+                        lugar sin borrarlas y volver a cargarlas. */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                      <strong style={{ fontSize: '12px', color: '#1e40af', textTransform: 'uppercase', letterSpacing: '.3px' }}>
+                        Columna {colIndex + 1}: {column.label || '(sin nombre)'}
+                      </strong>
+                      <button
+                        type="button"
+                        onClick={() => moverColumna(elementIndex, colIndex, -1)}
+                        style={btnMover(colIndex === 0)}
+                        title="Mover esta columna a la izquierda"
+                        disabled={colIndex === 0}
+                      >←</button>
+                      <button
+                        type="button"
+                        onClick={() => moverColumna(elementIndex, colIndex, 1)}
+                        style={btnMover(colIndex === element.columns.length - 1)}
+                        title="Mover esta columna a la derecha"
+                        disabled={colIndex === element.columns.length - 1}
+                      >→</button>
+                    </div>
                     <div className="field-grid">
                       <div className="form-group"><label>Nombre de Columna</label><input type="text" value={column.label} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "label", e.target.value)} placeholder="Ej: Hora, Temperatura"/></div>
                       <div className="form-group"><label>📐 Unidad (opcional)</label><input type="text" value={column.unit || ""} onChange={(e) => updateColumnInTable(elementIndex, colIndex, "unit", e.target.value)} placeholder="Ej: °C, kg, %, m³" style={{ maxWidth: '120px' }}/></div>

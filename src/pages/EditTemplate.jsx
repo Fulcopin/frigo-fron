@@ -283,6 +283,29 @@ function EditTemplate() {
   const updateBodyElement = (elementIndex, field, value) => setTemplate(prev => ({...prev, bodyElements: prev.bodyElements.map((el, i) => i === elementIndex ? { ...el, [field]: value } : el)}));
   const removeBodyElement = (elementIndex) => setTemplate(prev => ({...prev, bodyElements: prev.bodyElements.filter((_, i) => i !== elementIndex)}));
 
+  /** Mueve una COLUMNA de la tabla (las "preguntas" de una tabla). */
+  const moverColumna = (elementIndex, colIndex, delta) => {
+    setTemplate(prev => {
+      const el = prev?.bodyElements?.[elementIndex];
+      if (!el || !Array.isArray(el.columns)) return prev;
+      const j = colIndex + delta;
+      if (j < 0 || j >= el.columns.length) return prev;
+      const cols = [...el.columns];
+      [cols[colIndex], cols[j]] = [cols[j], cols[colIndex]];
+      return { ...prev, bodyElements: prev.bodyElements.map((e, i) => (i === elementIndex ? { ...e, columns: cols } : e)) };
+    });
+  };
+
+  /** Estilo de los botones de mover: chicos, azules y visibles (no rojos). */
+  const btnMoverCol = (disabled) => ({
+    width: '26px', height: '26px', padding: 0, lineHeight: 1,
+    borderRadius: '6px', border: '1px solid #93c5fd',
+    background: disabled ? '#f1f5f9' : '#eff6ff',
+    color: disabled ? '#cbd5e1' : '#1d4ed8',
+    fontWeight: 800, fontSize: '13px',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  });
+
   // ── Copiar / duplicar / pegar bloques ────────────────────────────────────
   // Reutilizar el "Control del Personal", procesos o materia prima entre
   // plantillas sin rearmarlos a mano.
@@ -2255,6 +2278,26 @@ function EditTemplate() {
 
                 {(element.columns || []).map((column, colIndex) => (
                   <div key={colIndex} className="field-item">
+                    {/* ↔️ Mover la columna dentro de la tabla (faltaba). */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                      <strong style={{ fontSize: '12px', color: '#1e40af', textTransform: 'uppercase', letterSpacing: '.3px' }}>
+                        Columna {colIndex + 1}: {column.label || '(sin nombre)'}
+                      </strong>
+                      <button
+                        type="button"
+                        onClick={() => moverColumna(elementIndex, colIndex, -1)}
+                        style={btnMoverCol(colIndex === 0)}
+                        title="Mover esta columna a la izquierda"
+                        disabled={colIndex === 0}
+                      >←</button>
+                      <button
+                        type="button"
+                        onClick={() => moverColumna(elementIndex, colIndex, 1)}
+                        style={btnMoverCol(colIndex === (element.columns || []).length - 1)}
+                        title="Mover esta columna a la derecha"
+                        disabled={colIndex === (element.columns || []).length - 1}
+                      >→</button>
+                    </div>
                     <div className="field-grid">
                       <div className="form-group">
                         <label>Nombre de Columna</label>
