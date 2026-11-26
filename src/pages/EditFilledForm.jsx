@@ -891,9 +891,35 @@ function EditFilledForm() {
       );
     }
 
+    // 🕐 COLUMNA DE HORA
+    // Una columna que se llama HORA INICIO / HORA FIN es una hora, aunque en la
+    // plantilla haya quedado guardada con tipo "date" o "datetime" (pasa en el
+    // PD-06 y otros): el campo salía como calendario "dd/mm/aaaa", no dejaba ver
+    // ni corregir la hora y el valor guardado ("01:00") quedaba inválido.
+    // Se decide por el NOMBRE de la columna, no por el tipo guardado.
+    const etiquetaCampo = String(field.label || field.name || '');
+    const esHoraSola = /hora/i.test(etiquetaCampo) && !/fecha|vencim|caduc|d[ií]a/i.test(etiquetaCampo);
+
+    /** Deja solo HH:MM, venga "01:00", "01:00:00" o "2026-11-25T01:00:00". */
+    const valorHora = (v) => {
+      const s = String(v ?? '').trim();
+      if (!s) return '';
+      const m = s.match(/(\d{1,2}):(\d{2})/);
+      return m ? `${m[1].padStart(2, '0')}:${m[2]}` : s;
+    };
+
     switch (field.type) {
       case "date":
-        return (
+        return esHoraSola ? (
+          <input
+            type="time"
+            value={valorHora(value)}
+            onChange={(e) => onChange(e.target.value)}
+            required={field.required}
+            disabled={disabled}
+            className={tableInputClass}
+          />
+        ) : (
           <input
             type="date"
             value={value || ""}
@@ -907,7 +933,7 @@ function EditFilledForm() {
         return (
           <input
             type="time"
-            value={value || ""}
+            value={valorHora(value)}
             onChange={(e) => onChange(e.target.value)}
             required={field.required}
             disabled={disabled}
@@ -917,8 +943,8 @@ function EditFilledForm() {
       case "datetime":
         return (
           <input
-            type="datetime-local"
-            value={value || ""}
+            type={esHoraSola ? "time" : "datetime-local"}
+            value={esHoraSola ? valorHora(value) : (value || "")}
             onChange={(e) => onChange(e.target.value)}
             required={field.required}
             disabled={disabled}
