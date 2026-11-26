@@ -12529,21 +12529,21 @@ useEffect(() => {
                   o.fila || (o.lote && idsOrigen.has(String(o.lote.templateId || ''))));
                 if (delMismoFormulario.length > 0) opciones = delMismoFormulario;
               }
-              // Solo lotes CON EXISTENCIA: si se ofrece uno que no está en el
-              // inventario (o entró en 0), el operario lo elige y después el
-              // formulario avisa "no hay / no existe". Se ocultan esos, salvo el
-              // que ya esté escrito en la fila.
-              const conExistencia = opciones.filter(o => {
-                const lote = o.lote || buscarLote(invLotes, o.value);
-                return !!lote && saldoDe(lote) > 0;
-              });
-              if (conExistencia.length > 0) opciones = conExistencia;
+              // Se muestran TODOS los lotes del formulario (tengan o no saldo):
+              // el operario necesita ver los códigos aunque el lote todavía no
+              // esté dado de alta; abajo de la celda se le avisa si no existe.
 
               // Lo ya escrito que no esté en la lista se sigue viendo.
               if (valorAct && !opciones.some(o => o.value === valorAct)) {
                 const loteInv = buscarLote(invLotes, valorAct);
-                opciones = [{ value: valorAct, label: `${valorAct} (fuera de la lista)`, lote: loteInv }, ...opciones];
+                opciones = [{ value: valorAct, label: valorAct, lote: loteInv }, ...opciones];
               }
+
+              // En esta tabla la lista muestra SOLO EL CÓDIGO del lote: el saldo
+              // ya se ve abajo de la celda ("⚖️ Saldo … Lbs"), así que repetirlo
+              // en cada opción ("21M195033 — 2.000,0 lbs disp.") solo alarga la
+              // lista y estorba para encontrar el código.
+              opciones = opciones.map(o => (o.label === o.value ? o : { ...o, label: o.value }));
             }
             // Saldo a mostrar: con origen inventario es el lote elegido; con origen
             // de producción es el lote hijo real que resolvería el descuento.
