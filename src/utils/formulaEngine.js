@@ -84,7 +84,14 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
       return format ? (total === 0 ? "0.00" : total.toFixed(2)) : String(total);
     }
 
-    const allColNames = rowKeys.sort((a, b) => b.length - a.length);
+    // 🚫 Nombres de columna VACÍOS fuera del reemplazo.
+    // Escapar un nombre vacío da una expresión regular vacía, que coincide con
+    // CADA posición del texto: el motor metía un valor entre cada letra y la
+    // fórmula terminaba en `0505050 0+0 000…` → "Octal literals are not allowed
+    // in strict mode". Con un nombre vacío la fórmula entera se rompía.
+    const allColNames = rowKeys
+      .filter(k => String(k ?? '').trim() !== '')
+      .sort((a, b) => b.length - a.length);
     expression = formula;
 
     // --- PROCESAR _ROW_ ---
@@ -158,6 +165,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
     }
 
     allColNames.forEach(colName => {
+      if (!colName || !String(colName).trim()) return;   // nombre vacío: nada que reemplazar
       const escaped = colName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'gi');
       expression = expression.replace(regex, () => {
@@ -179,6 +187,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
       let expression2 = normalizeKey(formula);
       expression2 = expression2.replace(/_row_/gi, String(currentRowIndex));
       Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
+        if (!normKey || !String(normKey).trim()) return;
         const origKey = normalizedKeyMap[normKey];
         const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const rx = new RegExp(escaped + '\\s*\\[\\*?\\]', 'gi');
@@ -237,6 +246,7 @@ export const evaluarFormula = (formula, rowData, allRows = null, currentRowIndex
         expression2 = expression2.replace(rx2, (m, n) => { const idx = parseInt(n) - 1; if (allRows && idx >= 0 && idx < allRows.length) { const v = parseFloat(allRows[idx][origKey]); return isNaN(v) ? '0' : String(v); } return '0'; });
       });
       Object.keys(normalizedKeyMap).sort((a, b) => b.length - a.length).forEach(normKey => {
+        if (!normKey || !String(normKey).trim()) return;
         const origKey = normalizedKeyMap[normKey];
         const escaped = normKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const rx = new RegExp(escaped, 'gi');
