@@ -7927,9 +7927,7 @@ useEffect(() => {
           console.log('📥 [INVENTARIO] Entradas:', resEnt);
           const textoEnt = resumenEntradas(resEnt);
           if (textoEnt) alert(textoEnt);
-          // Se refresca siempre: si los lotes ya existían no se duplican, pero
-          // puede que se les haya corregido el peso (lotes que entraron en 0).
-          await refrescarInventario();
+          if (resEnt.creados.length > 0) await refrescarInventario();
         } catch (entErr) {
           console.warn('⚠️ [INVENTARIO] No se pudieron registrar lotes:', entErr.message);
           // Antes solo quedaba en la consola: el formulario se guardaba, el lote
@@ -12531,6 +12529,16 @@ useEffect(() => {
                   o.fila || (o.lote && idsOrigen.has(String(o.lote.templateId || ''))));
                 if (delMismoFormulario.length > 0) opciones = delMismoFormulario;
               }
+              // Solo lotes CON EXISTENCIA: si se ofrece uno que no está en el
+              // inventario (o entró en 0), el operario lo elige y después el
+              // formulario avisa "no hay / no existe". Se ocultan esos, salvo el
+              // que ya esté escrito en la fila.
+              const conExistencia = opciones.filter(o => {
+                const lote = o.lote || buscarLote(invLotes, o.value);
+                return !!lote && saldoDe(lote) > 0;
+              });
+              if (conExistencia.length > 0) opciones = conExistencia;
+
               // Lo ya escrito que no esté en la lista se sigue viendo.
               if (valorAct && !opciones.some(o => o.value === valorAct)) {
                 const loteInv = buscarLote(invLotes, valorAct);
